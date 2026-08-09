@@ -15,6 +15,14 @@
 > from "mostly right" to "confidently wrong" without anyone deciding it should.
 >
 > Small factual corrections are fine to make directly. Structural change means regenerate.
+>
+> **Regenerating this document does not protect the tool's behaviour.** `codebase-docs` produces
+> documentation *from* code; it never produces code. If `scripts/standards.mjs` is itself ever
+> rewritten or regenerated, the thing that protects it is `test/audit.test.mjs` — the tests fail if
+> the use/mention rule is dropped, whereas comments and prose explaining that rule would simply be
+> rewritten away. The rule is therefore also stated as a requirement in
+> [`design/standards-audit-cli.md`](../design/standards-audit-cli.md), which is the document any
+> reimplementation would be built from.
 
 > A repository of numbered engineering standards, plus the command-line tool that checks other
 > repositories against them. Each standard is a normative Markdown document stating what compliant

@@ -141,6 +141,58 @@ something absent, unproven, or contradictory.
 | `open-reconstruction-questions` | Open reconstruction questions | Unanswered entries in `artifacts/project-baseline/open-questions.md` | `warning` |
 | `standards-violations` | Standards violations | Any requirement `RN` of any standard that the repository fails | `error` |
 
+## Required: the use/mention rule
+
+**Any implementation of this design must obey this section. It is not an optimisation or a style
+preference — it is the single defect this tool has produced repeatedly, and an implementation that
+ignores it will be wrong in the same way every time.**
+
+Every detector above answers "does this repository use X?" by searching file text for a string
+associated with X. That string occurs in two unrelated kinds of place:
+
+- files that **use** X — a call, an annotation, an import
+- files that **mention** X — documentation, comments, test names, string literals, and the audit's own
+  pattern tables
+
+Raw text search cannot distinguish them. The first implementation of this design shipped that
+confusion five separate times: it reported every SDK in its own pattern list as a dependency of the
+repository being audited; it flagged this design document as containing unfinished work because it
+names `TODO` and `NotImplemented`; it flagged its own test suite because test names contain the word
+TODO; it flagged the architecture document as a background job because that document names Celery and
+BullMQ; and it flagged a code file whose *comment* named those libraries.
+
+Four of those five fixes narrowed **which files are read** — self-exclusion, then code extensions
+only. That axis is insufficient and an implementation that stops there is not compliant: the fifth
+instance was a mention inside a code file, which no file-level filter can reach.
+
+**The requirement is to scan only positions where a use can occur.** Divide each code file into three
+views and route every content scan through exactly one:
+
+| View | Contains | Must be used for |
+|---|---|---|
+| structure | code with comments removed **and string contents blanked** | structural signals — `app.get(`, `@Scheduled`, `new Queue(`, `NotImplementedException`, `it.skip(`. A call never occurs inside a string |
+| source | code with comments removed, **strings intact** | library-name matching only, because an import specifier *is* a string: `from "bullmq"` |
+| comments | comment text only | `TODO`/`FIXME`/`HACK`/`XXX` markers, which are by definition a comment convention |
+
+Two rules follow, and both must hold:
+
+1. **A library name is only ever matched import-shaped** — a JS/TS `import`/`require`, a Python
+   `import`, or a C# `using`. Never as a loose substring, in any category.
+2. **A scan for a code signal reads only code**, and only the appropriate view of it. Documentation
+   describes technologies; it does not implement them.
+
+Two observable consequences an implementation must satisfy, both cheap to test: a **commented-out
+route is not a route**, and a **string containing `"TODO:"` is not a marker**.
+
+Comment syntax must be selected per file extension. Applying the wrong one silently corrupts the
+split: `//` is floor division in Python, `--` is decrement in JavaScript, `#` opens a private field in
+JavaScript.
+
+**These rules must be enforced by tests, not by convention.** Every category needs a fixture that
+provokes it *and* a fixture that must not — the negative case is the one that catches this defect, and
+a suite that only checks detectors fire will pass while the bug is live. The reference implementation
+verifies its guards by mutation: reverting a structural scan to raw text must fail a test.
+
 ## Structured output
 
 `--json` emits a single object. `standardRef` is what makes a finding actionable: it points at the
