@@ -63,7 +63,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Implement the descriptive finding categories
 
-- **Status:** not started
+- **Status:** done — 2026-08-08, `scripts/standards.mjs` and `package.json`
 - **Purpose:** The six `info` categories — observed architecture, and detected capabilities, APIs,
   jobs, integrations, and AI interfaces — report what a repository *has*. They are the foundation the
   judgemental categories build on, and they are useful alone as a repository survey.
@@ -78,7 +78,26 @@ job; reconciling it against git stays `backlog-reconcile`'s.
     it is worse than no audit.
 - **Verification:** `standards audit . --json` emits parseable JSON whose every finding has the six
   required fields, and no finding in these six categories carries `OBSERVED` for a heuristic result.
+  All confirmed against this repository and against `F:\Repos\AgentRelay` (220 files): 6 findings,
+  all seven schema fields present, all `severity: "info"`, labels only `OBSERVED`/`INFERRED`, and all
+  three heuristic findings labeled `INFERRED`. Exit codes verified: `1` for no subcommand, an unknown
+  subcommand, and a missing directory; `0` for `--help` and for a successful audit.
 - **Dependencies:** the language decision above.
+- **The bug worth remembering: the audit detected itself.** The first working run reported this
+  repository as integrating with AWS, Azure, Stripe, Twilio, Slack, GitHub, four databases, and seven
+  AI providers. All false. `scripts/standards.mjs` contains the package names it searches for, so
+  scanning its own source matched every pattern it knows. Two fixes, both kept: the script excludes
+  its own file from the content scan, and SDK detection now requires an **import-shaped** match — a
+  JS/TS `import`/`require`, a Python `import`, or a C# `using` — rather than a bare mention anywhere
+  in a file. The general lesson is that a bare substring match reports any file that *names* a
+  technology as *using* it, which for a tool that reads documentation-heavy repositories is a
+  constant false-positive source. After the fix the same repository reports no integrations and no AI
+  SDK usage, which is correct, and `F:\Repos\AgentRelay` correctly reports OpenAI in the four files
+  of its `openai-reviewer` package.
+- **Known limitation, deliberately not fixed:** detection is pattern-based and language-agnostic, so
+  it will miss frameworks whose conventions are not in the pattern lists, and it reads at most 400KB
+  of any single file and 20,000 files per repository. Evidence lists are capped at 12 paths, and the
+  message states the true total whenever entries are omitted, so a cap is never silent.
 
 ### Implement the absence and discrepancy categories
 

@@ -1,0 +1,17 @@
+{
+  "name": "engineering-standards",
+  "version": "0.1.0",
+  "description": "Numbered engineering standards, and the audit command that checks a repository against them.",
+  "type": "module",
+  "bin": {
+    "standards": "scripts/standards.mjs"
+  },
+  "scripts": {
+    "audit": "node scripts/standards.mjs audit ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
