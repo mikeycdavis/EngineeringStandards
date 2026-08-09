@@ -25,6 +25,8 @@ node <standards-repo>/scripts/policy.mjs ./project-policy.yml
 
 # 3. Create the required project artifacts
 cp <standards-repo>/templates/PROJECT.md ./PROJECT.md
+cp <standards-repo>/templates/AGENTS.md ./AGENTS.md    # bootstrap for any coding agent
+cp <standards-repo>/templates/CLAUDE.md ./CLAUDE.md    # Claude Code specifics only
 mkdir -p artifacts/project-plan-breakdown artifacts/adr
 
 # 4. Run the planning and documentation workflows
@@ -389,6 +391,13 @@ AGENTS.md / CLAUDE.md / .github/copilot-instructions.md
     -> project-policy.yml     (what THIS project is held to)
     -> standards/NN-*.md      (what a specific rule means, read on demand)
 ```
+
+Copy [`templates/AGENTS.md`](templates/AGENTS.md) and [`templates/CLAUDE.md`](templates/CLAUDE.md)
+rather than writing your own. They are short on purpose: `AGENTS.md` carries the load sequence and
+your project's operational facts, `CLAUDE.md` carries only what is Claude Code specific and defers
+to `AGENTS.md` for everything else. **Do not paste the standards into either one**
+([Standard 17](standards/17-agent-instruction-files.md) R2) — an instruction file should get
+*shorter* as the standards grow, and a copied rule becomes the one an agent actually follows.
 
 An agent should **not** read all 44 standards before starting work. It should read the policy to
 learn what applies, and open a standard when a rule is relevant to what it is doing. Each standard's

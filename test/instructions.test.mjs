@@ -45,6 +45,72 @@ test("the policy template uses only canonical rule IDs", async () => {
   }
 });
 
+// --- The agent bootstrap templates (Standard 17) -------------------------------------------------
+
+test("every template init writes actually exists", async () => {
+  // init reads its templates at apply() time, so a missing one is a crash in an adopter's
+  // repository, half-bootstrapped. Parsed from the source rather than imported because ARTIFACTS
+  // is deliberately private.
+  const src = await read(path.join(ROOT, "scripts/init.mjs"));
+  const templates = [...src.matchAll(/template:\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(templates.length >= 4, "init declares fewer templates than expected — has the list moved?");
+  for (const t of templates) {
+    assert.ok(existsSync(path.join(ROOT, t)), `init writes a missing template: ${t}`);
+  }
+});
+
+test("a bootstrap document is shorter than the standard it routes to", async () => {
+  // Standard 17 R2's own test, made mechanical: an instruction file should get SHORTER as the
+  // standards grow. A template longer than Standard 17 itself is duplicating rather than routing,
+  // which is the failure that makes the copy authoritative in practice.
+  const standard = (await read(path.join(ROOT, "standards/17-agent-instruction-files.md"))).length;
+  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+    const template = (await read(path.join(ROOT, "templates", name))).length;
+    assert.ok(
+      template < standard,
+      `templates/${name} (${template} bytes) is longer than the standard it points at (${standard})`,
+    );
+  }
+});
+
+test("the agent template routes to every canonical source in the load sequence", async () => {
+  // Standard 17 R3 is a load sequence, not a checklist: each step tells the agent what to read
+  // next. A template missing a step sends an agent to the standards without knowing which version
+  // or which exceptions apply.
+  const text = await read(path.join(ROOT, "templates/AGENTS.md"));
+  for (const source of [
+    "PROJECT.md",
+    "project-policy.yml",
+    "standardVersion",
+    "standards/",
+    "artifacts/project-plan-breakdown/",
+    "artifacts/adr/",
+  ]) {
+    assert.ok(text.includes(source), `templates/AGENTS.md never routes to ${source}`);
+  }
+  // R5, and the one repetition Standard 17 endorses, because it is routing rather than restatement.
+  assert.match(text, /never rely on chat history/i);
+  // R4: when the two disagree the standard wins. Without this an adopter's edits quietly become
+  // a competing definition.
+  assert.match(text, /the standard governs/i);
+});
+
+test("CLAUDE.md defers to AGENTS.md instead of copying it", async () => {
+  // The fork Standard 17 R2 prohibits, one level down: two instruction files carrying the same
+  // content drift apart, and nothing records which one an agent actually followed.
+  const claude = await read(path.join(ROOT, "templates/CLAUDE.md"));
+  const agents = await read(path.join(ROOT, "templates/AGENTS.md"));
+  assert.match(claude, /AGENTS\.md/, "CLAUDE.md never points at AGENTS.md");
+  assert.ok(
+    claude.length < agents.length,
+    "CLAUDE.md is not smaller than AGENTS.md — it is carrying content rather than deferring",
+  );
+  // The load sequence lives in exactly one file. Its steps must not be restated here.
+  for (const step of ["artifacts/project-plan-breakdown/", "artifacts/adr/", "standardVersion"]) {
+    assert.ok(!claude.includes(step), `CLAUDE.md restates the load sequence: ${step}`);
+  }
+});
+
 // --- The adoption guide must describe things that exist -----------------------------------------
 
 test("every path the guide references exists", async () => {

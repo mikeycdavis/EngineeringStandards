@@ -161,11 +161,18 @@ test("an approved overwrite is marked destructive; a creation is not", async () 
 test("running init repeatedly is safe and converges", async () => {
   const dir = await repo(GREENFIELD);
   try {
-    await apply(dir, await plan(dir));
+    const first = await plan(dir);
+    await apply(dir, first);
     const second = await plan(dir);
     assert.deepEqual(second.created, [], "a second run wanted to create something again");
     assert.deepEqual(second.conflicts, [], "a second run conflicted with its own output");
-    assert.equal(second.preserved.length, 4);
+    // Derived from the first run rather than hardcoded: a count literal here goes stale silently
+    // the next time an artifact is added, and passes for the wrong reason in between.
+    assert.deepEqual(
+      [...second.preserved].sort(),
+      [...first.created].sort(),
+      "a second run did not recognise everything the first one wrote",
+    );
 
     await apply(dir, second);
     const third = await plan(dir);

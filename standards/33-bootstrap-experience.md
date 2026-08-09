@@ -234,7 +234,7 @@ guarantee R5's requirement that a dry run predict the real run exactly.
 
 | Requirement | Implementation |
 | --- | --- |
-| R1 — generates the artifacts | `project-policy.yml`, `PROJECT.md`, `artifacts/project-plan-breakdown/`, `artifacts/adr/`, from `templates/`. A test asserts what it writes validates against the real schema |
+| R1 — generates the artifacts | `project-policy.yml`, `PROJECT.md`, `AGENTS.md`, `CLAUDE.md`, `artifacts/project-plan-breakdown/`, `artifacts/adr/`, from `templates/`. Six of the seven the source names; `.github/copilot-instructions.md` is not generated ([Standard 17](17-agent-instruction-files.md)). A test asserts what it writes validates against the real schema, and another that every template it names exists |
 | R2 — non-destructive | A differing file is a `conflict`; nothing is written. Overwriting requires naming the exact path (`--force-overwrite=PROJECT.md`), and approving one path does not approve another |
 | R3 — idempotent | A second run recognises its own output and preserves it. Tested to three runs |
 | R4 — mode detection and routing | `greenfield`, `existing-with-plan`, `reconstruction-required`, reported `INFERRED` with the evidence used, overridable by `--mode` (reported `CONFIRMED_BY_OWNER`) |

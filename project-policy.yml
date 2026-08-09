@@ -99,7 +99,7 @@ attestations:
     reviewedAt: "2026-08-09"
     # One line: scripts/yaml.mjs supports a deliberately small subset and rejects block scalars
     # rather than guessing at them. The parser failing loudly here is the design working.
-    evidence: "Reviewed the standards init write path. Creating a missing artifact is ordinary execute; replacing an existing one is refused by default and reported as a conflict. Overwriting requires naming the exact path, and approving one path does not approve another. Verified by the safety-contract tests in test/init.test.mjs."
+    evidence: "Reviewed the standards init write path. Creating a missing artifact is ordinary execute; replacing an existing one is refused by default and reported as a conflict. Overwriting requires naming the exact path, and approving one path does not approve another. Verified by the safety-contract tests in test/init.test.mjs. Re-reviewed 2026-08-09 after AGENTS.md and CLAUDE.md were added to ARTIFACTS: the additions widen what init creates and leave the create/overwrite/conflict logic untouched, so every path still routes through the same refusal."
     reference: "artifacts/adr/0004-audit-and-validate-are-separate-commands.md"
     reviewedAgainst:
       paths:
@@ -108,4 +108,4 @@ attestations:
       # Content digest of the paths above, printed by `standards validate` when absent. When those
       # files change materially this stops matching, the attestation goes stale, and the rule
       # returns to not-evaluated until a human looks again.
-      digest: "ec3048284585f7c9c045185ffaa966c3"
+      digest: "8c8103086465653b64676dca6077a754"

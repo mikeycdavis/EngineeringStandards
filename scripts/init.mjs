@@ -41,6 +41,8 @@ export const MODES = {
 const ARTIFACTS = [
   { path: "project-policy.yml", template: "templates/project-policy.yml" },
   { path: "PROJECT.md", template: "templates/PROJECT.md" },
+  { path: "AGENTS.md", template: "templates/AGENTS.md" },
+  { path: "CLAUDE.md", template: "templates/CLAUDE.md" },
   { path: "artifacts/project-plan-breakdown/", directory: true },
   { path: "artifacts/adr/", directory: true },
 ];

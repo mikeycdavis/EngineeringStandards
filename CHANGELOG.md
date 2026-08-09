@@ -13,6 +13,37 @@ All notable changes to this framework. Versioning follows
 | Output schema | The validator's JSON envelope | `schemaVersion` in every report |
 | Package | The npm package | `package.json` |
 
+## Unreleased
+
+No rule was added, changed, or removed, so no version has been cut
+([Standard 21](standards/21-versioning.md)).
+
+### Added
+
+- **`templates/AGENTS.md` and `templates/CLAUDE.md`** — the agent bootstrap templates
+  [Standard 17](standards/17-agent-instruction-files.md) R1 calls for. `AGENTS.md` carries R3's load
+  sequence in order; `CLAUDE.md` defers to it and holds only Claude Code specifics, so the two files
+  cannot drift into competing definitions.
+- **`standards init` writes both**, bringing it to six of the seven artifacts
+  [Standard 33](standards/33-bootstrap-experience.md) R1 names.
+- Tests enforcing R2 mechanically: each template must be shorter than the standard it routes to,
+  `CLAUDE.md` shorter than `AGENTS.md` and free of the load sequence, and every template `init`
+  names must exist.
+
+### Dogfooded
+
+**Attestation staleness fired for real, on its first opportunity.** Adding the two artifacts to
+`init` changed `scripts/init.mjs`, one of the paths `ai.destructive-approval` was reviewed against.
+The digest stopped matching, the attestation went stale, and the rule returned to `not-evaluated` —
+dropping the run from 13 passed to 12 until a human looked again. It was renewed with a new digest
+and a note on what changed, not silently refreshed. This is the mechanism working: the alternative
+is an attestation that keeps asserting a review of code nobody reviewed.
+
+### Known gap
+
+`.github/copilot-instructions.md` — the third file R1 names — has no template. Recorded in
+Standard 17's `## Implementation` rather than left to be discovered.
+
 ## 1.1.0 — 2026-08-09
 
 **`MINOR`.** Every change is a widening: an optional policy section, an optional catalog field, and
