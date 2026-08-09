@@ -379,24 +379,41 @@ test("every finding carries the full schema", () => {
   }
 });
 
-test("every standardRef resolves to a heading that exists", async () => {
+test("every standardRef resolves to a heading in the file it names", async () => {
+  // Generalized at 2.0.0. It previously loaded standard 44 and checked every anchor against it,
+  // which was true only while 44 was the sole standard the audit pointed at. The must-never
+  // detectors reference 46, 48, and 50, so the file half of the ref is now resolved too — a ref
+  // naming a standard that does not exist would otherwise have passed by being checked against the
+  // wrong document.
   const { readFile } = await import("node:fs/promises");
-  const md = await readFile(path.join(REPO, "standards/44-existing-project-reconstruction.md"), "utf8");
-  const anchors = new Set(
-    md
-      .split(/\r?\n/)
-      .filter((l) => /^#{2,3} /.test(l))
-      .map((l) => l.replace(/^#+ /, "").toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-")),
-  );
+  const anchorsFor = new Map();
+  const load = async (file) => {
+    if (!anchorsFor.has(file)) {
+      const md = await readFile(path.join(REPO, file), "utf8");
+      anchorsFor.set(
+        file,
+        new Set(
+          md
+            .split(/\r?\n/)
+            .filter((l) => /^#{2,3} /.test(l))
+            .map((l) => l.replace(/^#+ /, "").toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-")),
+        ),
+      );
+    }
+    return anchorsFor.get(file);
+  };
+
   let checked = 0;
-  for (const name of ["compliant", "delegated", "naming-only", "markers"]) {
+  for (const name of ["compliant", "delegated", "naming-only", "markers", "never-violations", "never-clean"]) {
     for (const f of audit(fixture(name)).json.findings) {
-      const [, anchor] = f.standardRef.split("#");
-      assert.ok(anchors.has(anchor), `${f.id} points at #${anchor}, which is not a heading`);
+      const [file, anchor] = f.standardRef.split("#");
+      const anchors = await load(file);
+      assert.ok(anchors.has(anchor), `${f.id} points at ${file}#${anchor}, which is not a heading there`);
       checked++;
     }
   }
   assert.ok(checked > 0);
+  assert.ok(anchorsFor.size > 1, "every ref resolved to one file — the generalization is untested");
 });
 
 test("heuristic findings are never labeled OBSERVED", () => {
@@ -520,4 +537,73 @@ test("every block claimed as verbatim source really is", () => {
     "a block claimed as source text does not appear in the source; reproduce it exactly or drop the claim",
   );
   assert.equal(r.status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The must-never detectors (Standards 46, 48, 50)
+//
+// The negative fixture is the one that matters. Every one of these patterns is named in this
+// framework's own standards documents in order to prohibit it, so a detector that reads prose or
+// comments reports the prohibition as a violation — the defect this tool has shipped five times.
+// ---------------------------------------------------------------------------
+
+const NEVER = [
+  ["committed-env-file", "scm.no-committed-env-files", ".env"],
+  ["secret-in-artifact", "security.no-secrets-in-artifacts", "config.yml"],
+  ["swallowed-exception", "errors.no-swallowed-exceptions", "src/swallow.js"],
+  ["certificate-validation-bypass", "security.no-cert-bypass", "src/tls.js"],
+  ["sql-string-interpolation", "security.no-sql-concat", "src/query.js"],
+];
+
+test("every must-never detector fires on the fixture that violates it", () => {
+  const res = audit(fixture("never-violations"));
+  for (const [id, rule, evidence] of NEVER) {
+    const found = of(res, id);
+    assert.equal(found.length, 1, `${id} did not fire`);
+    assert.equal(found[0].rule, rule, `${id} is bound to the wrong canonical rule`);
+    assert.equal(found[0].severity, "error");
+    assert.ok(
+      found[0].evidence.some((e) => e.startsWith(evidence)),
+      `${id} did not name ${evidence}: ${JSON.stringify(found[0].evidence)}`,
+    );
+  }
+});
+
+test("no must-never detector fires on the fixture that names every pattern without using one", () => {
+  // .env.example and .env.template; a catch with a justification comment and one that rethrows;
+  // cert-bypass settings quoted in a string and named in a comment; a parameterized query with an
+  // allow-listed sort column; and a Markdown page reproducing all of them as prose.
+  const found = ids(audit(fixture("never-clean")));
+  for (const [id] of NEVER) {
+    assert.ok(!found.has(id), `${id} fired on a fixture that only mentions the pattern`);
+  }
+});
+
+test("the secret detector leaves .env files to the rule that owns them", () => {
+  // Single owner, so one defect produces one finding: the fixture's .env holds a credential and is
+  // already an error by filename. A content scan on top would report the same defect twice.
+  const res = audit(fixture("never-violations"));
+  assert.deepEqual(
+    of(res, "secret-in-artifact")[0].evidence.filter((e) => e.startsWith(".env")),
+    [],
+    "the secret detector read a .env file",
+  );
+});
+
+test("every must-never detector declares which source view it scans", async () => {
+  // Standard 50's review requirement, made mechanical. The use/mention defect was fixed four times
+  // by narrowing which FILES are read, and each fix was insufficient; the fifth instance was a
+  // mention inside a code file. Declaring the view is what forces the question to be asked.
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(path.join(REPO, "scripts/standards.mjs"), "utf8");
+  for (const [, rule] of NEVER) {
+    const fn = src.slice(0, src.indexOf(`rule: "${rule}"`));
+    const doc = fn.lastIndexOf("/**");
+    assert.ok(doc > 0, `${rule} has no doc comment before it`);
+    assert.match(
+      fn.slice(doc),
+      /VIEW:/,
+      `the detector for ${rule} does not declare which source view it scans`,
+    );
+  }
 });

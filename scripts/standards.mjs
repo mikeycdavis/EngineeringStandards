@@ -57,6 +57,11 @@ const EVALUATED_RULES = [
   "quality.dead-code",
   "reconstruction.baseline-artifacts",
   "reconstruction.open-questions",
+  "scm.no-committed-env-files",
+  "security.no-secrets-in-artifacts",
+  "errors.no-swallowed-exceptions",
+  "security.no-cert-bypass",
+  "security.no-sql-concat",
 ];
 
 /**
@@ -173,6 +178,18 @@ function renderVerdict(report, policy) {
   return out.join("\n");
 }
 const STD44 = "standards/44-existing-project-reconstruction.md";
+const STD46 = "standards/46-source-control-safety.md";
+const STD48 = "standards/48-error-handling-and-observability.md";
+const STD50 = "standards/50-security-prohibitions.md";
+
+/** Anchors for the must-never layer's evaluated rules (Standards 45-53). */
+const N = {
+  secrets: `${STD46}#r1--never-commit-secrets`,
+  envFiles: `${STD46}#r2--never-commit-environment-files`,
+  swallowed: `${STD48}#r1--never-silently-swallow-an-exception`,
+  certBypass: `${STD50}#r2--never-bypass-certificate-validation`,
+  sqlConcat: `${STD50}#r3--never-build-sql-by-concatenating-untrusted-input`,
+};
 
 /**
  * Requirement anchors, verified against the headings in that file. A standardRef that does not
@@ -1343,6 +1360,236 @@ const DESCRIPTIVE = [
   ["detected-ai-interfaces", "Detected AI interfaces"],
 ];
 
+// ---------------------------------------------------------------------------
+// Detectors — the must-never layer (Standards 45-53)
+//
+// Standard 45 R5's brittle-check prohibition governs every one of these: a check that fires often
+// enough to be ignored is worse than none, because its clean runs are still counted as assurance.
+// So each covers a narrow, high-confidence subset, and its standard states the subset rather than
+// the aspiration.
+//
+// Each detector's doc comment MUST declare which source view it scans and why that view is right
+// for its signal. That is not documentation discipline — it is the structural fix for the defect
+// this tool has shipped five times, and a detector reaching for raw `contents` to find a code
+// signal is reintroducing it.
+// ---------------------------------------------------------------------------
+
+/**
+ * scm.no-committed-env-files — Standard 46 R2.
+ *
+ * VIEW: filename only. No content is read, and none needs to be: an environment file is where a
+ * project puts the values it must not publish, so the file's presence is the finding. Reading it
+ * would also duplicate security.no-secrets-in-artifacts, which excludes these files for exactly
+ * that reason — one defect, one finding.
+ */
+const ENV_FILE_RE = /(^|\/)\.env(\.[\w.-]+)?$/;
+const ENV_PERMITTED = /\.(example|template|sample|vault)$/;
+
+function detectCommittedEnvFiles(files) {
+  const hits = files
+    .map((f) => rel(f))
+    .filter((p) => ENV_FILE_RE.test(p) && !ENV_PERMITTED.test(p));
+  if (hits.length === 0) return;
+
+  addFinding({
+    id: "committed-env-file",
+    rule: "scm.no-committed-env-files",
+    category: "Standards violations",
+    severity: "error",
+    label: "OBSERVED",
+    evidence: hits.sort(),
+    message: `${hits.length} environment file(s) are tracked. Rotate anything they contained; an example variant is the supported alternative.`,
+    standardRef: N.envFiles,
+  });
+}
+
+/**
+ * security.no-secrets-in-artifacts — Standard 16 R2, evaluated from 2.0.0 (Standard 46 R1).
+ *
+ * VIEW: `sourceOf` for code — comments removed, strings intact — because a credential lives inside
+ * a string literal and `structureOf` would blank exactly the thing being looked for. Raw text for
+ * .yml/.yaml/.json/.toml, which have no code structure to extract. NEVER Markdown: documentation
+ * names credential shapes in order to prohibit them, and this file's own patterns would be findings.
+ *
+ * Excludes .env files entirely — scm.no-committed-env-files owns those by filename.
+ *
+ * High-confidence shapes only. No entropy scoring: a check that flags every base64 blob is the
+ * brittle check Standard 45 R5 forbids, and its clean runs would be counted as assurance.
+ */
+const CONFIG_EXT = new Set([".yml", ".yaml", ".json", ".toml"]);
+const SECRET_PATTERNS = [
+  [/-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/, "private key block"],
+  [/\bAKIA[0-9A-Z]{16}\b/, "AWS access key id"],
+  [/\bgh[pousr]_[A-Za-z0-9]{36,}/, "GitHub token"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/, "GitLab personal access token"],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}/, "Slack token"],
+  [/\bsk_live_[A-Za-z0-9]{16,}/, "Stripe live secret key"],
+];
+
+function detectSecretsInArtifacts(files, contents) {
+  const hits = [];
+  for (const f of files) {
+    const p = rel(f);
+    if (ENV_FILE_RE.test(p)) continue; // Single owner: scm.no-committed-env-files.
+    const ext = path.extname(f);
+    let text = null;
+    if (isCode(f)) text = sourceOf(f);
+    else if (CONFIG_EXT.has(ext)) text = contents.get(f) ?? "";
+    if (!text) continue;
+
+    for (const [re, what] of SECRET_PATTERNS) {
+      if (re.test(text)) hits.push(`${p} (${what})`);
+    }
+  }
+  if (hits.length === 0) return;
+
+  addFinding({
+    id: "secret-in-artifact",
+    rule: "security.no-secrets-in-artifacts",
+    category: "Standards violations",
+    severity: "error",
+    label: "INFERRED",
+    evidence: uniq(hits).sort(),
+    message: `${hits.length} credential-shaped value(s) in tracked files. Rotate first — removing it from HEAD does not remove it from history.`,
+    standardRef: N.secrets,
+  });
+}
+
+/**
+ * errors.no-swallowed-exceptions — Standard 48 R1.
+ *
+ * VIEW: `structureOf` AND raw contents, both required, for different halves of the question.
+ * `structureOf` proves a real catch construct — a `catch {}` inside a string or a comment is
+ * invisible there, which is correct. Raw text proves the absence of a justification comment inside
+ * the braces, because comments survive only in the raw text. The standard treats the comment at the
+ * catch site as the documented contract, so a detector that could not see comments would report
+ * every justified catch as a violation.
+ */
+const EMPTY_CATCH_STRUCT = /\bcatch\s*(\([^)]*\))?\s*\{\s*\}/g;
+const EMPTY_CATCH_PY = /\bexcept\b[^\n:]*:\s*\n\s*pass\b/g;
+
+const countOf = (text, re) => (text.match(re) ?? []).length;
+
+function detectSwallowedExceptions(files, contents) {
+  const hits = [];
+  for (const f of files) {
+    if (!isCode(f)) continue;
+    const structure = structureOf(f);
+    if (!structure) continue;
+    const raw = contents.get(f) ?? "";
+
+    // Both views must agree, and the pairing is what makes each one necessary:
+    //
+    //   empty in `raw`       — the body holds no justification comment either, since comments
+    //                          survive only here. A justified catch is NOT empty in raw.
+    //   empty in `structure` — it is a real catch construct, not one quoted in a string.
+    //
+    // Counted rather than tested, so one justified catch does not excuse an unjustified one beside
+    // it: the smaller count is how many catch sites are empty under both readings.
+    const unjustified =
+      Math.min(countOf(structure, EMPTY_CATCH_STRUCT), countOf(raw, EMPTY_CATCH_STRUCT)) +
+      Math.min(countOf(structure, EMPTY_CATCH_PY), countOf(raw, EMPTY_CATCH_PY));
+    if (unjustified > 0) hits.push(rel(f));
+  }
+  if (hits.length === 0) return;
+
+  addFinding({
+    id: "swallowed-exception",
+    rule: "errors.no-swallowed-exceptions",
+    category: "Standards violations",
+    severity: "error",
+    label: "INFERRED",
+    evidence: uniq(hits).sort(),
+    message: `${hits.length} file(s) contain a catch block empty of both handling code and justification.`,
+    standardRef: N.swallowed,
+  });
+}
+
+/**
+ * security.no-cert-bypass — Standard 50 R2.
+ *
+ * VIEW: `structureOf` — comments removed, string contents blanked. A pattern named in documentation
+ * or quoted in a string is not a bypass, and this framework's own standards documents name every
+ * one of these patterns in order to prohibit them.
+ *
+ * `curl -k` is matched in shell scripts only, where it is a command rather than a mention.
+ */
+const CERT_BYPASS = [
+  /\brejectUnauthorized\s*:\s*false/,
+  /\bNODE_TLS_REJECT_UNAUTHORIZED\b/,
+  /\bverify\s*=\s*False\b/,
+  /\bInsecureSkipVerify\s*:\s*true/,
+  /ServerCertificateValidationCallback\s*(\+?=)\s*[^;]*=>\s*true/,
+  /ServerCertificateCustomValidationCallback\s*=\s*[^;]*=>\s*true/,
+];
+
+function detectCertBypass(files) {
+  const hits = [];
+  for (const f of files) {
+    if (!isCode(f)) continue;
+    const code = structureOf(f);
+    if (!code) continue;
+    if (CERT_BYPASS.some((re) => re.test(code))) hits.push(rel(f));
+    else if (path.extname(f) === ".sh" && /\bcurl\b[^\n|]*\s-[a-zA-Z]*k\b/.test(code)) hits.push(rel(f));
+  }
+  if (hits.length === 0) return;
+
+  addFinding({
+    id: "certificate-validation-bypass",
+    rule: "security.no-cert-bypass",
+    category: "Standards violations",
+    severity: "error",
+    label: "INFERRED",
+    evidence: uniq(hits).sort(),
+    message: `${hits.length} file(s) disable TLS certificate or hostname verification.`,
+    standardRef: N.certBypass,
+  });
+}
+
+/**
+ * security.no-sql-concat — Standard 50 R3.
+ *
+ * VIEW: `sourceOf` — comments removed, strings intact — because the interpolation being detected
+ * lives inside a string literal, which `structureOf` blanks.
+ *
+ * COVERED SUBSET, and it is narrower than the prohibition: a template literal or Python f-string
+ * containing a whole SQL STATEMENT and an interpolation after it. The string-concatenation form
+ * ("SELECT ..." + id) is deliberately NOT detected — it was implemented, produced too many false
+ * positives on ordinary string building, and was removed rather than shipped as a check that would
+ * be silenced. Standard 50 R3 states this, and states what follows: a clean result means "no
+ * supported pattern was detected", never "this project has no SQL injection risk".
+ *
+ * A whole statement rather than a bare keyword, because the first version of this matched any of
+ * SELECT / WHERE / ORDER BY and immediately reported `const where = `${file}: ...`` in this
+ * repository's own catalog loader — an ordinary variable named `where`. That is precisely the
+ * brittle check Standard 45 R5 forbids, caught by the self-audit on its first run.
+ */
+const SQL_STATEMENT = String.raw`(SELECT\b[\s\S]*?\bFROM|INSERT\s+INTO|UPDATE\b[\s\S]*?\bSET|DELETE\s+FROM)`;
+const SQL_TEMPLATE = new RegExp("`[^`]*\\b" + SQL_STATEMENT + "\\b[^`]*\\$\\{[^}]+\\}[^`]*`", "i");
+const SQL_FSTRING = new RegExp('f["\'][^"\']*\\b' + SQL_STATEMENT + '\\b[^"\']*\\{[^}]+\\}[^"\']*["\']', "i");
+
+function detectSqlConcat(files) {
+  const hits = [];
+  for (const f of files) {
+    if (!isCode(f)) continue;
+    const code = sourceOf(f);
+    if (!code) continue;
+    if (SQL_TEMPLATE.test(code) || SQL_FSTRING.test(code)) hits.push(rel(f));
+  }
+  if (hits.length === 0) return;
+
+  addFinding({
+    id: "sql-string-interpolation",
+    rule: "security.no-sql-concat",
+    category: "Standards violations",
+    severity: "error",
+    label: "INFERRED",
+    evidence: uniq(hits).sort(),
+    message: `${hits.length} file(s) interpolate a value into SQL text. Use a parameterized query, or validate an identifier against an allow-list.`,
+    standardRef: N.sqlConcat,
+  });
+}
+
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
 function renderHuman(fileCount) {
@@ -1431,6 +1678,12 @@ detectOpenQuestions(files, contents);
 await detectPlanDiscrepancies(files, contents);
 detectDocDiscrepancies(files, contents);
 detectStandardsViolations(files, contents);
+
+detectCommittedEnvFiles(files);
+detectSecretsInArtifacts(files, contents);
+detectSwallowedExceptions(files, contents);
+detectCertBypass(files);
+detectSqlConcat(files);
 
 // ---------------------------------------------------------------------------
 // Verdict — catalog + policy + findings (Standards 25, 27, 30)

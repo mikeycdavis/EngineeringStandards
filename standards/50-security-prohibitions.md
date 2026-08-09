@@ -96,11 +96,19 @@ The detector reads the **source** view — comments removed, string contents int
 interpolation being detected lives inside a string literal.
 
 **The covered subset is stated, and it is narrower than the prohibition.** Detected: a template
-literal containing a SQL verb and an interpolation (`` `SELECT * FROM users WHERE id = ${id}` ``),
-and the Python f-string equivalent. **Not detected: the string-concatenation form**
-(`"SELECT ... " + id`), which was implemented, produced too many false positives on ordinary string
-building, and was removed rather than shipped as a check that would be ignored — the brittle-check
-prohibition in [Standard 45](45-engineering-invariants.md) R5.
+literal containing a whole SQL *statement* and an interpolation
+(`` `SELECT * FROM users WHERE id = ${id}` ``), and the Python f-string equivalent. **Not detected:
+the string-concatenation form** (`"SELECT ... " + id`), which was implemented, produced too many
+false positives on ordinary string building, and was removed rather than shipped as a check that
+would be ignored — the brittle-check prohibition in
+[Standard 45](45-engineering-invariants.md) R5.
+
+*A statement rather than a keyword*, and that distinction was bought rather than reasoned. The first
+version matched any of `SELECT`, `WHERE`, or `ORDER BY` and, on its first run, reported this
+repository's own catalog loader: `const where = \`${file}: ...\`` — an ordinary variable named
+`where`. The detector was narrowed to require a full statement shape before the interpolation. It is
+recorded here because it is the brittle-check prohibition catching a check written under this
+standard, one commit after the standard was written.
 
 Therefore, and this is normative: **a clean result on this rule means "no supported pattern was
 detected", never "this project has no SQL injection risk."** A reviewer citing a passing
