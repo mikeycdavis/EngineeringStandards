@@ -158,7 +158,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Give the audit a test suite and CI
 
-- **Status:** not started
+- **Status:** done — 2026-08-08, `test/` and `.github/workflows/ci.yml`
 - **Purpose:** The audit was run against its own repository and reported *no test suite and no CI
   configuration*. That finding is correct. A tool whose output is "your repository is non-compliant"
   has no standing to report that while being unverified itself, and two false positives have already
@@ -175,10 +175,25 @@ job; reconciling it against git stays `backlog-reconcile`'s.
     the delegated-liveness trap.
   - Running the audit against this repository must report no `error`-severity findings.
 - **Verification:** `npm test` exits 0 with every fixture asserted, and the CI workflow runs it on
-  push. `node scripts/standards.mjs audit . --strict` should then be a meaningful gate rather than one
-  that has never failed.
+  push. Done: 20 tests over four committed fixtures, using `node:test` so the zero-dependency rule
+  holds. The fixtures are `test/fixtures/{compliant,delegated,naming-only,markers}`.
 - **Dependencies:** the implemented categories above. This item was created by the audit's own output
   on 2026-08-08, not planned in advance.
-- **Note:** the fixtures used during development were written to a scratch directory and are not
-  committed. They are described in the verification notes above and would need rebuilding as
-  committed fixtures.
+- **The suite was mutation-tested rather than trusted.** Reverting the import-shape check to the bare
+  substring match that caused the first false positive fails exactly one test — the one written to
+  catch it — and no others. A regression guard that has never been seen to fail is an assumption, not
+  a guard.
+- **A third false positive, found by running the audit on the repository after adding the tests.**
+  `test/audit.test.mjs` was flagged for unfinished work because its test *names* contain the word
+  TODO. Fixed by requiring the punctuation a real marker carries — `TODO:` or `TODO(owner)` — which
+  is a genuine precision improvement rather than an exclusion. Verified not to over-correct: the
+  `markers` fixture's real `// TODO: finish this properly` is still caught. That makes three
+  false positives of the same family, all fixed by the same rule: **match the shape of the thing, not
+  its name.**
+- **CI deliberately does not run `--strict`.** That flag fails on warnings, which would turn every
+  advisory finding into a broken build, and the predictable outcome is that someone disables the
+  step. The error-level gate is instead the assertion in `test/audit.test.mjs` that this repository
+  has no error-severity findings, which runs as part of `npm test`.
+- **One warning is left open deliberately:** this repository has no `docs/architecture.md`. It is a
+  real finding, not a false positive. Writing it is `/codebase-docs`'s job and is left for the owner
+  to run rather than hand-written here.

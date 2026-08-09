@@ -48,11 +48,19 @@ const R = {
   done: `${STD44}#r10--definition-of-done`,
 };
 
-/** Directories never worth walking: build output, dependencies, virtualenvs, caches. */
+/**
+ * Directories never worth walking: build output, dependencies, virtualenvs, caches.
+ *
+ * `fixtures` is here for a different reason than the rest. Test fixtures are deliberately malformed —
+ * that is their job — so scanning them reports the test data's planted defects as the repository's
+ * own. This tool's own fixtures would otherwise make it report itself as non-compliant. The cost is
+ * that a genuine `fixtures/` directory of production code is skipped; that trade is worth it, and a
+ * repository can still audit one directly with `--dir=`.
+ */
 const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "out", "bin", "obj", ".next", ".nuxt",
   ".venv", "venv", "__pycache__", "target", "vendor", "coverage", ".turbo",
-  ".gradle", ".idea", ".vs", ".vscode", "packages-cache", ".pytest_cache",
+  ".gradle", ".idea", ".vs", ".vscode", "packages-cache", ".pytest_cache", "fixtures",
 ]);
 
 /** Extensions whose contents are worth pattern-scanning. */
@@ -560,7 +568,9 @@ function detectUnverifiedFunctionality(files) {
 }
 
 const UNFINISHED = [
-  [/\b(TODO|FIXME|HACK|XXX)\b/, "TODO/FIXME markers"],
+  // Require the punctuation a real marker carries — `TODO:` or `TODO(owner)`. Without it, any file
+  // that discusses markers matches, which is how this tool's own test suite got flagged.
+  [/\b(TODO|FIXME|HACK|XXX)\b\s*[:(]/, "TODO/FIXME markers"],
   [/\bNotImplemented(Error|Exception)?\b|\braise NotImplementedError\b|\bthrow new NotImplementedException\b/, "unimplemented stubs"],
   [/\b(it|test|describe)\.skip\(|\bxit\(|@pytest\.mark\.skip|\[Ignore\]|\bt\.Skip\(/, "skipped tests"],
 ];

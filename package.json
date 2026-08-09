@@ -7,7 +7,9 @@
     "standards": "scripts/standards.mjs"
   },
   "scripts": {
-    "audit": "node scripts/standards.mjs audit ."
+    "test": "node --test \"test/*.test.mjs\"",
+    "audit": "node scripts/standards.mjs audit .",
+    "audit:strict": "node scripts/standards.mjs audit . --strict"
   },
   "engines": {
     "node": ">=18"
