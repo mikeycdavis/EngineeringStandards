@@ -42,18 +42,18 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 15 | AI Tool Contracts | [standards/15-ai-tool-contracts.md](standards/15-ai-tool-contracts.md) | *none — completes the 12–15 baseline contract* | active |
 | 16 | Security | [standards/16-security.md](standards/16-security.md) | *none* | active |
 | 17 | Agent Instruction Files | [standards/17-agent-instruction-files.md](standards/17-agent-instruction-files.md) | *none* | active |
-| 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | *none* | active |
-| 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | *none — no policy published yet* | active |
-| 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | *none* | active |
+| 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | `project-policy.yml` (declared; not yet read by the audit) | active |
+| 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | `schemas/project-policy.schema.json`, `scripts/jsonschema.mjs` | active |
+| 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | `scripts/policy.mjs` — declared and expiry-checked, not yet applied | active |
 | 21 | Versioning | [standards/21-versioning.md](standards/21-versioning.md) | *none — no framework version published yet* | active |
 | 22 | Adoption and Migration | [standards/22-adoption-and-migration.md](standards/22-adoption-and-migration.md) | `project-reconstruction` (R4) | active |
 | 23 | Standards Validator CLI | [standards/23-standards-validator-cli.md](standards/23-standards-validator-cli.md) | `scripts/standards.mjs` — audited in the document | active |
 | 24 | Validator Rules | [standards/24-validator-rules.md](standards/24-validator-rules.md) | `scripts/standards.mjs` (partial) | active |
 | 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/standards.mjs` (partial) | active |
-| 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | *not implemented* | active |
+| 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | enforced by the policy schema (partial) | active |
 | 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | *not implemented — no rule catalog exists yet* | active |
 | 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
-| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/audit.test.mjs` (partial) | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 55 tests, 3 files (partial) | active |
 | 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | *not implemented — no score is computed* | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
 | 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README (partial) | active |
@@ -63,10 +63,10 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 36 | Implementation Strategy | [standards/36-implementation-strategy.md](standards/36-implementation-strategy.md) | *the build order itself* | active |
 | 37 | Quality Bar | [standards/37-quality-bar.md](standards/37-quality-bar.md) | *none — delegates to the standards it names* | active |
 | 38 | Definition of Done | [standards/38-definition-of-done.md](standards/38-definition-of-done.md) | *not implemented — release criteria not met* | active |
-| 39 | Codebase Documentation Standard | [standards/39-codebase-documentation.md](standards/39-codebase-documentation.md) | `codebase-docs` — **conflicts on R4**, see the document | active |
+| 39 | Codebase Documentation Standard | [standards/39-codebase-documentation.md](standards/39-codebase-documentation.md) | `codebase-docs`, `scripts/diagrams.mjs` — see [ADR 0003](artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md) | active |
 | 40 | Diffable AI Changes | [standards/40-diffable-ai-changes.md](standards/40-diffable-ai-changes.md) | *none — ordinary source control is the mechanism* | active |
 | 41 | Decisions, Assumptions, and Unresolved Questions | [standards/41-decisions-assumptions-and-questions.md](standards/41-decisions-assumptions-and-questions.md) | `artifacts/adr/` (partial) | active |
-| 42 | Documentation Freshness | [standards/42-documentation-freshness.md](standards/42-documentation-freshness.md) | `scripts/standards.mjs` — one check of five | active |
+| 42 | Documentation Freshness | [standards/42-documentation-freshness.md](standards/42-documentation-freshness.md) | `scripts/standards.mjs`, `scripts/diagrams.mjs` — two checks of five | active |
 | 43 | Documentation Completion Requirement | [standards/43-documentation-completion.md](standards/43-documentation-completion.md) | *not implemented — belongs in `pre-push`* | active |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
@@ -81,6 +81,8 @@ source extraction still agrees with it, and CI fails if it does not.
   — one lifecycle vocabulary across plans, backlogs, and tooling.
 - [artifacts/adr/0002-canonical-rule-identity.md](artifacts/adr/0002-canonical-rule-identity.md)
   — one rule identity across policy keys, exceptions, the catalog, and validator output.
+- [artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md](artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md)
+  — Mermaid source is canonical; SVG is a generated artifact, never hand-edited.
 
 ## Design documents
 
@@ -103,8 +105,8 @@ artifacts/
   adr/              Accepted decision records.
 ```
 
-**Commands.** `npm test` · `npm run audit` · `npm run policy` · `npm run inventory` ·
-`npm run fidelity`. CI runs all five.
+**Commands.** `npm test` · `npm run audit` · `npm run policy` · `npm run diagrams` ·
+`npm run inventory` · `npm run fidelity`. CI runs all six.
 
 **Numbering convention.** Standards files are named `NN-<kebab-title>.md`. Zero-pad single digits
 (`01-…` through `09-…`) when backfilling, so a directory listing sorts in numeric order.

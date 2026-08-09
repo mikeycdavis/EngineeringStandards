@@ -34,6 +34,13 @@ jobs:
       - name: Project policy
         run: npm run policy
 
+      # Standard 39 R4: detect when Mermaid source and its derived copies fall out of sync. This
+      # compares text rather than rendering anything, which is what lets a zero-dependency
+      # repository enforce the rule at all — a check needing a headless browser would not run here,
+      # and the rule would go unenforced.
+      - name: Diagram freshness
+        run: npm run diagrams
+
       - name: Test
         run: npm test
 

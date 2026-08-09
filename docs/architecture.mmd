@@ -1,0 +1,58 @@
+flowchart TB
+    subgraph source["Source of truth"]
+        spec["engineering-standards-spec.md<br/>items 1-44"]
+        inventory[("standards-source-inventory.json<br/>reviewed enumeration")]
+    end
+
+    subgraph normative["Normative content"]
+        stds["standards/01-44<br/>one document per standard"]
+        adrs["artifacts/adr/<br/>0001 0002 0003"]
+        design["design/<br/>audit CLI design"]
+    end
+
+    subgraph contracts["Structured contracts"]
+        policy["project-policy.yml"]
+        schema[["project-policy.schema.json"]]
+    end
+
+    subgraph tools["Commands"]
+        audit["standards.mjs<br/>audit"]
+        pol["policy.mjs"]
+        inv["inventory.mjs"]
+        fid["fidelity.mjs"]
+    end
+
+    subgraph support["Parsers"]
+        yaml["yaml.mjs<br/>strict subset"]
+        js["jsonschema.mjs<br/>throws on unknown keyword"]
+    end
+
+    subgraph verify["Verification"]
+        tests["test/*.test.mjs<br/>fixtures + mutation tests"]
+        ci{{"GitHub Actions<br/>no install step"}}
+    end
+
+    spec -->|extracted, compared| inv
+    inv -->|checks| inventory
+    inventory -->|claims| stds
+    spec -->|verbatim blocks| fid
+    fid -->|checks| stds
+
+    policy --> pol
+    pol -->|parses| yaml
+    pol -->|validates against| js
+    js -->|reads| schema
+
+    audit -->|scans| stds
+    audit -->|scans| design
+
+    ci --> inv
+    ci --> fid
+    ci --> pol
+    ci --> tests
+    ci --> audit
+    tests -->|exercises| audit
+    tests -->|exercises| pol
+
+    stds -.->|governs| tools
+    adrs -.->|decides| contracts

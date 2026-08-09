@@ -154,15 +154,19 @@ of Standards 18, 25, 26, and 27 to
 [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md) landed in the same commit as the ADR.
 That is R2's coupling, achieved by discipline.
 
-**R4 is met in exactly one narrow form.** The audit's `doc-code-discrepancies` category compares
-documented paths against the filesystem — row one of R4's table — and it has fired twice on this
-repository's own README. Rows two through five are unimplemented. The `.mmd`/`.svg` check is
-unimplementable here for a more fundamental reason: no `.mmd` source exists, because
-[Standard 39](39-codebase-documentation.md) R4 is currently violated by the generating skill.
+**R4 is met in two of its five rows.** The audit's `doc-code-discrepancies` category compares
+documented paths against the filesystem — row one — and has fired twice on this repository's own
+README. `scripts/diagrams.mjs` implements row three, the `.mmd`/derived-copy sync check, and runs in
+CI. Rows two, four, and five are unimplemented, and rows two and four need the rule catalog
+([Standard 27](27-rule-catalog.md)) before a validator can know what surfaces a project should have.
 
-**R3 has one outstanding instance.** `docs/architecture.md` was generated when the repository held
-far fewer standards and no `scripts/inventory.mjs` or `scripts/fidelity.mjs`. Those are architectural
-additions under R2's first row, so the document is materially stale by this standard's own definition
-— and the correct remedy is regeneration ([Standard 39](39-codebase-documentation.md) R1), which is
-blocked behind the same skill conflict. Recorded here rather than left implicit, per
-[Standard 41](41-decisions-assumptions-and-questions.md) R1.
+The diagram check is worth noting as an instance of this standard's own R4 discipline: it compares
+text rather than rendering anything, so it establishes that a derived copy matches its source and
+claims nothing about whether the diagram is *correct*. That is the honest scope of what it can see.
+
+**R3's outstanding instance is closed.** `docs/architecture.md` had been generated when the
+repository held far fewer standards and none of the current tooling, making it materially stale by
+this standard's own definition. It was regenerated when the diagram strategy changed
+([ADR 0003](../artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md)) — the same change set,
+which is R2's coupling — and now describes the six scripts, the policy toolchain, the five commands,
+and its own known gaps.

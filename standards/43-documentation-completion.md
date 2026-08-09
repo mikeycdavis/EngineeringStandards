@@ -149,10 +149,12 @@ the affected standards in the same commit, and the two ADRs were written when ar
 changed — R2's first, fourth, and fifth steps. `PROJECT.md` does not exist, so the sixth step has no
 target ([Standard 6](06-project-manifest.md), [Standard 34](34-dogfooding.md)).
 
-**R2's second and third steps are blocked.** No Mermaid source exists, and
-`/codebase-docs` currently produces a hand-authored SVG — the
-[Standard 39](39-codebase-documentation.md) R4 conflict. Running the seventh step today would
-regenerate the violation, which is why it has not been run since that conflict was found.
+**R2's second and third steps are now unblocked and were exercised.** `docs/architecture.mmd` is the
+canonical Mermaid source ([ADR 0003](../artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md)),
+updated before its embedded copy — R2's first ordering rule — and `scripts/diagrams.mjs` enforces
+that ordering in CI rather than trusting it. The third step, regenerating the `.svg`, is declared
+not-applicable for this repository with the reasoning recorded, which is what R2 requires of a step
+that does not apply.
 
 **R3 is partially satisfied and can be stated precisely.** From this repository alone, a fresh agent
 can determine what the project is (`README.md`), what was decided (`artifacts/adr/`), how the audit

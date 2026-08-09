@@ -12,6 +12,7 @@
     "inventory": "node scripts/inventory.mjs",
     "fidelity": "node scripts/fidelity.mjs",
     "policy": "node scripts/policy.mjs",
+    "diagrams": "node scripts/diagrams.mjs",
     "audit:strict": "node scripts/standards.mjs audit . --strict"
   },
   "engines": {
