@@ -20,15 +20,19 @@ No rule was added, changed, or removed, so no version has been cut
 
 ### Added
 
-- **`templates/AGENTS.md` and `templates/CLAUDE.md`** — the agent bootstrap templates
-  [Standard 17](standards/17-agent-instruction-files.md) R1 calls for. `AGENTS.md` carries R3's load
-  sequence in order; `CLAUDE.md` defers to it and holds only Claude Code specifics, so the two files
-  cannot drift into competing definitions.
-- **`standards init` writes both**, bringing it to six of the seven artifacts
+- **`templates/AGENTS.md`, `templates/CLAUDE.md`, and `templates/copilot-instructions.md`** — all
+  three agent bootstrap templates [Standard 17](standards/17-agent-instruction-files.md) R1 names.
+  `AGENTS.md` carries R3's load sequence in order; the other two defer to it and hold only what is
+  specific to their own agent, so the three files cannot drift into competing definitions.
+- **`standards init` writes all three**, completing the seven artifacts
   [Standard 33](standards/33-bootstrap-experience.md) R1 names.
 - Tests enforcing R2 mechanically: each template must be shorter than the standard it routes to,
-  `CLAUDE.md` shorter than `AGENTS.md` and free of the load sequence, and every template `init`
-  names must exist.
+  each secondary file shorter than `AGENTS.md` and free of the load sequence, every template `init`
+  names must exist, and a template must exist for every file R1's verbatim list names — that last
+  check is what named the missing third template rather than leaving it to be noticed.
+- The defer check reads the templates **with comments stripped**. It had been passing on a mention
+  of `AGENTS.md` inside an explanatory comment — the part an adopter deletes on the way in — so a
+  template whose body had stopped deferring would still have passed.
 
 ### Dogfooded
 
@@ -38,11 +42,6 @@ The digest stopped matching, the attestation went stale, and the rule returned t
 dropping the run from 13 passed to 12 until a human looked again. It was renewed with a new digest
 and a note on what changed, not silently refreshed. This is the mechanism working: the alternative
 is an attestation that keeps asserting a review of code nobody reviewed.
-
-### Known gap
-
-`.github/copilot-instructions.md` — the third file R1 names — has no template. Recorded in
-Standard 17's `## Implementation` rather than left to be discovered.
 
 ## 1.1.0 — 2026-08-09
 

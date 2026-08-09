@@ -109,28 +109,28 @@ answer the ten questions without any conversation history.
 
 **Templates implemented; detection in a consuming repository not yet.**
 
-`templates/AGENTS.md` and `templates/CLAUDE.md` satisfy R1 for the two files most projects use, and
-`standards init` writes both. R3's load sequence is the spine of the `AGENTS.md` template, in order,
-with each step naming the path it routes to.
+`templates/AGENTS.md`, `templates/CLAUDE.md`, and `templates/copilot-instructions.md` satisfy R1 for
+all three files it names, and `standards init` writes all three. R3's load sequence is the spine of
+the `AGENTS.md` template, in order, with each step naming the path it routes to.
 
-`CLAUDE.md` is deliberately near-empty and defers to `AGENTS.md`. Two full instruction files would
-reproduce R2's fork one level down — the same content in two places, drifting apart, with nothing
-recording which one an agent actually followed. The template therefore carries only what is Claude
-Code specific (which skills to use) and points at `AGENTS.md` for everything else.
+`CLAUDE.md` and `copilot-instructions.md` are deliberately near-empty and defer to `AGENTS.md`.
+Three full instruction files would reproduce R2's fork two levels down — the same content in three
+places, drifting apart, with nothing recording which one an agent actually followed. Each secondary
+template therefore carries only what is specific to its own agent and points at `AGENTS.md` for
+everything else.
 
 R2's own test — *an instruction file should get shorter as the standards grow* — is enforced
 mechanically rather than left to judgement: a test asserts each template is smaller than this
-standard, that `CLAUDE.md` is smaller than `AGENTS.md`, and that `CLAUDE.md` does not restate the
-load sequence. A further test asserts every template `init` writes exists, because a missing one is
-a crash in an adopter's repository, half-bootstrapped.
+standard, that each secondary file is smaller than `AGENTS.md`, that neither restates the load
+sequence, and that both point at `AGENTS.md` **outside their comments** — the comments are deleted
+by whoever copies the template, so a route that lives only in one is not a route. A further test
+asserts every template `init` writes exists, because a missing one is a crash in an adopter's
+repository, half-bootstrapped; another parses R1's verbatim list and asserts a template exists for
+every file it names, which is the check that would have named the missing third template at the time
+rather than leaving it to be noticed.
 
 **Not implemented:** `standards audit` still does not check a consuming repository for instruction
 files or their length. The useful check is mechanical and narrow — an instruction file substantially
 longer than the standards it points at is almost certainly duplicating them — and it is the same
 comparison the template test already makes, applied to someone else's repository rather than to
 `templates/`.
-
-**The third template is missing.** R1 names `.github/copilot-instructions.md` alongside the other
-two; only `AGENTS.md` and `CLAUDE.md` are provided. R1 is `SHOULD` and a project uses only the files
-its agents read, so this is a gap in coverage rather than a violation — but it is a gap, and it is
-recorded here rather than discovered.

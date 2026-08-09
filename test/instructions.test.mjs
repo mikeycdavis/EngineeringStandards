@@ -64,7 +64,7 @@ test("a bootstrap document is shorter than the standard it routes to", async () 
   // standards grow. A template longer than Standard 17 itself is duplicating rather than routing,
   // which is the failure that makes the copy authoritative in practice.
   const standard = (await read(path.join(ROOT, "standards/17-agent-instruction-files.md"))).length;
-  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+  for (const name of ["AGENTS.md", "CLAUDE.md", "copilot-instructions.md"]) {
     const template = (await read(path.join(ROOT, "templates", name))).length;
     assert.ok(
       template < standard,
@@ -95,19 +95,39 @@ test("the agent template routes to every canonical source in the load sequence",
   assert.match(text, /the standard governs/i);
 });
 
-test("CLAUDE.md defers to AGENTS.md instead of copying it", async () => {
-  // The fork Standard 17 R2 prohibits, one level down: two instruction files carrying the same
-  // content drift apart, and nothing records which one an agent actually followed.
-  const claude = await read(path.join(ROOT, "templates/CLAUDE.md"));
+test("the secondary instruction files defer to AGENTS.md instead of copying it", async () => {
+  // The fork Standard 17 R2 prohibits, one level down: instruction files carrying the same content
+  // drift apart, and nothing records which one an agent actually followed. AGENTS.md is the single
+  // place the load sequence lives; every other file points at it.
   const agents = await read(path.join(ROOT, "templates/AGENTS.md"));
-  assert.match(claude, /AGENTS\.md/, "CLAUDE.md never points at AGENTS.md");
-  assert.ok(
-    claude.length < agents.length,
-    "CLAUDE.md is not smaller than AGENTS.md — it is carrying content rather than deferring",
-  );
-  // The load sequence lives in exactly one file. Its steps must not be restated here.
-  for (const step of ["artifacts/project-plan-breakdown/", "artifacts/adr/", "standardVersion"]) {
-    assert.ok(!claude.includes(step), `CLAUDE.md restates the load sequence: ${step}`);
+
+  for (const name of ["CLAUDE.md", "copilot-instructions.md"]) {
+    const text = await read(path.join(ROOT, "templates", name));
+    // Comments are stripped first: they explain the template to whoever copies it and are deleted
+    // on the way in, so a mention of AGENTS.md inside one is not a route an agent will ever follow.
+    // Without this the check passed on a template whose body had stopped deferring entirely.
+    const body = text.replace(/<!--[\s\S]*?-->/g, "");
+    assert.match(body, /AGENTS\.md/, `${name} never points at AGENTS.md outside its comments`);
+    assert.ok(
+      text.length < agents.length,
+      `${name} is not smaller than AGENTS.md — it is carrying content rather than deferring`,
+    );
+    for (const step of ["artifacts/project-plan-breakdown/", "artifacts/adr/", "standardVersion"]) {
+      assert.ok(!text.includes(step), `${name} restates the load sequence: ${step}`);
+    }
+  }
+});
+
+test("a template for every instruction file Standard 17 names", async () => {
+  // R1 names three files. Providing two of them was a real gap for one commit; this is the check
+  // that would have named it at the time rather than leaving it to be noticed.
+  const standard = await read(path.join(ROOT, "standards/17-agent-instruction-files.md"));
+  const named = [...standard.matchAll(/^(AGENTS\.md|CLAUDE\.md|\.github\/copilot-instructions\.md)$/gm)]
+    .map((m) => m[1]);
+  assert.equal(new Set(named).size, 3, "R1's verbatim list no longer names three files");
+  for (const file of new Set(named)) {
+    const template = path.join(ROOT, "templates", path.basename(file));
+    assert.ok(existsSync(template), `Standard 17 R1 names ${file} and there is no template for it`);
   }
 });
 

@@ -43,6 +43,7 @@ const ARTIFACTS = [
   { path: "PROJECT.md", template: "templates/PROJECT.md" },
   { path: "AGENTS.md", template: "templates/AGENTS.md" },
   { path: "CLAUDE.md", template: "templates/CLAUDE.md" },
+  { path: ".github/copilot-instructions.md", template: "templates/copilot-instructions.md" },
   { path: "artifacts/project-plan-breakdown/", directory: true },
   { path: "artifacts/adr/", directory: true },
 ];

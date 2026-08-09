@@ -27,7 +27,8 @@ node <standards-repo>/scripts/policy.mjs ./project-policy.yml
 cp <standards-repo>/templates/PROJECT.md ./PROJECT.md
 cp <standards-repo>/templates/AGENTS.md ./AGENTS.md    # bootstrap for any coding agent
 cp <standards-repo>/templates/CLAUDE.md ./CLAUDE.md    # Claude Code specifics only
-mkdir -p artifacts/project-plan-breakdown artifacts/adr
+mkdir -p .github artifacts/project-plan-breakdown artifacts/adr
+cp <standards-repo>/templates/copilot-instructions.md ./.github/copilot-instructions.md
 
 # 4. Run the planning and documentation workflows
 #    /plan-structure  /plan-handoff  /codebase-docs
@@ -392,10 +393,11 @@ AGENTS.md / CLAUDE.md / .github/copilot-instructions.md
     -> standards/NN-*.md      (what a specific rule means, read on demand)
 ```
 
-Copy [`templates/AGENTS.md`](templates/AGENTS.md) and [`templates/CLAUDE.md`](templates/CLAUDE.md)
-rather than writing your own. They are short on purpose: `AGENTS.md` carries the load sequence and
-your project's operational facts, `CLAUDE.md` carries only what is Claude Code specific and defers
-to `AGENTS.md` for everything else. **Do not paste the standards into either one**
+Copy [`templates/AGENTS.md`](templates/AGENTS.md), [`templates/CLAUDE.md`](templates/CLAUDE.md), and
+[`templates/copilot-instructions.md`](templates/copilot-instructions.md) rather than writing your
+own. They are short on purpose: `AGENTS.md` carries the load sequence and your project's operational
+facts; the other two carry only what is specific to their own agent and defer to `AGENTS.md` for
+everything else. **Do not paste the standards into any of them**
 ([Standard 17](standards/17-agent-instruction-files.md) R2) — an instruction file should get
 *shorter* as the standards grow, and a copied rule becomes the one an agent actually follows.
 
