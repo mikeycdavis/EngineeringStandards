@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="730" viewBox="0 0 1100 730">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="1100" height="730" fill="#FFFFFF"/>
+
+  <text x="550" y="38" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="18" font-weight="bold" fill="#0F172A">EngineeringStandards — Architecture</text>
+
+  <!-- ═══ LAYER 1: CLI SURFACE ═══ -->
+  <rect x="20" y="60" width="1060" height="120" rx="8"
+        fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5"/>
+  <text x="36" y="80" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="600" fill="#15803D" letter-spacing="0.05em">CLI SURFACE</text>
+
+  <rect x="294" y="85" width="160" height="70" rx="6" fill="#DCFCE7" stroke="#22C55E" stroke-width="1.5"/>
+  <text x="374" y="115" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Subcommand dispatch</text>
+  <text x="374" y="131" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">argv[2] = audit</text>
+
+  <rect x="470" y="85" width="160" height="70" rx="6" fill="#DCFCE7" stroke="#22C55E" stroke-width="1.5"/>
+  <text x="550" y="115" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Flag parsing</text>
+  <text x="550" y="131" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">--json --strict --dir</text>
+
+  <rect x="646" y="85" width="160" height="70" rx="6" fill="#DCFCE7" stroke="#22C55E" stroke-width="1.5"/>
+  <text x="726" y="115" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Exit codes</text>
+  <text x="726" y="131" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">0 / 1 under --strict</text>
+
+  <!-- ═══ LAYER 2: REPOSITORY SCAN ═══ -->
+  <rect x="20" y="180" width="1060" height="120" rx="8"
+        fill="#FAFAF9" stroke="#D6D3D1" stroke-width="1.5"/>
+  <text x="36" y="200" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="600" fill="#44403C" letter-spacing="0.05em">REPOSITORY SCAN</text>
+
+  <rect x="294" y="205" width="160" height="70" rx="6" fill="#F5F5F4" stroke="#78716C" stroke-width="1.5"/>
+  <text x="374" y="235" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">findRoot()</text>
+  <text x="374" y="251" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">.git / package.json</text>
+
+  <rect x="470" y="205" width="160" height="70" rx="6" fill="#F5F5F4" stroke="#78716C" stroke-width="1.5"/>
+  <text x="550" y="235" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">collectFiles()</text>
+  <text x="550" y="251" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">prunes SKIP_DIRS</text>
+
+  <rect x="646" y="205" width="160" height="70" rx="6" fill="#F5F5F4" stroke="#78716C" stroke-width="1.5"/>
+  <text x="726" y="235" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">readText()</text>
+  <text x="726" y="251" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">400KB cap, skips SELF</text>
+
+  <!-- ═══ LAYER 3: DETECTORS ═══ -->
+  <rect x="20" y="300" width="1060" height="150" rx="8"
+        fill="#FFF7ED" stroke="#FED7AA" stroke-width="1.5"/>
+  <text x="36" y="320" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="600" fill="#C2410C" letter-spacing="0.05em">DETECTORS — 6 DESCRIPTIVE, 10 JUDGEMENT</text>
+
+  <rect x="90" y="345" width="140" height="70" rx="6" fill="#FFEDD5" stroke="#F97316" stroke-width="1.5"/>
+  <text x="160" y="375" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Architecture</text>
+  <text x="160" y="391" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">doc, else inferred</text>
+
+  <rect x="246" y="345" width="140" height="70" rx="6" fill="#FFEDD5" stroke="#F97316" stroke-width="1.5"/>
+  <text x="316" y="375" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Capabilities</text>
+  <text x="316" y="391" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">entry points</text>
+
+  <rect x="402" y="345" width="140" height="70" rx="6" fill="#FFEDD5" stroke="#F97316" stroke-width="1.5"/>
+  <text x="472" y="375" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">APIs &amp; jobs</text>
+  <text x="472" y="391" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">routes, schedulers</text>
+
+  <rect x="558" y="345" width="140" height="70" rx="6" fill="#FFEDD5" stroke="#F97316" stroke-width="1.5"/>
+  <text x="628" y="375" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Integrations &amp; AI</text>
+  <text x="628" y="391" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">import-shaped only</text>
+
+  <rect x="714" y="345" width="140" height="70" rx="6" fill="#FFEDD5" stroke="#F97316" stroke-width="1.5"/>
+  <text x="784" y="375" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Absence checks</text>
+  <text x="784" y="391" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">missing-*, TODO:</text>
+
+  <rect x="870" y="345" width="140" height="70" rx="6" fill="#FFEDD5" stroke="#F97316" stroke-width="1.5"/>
+  <text x="940" y="375" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Discrepancies</text>
+  <text x="940" y="391" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">plan vs backlog</text>
+
+  <!-- ═══ LAYER 4: REPORTING ═══ -->
+  <rect x="20" y="450" width="1060" height="120" rx="8"
+        fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="36" y="470" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="600" fill="#1D4ED8" letter-spacing="0.05em">REPORTING</text>
+
+  <rect x="362" y="475" width="180" height="70" rx="6" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="452" y="505" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">Human report</text>
+  <text x="452" y="521" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">has / needs attention</text>
+
+  <rect x="558" y="475" width="180" height="70" rx="6" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="648" y="505" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">JSON report</text>
+  <text x="648" y="521" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">schemaVersion 1</text>
+
+  <!-- ═══ LAYER 5: NORMATIVE CONTENT ═══ -->
+  <rect x="20" y="570" width="1060" height="120" rx="8"
+        fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5"/>
+  <text x="36" y="590" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="600" fill="#BE123C" letter-spacing="0.05em">NORMATIVE CONTENT — MARKDOWN, NO CODE</text>
+
+  <rect x="206" y="595" width="160" height="70" rx="6" fill="#FFE4E6" stroke="#F43F5E" stroke-width="1.5"/>
+  <text x="286" y="625" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">standards/</text>
+  <text x="286" y="641" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">44 live, 1–43 pending</text>
+
+  <rect x="382" y="595" width="160" height="70" rx="6" fill="#FFE4E6" stroke="#F43F5E" stroke-width="1.5"/>
+  <text x="462" y="625" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">design/</text>
+  <text x="462" y="641" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">audit CLI design</text>
+
+  <rect x="558" y="595" width="160" height="70" rx="6" fill="#FFE4E6" stroke="#F43F5E" stroke-width="1.5"/>
+  <text x="638" y="625" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">project plan</text>
+  <text x="638" y="641" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">breakdown items</text>
+
+  <rect x="734" y="595" width="160" height="70" rx="6" fill="#FFE4E6" stroke="#F43F5E" stroke-width="1.5"/>
+  <text x="814" y="625" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" font-weight="500" fill="#1E293B">source prompt</text>
+  <text x="814" y="641" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="10" fill="#64748B">original_prompt.md</text>
+
+  <!-- ═══ CONNECTIONS ═══ -->
+  <path d="M550,155 L550,205" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="558" y="187" font-family="system-ui, sans-serif" font-size="10" fill="#64748B">target path</text>
+
+  <path d="M550,275 L550,310 L472,310 L472,345" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="558" y="295" font-family="system-ui, sans-serif" font-size="10" fill="#64748B">file list + contents</text>
+
+  <path d="M316,415 C316,435 380,435 452,475" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M784,415 C784,435 700,435 648,475" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="470" y="446" font-family="system-ui, sans-serif" font-size="10" fill="#64748B">findings[] — severity + evidence label</text>
+
+  <path d="M648,545 L648,580 L286,580 L286,595" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="440" y="576" font-family="system-ui, sans-serif" font-size="10" fill="#64748B">standardRef cites a requirement anchor</text>
+
+  <path d="M160,345 L160,330 L940,330 L940,345" stroke="#475569" stroke-width="1.5" fill="none"
+        stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="500" y="326" font-family="system-ui, sans-serif" font-size="10" fill="#64748B">descriptive findings run first — judgement detectors read them</text>
+</svg>

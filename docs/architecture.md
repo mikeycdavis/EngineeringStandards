@@ -1,0 +1,307 @@
+# Architecture — EngineeringStandards
+
+> A repository of numbered engineering standards, plus the command-line tool that checks other
+> repositories against them. Each standard is a normative Markdown document stating what compliant
+> work must look like; the executable procedure that carries a standard out lives outside this
+> repository as a global Claude Code skill. The `standards audit` command reads a target repository
+> and reports what it contains and where it departs from the standards, in human-readable and JSON
+> form. The audience is the repository owner and any AI agent working in a project that claims to
+> follow these standards.
+
+This is a documentation repository with one tool in it. It has **no database, no HTTP API, no
+background jobs, no user interface, and no third-party dependencies** — those sections are omitted
+rather than filled with "none", except where their absence is itself a design decision worth
+recording.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Normative content | Markdown. `standards/` (one numbered document per standard), `design/` (forward-looking designs), `artifacts/` (source specification and the project plan) |
+| Audit tool | Node.js ≥ 18, ESM, a single 953-line `.mjs` file. Only `node:` builtins — `node:fs/promises`, `node:fs`, `node:url`, `node:path`. **Zero third-party dependencies** |
+| Tests | `node:test` + `node:assert/strict` (built in, so the zero-dependency rule survives testing), 20 tests over 4 committed fixtures |
+| CI | GitHub Actions, Node 20, no install step |
+| Distribution | npm `bin` entry (`standards`), plus a no-install fallback via `node scripts/standards.mjs` |
+
+The zero-dependency rule is a deliberate constraint, not an accident of a small tool: a program whose
+entire output is a judgement about another repository's hygiene cannot credibly arrive with a
+transitive dependency tree. It is recorded in
+[`design/standards-audit-cli.md`](../design/standards-audit-cli.md), and the CI workflow deliberately
+has no `npm ci` step so that adding a dependency breaks the build.
+
+## Repository Contents
+
+| Path | Holds | Notes |
+|---|---|---|
+| `standards/NN-<kebab-title>.md` | One normative document per standard | Only `44-existing-project-reconstruction.md` exists. Zero-pad single digits when backfilling so listings sort numerically |
+| `design/` | Designs not yet implemented | Currently the audit CLI design, which the implementation is expected to satisfy |
+| `artifacts/prompts/original_prompt.md` | The source specification standard 44 was written from | Committed so the standard can be diffed against what it claims to implement |
+| `artifacts/project-plan-breakdown/` | This repository's own project plan | Ordered files; every executable item carries Status, Purpose, Deliverables, Acceptance Criteria, Verification, Dependencies |
+| `scripts/standards.mjs` | The entire audit tool | Single file, no imports of its own modules |
+| `test/audit.test.mjs` | The test suite | Runs the CLI as a subprocess and asserts on `--json` |
+| `test/fixtures/` | Four fixture repositories | Skipped by the audit itself — see *Fixture exclusion* below |
+
+**Standards and skills are separate on purpose.** Standards 1–43 exist today only as their
+implementing skills (`codebase-docs`, `plan-structure`, `plan-handoff`, `backlog`,
+`backlog-validate`, `backlog-reconcile`, `pre-push`) in `~/.claude/skills/`, which is outside this
+repository and outside version control. Standard 44 is the first with a document here; its skill is
+`project-reconstruction`. The skills are deliberately not mirrored into this repository, because a
+project-scoped copy shadows rather than replaces the user-level one and the two then drift. The
+accepted cost is that the skills have no history or backup.
+
+## Runtime Processes
+
+One, and it is short-lived.
+
+### `standards` — the audit CLI
+**Host:** the user's shell, or a CI runner. A one-shot process; nothing is long-running, nothing
+listens on a port.
+**Entry point:** [`scripts/standards.mjs`](../scripts/standards.mjs). Top-level `await` at module
+scope — there is no `main()` function; the file body *is* the program.
+**Purpose:** Walk a target repository, run sixteen detectors over the file list and file contents,
+and emit findings. It **reports only** and never writes to the repository it audits.
+
+**Invocation:**
+
+| Form | Requires |
+|---|---|
+| `standards audit .` | `npm link` or `npm i -g .` to put the `bin` on PATH |
+| `node scripts/standards.mjs audit .` | nothing — works from a clone |
+| `npm run audit` / `npm run audit:strict` | a clone |
+
+**Arguments** are parsed by hand against `process.argv`, matching the sibling backlog tools rather
+than introducing a CLI framework. `process.argv[2]` is the subcommand and must be `audit`; anything
+else exits 1 with usage on stderr. Flags: `--json`, `--strict`, `--dir=<path>`. A bare positional
+argument is the target path.
+
+**Exit codes:** `1` for no subcommand, an unknown subcommand, or a target directory that does not
+exist. `1` when `--strict` is passed *and* any finding has a severity other than `info`. `0`
+otherwise.
+
+## Layers & Components
+
+The tool is a straight pipeline inside one file, divided by comment banners. There is no dependency
+injection, no plugin registry, and no dynamic dispatch — detectors are plain functions called in a
+fixed order.
+
+### CLI surface — `scripts/standards.mjs` lines 77–106
+**Responsibility:** Turn `process.argv` into a subcommand, a target directory, and three booleans.
+
+- `usage(stream)` — writes the help text; goes to stdout for `--help` and stderr for a misuse.
+- Module-level constants `JSON_OUT`, `STRICT`, `dirFlag`, `positional`.
+
+### Repository scan — lines 108–162
+**Responsibility:** Decide what to read, and read it without ever throwing.
+
+- `findRoot(start)` — walks up for a `.git` or `package.json` marker so the command works from any
+  subdirectory. **Bypassed entirely when `--dir=` is given**, which is what lets the tests audit a
+  fixture without the walk escaping into this repository.
+- `collectFiles(dir, acc)` — recursive directory walk. Returns the accumulator on an unreadable
+  directory rather than aborting the run. Capped at `MAX_FILES` (20,000).
+- `readText(file)` — reads at most `MAX_READ_BYTES` (400,000) and returns `""` on any error, so a
+  binary or locked file degrades to "no content" instead of a crash.
+- `SKIP_DIRS` — build output, dependencies, virtualenvs, caches, and `fixtures`.
+
+### Finding construction — lines 164–190
+**Responsibility:** Build every finding through one function so the output contract cannot drift.
+
+- `addFinding({id, category, severity, label, evidence, message, standardRef})` — pushes onto the
+  module-level `findings` array. Truncates `evidence` to `MAX_EVIDENCE` (12) and, when it does,
+  appends the true total to the message so a cap is **never silent**. Defaults `severity` to `info`
+  and `standardRef` to R5.
+- `R` — a map of requirement anchors, each verified against a real heading in standard 44. A test
+  asserts every emitted `standardRef` resolves.
+
+### Descriptive detectors — lines 192–471
+**Responsibility:** Report what the repository *has*. Always severity `info`.
+
+- `detectArchitecture` — `docs/architecture.md` if present (`OBSERVED`); otherwise manifests and
+  top-level directory names (`INFERRED`).
+- `detectCapabilities` — `package.json` `bin` and `scripts`, plus entry-point filename patterns
+  (`Program.cs`, `__main__.py`, `main.*`, `index.html`, `App.tsx`).
+- `detectApis` — OpenAPI/Swagger specs (`OBSERVED`); controller filenames, `routes/`-style
+  directories, and request-mapping content patterns for Flask, Spring, ASP.NET, Express, and Go
+  (`INFERRED`).
+- `detectJobs` — CI workflows declaring a `schedule:` trigger (`OBSERVED`); job-shaped filenames,
+  code-shaped scheduler signals, and import-shaped job libraries
+  (`INFERRED`).
+- `detectIntegrations` — environment templates (`OBSERVED`); twelve SDK families matched
+  **import-shaped**, plus `webhook` paths (`INFERRED`).
+- `detectAiInterfaces` — `SKILL.md` and prompt files (`OBSERVED`); eight model-provider SDKs matched
+  import-shaped (`INFERRED`).
+
+### Judgement detectors — lines 473–836
+**Responsibility:** Report what is absent, unproven, or contradictory. Severity `warning` or `error`.
+
+- `detectMissingDocs` — no `docs/architecture.md`, or a README under 400 characters.
+- `detectMissingPlanningArtifacts` — no `artifacts/project-plan-breakdown/`, or one without
+  `00-overview.md`.
+- `detectMissingAuditInfrastructure` — no test files, or no CI configuration.
+- `detectUnverifiedFunctionality` — capabilities detected while the repository has no tests at all.
+  Deliberately coarse: per-capability coverage mapping is not attempted, and the report says so.
+- `detectUnfinished` — `TODO:`/`FIXME:`/`HACK:`/`XXX:` markers, unimplemented stubs, and skipped
+  tests. **Code files only.**
+- `detectDeadCode` — source files whose basename appears in no other file. Severity `info` because
+  dynamic imports and reflection defeat it; the message says to treat each hit as a question.
+- `detectOpenQuestions` — counts lines matching `**Status:** open` in
+  `artifacts/project-baseline/open-questions.md`.
+- `parsePlanItems` / `detectPlanDiscrepancies` — parses `### Title` items and their
+  `- **Field:** value` lines, then resolves delegated status. See *Delegated liveness* below.
+- `detectDocDiscrepancies` — backticked paths in the README that do not exist, and `npm run <script>`
+  references absent from `package.json`.
+- `detectStandardsViolations` — a baseline directory without its baseline document (R4), and a
+  reconstructed prompt lacking its self-declaration (R6).
+
+### Reporting — lines 838–904
+**Responsibility:** Render, in two mutually exclusive modes.
+
+- `renderHuman(fileCount)` — two sections, *What the repository has* (every descriptive category,
+  including ones with nothing detected) and *What needs attention* (sorted error → warning → info,
+  each with its `standardRef`). Always closes with a paragraph stating that coverage is partial and a
+  clean run does not mean compliant.
+- `--json` — one object: `{schemaVersion, repo, auditedAt, findings[]}`. Flat, stable ids, no nesting
+  a consumer must traverse to count problems.
+
+## Data Flow
+
+A full run of `standards audit .`:
+
+1. `scripts/standards.mjs` executes top to bottom. `process.argv` is parsed (lines 81–86); a
+   subcommand that is not `audit` exits 1 here.
+2. The target resolves: `--dir=` wins, else the positional argument, else `.`. A non-existent target
+   exits 1 (lines 122–126).
+3. `findRoot(target)` walks up for `.git` or `package.json` — **skipped when `--dir=` was given**, in
+   which case that path is the root verbatim.
+4. `collectFiles(root, [])` walks the tree, pruning `SKIP_DIRS`, returning up to 20,000 absolute
+   paths.
+5. Every file with a text extension is read into the `contents` map — **except this script itself**,
+   which is skipped via the `SELF` constant (see *Self-exclusion*).
+6. The six descriptive detectors run **first**, because `detectUnverifiedFunctionality` reads the
+   capability findings they produce.
+7. The ten judgement detectors run. `detectPlanDiscrepancies` is the only `async` one, since it reads
+   backlog item files on demand to resolve delegated status.
+8. Output: `JSON.stringify` of the report object, or `renderHuman()`.
+9. `process.exit(STRICT && findings.some(f => f.severity !== "info") ? 1 : 0)`.
+
+## Key Patterns & Conventions
+
+**Evidence labels are load-bearing, not decorative.** Every finding carries one of standard 44's
+labels. A detection resting on a file existing at a path with a defined meaning is `OBSERVED`; one
+resting on a naming convention or content pattern is `INFERRED`. Reporting a heuristic as an
+observation is the same fabrication error the standard's R2 prohibits, and a test asserts no
+heuristic finding is ever labelled `OBSERVED`. Canonical example: `detectArchitecture` emits
+`OBSERVED` for a real `docs/architecture.md` and `INFERRED` when guessing from directory names.
+
+**Match the shape of the thing, not its name.** This is the single most important convention here,
+because the tool has produced the same class of bug **five times**. Each was a detector reporting a
+file that *named* a technology as one that *used* it, and each fix is now a rule:
+
+| # | Symptom | Fix |
+|---|---|---|
+| 1 | Reported every SDK it knows about, on every repository | `SELF` exclusion — the script contains the names it searches for |
+| 2 | A design document flagged as unfinished work | Code-signal scans read code extensions only |
+| 3 | The test file flagged as unfinished work | Markers must carry `:` or `(` — `TODO:`, not the word "TODO" |
+| 4 | This architecture document flagged as a background job | Route and scheduler scans restricted to code too |
+| 5 | The test file flagged as a background job by a *comment* | Library names go through `importPattern()` everywhere |
+
+Two rules fall out, and any new detector must obey both:
+
+- **A scan for a code signal reads only code.** `isCode(f)` gates every content scan. Documentation
+  describes technologies; it does not implement them.
+- **A library name is only ever matched import-shaped.** `importPattern(pkg)` requires a JS/TS
+  `import`/`require`, a Python `import`, or a C# `using`. No bare library name is matched as a loose
+  substring anywhere in this file — not for integrations, not for AI providers, not for job
+  frameworks. Code-shaped signals that prose cannot produce by accident (`@Scheduled`,
+  `cron.schedule(`, `[HttpGet]`) may still be matched directly.
+
+Bug 4 was found by running the audit against this repository immediately after writing this document;
+bug 5 by running it again after adding the test that guards bug 4. Both are now regression tests.
+
+**Self-exclusion.** `SELF` (line 29) holds this file's own resolved path and is skipped when building
+the contents map. Without it the tool is guaranteed to report itself as integrating with every
+service in its own pattern tables.
+
+**Fixture exclusion.** `fixtures` is in `SKIP_DIRS` for a different reason than the build directories
+beside it. Fixture data is *deliberately* malformed, so scanning it reports the test data's planted
+defects as the repository's own. The cost is that a genuine `fixtures/` directory of production code
+is skipped; a repository can still audit one directly with `--dir=`.
+
+**Delegated liveness, and the trap under it.** A plan item may delegate its status to a work tracker
+with `Status: tracked as <backlog-id>`. `detectPlanDiscrepancies` resolves that reference by reading
+`status:` from `artifacts/backlog/items/<id>.md` **before** judging, and treats an id resolving to
+nothing as an `error` in its own right. This matters because under delegation *no plan item is ever
+`done`* — so an implementation that only checks for `done` returns zero findings on precisely the
+repositories that follow the standard most closely. The `delegated` fixture exists to keep that
+permanently guarded.
+
+**Never crash on a repository.** `collectFiles` swallows unreadable directories; `readText` returns
+`""` on any error; `JSON.parse` of a manifest is wrapped. An audit that dies on one malformed file is
+worse than one that reports slightly less.
+
+**No silent caps.** Evidence lists truncate at 12 but the message then states the true total. The
+human report always closes by saying coverage is partial and that a clean run means nothing matched
+the patterns — not that the repository is compliant.
+
+**Tests assert the negative.** Every category is asserted twice: once on a fixture that must provoke
+it, once on a fixture that must not. Both shipped bugs were false positives, so a suite that only
+checked detectors fire would have passed while both were live. The suite has been mutation-tested:
+reverting `importPattern` to a bare substring match fails exactly one test.
+
+## Testing
+
+`npm test` → `node --test "test/*.test.mjs"`. Note the glob: Node 24 resolves a bare directory
+argument as a module path and fails.
+
+[`test/audit.test.mjs`](../test/audit.test.mjs) runs the CLI as a subprocess via `spawnSync` and
+parses `--json`, so it exercises argument parsing, scanning, and serialization rather than internal
+functions. Every fixture is audited with `--dir=` to pin the root.
+
+| Fixture | Represents | Asserts |
+|---|---|---|
+| `compliant` | A repository satisfying every checkable category | None of the `missing-*` categories fire; `--strict` exits 0 |
+| `delegated` | Every plan item `tracked as <id>` | Dangling `ST-999` reported; `ST-002` resolved to done with a missing deliverable caught; `ST-001` not reported |
+| `naming-only` | A file naming SDKs without importing them | `detected-integrations` and `detected-ai-interfaces` do **not** fire |
+| `markers` | Prose naming TODO, plus a real code TODO | `potential-unfinished-features` fires on `src/work.js` only |
+
+Two suite-wide tests apply to all fixtures: every finding carries the full schema with a legal
+severity and label, and every `standardRef` resolves to a heading that exists in standard 44.
+
+## CI
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — on push to `develop`/`master` and on
+pull requests. Checkout, Node 20, `npm test`, then `npm run audit`.
+
+There is **no install step**, so introducing a dependency breaks the build — that is the enforcement
+mechanism for the zero-dependency decision.
+
+The audit step deliberately does **not** use `--strict`. That flag fails on warnings, which would
+turn every advisory finding into a broken build, and the predictable outcome is that someone disables
+the step. The error-level gate is instead an assertion inside the test suite that this repository has
+no `error`-severity findings.
+
+## Entry Points for Common Tasks
+
+| Task | Where to start |
+|---|---|
+| Add a finding category | `scripts/standards.mjs` — write a `detectX(files, contents)` function in the descriptive or judgement section, call it in the pipeline at the bottom (order matters only if it reads earlier findings), add its id to `DESCRIPTIVE` if it is descriptive, and add a provoking **and** a non-provoking fixture assertion in `test/audit.test.mjs` |
+| Add a standard | `standards/NN-<kebab-title>.md`, zero-padded below 10; add a row to the `README.md` index table; add its anchor to the `R` map in `scripts/standards.mjs` if findings will cite it |
+| Change what a `standardRef` points at | The `R` map, `scripts/standards.mjs` line 38. The "every standardRef resolves" test will fail if the heading does not exist |
+| Add a test fixture | `test/fixtures/<name>/` — it is a real directory tree, audited with `--dir=`. Remember `fixtures` is in `SKIP_DIRS`, so it will not pollute this repository's own audit |
+| Change the plan | `artifacts/project-plan-breakdown/` — every executable item needs all six fields, or `detectStandardsViolations` reports an R7 violation against this repository and CI fails |
+| Adjust scan limits | `MAX_FILES`, `MAX_READ_BYTES`, `MAX_EVIDENCE`, `SKIP_DIRS`, `TEXT_EXT`, `CODE_EXT` — all at the top of `scripts/standards.mjs` |
+
+## Known Gaps
+
+Stated because a reference document that implies completeness it does not have is worse than none.
+
+- **Ten of sixteen categories are shallow.** `unverified-functionality` fires only when a repository
+  has *no* tests at all rather than mapping coverage per capability; `doc-code-discrepancies` checks
+  only README paths and npm script names, not whether prose claims match behaviour;
+  `standards-violations` checks two mechanical rules out of standard 44's ten requirements.
+- **Detection is pattern-based and language-agnostic**, so any framework whose conventions are not in
+  the pattern tables is invisible. A clean run means nothing matched.
+- **`potential-dead-code` matches on basename**, so dynamic imports, reflection, and two files
+  sharing a stem all defeat it. It is `info` severity for that reason.
+- **The audit cannot check most of standard 44.** Whether a baseline's claims are *true*, whether
+  evidence labels are applied honestly, and whether a reconstruction asked the owner the right
+  questions are all judgements no pattern match reaches.

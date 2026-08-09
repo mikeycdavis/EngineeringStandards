@@ -63,12 +63,29 @@ const SKIP_DIRS = new Set([
   ".gradle", ".idea", ".vs", ".vscode", "packages-cache", ".pytest_cache", "fixtures",
 ]);
 
-/** Extensions whose contents are worth pattern-scanning. */
+/** Extensions whose contents are worth pattern-scanning at all. */
 const TEXT_EXT = new Set([
   ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
   ".kt", ".php", ".rs", ".yml", ".yaml", ".json", ".toml", ".md", ".razor", ".vue",
   ".svelte", ".sql", ".sh", ".ps1",
 ]);
+
+/**
+ * Extensions that contain *code*. Any scan looking for a code signal — a route registration, a
+ * scheduler annotation, a TODO marker, an SDK import — must be restricted to these.
+ *
+ * This tool has produced the same bug four times: prose that *names* a technology or marker being
+ * reported as an instance of it. The fourth was this repository's own architecture document, which
+ * describes the scheduler patterns the job detector looks for and was duly reported as a background
+ * job. Documentation describes; it does not implement. Scanning it for code signals is always wrong.
+ */
+const CODE_EXT = new Set([
+  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
+  ".kt", ".php", ".rs", ".razor", ".vue", ".svelte", ".sql", ".sh", ".ps1",
+]);
+
+/** True when this file's *content* may be scanned for a code signal. */
+const isCode = (f) => CODE_EXT.has(path.extname(f));
 
 const MAX_FILES = 20000;
 const MAX_READ_BYTES = 400_000;
@@ -303,8 +320,8 @@ function detectApis(files, contents) {
   const handlers = files.filter((f) => {
     const r = rel(f);
     if (/(^|\/)\w*Controller\.(cs|java|ts|js|py|rb)$/i.test(r)) return true;
-    if (/(^|\/)(routes?|controllers?|api|endpoints?)\//i.test(r) && TEXT_EXT.has(path.extname(f)))
-      return true;
+    if (/(^|\/)(routes?|controllers?|api|endpoints?)\//i.test(r) && isCode(f)) return true;
+    if (!isCode(f)) return false; // prose describing a route table is not a route
     const text = contents.get(f);
     return text ? API_CONTENT.some((re) => re.test(text)) : false;
   });
@@ -320,12 +337,22 @@ function detectApis(files, contents) {
 }
 
 const JOB_NAME = /(Job|Worker|Processor|Scheduler|Consumer|Poller|Cron|Task)s?\.(cs|ts|js|mjs|py|go|rb|java|kt)$/i;
+/**
+ * Code-shaped signals: an annotation, a base class, or a call. These are safe to match anywhere in a
+ * code file because prose does not contain `@Scheduled` or `cron.schedule(` by accident.
+ */
 const JOB_CONTENT = [
   /@Scheduled\b/,
   /\bBackgroundService\b|\bIHostedService\b/,
-  /\bcelery\b|\bsidekiq\b|\bBullMQ\b|\bnew Queue\(/i,
-  /\bcron\.schedule\(|\bnode-cron\b/,
+  /\bnew Queue\(|\bcron\.schedule\(/,
 ];
+
+/**
+ * Library names, which must be import-shaped. A comment naming Celery is not a Celery worker — this
+ * file's own test suite was flagged as a background job for exactly that reason. Every bare library
+ * name in this tool goes through importPattern(); none is matched as a loose substring.
+ */
+const JOB_PACKAGES = "celery|sidekiq|bullmq|bull|agenda|node-cron|apscheduler|resque";
 
 function detectJobs(files, contents) {
   const workflowCron = files.filter((f) => {
@@ -345,8 +372,10 @@ function detectJobs(files, contents) {
 
   const jobs = files.filter((f) => {
     if (JOB_NAME.test(path.basename(f))) return true;
+    if (!isCode(f)) return false; // prose naming Celery or BullMQ is not a scheduler
     const text = contents.get(f);
-    return text ? JOB_CONTENT.some((re) => re.test(text)) : false;
+    if (!text) return false;
+    return JOB_CONTENT.some((re) => re.test(text)) || importPattern(JOB_PACKAGES).test(text);
   });
   if (jobs.length === 0) return;
 
@@ -575,21 +604,10 @@ const UNFINISHED = [
   [/\b(it|test|describe)\.skip\(|\bxit\(|@pytest\.mark\.skip|\[Ignore\]|\bt\.Skip\(/, "skipped tests"],
 ];
 
-/**
- * Markers like TODO and NotImplemented are code signals. Scanning prose for them flags any document
- * that *names* a marker as *containing* one — this file's own design document was the first false
- * positive. Restricting the scan to code extensions is the fix; a TODO in a Markdown file is a note,
- * not an unfinished code path.
- */
-const CODE_EXT = new Set([
-  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
-  ".kt", ".php", ".rs", ".razor", ".vue", ".svelte", ".sql", ".sh", ".ps1",
-]);
-
 function detectUnfinished(files, contents) {
   const byKind = new Map();
   for (const f of files) {
-    if (!CODE_EXT.has(path.extname(f))) continue;
+    if (!isCode(f)) continue; // a TODO in a Markdown file is a note, not an unfinished code path
     const text = contents.get(f);
     if (!text) continue;
     for (const [re, kind] of UNFINISHED) {

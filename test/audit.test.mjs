@@ -76,6 +76,39 @@ test("a Markdown file naming TODO is not unfinished work", () => {
   assert.deepEqual(evidence, ["src/work.js"]);
 });
 
+test("prose describing schedulers and routes is not code", () => {
+  // The fourth false positive of this family: this repository's own architecture document names
+  // Celery, Sidekiq, BullMQ and the route-registration patterns the detectors match, and was
+  // reported as a background job. Documentation describes; it does not implement.
+  const res = audit(fixture("markers"));
+  for (const id of ["detected-jobs", "detected-apis"]) {
+    const md = evidenceOf(res, id).filter((e) => e.endsWith(".md"));
+    assert.deepEqual(md, [], `${id} matched prose in ${JSON.stringify(md)}`);
+  }
+
+  const self = audit(REPO);
+  const proseHits = ["detected-jobs", "detected-apis"].flatMap((id) =>
+    evidenceOf(self, id).filter((e) => e.endsWith(".md")),
+  );
+  assert.deepEqual(proseHits, [], "this repository's own Markdown must never match a code signal");
+});
+
+test("a comment naming a job library is not a job, but importing one is", () => {
+  // The fifth instance: a comment in this suite naming Celery and BullMQ made the test file itself
+  // register as a background job. Library names go through importPattern() everywhere now.
+  assert.deepEqual(
+    evidenceOf(audit(REPO), "detected-jobs"),
+    [],
+    "this repository runs no background jobs; comments naming them must not say otherwise",
+  );
+
+  assert.deepEqual(
+    evidenceOf(audit(fixture("compliant")), "detected-jobs"),
+    ["src/jobs/nightly.js"],
+    "a real `import { Queue } from \"bullmq\"` must still be detected",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // The delegated-liveness trap
 // ---------------------------------------------------------------------------
