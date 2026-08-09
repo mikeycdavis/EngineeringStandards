@@ -205,6 +205,15 @@ applicability:
     reviewedAt: "2026-08-09"
     revisitWhen: "Any script uses workers, threads, or in-process parallelism, or CI runs steps that share a mutable resource."
 
+  # The reason establishes only that the rule has no subject here. It deliberately does NOT say
+  # "no failures are silenced" — that would be a claim about behaviour nobody reviewed, and it would
+  # turn a not-applicable declaration back into the attestation it exists instead of.
+  observability.no-silenced-failures:
+    status: not-applicable
+    reason: "This repository has no telemetry, alerting, monitoring, or failure-notification subsystem whose signals could be suppressed, disabled, or dropped. Current diagnostics are limited to CLI output, process exit codes, test failures, and CI results, which are governed by other standards and are not an observability subsystem for this rule."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "The repository adds telemetry, structured operational logging, alerting, monitoring, failure notifications, metrics emission, tracing, or another persistent observability channel."
+
 # ai.destructive-approval was declared not-applicable until 2026-08-09, with the trigger
 # "`standards init` lands — it writes files, and Standard 33 R2's overwrite permission is exactly
 # this rule." It landed, so the declaration was removed and the rule now applies at its catalog
