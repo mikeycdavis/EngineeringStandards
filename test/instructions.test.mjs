@@ -67,22 +67,30 @@ test("every script the guide tells an adopter to run exists", async () => {
   }
 });
 
-test("the guide names the subcommand the CLI actually implements", async () => {
-  // Standard 23 R2 specifies `standards validate`; the tool ships `standards audit`. The guide must
-  // track the implementation, and this test fails when the rename lands — deliberately, so the
-  // guide is updated in the same change set (Standard 42 R2).
+test("the guide names every subcommand the CLI implements", async () => {
+  // This test previously fired when only `audit` shipped and asserted the guide said so. It fired
+  // for real when `validate` landed (ADR 0004), which is what it was for: the guide had to be
+  // updated in the same change set (Standard 42 R2). It now guards both commands.
   const cli = await read(path.join(ROOT, "scripts/standards.mjs"));
-  const implementsAudit = /"audit"/.test(cli);
-  const implementsValidate = /"validate"/.test(cli);
-  const guide = await read(GUIDE);
+  const commands = [...cli.matchAll(/COMMANDS = new Set\(\[([^\]]+)\]\)/g)]
+    .flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
+  assert.ok(commands.length >= 2, "expected the CLI to declare its commands in one place");
 
-  assert.ok(implementsAudit || implementsValidate, "the CLI implements neither subcommand");
-  if (implementsAudit && !implementsValidate) {
-    assert.match(guide, /standards\.mjs audit/, "guide should show `audit` while that is what ships");
+  const guide = await read(GUIDE);
+  for (const command of commands) {
+    assert.match(
+      guide,
+      new RegExp(`standards\.mjs ${command}`),
+      `the CLI implements \`${command}\` but the guide never shows it`,
+    );
   }
-  if (implementsValidate) {
-    assert.match(guide, /standards\.mjs validate/, "the CLI now implements `validate`; update the guide");
-  }
+});
+
+test("the guide tells an adopter which command to gate CI on", async () => {
+  // Two commands with different exit-code contracts is a trap unless the guide is explicit about
+  // which one is the gate (ADR 0004).
+  const guide = await read(GUIDE);
+  assert.match(guide, /gate .{0,40}`?validate`?/i);
 });
 
 test("the guide covers every section the adoption standard requires", async () => {

@@ -275,10 +275,10 @@ test("every finding carries the full schema", () => {
   const required = ["id", "category", "severity", "label", "evidence", "message", "standardRef"];
   for (const name of ["compliant", "delegated", "naming-only", "markers"]) {
     const res = audit(fixture(name));
-    // The envelope is Standard 25's, so schemaVersion is a string. This changed from the numeric
-    // `1` when the compliance engine landed — a breaking change to the JSON contract, made before
-    // anything consumed it (Standard 15).
-    assert.equal(res.json.schemaVersion, "1.0");
+    // Semantic versioning, normalised in ADR 0004 so schemaVersion and standardVersion share a
+    // format. They remain independently versioned — independence means they may diverge
+    // numerically, not that they use different shapes.
+    assert.equal(res.json.schemaVersion, "1.0.0");
     assert.match(res.json.auditedAt, /^\d{4}-\d\d-\d\dT.*Z$/);
     for (const f of res.json.findings) {
       for (const key of required) assert.ok(key in f, `${name}: finding ${f.id} lacks ${key}`);

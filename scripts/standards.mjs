@@ -31,7 +31,7 @@ import { validate } from "./jsonschema.mjs";
  */
 const SELF = fileURLToPath(import.meta.url);
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = "1.0.0";
 
 /**
  * The rules this evaluator actually examines.
@@ -352,11 +352,16 @@ const positional = argv.slice(1).find((a) => !a.startsWith("--"));
 
 function usage(stream = process.stderr) {
   stream.write(
-    "Usage: standards audit [path] [--json] [--dir=<path>] [--strict]\n\n" +
-      "  audit          Report what a repository has and where it departs from the standards.\n\n" +
+    "Usage: standards <audit|validate> [path] [--json] [--dir=<path>] [--strict]\n\n" +
+      "  audit          Evidence discovery. What a repository has and where it departs from\n" +
+      "                 the standards. Needs no policy; never produces a verdict.\n" +
+      "  validate       Policy-aware compliance evaluation. Loads project-policy.yml, applies\n" +
+      "                 applicability and exceptions, and produces the authoritative status.\n\n" +
       "  --json         Emit the structured report on stdout instead of the readable one.\n" +
-      "  --dir=<path>   Audit a directory other than the resolved project root.\n" +
-      "  --strict       Exit 1 when any finding needs attention.\n",
+      "  --dir=<path>   Target a directory other than the resolved project root.\n" +
+      "  --strict       audit only: exit 1 when any finding needs attention.\n\n" +
+      "Gate CI on `validate`. Use `audit` for diagnostics, discovery, and reconstruction.\n" +
+      "See artifacts/adr/0004-audit-and-validate-are-separate-commands.md.\n",
   );
 }
 
@@ -378,11 +383,26 @@ if (!subcommand || subcommand === "--help" || subcommand === "-h") {
   usage(process.stdout);
   process.exit(subcommand ? EXIT_OK : EXIT_INVOCATION);
 }
-if (subcommand !== "audit") {
+const COMMANDS = new Set(["audit", "validate"]);
+if (!COMMANDS.has(subcommand)) {
   process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
   usage();
   process.exit(EXIT_INVOCATION);
 }
+
+/**
+ * The two commands have genuinely different jobs, and ADR 0004 keeps them apart rather than
+ * making one an alias for the other:
+ *
+ *   audit     evidence discovery — what was observed. No status, no score, no policy required.
+ *   validate  the verdict — policy-aware, and the command CI gates on.
+ *
+ * Their exit-code contracts differ, which is the practical reason they cannot be one command: the
+ * survey exits 0 on warnings unless --strict, while the verdict exits 1 on a required-rule failure
+ * regardless of it. One command cannot hold both without a flag selecting which contract applies,
+ * and a flag that changes the exit contract is a trap.
+ */
+const VALIDATING = subcommand === "validate";
 
 // ---------------------------------------------------------------------------
 // Repository scan
@@ -1309,6 +1329,37 @@ assertBindings(
   findings.map((f) => f.rule).filter(Boolean),
 );
 
+if (!VALIDATING) {
+  // audit: evidence only. No status, no score, no policy required — ADR 0004.
+  if (JSON_OUT) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          schemaVersion: SCHEMA_VERSION,
+          repo: root.split(path.sep).join("/"),
+          auditedAt: new Date().toISOString(),
+          findings,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+  } else {
+    process.stdout.write(renderHuman(files.length) + "\n");
+    process.stdout.write(
+      "\nThis is evidence, not a verdict. Run `standards validate` for a compliance status.\n",
+    );
+  }
+  process.exit(STRICT && findings.some((f) => f.severity !== "info") ? EXIT_FINDINGS : EXIT_OK);
+}
+
+// ---------------------------------------------------------------------------
+// validate — the verdict (Standards 25, 27, 30)
+//
+// The three-way separation must not be violated here: the catalog defines rule identity and
+// metadata, project-policy.yml defines what applies to THIS project, and everything above produces
+// evidence. Nothing in this section redefines a rule or invents applicability.
+
 const policy = await loadProjectPolicy(root);
 const verdict = evaluate({
   catalog,
@@ -1345,12 +1396,12 @@ if (JSON_OUT) {
   // guarantees — a consumer joins on results[].ruleId, never on a finding category.
   process.stdout.write(JSON.stringify({ ...report, findings }, null, 2) + "\n");
 } else {
-  process.stdout.write(renderHuman(files.length) + "\n");
   process.stdout.write(renderVerdict(report, policy) + "\n");
 }
 
-// A policy that could not be read is exit 2: could-not-evaluate is not non-compliance
-// (Standard 30 R1). A required-level failure is exit 1 regardless of score (Standard 30 R2).
-if (policy.error) process.exit(EXIT_INVOCATION);
+// A policy that could not be read, or none at all, is exit 2: a verdict was requested and there is
+// nothing to evaluate against. That is a configuration problem, not a compliance failure
+// (Standard 30 R1, ADR 0004). A required-level failure is exit 1 regardless of score.
+if (policy.error || !policy.document) process.exit(EXIT_INVOCATION);
 if (report.status === "NON_COMPLIANT") process.exit(EXIT_FINDINGS);
-process.exit(STRICT && findings.some((f) => f.severity !== "info") ? EXIT_FINDINGS : EXIT_OK);
+process.exit(EXIT_OK);

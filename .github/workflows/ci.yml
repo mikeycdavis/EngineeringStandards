@@ -56,3 +56,9 @@ jobs:
       # in test/audit.test.mjs that this repository has no error-severity findings, which runs above.
       - name: Audit this repository
         run: npm run audit
+
+      # The gate. `validate` applies this repository's own policy and exits 1 on a required-rule
+      # failure regardless of --strict, and 2 if the policy cannot be read. This is the command
+      # consuming projects are told to gate on (ADR 0004), so it is the one this repository gates on.
+      - name: Validate this repository
+        run: npm run validate

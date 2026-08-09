@@ -209,7 +209,7 @@ Against R1's fourteen criteria:
 
 | Criterion | State |
 | --- | --- |
-| Coherent v1 engineering standard | **Partial** — all 44 documents exist and cross-reference coherently; no `VERSION` or `CHANGELOG` declares a v1 ([21](21-versioning.md)) |
+| Coherent v1 engineering standard | **Yes** — all 44 documents exist and cross-reference coherently, and `VERSION` + `CHANGELOG.md` publish `1.0.0` with its frozen surface enumerated |
 | Standards have stable rule IDs | **Yes** — `rules/` defines 24, every one canonical, each naming its standard; `assertBindings` rejects any id the evaluator invents |
 | `project-policy.yml` has a JSON Schema | **Yes** — `schemas/project-policy.schema.json`, executed by `npm run policy` in CI |
 | Example policies validate successfully | **Yes** — one valid example and four known-negatives in `test/fixtures/policies/` |
@@ -224,18 +224,19 @@ Against R1's fourteen criteria:
 | No placeholder implementations or knowingly broken tests | **Yes** — no skipped tests, no stub commands |
 | Builds and tests using documented commands | **Yes** — `npm test`, `npm run audit`, `policy`, `diagrams`, `inventory`, `fidelity` |
 
-**Twelve met, two partial, none outstanding** — recomputed from current evidence, not carried forward
-from the previous seven / two / five or the intermediate nine / four / one. Four criteria moved to
-**Yes** because the catalog and compliance engine landed together and made rule identity, exception
-application, and the repository's own artifact compliance mechanically checkable rather than asserted.
+**Thirteen met, one partial, none outstanding** — recomputed from current evidence rather than
+carried forward, as at each previous assessment (7/2/5, then 9/4/1, then 12/2/0). Publishing `1.0.0`
+closed the last version-dependent criterion: `standardVersion: "1.0.0"` now resolves to something
+published rather than being a forward declaration.
 
-**The two remaining partials are the same gap seen twice:** no `VERSION` or `CHANGELOG` publishes a
-v1, so `standardVersion: "1.0.0"` is a forward declaration; and the catalog covers 24 rules rather
-than every requirement across forty-four standards, so what an agent can determine mechanically is
-narrower than what the standards specify.
+**The one remaining partial is real and is not a version problem.** The catalog covers 24 rules
+across 14 of 44 standards, so what an agent can determine *mechanically* about this repository is
+narrower than what the standards specify. `frameworkCoverage` reports exactly that on every run,
+which is the honest handling — the gap is measured and published rather than argued away.
 
-**The release definition is still not satisfied**, which is consistent with the standing decision
-that this work stays on `develop` until the plan has no gaps.
+**The release definition is now satisfied on its own terms.** That is not the same as the project
+being finished: `standards init` is unbuilt, and the standing decision that nothing merges to
+`master` until the plan has zero gaps is unchanged and independent of this.
 
 **R3 is now enforced rather than described.** `scripts/compliance.mjs` returns `skipped` with
 `disposition: "not-evaluated"` for any rule nothing examined, and a test asserts that a run with an

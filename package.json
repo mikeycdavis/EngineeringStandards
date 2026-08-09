@@ -1,6 +1,6 @@
 {
   "name": "engineering-standards",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Numbered engineering standards, and the audit command that checks a repository against them.",
   "type": "module",
   "bin": {
@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "audit": "node scripts/standards.mjs audit .",
+    "validate": "node scripts/standards.mjs validate .",
     "inventory": "node scripts/inventory.mjs",
     "fidelity": "node scripts/fidelity.mjs",
     "policy": "node scripts/policy.mjs",

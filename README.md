@@ -61,9 +61,9 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | `project-policy.yml` — read by the audit | active |
 | 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | `schemas/project-policy.schema.json`, `scripts/jsonschema.mjs` | active |
 | 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | `scripts/policy.mjs`, `scripts/compliance.mjs` | active |
-| 21 | Versioning | [standards/21-versioning.md](standards/21-versioning.md) | *none — no framework version published yet* | active |
+| 21 | Versioning | [standards/21-versioning.md](standards/21-versioning.md) | [VERSION](VERSION), [CHANGELOG.md](CHANGELOG.md) | active |
 | 22 | Adoption and Migration | [standards/22-adoption-and-migration.md](standards/22-adoption-and-migration.md) | [INSTRUCTIONS.md](INSTRUCTIONS.md), `project-reconstruction` | active |
-| 23 | Standards Validator CLI | [standards/23-standards-validator-cli.md](standards/23-standards-validator-cli.md) | `scripts/standards.mjs` — audited in the document | active |
+| 23 | Standards Validator CLI | [standards/23-standards-validator-cli.md](standards/23-standards-validator-cli.md) | `standards audit`, `standards validate` | active |
 | 24 | Validator Rules | [standards/24-validator-rules.md](standards/24-validator-rules.md) | `scripts/standards.mjs` (partial) | active |
 | 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/compliance.mjs` — full envelope | active |
 | 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | `rules/`, `scripts/catalog.mjs` | active |
@@ -99,6 +99,8 @@ source extraction still agrees with it, and CI fails if it does not.
   — one rule identity across policy keys, exceptions, the catalog, and validator output.
 - [artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md](artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md)
   — Mermaid source is canonical; SVG is a generated artifact, never hand-edited.
+- [artifacts/adr/0004-audit-and-validate-are-separate-commands.md](artifacts/adr/0004-audit-and-validate-are-separate-commands.md)
+  — `audit` is evidence, `validate` is the verdict; and the v1 public surface this freezes.
 
 ## Design documents
 
@@ -113,6 +115,8 @@ Forward-looking designs that are not yet implemented:
 INSTRUCTIONS.md     How to adopt and use the framework from another project.
 standards/          One numbered normative document per standard (NN-<kebab-title>.md).
 rules/              The rule catalog — the source of machine truth for rule identity (Standard 27).
+VERSION             The published framework version.
+CHANGELOG.md        What each version changed, and what 1.0.0 freezes.
 PROJECT.md          This repository's own manifest (Standard 6).
 templates/          What an adopting project copies.
 design/             Forward-looking designs, not yet implemented.
@@ -125,8 +129,10 @@ artifacts/
   adr/              Accepted decision records.
 ```
 
-**Commands.** `npm test` · `npm run audit` · `npm run policy` · `npm run diagrams` ·
-`npm run inventory` · `npm run fidelity`. CI runs all six.
+**Commands.** `npm test` · `npm run audit` (evidence) · `npm run validate` (verdict) ·
+`npm run policy` · `npm run diagrams` · `npm run inventory` · `npm run fidelity`. CI runs all seven.
+
+**Version 1.0.0** — see [CHANGELOG.md](CHANGELOG.md) for what the release freezes.
 
 **Numbering convention.** Standards files are named `NN-<kebab-title>.md`. Zero-pad single digits
 (`01-…` through `09-…`) when backfilling, so a directory listing sorts in numeric order.

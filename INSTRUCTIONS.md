@@ -30,16 +30,22 @@ mkdir -p artifacts/project-plan-breakdown artifacts/adr
 # 4. Run the planning and documentation workflows
 #    /plan-structure  /plan-handoff  /codebase-docs
 
-# 5. Audit, then resolve every finding: fix it, except it, or declare it not applicable
+# 5. See what the tooling observes
 node <standards-repo>/scripts/standards.mjs audit .
+
+# 6. Get the verdict, and resolve every failure: fix it, except it, or declare it not applicable
+node <standards-repo>/scripts/standards.mjs validate .
 ```
 
-**On the command name.** [Standard 23](standards/23-standards-validator-cli.md) R2 names
-`standards validate` as the canonical command. The implementation currently ships `standards audit`,
-and this document names what actually runs rather than what is specified — a recipe documenting a
-command that does not exist is a defect
-([Standard 32](standards/32-documentation-quality.md) R3), not a forward-looking convenience. The
-rename is an open item.
+**Two commands, two jobs** ([ADR 0004](artifacts/adr/0004-audit-and-validate-are-separate-commands.md)):
+
+| Command | Job | Needs a policy? |
+| --- | --- | --- |
+| `audit` | **Evidence discovery.** What the repository has and where it departs from the standards | No |
+| `validate` | **The verdict.** Applies your policy, applicability, exceptions, and `nonExemptible` | Yes |
+
+**Gate CI on `validate`.** Use `audit` for diagnostics, discovery, reconstruction, and evidence
+inspection. They are not aliases and their exit codes mean different things — see sections 6 and 7.
 
 ---
 
@@ -119,7 +125,7 @@ node <standards-repo>/scripts/policy.mjs ./project-policy.yml
 **A valid policy says nothing about whether you comply.** It says the declaration is well-formed.
 Compliance comes from an audit run.
 
-## 6. Running the audit
+## 6. Running the audit — evidence
 
 ```bash
 node <standards-repo>/scripts/standards.mjs audit .          # this repo
@@ -128,11 +134,40 @@ node <standards-repo>/scripts/standards.mjs audit . --json
 node <standards-repo>/scripts/standards.mjs audit . --strict
 ```
 
-`--strict` fails on warnings as well as errors. Use it locally and in a gate you control; think
-before making it your only CI signal, because a build that breaks on advisory findings is a build
-someone disables ([Standard 28](standards/28-github-actions.md)).
+`audit` reports what the tooling observed and **never produces a compliance status**. It works with
+no policy at all, which is what makes it the right command during reconstruction
+([Standard 44](standards/44-existing-project-reconstruction.md)) and for general diagnostics.
 
-**The audit reads your `project-policy.yml`** and prints a verdict beneath the findings:
+Its exit codes are its own, documented separately from the compliance contract:
+
+| Exit | Means |
+| --- | --- |
+| `0` | The survey completed |
+| `1` | `--strict` was given and something needs attention |
+| `2` | Invocation error |
+
+`--strict` promotes warnings to failures. Think before making it a CI gate: a build that breaks on a
+heuristic dead-code guess is a build someone disables
+([Standard 28](standards/28-github-actions.md)). **For gating, use `validate`.**
+
+## 7. Running validate — the verdict
+
+```bash
+node <standards-repo>/scripts/standards.mjs validate .
+node <standards-repo>/scripts/standards.mjs validate . --json
+```
+
+| Exit | Means |
+| --- | --- |
+| `0` | Compliant, including `COMPLIANT_WITH_EXCEPTIONS` |
+| `1` | Evaluated, and non-compliant |
+| `2` | Invocation, configuration, or schema error — including **no `project-policy.yml`** |
+
+A project with no policy is `NOT_EVALUATED` and exits `2`: you asked for a verdict and there is
+nothing to evaluate against. That is a configuration problem, not a compliance failure
+([Standard 30](standards/30-compliance-scoring.md) R1).
+
+`validate` prints:
 
 ```text
 Compliance
@@ -142,14 +177,11 @@ Compliance
   Cover:  12 automated, 0 manual-review, 7 not-evaluated
 ```
 
-**Read the last two lines together.** 100% means every required rule that was *checked* passed; the
-coverage line says how many were not checked at all. A rule nothing evaluated is `skipped` — never a
-pass, and never a failure.
+**Read the last three lines together.** 100% means every required rule that was *checked* passed;
+the coverage line says how many were not checked at all; and the framework line says how much of the
+framework has been turned into rules in the first place. None of the three combines into the others.
 
-Without a `project-policy.yml` the status is `NOT_EVALUATED` and the findings are observations rather
-than a verdict. That is not a failure state; it means nothing declared what applies here.
-
-## 7. Classifying required / not-applicable / exception
+## 8. Classifying required / not-applicable / exception
 
 Every rule you do not satisfy is exactly one of three things, and it must be recorded as such
 ([Standard 34](standards/34-dogfooding.md) R3). **There is no fourth category, and specifically no
@@ -180,7 +212,7 @@ Two things to resist:
   same outcome while hiding it, and is the mechanism
   [Standard 18](standards/18-machine-readable-project-policy.md) R1 prohibits.
 
-## 8. Bootstrapping a greenfield project
+## 9. Bootstrapping a greenfield project
 
 1. `project-policy.yml` from the template, edited
 2. `PROJECT.md` from the template ([Standard 6](standards/06-project-manifest.md))
@@ -188,14 +220,14 @@ Two things to resist:
    `artifacts/project-plan-breakdown/` ([Standard 35](standards/35-planning-requirements.md))
 4. `artifacts/adr/` for decisions ([Standard 11](standards/11-architecture-decision-records.md))
 5. `/codebase-docs` once there is something to document
-6. Audit, and resolve every finding per section 7
+6. Audit, and resolve every finding per section 8
 
 [Standard 33](standards/33-bootstrap-experience.md) specifies a `standards init` that would do steps
 1–4 in one command. **It is not built yet** — do these by hand.
 
-## 9. Onboarding an existing project
+## 10. Onboarding an existing project
 
-Follow the flow in section 10. The short version: if the project has a trustworthy plan, normalize
+Follow the flow in section 11. The short version: if the project has a trustworthy plan, normalize
 what exists rather than replacing it. If it does not, you are in reconstruction mode and must not
 write a plan as though the project were starting now.
 
@@ -206,7 +238,7 @@ Normalizing means: add the policy and manifest, check the existing plan against 
 **non-destructive and evidence-preserving** ([Standard 22](standards/22-adoption-and-migration.md)
 R3) — you are not entitled to delete history that does not match the new shape.
 
-## 10. The adoption decision flow
+## 11. The adoption decision flow
 
 ```mermaid
 flowchart TB
@@ -264,7 +296,7 @@ flowchart TB
 design document nobody followed is not a plan. If you find yourself reasoning about what the original
 author *probably* meant, you are in reconstruction mode.
 
-## 11. Reconstruction mode
+## 12. Reconstruction mode
 
 Required when a project has an implementation and no trustworthy plan or original prompt
 ([Standard 44](standards/44-existing-project-reconstruction.md),
@@ -284,7 +316,7 @@ Two non-negotiables:
 indistinguishable from a real one, and every later reader — human or agent — treats invented intent
 as recorded intent. This is the single worst outcome of a careless adoption.
 
-## 12. Required artifacts and directories
+## 13. Required artifacts and directories
 
 | Path | Standard | Required |
 | --- | --- | --- |
@@ -296,7 +328,7 @@ as recorded intent. This is the single worst outcome of a careless adoption.
 | `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md` | [17](standards/17-agent-instruction-files.md) | Where agents work in the repository |
 | `docs/` | [39](standards/39-codebase-documentation.md) | Yes, for anything non-trivial |
 
-## 13. How agents should read the standards
+## 14. How agents should read the standards
 
 Point your agent instruction files here first, then to the project's own declarations:
 
@@ -323,7 +355,7 @@ work is done rather than what is produced:
   never be the only source of something needed to continue
   ([Standard 41](standards/41-decisions-assumptions-and-questions.md))
 
-## 14. Planning
+## 15. Planning
 
 Run `/plan-structure` and `/plan-handoff` before implementation. If those skills are unavailable,
 reproduce their intended behaviour manually — the requirement is on the outcome, not the tool
@@ -349,7 +381,7 @@ another tracker — that is relationship metadata, not a state.
 **Status, Acceptance Criteria, and Verification are always applicable** to an executable item. Without
 them an item cannot be reported on, finished, or proven finished.
 
-## 15. Architecture decision records
+## 16. Architecture decision records
 
 Write an ADR for consequential choices: database technology, authentication model, AI provider
 strategy, event architecture, or a deliberate deviation from these standards
@@ -359,7 +391,7 @@ They live in `artifacts/adr/`, numbered, and record context, the decision, alter
 and consequences. The alternatives section is the one people skip and the one a future reader needs —
 a decision without its rejected options is indistinguishable from an accident.
 
-## 16. Documentation and `/codebase-docs`
+## 17. Documentation and `/codebase-docs`
 
 Run `/codebase-docs` for initial documentation, after significant architectural change, and whenever
 documentation is materially stale ([Standard 39](standards/39-codebase-documentation.md) R1).
@@ -379,7 +411,7 @@ Where a structured contract exists — OpenAPI, JSON Schema, a tool definition �
 than restating it. Documentation adds what the contract cannot express: intent, sequence, and why a
 surprising choice was made.
 
-## 17. Upgrading to a newer standards version
+## 18. Upgrading to a newer standards version
 
 1. Read the upstream `CHANGELOG` for what changed at your current version and above
 2. Bump `standardVersion` in `project-policy.yml`
@@ -398,7 +430,7 @@ a declared state rather than a failure.
 rule still means what its author intended
 ([Standard 26](standards/26-stable-rule-ids.md) R3).
 
-## 18. What not to do
+## 19. What not to do
 
 - **Do not copy the standards into your repository.** Reference the version; keep declarations local.
 - **Do not scaffold a clean-room plan over an existing codebase.** That is a fabricated history.
@@ -426,13 +458,14 @@ Stated here rather than discovered later. Most of what this table used to say is
 | Gap | Consequence for you |
 | --- | --- |
 | The catalog covers 24 rules across 14 of 44 standards | Rules outside it are reported `not-evaluated` rather than passing — honest, but a `COMPLIANT` verdict covers less than the whole framework. The audit prints this as `frameworkCoverage` so you never have to remember it |
-| Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`. Read the coverage line, not just the score |
-| No `VERSION` or `CHANGELOG` ([21](standards/21-versioning.md)) | `standardVersion: "1.0.0"` is a forward declaration; nothing upstream publishes a version yet |
-| No `standards init` ([33](standards/33-bootstrap-experience.md)) | Bootstrap is manual — section 8 |
-| Command is `audit`, not `validate` ([23](standards/23-standards-validator-cli.md) R2) | Use `audit` until the rename lands |
+| Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`, never passing. Read the coverage line, not just the score |
+| No `standards init` ([33](standards/33-bootstrap-experience.md)) | Bootstrap is manual — section 9 |
+| No `standardVersion` resolution ([21](standards/21-versioning.md) R5) | With one published version there is nothing to resolve against; an unresolvable version is not yet rejected |
 
 Each is recorded in the `## Implementation` section of the standard that specifies it.
 
-**Closed since the first version of this guide:** the audit now reads `project-policy.yml`, applies
-applicability and exceptions, binds every finding to a canonical rule id, and emits a
-[Standard 30](standards/30-compliance-scoring.md) verdict with a score and an assurance breakdown.
+**Closed since the first version of this guide:** the tooling reads `project-policy.yml`, applies
+applicability and exceptions, enforces `nonExemptible`, binds every finding to a canonical rule id,
+and emits a [Standard 30](standards/30-compliance-scoring.md) verdict with score, assurance, and
+framework coverage. `standards validate` ships, and the framework publishes `1.0.0` with its frozen
+surface enumerated in [CHANGELOG.md](CHANGELOG.md).

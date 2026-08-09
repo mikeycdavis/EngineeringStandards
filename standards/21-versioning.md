@@ -119,9 +119,28 @@ so as exit `2`.
 
 ## Implementation
 
-**No skill implements this standard.**
+**Implemented.** `VERSION` declares `1.0.0` and `CHANGELOG.md` records what that version freezes.
 
-This repository does not yet publish `VERSION` or `CHANGELOG.md` — the series is incomplete, and
-declaring `1.0.0` before every standard exists would be a version nobody could meaningfully adopt.
-Both are prerequisites for the first release rather than optional extras, and
-`scripts/inventory.mjs` already tracks how far off that is.
+Three versions travel independently, which is R1 in practice rather than in principle:
+
+| Version | Versions | Declared in |
+| --- | --- | --- |
+| Framework | The standards, catalog, and policy schema | `VERSION`; a project's `standardVersion` |
+| Output schema | The validator's JSON envelope | `schemaVersion` on every report |
+| Package | The npm package | `package.json` |
+
+They share a **format** — three-component semantic versioning — so that independence means they may
+diverge numerically rather than that they are shaped differently
+([ADR 0004](../artifacts/adr/0004-audit-and-validate-are-separate-commands.md)).
+`schemaVersion` changed shape twice before this release, from numeric `1` to `"1.0"` to `"1.0.0"`;
+both were free because nothing consumed the envelope, and 1.0.0 is the point after which they stop
+being free.
+
+**What `1.0.0` freezes** is enumerated in ADR 0004 and repeated in `CHANGELOG.md`: command names and
+semantics, the policy schema, canonical rule IDs, alias resolution, the catalog entry contract, the
+JSON envelope, statuses, dispositions, exit codes, and score, assurance, and coverage semantics.
+Console wording, module layout, and detector internals are explicitly outside it.
+
+**R5 is not implemented.** Nothing yet resolves a project's declared `standardVersion` against a
+published set of framework versions, or rejects an unresolvable one — with a single published
+version there is nothing to resolve against, but the check has to exist before a second version does.

@@ -152,7 +152,7 @@ about the check before it is evidence about the project.
 | --- | --- |
 | R1 — named `standards`, cross-platform | **Met.** Node ESM, zero dependencies, `bin: standards`. |
 | R2 — `validate` subcommand | **Not met.** The implementation provides `audit`, not `validate`. |
-| R2 — target forms, `--json`, `--strict` | **Partially met.** `standards audit .`, `standards audit ../Other`, `--json`, `--strict`, and `--dir=` all work. The flag is `--json` rather than `--format json`. |
+| R2 — target forms, `--json`, `--strict` | **Met.** `standards validate` ships as the required first feature, alongside `standards audit` for evidence discovery ([ADR 0004](../artifacts/adr/0004-audit-and-validate-are-separate-commands.md)). Target forms, `--json`, `--strict`, and `--dir=` all work. The flag is `--json` rather than `--format json`. |
 | R3 — exit codes | **Partially met.** `0` and `1` behave as specified, including warnings exiting `0` without `--strict`. There is no exit `2`: an invocation error currently exits `1`. |
 | R4 — versioned JSON envelope | **Partially met.** Output carries `schemaVersion`, but as a number rather than a string, and has no `standardVersion`, `status`, or `score`. `findings` corresponds to `results`. |
 | R5 — exceptions applied | **Not met.** The implementation does not read `project-policy.yml`, so it applies no exceptions and reaches no compliance verdict. |
