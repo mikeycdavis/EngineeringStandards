@@ -17,6 +17,17 @@
  * collapsed to single-spaced text before comparison. Backticks, punctuation, and wording are NOT
  * normalized away — those are exactly what this exists to catch.
  *
+ * WHICH SOURCE. Standards derive from more than one reviewed document, so the source is resolved per
+ * standard from artifacts/standards-source-inventory.json rather than hardcoded. A quote is checked
+ * against its own standard's source and no other — otherwise a document could borrow provenance from
+ * a source it has nothing to do with.
+ *
+ * SECTION SCOPE. For a `reviewed-sections` source there are no item numbers, so an entry declares
+ * which `##`/`###` sections it realizes. A quote in such a standard must appear inside the text of
+ * one of the sections that standard claims, not merely somewhere in the file. A section mapping that
+ * does not constrain the quotes would be decorative: it would assert provenance while verifying
+ * nothing about it.
+ *
  * Usage:
  *   node scripts/fidelity.mjs           report, exit 1 on any unverified claim
  *   node scripts/fidelity.mjs --json    machine-readable
@@ -27,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = path.join(ROOT, "artifacts/prompts/engineering-standards-spec.md");
+const INVENTORY = path.join(ROOT, "artifacts/standards-source-inventory.json");
 const JSON_OUT = process.argv.includes("--json");
 
 /** A sentence asserting that what follows is source text. */
@@ -75,13 +86,73 @@ function blockAfter(lines, start) {
   return null;
 }
 
-const sourceNorm = normalize(await readFile(SOURCE, "utf8"));
+/**
+ * The text of one `##`/`###` section: from its heading to the next heading at the same or a higher
+ * level. A `###` under a claimed `##` therefore belongs to the claim, which is what a reader would
+ * expect of "the X section".
+ */
+function sectionText(sourceText, name) {
+  const lines = sourceText.split("\n");
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const start = lines.findIndex((l) => new RegExp(`^(#{2,3})\\s*${escaped}\\s*$`).test(l));
+  if (start === -1) return null;
+  const level = lines[start].match(/^#+/)[0].length;
+  const body = [lines[start]];
+  for (let i = start + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^(#+)\s/);
+    if (m && m[1].length <= level) break;
+    body.push(lines[i]);
+  }
+  return body.join("\n");
+}
+
+const inventory = JSON.parse(await readFile(INVENTORY, "utf8"));
+const extractionOf = new Map(inventory.sources.map((s) => [s.path, s.extraction]));
+const entryFor = new Map(inventory.standards.map((s) => [s.number, s]));
+
+/** Cache: source path → normalized whole-document text. */
+const wholeSource = new Map();
+async function normalizedSource(sourcePath) {
+  if (!wholeSource.has(sourcePath)) {
+    wholeSource.set(sourcePath, normalize(await readFile(path.join(ROOT, sourcePath), "utf8")));
+  }
+  return wholeSource.get(sourcePath);
+}
+
+/** Cache: `${sourcePath}::${section}` → normalized section text. */
+const sectionCache = new Map();
+async function normalizedSections(sourcePath, sections) {
+  const out = [];
+  for (const section of sections) {
+    const key = `${sourcePath}::${section}`;
+    if (!sectionCache.has(key)) {
+      const raw = sectionText(await readFile(path.join(ROOT, sourcePath), "utf8"), section);
+      sectionCache.set(key, raw === null ? null : normalize(raw));
+    }
+    const value = sectionCache.get(key);
+    if (value !== null) out.push(value);
+  }
+  return out;
+}
+
 const files = (await readdir(path.join(ROOT, "standards"))).filter((f) => /^\d\d-.*\.md$/.test(f)).sort();
 
 const failures = [];
 let claims = 0;
 
 for (const file of files) {
+  const number = Number(file.slice(0, 2));
+  const entry = entryFor.get(number);
+  if (!entry) {
+    // The inventory check owns unclaimed files; here it only means there is no source to check against.
+    continue;
+  }
+  const extraction = extractionOf.get(entry.source);
+  const haystacks =
+    extraction === "reviewed-sections"
+      ? await normalizedSections(entry.source, entry.sourceSections ?? [])
+      : [await normalizedSource(entry.source)];
+
   const text = await readFile(path.join(ROOT, "standards", file), "utf8");
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -90,15 +161,18 @@ for (const file of files) {
     if (!block) continue;
     claims++;
     const norm = normalize(block.text);
-    if (!norm || sourceNorm.includes(norm)) continue;
+    if (!norm || haystacks.some((h) => h.includes(norm))) continue;
 
-    // Report the first fragment that diverges, so the message points at the actual edit.
-    const words = norm.split(" ");
+    // Report the first fragment that diverges, so the message points at the actual edit. Measured
+    // against whichever declared section matched most of the quote — the one it was meant to be in.
     let longest = "";
-    for (let a = 0; a < words.length; a++) {
-      for (let b = words.length; b > a; b--) {
-        const frag = words.slice(a, b).join(" ");
-        if (frag.length > longest.length && sourceNorm.includes(frag)) longest = frag;
+    const words = norm.split(" ");
+    for (const haystack of haystacks) {
+      for (let a = 0; a < words.length; a++) {
+        for (let b = words.length; b > a; b--) {
+          const frag = words.slice(a, b).join(" ");
+          if (frag.length > longest.length && haystack.includes(frag)) longest = frag;
+        }
       }
     }
     const cut = longest ? norm.indexOf(longest) + longest.length : 0;
@@ -106,6 +180,11 @@ for (const file of files) {
       file: `standards/${file}`,
       line: block.line,
       kind: block.kind,
+      source: entry.source,
+      scope:
+        extraction === "reviewed-sections"
+          ? `sections: ${(entry.sourceSections ?? []).map((s) => `"${s}"`).join(", ") || "(none declared)"}`
+          : "whole document",
       diverges: norm.slice(cut, cut + 120).trim() || norm.slice(0, 120),
       claimed: norm.slice(0, 160),
     });
@@ -120,14 +199,17 @@ if (JSON_OUT) {
 const out = [`Verbatim claims checked: ${claims}`, `Unverified claims:       ${failures.length}`, ""];
 for (const f of failures) {
   out.push(`! ${f.file}:${f.line} (${f.kind})`);
+  out.push(`    checked against:  ${f.source} — ${f.scope}`);
   out.push(`    claimed verbatim: ${f.claimed}${f.claimed.length >= 160 ? "…" : ""}`);
   out.push(`    diverges at:      ${f.diverges}`);
   out.push("");
 }
 if (failures.length > 0) {
-  out.push("A block claimed as source text does not appear in the source. The usual cause is");
-  out.push("formatting added to the quotation — backticks around an identifier, a changed dash, a");
-  out.push("reworded line. Reproduce the source exactly, or drop the verbatim claim.");
+  out.push("A block claimed as source text does not appear in the source it was checked against.");
+  out.push("The usual cause is formatting added to the quotation — backticks around an identifier, a");
+  out.push("changed dash, a reworded line. The other cause is scope: a quote must appear inside one");
+  out.push("of the sections its standard declares in the inventory, not merely somewhere in the file.");
+  out.push("Reproduce the source exactly, fix the declared sections, or drop the verbatim claim.");
 } else {
   out.push("Every block claimed as source text appears in the source.");
 }

@@ -1,227 +1,282 @@
 {
-  "$comment": "CANONICAL ENUMERATION. Reviewed by a human against artifacts/prompts/engineering-standards-spec.md and committed as the source of truth for how many standards exist and what they are called. Extraction from the source is tested AGAINST this file - this file is never regenerated from a run. A parser change must not be able to silently redefine the series. See scripts/inventory.mjs.",
-  "source": "artifacts/prompts/engineering-standards-spec.md",
+  "$comment": "CANONICAL ENUMERATION. Reviewed by a human against the reviewed source documents listed under sources[] and committed as the source of truth for how many standards exist and what they are called. Extraction from the source is tested AGAINST this file - this file is never regenerated from a run. A parser change must not be able to silently redefine the series. See scripts/inventory.mjs.",
+  "sources": [
+    {
+      "path": "artifacts/prompts/engineering-standards-spec.md",
+      "extraction": "numbered-items",
+      "expectedCount": 44
+    },
+    {
+      "path": "artifacts/prompts/second-fold-in-prompt.md",
+      "extraction": "reviewed-sections",
+      "expectedCount": 0
+    }
+  ],
   "reviewedOn": "2026-08-08",
   "expectedCount": 44,
   "standards": [
     {
       "number": 1,
       "title": "Human and AI Operability",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/01-human-and-ai-operability.md"
     },
     {
       "number": 2,
       "title": "Propose vs Execute",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/02-propose-vs-execute.md"
     },
     {
       "number": 3,
       "title": "Auditing",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/03-auditing.md"
     },
     {
       "number": 4,
       "title": "Planning Standards",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/04-planning-standards.md"
     },
     {
       "number": 5,
       "title": "Resumability",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/05-resumability.md"
     },
     {
       "number": 6,
       "title": "Project Manifest",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/06-project-manifest.md"
     },
     {
       "number": 7,
       "title": "Acceptance Criteria",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/07-acceptance-criteria.md"
     },
     {
       "number": 8,
       "title": "Status Tracking",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/08-status-tracking.md"
     },
     {
       "number": 9,
       "title": "Verification",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/09-verification.md"
     },
     {
       "number": 10,
       "title": "Scope Change Management",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/10-scope-change-management.md"
     },
     {
       "number": 11,
       "title": "Architecture Decision Records",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/11-architecture-decision-records.md"
     },
     {
       "number": 12,
       "title": "Structured Errors",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/12-structured-errors.md"
     },
     {
       "number": 13,
       "title": "Idempotency",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/13-idempotency.md"
     },
     {
       "number": 14,
       "title": "Structured Results",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/14-structured-results.md"
     },
     {
       "number": 15,
       "title": "AI Tool Contracts",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/15-ai-tool-contracts.md"
     },
     {
       "number": 16,
       "title": "Security",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/16-security.md"
     },
     {
       "number": 17,
       "title": "Agent Instruction Files",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/17-agent-instruction-files.md"
     },
     {
       "number": 18,
       "title": "Machine-Readable Project Policy",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/18-machine-readable-project-policy.md"
     },
     {
       "number": 19,
       "title": "JSON Schema",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/19-json-schema.md"
     },
     {
       "number": 20,
       "title": "Exceptions",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/20-exceptions.md"
     },
     {
       "number": 21,
       "title": "Versioning",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/21-versioning.md"
     },
     {
       "number": 22,
       "title": "Adoption and Migration",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/22-adoption-and-migration.md"
     },
     {
       "number": 23,
       "title": "Standards Validator CLI",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/23-standards-validator-cli.md"
     },
     {
       "number": 24,
       "title": "Validator Rules",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/24-validator-rules.md"
     },
     {
       "number": 25,
       "title": "Validator Output",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/25-validator-output.md"
     },
     {
       "number": 26,
       "title": "Stable Rule IDs",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/26-stable-rule-ids.md"
     },
     {
       "number": 27,
       "title": "Rule Catalog",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/27-rule-catalog.md"
     },
     {
       "number": 28,
       "title": "GitHub Actions",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/28-github-actions.md"
     },
     {
       "number": 29,
       "title": "Testing",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/29-testing.md"
     },
     {
       "number": 30,
       "title": "Compliance Scoring",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/30-compliance-scoring.md"
     },
     {
       "number": 31,
       "title": "WhatsNext Compatibility",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/31-whatsnext-compatibility.md"
     },
     {
       "number": 32,
       "title": "Documentation Quality",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/32-documentation-quality.md"
     },
     {
       "number": 33,
       "title": "Bootstrap Experience",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/33-bootstrap-experience.md"
     },
     {
       "number": 34,
       "title": "Dogfooding",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/34-dogfooding.md"
     },
     {
       "number": 35,
       "title": "Planning Requirements",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/35-planning-requirements.md"
     },
     {
       "number": 36,
       "title": "Implementation Strategy",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/36-implementation-strategy.md"
     },
     {
       "number": 37,
       "title": "Quality Bar",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/37-quality-bar.md"
     },
     {
       "number": 38,
       "title": "Definition of Done",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/38-definition-of-done.md"
     },
     {
       "number": 39,
       "title": "Codebase Documentation Standard",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/39-codebase-documentation.md"
     },
     {
       "number": 40,
       "title": "Diffable AI Changes",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/40-diffable-ai-changes.md"
     },
     {
       "number": 41,
       "title": "Decisions, Assumptions, and Unresolved Questions",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/41-decisions-assumptions-and-questions.md"
     },
     {
       "number": 42,
       "title": "Documentation Freshness",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/42-documentation-freshness.md"
     },
     {
       "number": 43,
       "title": "Documentation Completion Requirement",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/43-documentation-completion.md"
     },
     {
       "number": 44,
       "title": "Existing Project Reconstruction",
+      "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/44-existing-project-reconstruction.md"
     }
   ]

@@ -468,6 +468,35 @@ test("source extraction agrees with the reviewed inventory", () => {
   assert.deepEqual(out.titleMismatches, []);
 });
 
+test("every standard names a source the inventory declares", () => {
+  // The enabling invariant for a second source document: an entry whose `source` is not in
+  // `sources[]` would be checked against nothing at all — by inventory, and by fidelity, which
+  // resolves each standard's source through this same field.
+  const r = spawnSync(process.execPath, [path.join(REPO, "scripts/inventory.mjs"), "--json"], {
+    encoding: "utf8",
+  });
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.orphans, [], "an inventory entry names no declared source");
+  assert.deepEqual(out.brokenSections, [], "a standard claims a source section that does not exist");
+  assert.deepEqual(
+    out.duplicateSections,
+    [],
+    "two standards claim the same source section without sharedSections",
+  );
+  assert.equal(
+    out.expectedCount,
+    out.sources.reduce((n, s) => n + s.expectedCount, 0),
+    "the global expected count must be the sum of its sources",
+  );
+  for (const source of out.sources) {
+    assert.equal(
+      source.declaredCount,
+      source.expectedCount,
+      `${source.path} declares ${source.declaredCount} standards but expects ${source.expectedCount}`,
+    );
+  }
+});
+
 test("every implementedBy path exists, and every standards file is claimed", () => {
   const r = spawnSync(process.execPath, [path.join(REPO, "scripts/inventory.mjs"), "--json"], {
     encoding: "utf8",
