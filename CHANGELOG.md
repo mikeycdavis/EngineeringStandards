@@ -33,6 +33,37 @@ No rule was added, changed, or removed, so no version has been cut
 - The defer check reads the templates **with comments stripped**. It had been passing on a mention
   of `AGENTS.md` inside an explanatory comment — the part an adopter deletes on the way in — so a
   template whose body had stopped deferring would still have passed.
+- **[Standard 44](standards/44-existing-project-reconstruction.md) R11** — tool-generated scaffolding
+  is never evidence about the project, the consuming-side mirror of Standard 33 R7. `standards init`
+  creates the plan directory *empty* in reconstruction mode, so a reconstruction that tests for the
+  presence of that directory reads the tool's own output as proof a plan exists and refuses to run at
+  exactly the moment it was needed.
+- **[Standard 44](standards/44-existing-project-reconstruction.md) R12 — the validated-search
+  invariant**, named so other standards can cite it: *a negative discovery result is evidence about
+  the search mechanism before it is evidence about the project.* `UNKNOWN` requires the failed search
+  to be recorded, and labels are one-way ratchets: `INFERRED` never becomes `OBSERVED` silently.
+  Cross-referenced from Standards 24 and 29, which are the same idea for validators and for tests.
+- **R9 provenance fields** — `confirmedBy` / `confirmedAt` / `question` / `reference`, deliberately
+  the same shape as attestation provenance and deliberately not the same mechanism: a reconstruction
+  confirmation is evidence about the *project*, an attestation is evidence about *rule compliance*.
+
+### Fixed
+
+- **The plan-breakdown detector tested presence, not content.** A `00-overview.md` holding nothing
+  but headings satisfied it — the same defect `hasContent()` fixed inside `init`, one level up where
+  nothing was left to catch it. It now reports an overview with no line outside its headings, and
+  says plainly in Standard 44's `## Implementation` where that check stops: whether prose that *is*
+  there is a real plan or an untouched template is a judgement, and no scan makes it.
+- **`design/standards-audit-cli.md` claimed the audit was unimplemented.** It opened with "Nothing
+  described here is implemented" while `scripts/standards.mjs` had shipped all sixteen of its finding
+  categories since 1.0.0 — a Standard 32 R3 defect in the framework's own design record. Reframed as
+  the implemented contract, with a table of the three places implementation went past the design.
+
+### Added — audit
+
+- **`undated-owner-confirmation`** — a `CONFIRMED_BY_OWNER` label with no `(YYYY-MM-DD)` in
+  `open-questions.md`. An answer whose age is unknown cannot be reassessed when the product changes.
+  Scoped to that one document on purpose; Standard 44 records what the check does not cover.
 
 ### Dogfooded
 

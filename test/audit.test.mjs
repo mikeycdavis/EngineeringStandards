@@ -17,6 +17,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -212,6 +214,79 @@ test("a repository with no plan breakdown is reported", () => {
   assert.match(of(res, "missing-planning-artifacts")[0].standardRef, /#r4--/);
 });
 
+// ---------------------------------------------------------------------------
+// Standard 44 R11 — the tool must not read its own scaffolding as a plan
+// ---------------------------------------------------------------------------
+
+/**
+ * Built rather than committed, for the same reason init's fixtures are: this one is defined by what
+ * it does NOT contain — an empty directory — and an empty directory does not survive git.
+ */
+async function scaffold(overview = null) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-scaffold-"));
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await writeFile(path.join(dir, "src/x.js"), "export const x = 1;\n", "utf8");
+  // Exactly what `standards init` leaves in reconstruction mode: the directory, and nothing in it.
+  await mkdir(path.join(dir, "artifacts/project-plan-breakdown"), { recursive: true });
+  if (overview !== null) {
+    await writeFile(path.join(dir, "artifacts/project-plan-breakdown/00-overview.md"), overview, "utf8");
+  }
+  return dir;
+}
+
+test("an empty plan directory init created is not a plan (Standard 44 R11)", async () => {
+  // The trap this guards: init creates the directory EMPTY on purpose, so any detector that tests
+  // for its presence reports "this project has a plan" on the strength of the tool's own output.
+  const dir = await scaffold();
+  try {
+    const res = audit(dir);
+    assert.ok(
+      ids(res).has("missing-planning-artifacts"),
+      "an empty plan directory must still be reported as missing planning artifacts",
+    );
+
+    // And the two commands must agree. init routing to reconstruction while audit reports a plan
+    // would leave the operator with two answers and no way to tell which one looked.
+    const r = spawnSync(process.execPath, [CLI, "init", `--dir=${dir}`, "--dry-run", "--json"], {
+      encoding: "utf8",
+    });
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.reconstructionRequired, true, "init must route an empty plan dir to reconstruction");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a plan overview that is headings only is not a plan either", async () => {
+  // One level past the empty directory: a file exists, so a presence check passes, and it says
+  // nothing. The check stops here — whether real prose is a genuine plan is a judgement, and
+  // Standard 44's Implementation section says so rather than implying this covers it.
+  const dir = await scaffold("# Overview\n\n## Sections\n");
+  try {
+    const res = audit(dir);
+    const f = of(res, "missing-planning-artifacts");
+    assert.equal(f.length, 1);
+    assert.match(f[0].message, /headings only/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a plan overview with real content is accepted", async () => {
+  // The mutation in reverse, and the assertion that matters: give the same fixture substantive
+  // prose and the finding must disappear. Without this the two tests above would pass on a detector
+  // that simply always fires.
+  const dir = await scaffold("# Overview\n\nOne section, covering the API surface in `01-api.md`.\n");
+  try {
+    assert.ok(
+      !ids(audit(dir)).has("missing-planning-artifacts"),
+      "a plan overview with content must not be reported",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("unanswered reconstruction questions are counted, answered ones are not", () => {
   const res = audit(fixture("delegated"));
   const q = of(res, "open-reconstruction-questions");
@@ -221,6 +296,21 @@ test("unanswered reconstruction questions are counted, answered ones are not", (
   assert.ok(
     !ids(audit(fixture("compliant"))).has("open-reconstruction-questions"),
     "a baseline whose questions are all answered must not be reported",
+  );
+});
+
+test("an owner confirmation with no date is reported; a dated one is not", () => {
+  // R3 requires the date and R9 requires the rest of the provenance. Only the date is greppable,
+  // so only the date is checked — the negative fixture is what keeps this from being a detector
+  // that fires on the word CONFIRMED_BY_OWNER itself.
+  const res = audit(fixture("delegated"));
+  const f = of(res, "undated-owner-confirmation");
+  assert.equal(f.length, 1);
+  assert.match(f[0].message, /^1 CONFIRMED_BY_OWNER label/);
+
+  assert.ok(
+    !ids(audit(fixture("compliant"))).has("undated-owner-confirmation"),
+    "a confirmation carrying (YYYY-MM-DD) must not be reported",
   );
 });
 

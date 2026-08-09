@@ -342,6 +342,36 @@ When answers are received:
 5. create or update ADRs where necessary
 6. record material scope changes
 
+**Provenance — an addition beyond the source.** A `CONFIRMED_BY_OWNER` label with only a date says
+that *somebody* answered *something*. A year later the answer cannot be reassessed, because the
+reader cannot tell who is being relied on or which question they were actually asked. Every
+`CONFIRMED_BY_OWNER` claim MUST therefore record, alongside the label:
+
+| Field | Meaning |
+| --- | --- |
+| `confirmedBy` | Who answered. A person or role, not "the owner". |
+| `confirmedAt` | The date the answer was given, `YYYY-MM-DD`. This is the date R3 already requires. |
+| `question` | What they were actually asked — the question as put, not a summary of the answer. |
+| `reference` | Where the exchange is recorded, if anywhere: an issue, a decision record, a message link. MAY be omitted when no durable record exists, and its absence is itself information. |
+
+These names are deliberately the same shape as attestation provenance
+([ADR 0005](../artifacts/adr/0005-attestations-are-recorded-human-evidence.md)), which records
+`reviewedBy` / `reviewedAt` / `evidence` / `reference`:
+
+| Reconstruction confirmation | Attestation | Both record |
+| --- | --- | --- |
+| `confirmedBy` | `reviewedBy` | the human being relied on |
+| `confirmedAt` | `reviewedAt` | when the judgement was made |
+| `question` | `evidence` | what the judgement was about |
+| `reference` | `reference` | where it is recorded |
+
+They are compatible on purpose and **are not the same mechanism**, also on purpose. A reconstruction
+confirmation is evidence about the *project* — it establishes what the software is meant to do. An
+attestation is evidence about *rule compliance* — it establishes that a human evaluated a rule the
+catalog says only a human can evaluate. Confirming a product fact never satisfies a rule, and
+attesting to a rule never establishes a product fact. One provenance vocabulary across both keeps a
+third dialect from appearing; one mechanism across both would let either be mistaken for the other.
+
 ### R10 — Definition of Done
 
 A pre-existing project is sufficiently reconstructed when:
@@ -362,14 +392,116 @@ A pre-existing project is sufficiently reconstructed when:
 14. A fresh engineer or AI agent can understand the project and continue work without access to
     historical chat.
 
-## Tooling (forward-looking)
+### R11 — Tool-generated scaffolding is never evidence
 
-A future audit mode — `standards audit .` — is designed but deliberately **not implemented in v1**.
-The artifacts required by this standard are shaped so that such an audit can consume them without
-rework: see [design/standards-audit-cli.md](../design/standards-audit-cli.md).
+**An addition beyond the source specification**, recorded here so it is visible as a choice rather
+than mistaken for the original text. The source could not have anticipated it: the failure it
+prevents was created by tooling this framework wrote after the source was written.
+
+Artifacts created by tooling are evidence about the tooling. They MUST NOT be treated as evidence
+about the project.
+
+Concretely: an `artifacts/project-plan-breakdown/` directory that `standards init` created, a
+`PROJECT.md` / `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md` still carrying its
+template text, an empty or placeholder plan file — none of these MUST be labeled `OBSERVED` as
+evidence of pre-existing project intent, and none of them MUST cause reconstruction to conclude that
+a plan already exists and stop.
+
+**Content, not presence, is what counts.** A plan directory establishes that a plan exists only when
+it contains substantive plan content: at least one file stating real purpose, deliverables, and
+completion criteria for real work in this project. A directory holding nothing, or holding an
+untouched template, is a directory the tool made.
+
+This is the consuming-side mirror of [Standard 33](33-bootstrap-experience.md) R7, and it is written
+here because the bug is real rather than hypothetical. `standards init` creates the plan directory
+**empty** in reconstruction mode, precisely so that no fabricated history is scaffolded over existing
+code. A second run then read its own empty directory as proof a plan existed and flipped the mode to
+`existing-with-plan`, erasing the `reconstructionRequired` signal. The fix — a directory counts only
+when it has content — is recorded at `scripts/init.mjs` and in the 1.1.0 changelog. A reconstruction
+that tests for the *presence* of the artifacts init creates reproduces exactly that defect, one level
+up, where nothing is left to catch it.
+
+### R12 — The validated-search invariant
+
+**An addition beyond the source specification.** The source requires evidence before questions (R1)
+and a label on every claim (R3); it does not say what makes a *negative* result reportable at all.
+That gap is where the framework's own worst failure mode lives, so the invariant is named here and
+given an address other standards can cite.
+
+> **A negative discovery result is evidence about the search mechanism before it is evidence about
+> the project.**
+
+Not finding something establishes, in the first instance, only that the search did not find it.
+Whether it also establishes something about the project depends entirely on whether the search was
+capable of finding it — and that is a property of the search, which must therefore be recorded
+alongside the result.
+
+This invariant pairs with R1. R1 forbids asking what the evidence can answer; R12 forbids concluding
+what the search did not establish. Together: **unanswered is not unsearched, and unsearched is not
+absent.**
+
+Operationally:
+
+1. `UNKNOWN` MUST NOT be assigned until the search that failed is itself recorded — what was looked
+   for, where, and how. R8's *what evidence was inspected* is where that record lives for a question;
+   for a claim, it belongs beside the label.
+2. A search that could not have succeeded produces no finding about the project at all. Grepping for
+   a term the project spells differently, scanning a directory the code does not live in, or reading
+   a file format the tool cannot parse yields `UNKNOWN` with the mechanism named — never "the project
+   does not do this".
+3. Label transitions are **one-way ratchets with provenance**. `INFERRED` becomes `OBSERVED` only by
+   citing the evidence newly found, and becomes `CONFIRMED_BY_OWNER` only through R9 with its
+   provenance fields. A label never strengthens silently, and never strengthens because the claim was
+   repeated often enough to feel established.
+
+The same invariant appears elsewhere in the standards under other names, and they are cross-references
+rather than duplicates: [Standard 24](24-validator-rules.md) — a check may claim only what its own
+kind of check establishes, so a clean structural scan is not a statement about behaviour;
+[Standard 29](29-testing.md) — a test that cannot fail proves nothing about the code under it. All
+three are one idea: *the instrument constrains the conclusion.*
+
+**Scope note.** This invariant is broader than reconstruction. It governs TODO scans, "no tests cover
+this" claims, missing-API findings, and every clean detector result the tooling produces. It lives
+here because reconstruction is where it was first needed and where it is most load-bearing; other
+standards cite it at this address. If it is ever promoted into a general validation standard, this
+section becomes the pointer and the definition moves — the wording does not fork.
+
+## Tooling
+
+`standards audit .` is implemented (`scripts/standards.mjs`) and consumes the artifacts this standard
+requires: it reports missing baseline artifacts, unlabeled claims, and plan/backlog pointers that
+resolve to nothing. Its contract is recorded in
+[design/standards-audit-cli.md](../design/standards-audit-cli.md); the findings it produces are bound
+to the canonical rule IDs in [`rules/reconstruction.json`](../rules/reconstruction.json).
 
 ## Implementation
 
 This standard is executed by the global `project-reconstruction` skill at
 `C:\Users\Mike\.claude\skills\project-reconstruction\`. The skill is the procedure — phases,
 templates, and commands. This document is the contract the skill must satisfy.
+
+**Mechanically checked.** Two rules carry canonical IDs and are evaluated by `standards audit`:
+`reconstruction.baseline-artifacts` (R4's artifacts exist) and `reconstruction.open-questions` (R8's
+questions carry the required parts, and R12's record of what search failed). Plan-item pointers that
+resolve to nothing are detected as plan/backlog discrepancies (R7). Three checks are worth naming
+because their limits matter:
+
+| Check | What it establishes | What it does not |
+| --- | --- | --- |
+| A plan directory holds an overview with content outside its headings (R11) | The directory is not the empty one `standards init` leaves behind, and the overview is not a bare title | Whether prose that is there is a real plan or an untouched template. That is a judgement; no scan makes it |
+| `CONFIRMED_BY_OWNER` carries a `(YYYY-MM-DD)` date (R3, R9) | Every confirmation in `open-questions.md` can be reassessed against a date | The rest of R9's provenance, which is prose; and any labeled claim outside that one file. The scan reads the questions document, so that is all it may claim ([Standard 24](24-validator-rules.md)) |
+| Open questions are surfaced rather than quietly closed (R8) | Questions marked open are counted and reported | Whether a question marked answered really was |
+
+**Not mechanically checked, and honestly so.** R11 and R12 are discipline, not structure, and no rule
+ID is claimed for them:
+
+- R11's substantive-content test is a judgement about whether a plan file says anything real. The
+  tooling makes the same judgement in its own narrow way — `standards init` treats a directory as
+  evidence only when it holds a `.md` — but a template-shaped file that says nothing is
+  indistinguishable from a real one by structure alone. The reconstruction agent judges it and MUST
+  state what it judged and why.
+- R12's ratchet — that `INFERRED` never silently becomes `OBSERVED` — is a constraint on *how a claim
+  changed over time*, and cannot be evaluated from a single snapshot of a repository. Nothing in a
+  finished document distinguishes a label that was earned from one that was assumed. It is enforced
+  normatively here and procedurally by the skill; claiming a test covers it would be exactly the false
+  green this framework exists to prevent.

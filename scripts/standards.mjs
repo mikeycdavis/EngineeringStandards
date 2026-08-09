@@ -899,7 +899,20 @@ function detectArchitectureArtifacts() {
   }
 }
 
-function detectMissingPlanningArtifacts(files) {
+/**
+ * Standard 44 R11: content, not presence.
+ *
+ * `standards init` creates artifacts/project-plan-breakdown/ EMPTY in reconstruction mode, on
+ * purpose — scaffolding template sections over existing code is a fabricated history. A detector
+ * that tests for the directory therefore reports "this project has a plan" on the strength of the
+ * tool's own output, which is the same defect hasContent() fixed inside init one level down.
+ *
+ * The test is deliberately structural and stops where structure stops: an overview with no line
+ * outside its headings says nothing, and that is checkable. Whether prose that IS there is a real
+ * plan or an untouched template is a judgement no scan makes, and Standard 44's Implementation
+ * section says so rather than implying this check covers it.
+ */
+function detectMissingPlanningArtifacts(files, contents) {
   const dir = "artifacts/project-plan-breakdown";
   if (!has(dir)) {
     addFinding({
@@ -914,7 +927,8 @@ function detectMissingPlanningArtifacts(files) {
     });
     return;
   }
-  if (!has(`${dir}/00-overview.md`)) {
+  const overview = files.find((f) => rel(f) === `${dir}/00-overview.md`);
+  if (!overview) {
     addFinding({
       id: "missing-planning-artifacts",
       rule: "planning.breakdown-directory",
@@ -923,6 +937,23 @@ function detectMissingPlanningArtifacts(files) {
       label: "OBSERVED",
       evidence: [`${dir}/`],
       message: `${dir}/ exists but has no 00-overview.md.`,
+      standardRef: R.artifacts,
+    });
+    return;
+  }
+
+  const body = (contents.get(overview) ?? "")
+    .split("\n")
+    .filter((line) => line.trim() && !line.trimStart().startsWith("#"));
+  if (body.length === 0) {
+    addFinding({
+      id: "missing-planning-artifacts",
+      rule: "planning.breakdown-directory",
+      category: "Missing planning artifacts",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [`${dir}/00-overview.md`],
+      message: `${dir}/00-overview.md is headings only; a plan directory is evidence of a plan only when it has content (Standard 44 R11).`,
       standardRef: R.artifacts,
     });
   }
@@ -1054,6 +1085,25 @@ function detectOpenQuestions(files, contents) {
   const text = contents.get(qFile) ?? "";
   // Fixed, greppable marker written by the project-reconstruction skill's questions template.
   const open = (text.match(/^\s*-?\s*\*\*Status:\*\*\s*open\s*$/gim) ?? []).length;
+
+  // Standard 44 R3/R9: a confirmation with no date cannot be reassessed when the product changes,
+  // because nothing says how old the answer is. Scoped to this one document deliberately — it is
+  // the file already in hand, and claiming to check every labeled claim in the repository would be
+  // a wider assurance than this scan earns (Standard 24).
+  const undated = (text.match(/CONFIRMED_BY_OWNER(?!\s*\(\d{4}-\d{2}-\d{2}\))/g) ?? []).length;
+  if (undated > 0) {
+    addFinding({
+      id: "undated-owner-confirmation",
+      rule: "reconstruction.open-questions",
+      category: "Open reconstruction questions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [rel(qFile)],
+      message: `${undated} CONFIRMED_BY_OWNER label(s) carry no (YYYY-MM-DD) date, so the answer cannot be reassessed.`,
+      standardRef: R.questions,
+    });
+  }
+
   if (open === 0) return;
 
   addFinding({
@@ -1357,7 +1407,7 @@ detectAiInterfaces(files, contents);
 
 detectMissingDocs(files, contents);
 detectArchitectureArtifacts();
-detectMissingPlanningArtifacts(files);
+detectMissingPlanningArtifacts(files, contents);
 detectMissingAuditInfrastructure(files);
 detectUnverifiedFunctionality(files);
 detectUnfinished(files);

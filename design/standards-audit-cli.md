@@ -2,16 +2,30 @@
 
 ## Purpose and non-goals
 
-This is a **design document only**. Nothing described here is implemented, and v1 of the standards
-ships no audit tool. It exists so the artifacts mandated by the standards — particularly
-[Standard 44](../standards/44-existing-project-reconstruction.md) — are shaped from the start to be
-machine-readable by an audit that arrives later, rather than needing rework when it does.
+**This design is implemented.** `scripts/standards.mjs` ships all sixteen finding categories below,
+and has since 1.0.0. The document was written before the tool existed, so that the artifacts mandated
+by the standards — particularly
+[Standard 44](../standards/44-existing-project-reconstruction.md) — would be shaped from the start to
+be machine-readable rather than needing rework. It stays because it remains the record of the
+*contract and the decisions*: the finding categories, the flag vocabulary, the zero-dependency
+choice, and the use/mention rule, which is the one section an implementation is most likely to get
+wrong and has already got wrong five times.
+
+**Where the implementation went past this design**, recorded here so the document does not quietly
+understate what exists:
+
+| Change | Where |
+| --- | --- |
+| The command split in two — `audit` discovers evidence, `validate` produces the verdict. This document describes `audit` alone; nothing here specifies a compliance status, because the verdict engine did not exist when it was written | [ADR 0004](../artifacts/adr/0004-audit-and-validate-are-separate-commands.md) |
+| Every finding carries a canonical `rule` id from the catalog, not only a `standardRef`. Categories were the identity when this was written; rule IDs are now the identity, and categories are how findings are grouped for a reader | [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md), `rules/` |
+| `standardRef` resolves to a section anchor in a standard file, so a finding links to the requirement rather than naming it | `scripts/standards.mjs` |
 
 The audit is scoped to **all** standards, not only 44. That is why this design lives in `design/`
 rather than inside a single standard document.
 
-**Non-goals:** this document does not specify an implementation language, a package layout, or a
-release plan. It specifies the contract an implementation would have to satisfy.
+**Non-goals:** this document does not specify a package layout or a release plan. The implementation
+language was left open here and settled in the building: Node with zero third-party dependencies, for
+the reasons recorded below.
 
 ## CLI contract
 
@@ -230,9 +244,13 @@ flat findings, stable ids, no nesting that a consumer must traverse to count pro
 Most categories map to a scan described in the table above. Two mappings are load-bearing and must
 stay consistent with what the `project-reconstruction` skill writes:
 
-- **`missing-planning-artifacts`** ← the presence or absence of the directory
-  `artifacts/project-plan-breakdown/`. This is why the skill always creates the directory with at
-  least `00-overview.md`, even for a small project.
+- **`missing-planning-artifacts`** ← the *content* of `artifacts/project-plan-breakdown/`, never its
+  presence. This is why the skill always creates the directory with at least `00-overview.md`, even
+  for a small project — and why the detector reports a directory that exists but holds no substantive
+  overview. Presence alone cannot be the test:
+  [Standard 44](../standards/44-existing-project-reconstruction.md) R11 exists because `standards
+  init` creates this directory **empty** in reconstruction mode, so a presence check reads the
+  tool's own scaffolding as proof the project has a plan.
 - **`open-reconstruction-questions`** ← lines matching `**Status:** open` in
   `artifacts/project-baseline/open-questions.md`. This is why the questions template uses a fixed,
   greppable `**Status:** open` / `**Status:** answered` line rather than free prose. Changing that
