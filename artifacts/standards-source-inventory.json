@@ -122,22 +122,22 @@
     {
       "number": 24,
       "title": "Validator Rules",
-      "implementedBy": null
+      "implementedBy": "standards/24-validator-rules.md"
     },
     {
       "number": 25,
       "title": "Validator Output",
-      "implementedBy": null
+      "implementedBy": "standards/25-validator-output.md"
     },
     {
       "number": 26,
       "title": "Stable Rule IDs",
-      "implementedBy": null
+      "implementedBy": "standards/26-stable-rule-ids.md"
     },
     {
       "number": 27,
       "title": "Rule Catalog",
-      "implementedBy": null
+      "implementedBy": "standards/27-rule-catalog.md"
     },
     {
       "number": 28,
