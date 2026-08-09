@@ -279,3 +279,35 @@ attestations:
         - test/init.test.mjs
       revision: "e3c4866..75b6e8c"
       digest: "fee57b4cc01dc42194a27fda1713f0c6"
+
+  # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
+  # the review turned up a real violation in each, and the attestation records the corrected state.
+  architecture.no-hidden-global-state:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "The rule has a real subject here and is discharged the way Standard 51 R1 asks, not by declaring it away. ADR 0007 names the state categorically -- every module-level accumulator, cache, and counter in scripts/standards.mjs, scripts/inventory.mjs and scripts/fidelity.mjs -- with a complete enumeration of the fourteen bindings as of 2.0.0, and names frozen lookup tables as configuration rather than state. Owner: the top-level run block, one per script, with addFinding the only writer to findings and the read loop the only writer to sources and contents. Reset: process exit and only process exit, with the accepted failure mode stated -- importing the module would run an audit as a side effect and a second import would return the first run's results from the module cache. Three invalidation conditions are named, with the mechanical refactor to apply when one arrives. Review event: the first draft of the ADR enumerated two bindings and glossed the rest, missing contents at scripts/standards.mjs:1653; this review rejected it, and the record was made categorical before approval."
+    reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
+    reviewedAgainst:
+      paths:
+        - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+        - scripts/standards.mjs
+        - scripts/inventory.mjs
+        - scripts/fidelity.mjs
+      revision: "e3c4866..HEAD"
+      digest: "9a0609376e2d9b8715377f674466a02c"
+
+  architecture.no-duplicate-implementations:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "Section-heading matching is single-owner. It had been implemented twice with independently hand-escaped regexes -- sectionRe in scripts/inventory.mjs and sectionText in scripts/fidelity.mjs, both landed in the same commit as Standard 51 itself, with sectionRe exported and imported by nothing. Verified after remediation: scripts/sections.mjs holds the only heading regex in scripts/, sectionText is built on sectionRe rather than restating it, and both former consumers import the definition. Two tests hold the shape -- one fails if any second heading regex appears anywhere in scripts/ or either consumer stops importing, the other exercises the owner against the real source document including that regex metacharacters in a section name are escaped rather than interpreted. Reintroducing the duplicate is caught by that test and by the inventory check independently."
+    reference: "standards/51-architecture-integrity.md"
+    reviewedAgainst:
+      paths:
+        - scripts/sections.mjs
+        - scripts/inventory.mjs
+        - scripts/fidelity.mjs
+        - test/audit.test.mjs
+      revision: "e3c4866..HEAD"
+      digest: "0ebf4e74b1c889d912c493b1515782e5"
