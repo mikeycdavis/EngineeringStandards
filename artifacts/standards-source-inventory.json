@@ -182,22 +182,22 @@
     {
       "number": 36,
       "title": "Implementation Strategy",
-      "implementedBy": null
+      "implementedBy": "standards/36-implementation-strategy.md"
     },
     {
       "number": 37,
       "title": "Quality Bar",
-      "implementedBy": null
+      "implementedBy": "standards/37-quality-bar.md"
     },
     {
       "number": 38,
       "title": "Definition of Done",
-      "implementedBy": null
+      "implementedBy": "standards/38-definition-of-done.md"
     },
     {
       "number": 39,
       "title": "Codebase Documentation Standard",
-      "implementedBy": null
+      "implementedBy": "standards/39-codebase-documentation.md"
     },
     {
       "number": 40,

@@ -59,7 +59,11 @@ Backfilling the remaining items as documents is in progress.
 | 33 | Bootstrap Experience | [standards/33-bootstrap-experience.md](standards/33-bootstrap-experience.md) | *not implemented — no `standards init`* | active |
 | 34 | Dogfooding | [standards/34-dogfooding.md](standards/34-dogfooding.md) | the repository itself (partial) | active |
 | 35 | Planning Requirements | [standards/35-planning-requirements.md](standards/35-planning-requirements.md) | `plan-structure`, `plan-handoff` | active |
-| 36–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 36 | Implementation Strategy | [standards/36-implementation-strategy.md](standards/36-implementation-strategy.md) | *the build order itself* | active |
+| 37 | Quality Bar | [standards/37-quality-bar.md](standards/37-quality-bar.md) | *none — delegates to the standards it names* | active |
+| 38 | Definition of Done | [standards/38-definition-of-done.md](standards/38-definition-of-done.md) | *not implemented — release criteria not met* | active |
+| 39 | Codebase Documentation Standard | [standards/39-codebase-documentation.md](standards/39-codebase-documentation.md) | `codebase-docs` — **conflicts on R4**, see the document | active |
+| 40–43 | *(see the source spec)* | *backfill pending* | `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 The canonical enumeration of the series lives in
