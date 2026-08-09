@@ -7,13 +7,20 @@ anything being installed there. A standard is the contract; its skill is the imp
 
 ## Standards
 
-Standards 1–43 exist today only as their implementing skills — `codebase-docs`, `plan-structure`,
-`plan-handoff`, `backlog`, `backlog-validate`, `backlog-reconcile`, and `pre-push`. Backfilling them
-as documents here is pending.
+The source specification for the whole series is committed at
+[artifacts/prompts/engineering-standards-spec.md](artifacts/prompts/engineering-standards-spec.md).
+It defines 43 standards numbered 1–44 — **there is no item 8**; the source skips it, and the gap is
+preserved rather than closed by renumbering, because the numbers are how work refers to these
+standards.
+
+Backfilling the remaining items as documents is in progress.
 
 | # | Standard | Doc | Implementing skill(s) | Status |
 | --- | --- | --- | --- | --- |
-| 1–43 | *(various)* | *backfill pending* | `codebase-docs`, `plan-structure`, `plan-handoff`, `backlog`, `backlog-validate`, `backlog-reconcile`, `pre-push` | implemented as skills |
+| 1 | Human and AI Operability | [standards/01-human-and-ai-operability.md](standards/01-human-and-ai-operability.md) | *none — a design constraint* | active |
+| 2 | Propose vs Execute | [standards/02-propose-vs-execute.md](standards/02-propose-vs-execute.md) | *none — a design constraint* | active |
+| 3 | Auditing | [standards/03-auditing.md](standards/03-auditing.md) | *none — a design constraint* | active |
+| 4–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `plan-structure`, `plan-handoff`, `backlog`, `backlog-validate`, `backlog-reconcile`, `pre-push` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 ## Design documents
@@ -26,7 +33,7 @@ Forward-looking designs that are not yet implemented:
 ## Layout
 
 ```text
-standards/    One numbered normative document per standard.
+standards/    One numbered normative document per standard (NN-<kebab-title>.md).
 design/       Forward-looking designs, not yet implemented.
 artifacts/
   prompts/    Source spec material the standards were written from.
