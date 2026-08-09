@@ -108,7 +108,7 @@ adding `Purpose` to this standard's five. That is a deliberate strengthening for
 where an item's reason for existing is exactly what the missing history would otherwise have supplied.
 A project following Standard 44 satisfies this standard as well; the reverse does not hold.
 
-Standard 8 governs the `Status` field's vocabulary.
+[Standard 8](08-status-tracking.md) governs the `Status` field's vocabulary.
 [Standard 4](04-planning-standards.md) governs where these items live.
 
 ## Implementation

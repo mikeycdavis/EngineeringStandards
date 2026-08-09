@@ -22,7 +22,11 @@ Backfilling the remaining items as documents is in progress.
 | 5 | Resumability | [standards/05-resumability.md](standards/05-resumability.md) | *none — a property of the repository* | active |
 | 6 | Project Manifest | [standards/06-project-manifest.md](standards/06-project-manifest.md) | *none* | active |
 | 7 | Acceptance Criteria | [standards/07-acceptance-criteria.md](standards/07-acceptance-criteria.md) | *none — partly checked by `standards audit`* | active |
-| 8–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile`, `pre-push` | partly implemented as skills |
+| 8 | Status Tracking | [standards/08-status-tracking.md](standards/08-status-tracking.md) | *none — see the vocabulary divergence noted in the document* | active |
+| 9 | Verification | [standards/09-verification.md](standards/09-verification.md) | `pre-push` | active |
+| 10 | Scope Change Management | [standards/10-scope-change-management.md](standards/10-scope-change-management.md) | *none — a discipline, not a procedure* | active |
+| 11 | Architecture Decision Records | [standards/11-architecture-decision-records.md](standards/11-architecture-decision-records.md) | *none* | active |
+| 12–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 ## Design documents

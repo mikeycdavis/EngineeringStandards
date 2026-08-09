@@ -74,8 +74,8 @@ This standard is the outcome the others produce:
 | Question from R1 | Answered by |
 | --- | --- |
 | What the project does, architecture, stack | [Standard 6](06-project-manifest.md) manifest; `docs/architecture.md` under Standard 39 |
-| What is complete, remaining, blocked | Standard 8 status vocabulary, applied to [Standard 4](04-planning-standards.md) plan files |
-| Important decisions and why | Architecture Decision Records under Standard 11 |
+| What is complete, remaining, blocked | [Standard 8](08-status-tracking.md) status vocabulary, applied to [Standard 4](04-planning-standards.md) plan files |
+| Important decisions and why | Architecture Decision Records under [Standard 11](11-architecture-decision-records.md) |
 | How to build, test, verify | [Standard 6](06-project-manifest.md) build and test commands; [Standard 7](07-acceptance-criteria.md) verification |
 | What should happen next | [Standard 6](06-project-manifest.md) next recommended work |
 
