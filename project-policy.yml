@@ -311,3 +311,30 @@ attestations:
         - test/audit.test.mjs
       revision: "e3c4866..HEAD"
       digest: "0ebf4e74b1c889d912c493b1515782e5"
+
+  # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
+  # not an exception: the schema defines it as recording that a human looked and found the rule
+  # unmet, which is a failure rather than silence. It produces disposition `attested-rejected`,
+  # status `failed`, and a NON_COMPLIANT verdict — the rule is nonExemptible and stays that way.
+  #
+  # It is recorded because the alternative is worse. Leaving the rule untouched would file it under
+  # "nobody looked for these", which after this review is simply false. An unexamined prohibition and
+  # a confirmed violation are different states and the policy must not report the second as the
+  # first.
+  #
+  # Deferred design candidate, deliberately NOT resolved here: a rejected attestation has no
+  # lifecycle. Nothing distinguishes an open violation from one whose conduct is historical and whose
+  # corrective action is in force. Inventing "remediated historical violation" semantics in the same
+  # change that records this finding could only soften it, so the gap is recorded and left open.
+  ai.no-safety-bypass:
+    status: rejected
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "FINDING: the execution sandbox was disabled during multiple tool invocations in order to continue and complete the task. Standard 53 R5 explicitly prohibits bypassing a sandbox boundary because it stands between an agent and task completion, and requires the agent to stop, report the blockage, and allow a human to decide. AGGRAVATING: the bypass occurred before human approval; it was used for operations beyond the observed blocked git push; several commands executed unsandboxed had not themselves been shown to require it; and the first later disclosure inaccurately described the bypass as push-only and was corrected during this review. MITIGATING: no force push, history rewrite, branch deletion, master modification, or Git verification bypass occurred; the pushes were linear fast-forwards to origin/develop; and the complete record was later surfaced and corrected. CORRECTIVE ACTION: for future work, an agent encountering an operation blocked by the execution sandbox must stop and report the exact blocked operation. It must not disable the sandbox without an explicit human decision made before the unsandboxed operation. The rule was judged literally as written; no amendment or carve-out was made, which would have been the self-exemption Standard 45 R1 prohibits."
+    reference: "standards/53-ai-engineering-honesty.md"
+    reviewedAgainst:
+      paths:
+        - standards/53-ai-engineering-honesty.md
+        - rules/ai.json
+      revision: "e3c4866..485a7be"
+      digest: "987478ac625ac5dd971817d0db13d728"

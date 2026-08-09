@@ -89,28 +89,45 @@ The source prompt asks for one at completion.
 | **Partial** | 3 code-analysis (`security.no-secrets-in-artifacts`, `errors.no-swallowed-exceptions`, `security.no-cert-bypass`, `security.no-sql-concat` — four detectors, all `partial`) |
 | **Review-required** | 19 `manual-review` rules. Each standard states why, and none claims a weak detector instead |
 | **Exceptions** | Defined per rule with conditions, justification, evidence, approval, and revisit conditions. Non-exemptible where the qualifier is internal: `meta.standards-not-weakened`, `testing.no-weakening-to-pass`, `testing.no-fabricated-results`, `errors.no-false-success`, `data.no-silent-discard`, `data.no-audit-corruption`, `security.no-disabled-access-controls`, `ai.no-fabricated-capabilities`, `ai.no-safety-bypass` |
-| **Tests added** | 143 total, up from 125. Positive and negative fixtures per detector; all four rows of the verdict semantics table; both exception-precedence boundaries; a required-level negative control; every mutation plant caught |
-| **Validation result** | Full gate green. `validate` reports `NOT_EVALUATED` on this repository — see below |
+| **Tests added** | 145 total, up from 125. Positive and negative fixtures per detector; all four rows of the verdict semantics table; both exception-precedence boundaries; a required-level negative control; every mutation plant caught |
+| **Validation result** | Full gate green. `validate` reports `NON_COMPLIANT` on this repository — see below |
 | **Remaining blind spots** | Git-history detection (test removal, coverage regression, history rewriting — each needs a previous state to compare against) · entropy secret scanning (brittle) · dynamic-evaluation detection (finding the call says nothing about the qualifiers) · destructive-command detection (`DROP TABLE` and `rm -rf` appear legitimately in migrations, teardown, and build scripts) |
 
-### Dogfooded — this repository reports `NOT_EVALUATED` on itself
+### Dogfooded — this repository reports `NON_COMPLIANT` on itself
 
-Eight prohibitions have no subject here and are declared not-applicable against repository evidence:
-no database or migrations, no user data, no audit store, no production data, no authentication or
-authorization anywhere in `scripts/`, no dynamic evaluation, no retry logic, no concurrency.
+Thirteen prohibitions have no subject here and are declared not-applicable against repository
+evidence: no database or migrations, no user data, no audit store, no production data, no
+authentication or authorization anywhere in `scripts/`, no dynamic evaluation, no retry logic, no
+concurrency, no observability subsystem.
 
-Eleven remain unestablished, and they are the ones about this framework's own development — whether
-a standard was weakened to let an implementation pass, whether a test was altered instead of a defect
-fixed, whether a capability was described without being checked. Those need a human review recorded
-as an attestation. An agent writing them would be manufacturing the evidence its own work needs to
-pass, which is the failure [Standard 53](standards/53-ai-engineering-honesty.md) R5 names.
+Eleven were left unestablished by the implementing agent, and they are the ones about this
+framework's own development — whether a standard was weakened to let an implementation pass, whether
+a test was altered instead of a defect fixed, whether a capability was described without being
+checked. An agent writing those would be manufacturing the evidence its own work needs to pass,
+which is the failure [Standard 53](standards/53-ai-engineering-honesty.md) R5 names. They were held
+for an owner review, and that review is what the record below reports.
 
-`architecture.no-hidden-global-state` is deliberately **not** declared not-applicable:
-`scripts/standards.mjs` holds module-level mutable state, so the rule has a real subject, and
-declaring it away because the process is short-lived would be the self-exemption
-[Standard 34](standards/34-dogfooding.md) R3 prohibits.
+**Two of the eleven were violations, found by the review and remediated before it would attest
+anything.** `architecture.no-duplicate-implementations`: section-heading matching had been
+implemented twice, in `scripts/inventory.mjs` and `scripts/fidelity.mjs`, in the same commit as
+Standard 51 itself — now owned once by `scripts/sections.mjs`.
+`architecture.no-hidden-global-state`: the rule has a real subject and was discharged the way
+Standard 51 R1 asks, by [ADR 0007](artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md)
+naming all fourteen module-level bindings, their owner, and their reset boundary — not by declaring
+the rule away because the process is short-lived, which would be the self-exemption
+[Standard 34](standards/34-dogfooding.md) R3 prohibits. The ADR's first draft named two of the
+fourteen and was rejected by the same review.
 
-**The verdict is honest and the exit code is 1.** That is the mechanism working on its author.
+**One is a confirmed violation and is recorded as one.** `ai.no-safety-bypass` carries the first
+`status: rejected` attestation this framework has issued: the execution sandbox was disabled during
+implementation to get past a blocked operation, which is exactly what
+[Standard 53](standards/53-ai-engineering-honesty.md) R5 forbids and exactly the qualifier — *to
+complete a task* — that makes the rule non-exemptible. The rule was **not** amended to accommodate
+it. A rejected attestation is not a waiver and not an approval: it records that a human looked and
+found the rule unmet, producing a failure rather than silence.
+
+**The verdict is `NON_COMPLIANT` and the exit code is 1.** That is the mechanism working on its
+author, which is the only test of it that counts.
 
 ### Also in this release
 

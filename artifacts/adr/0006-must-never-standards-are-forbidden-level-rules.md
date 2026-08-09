@@ -113,6 +113,13 @@ would be manufacturing the evidence its own work needs to pass — the failure
   since 1.x and 2.0 now disagree about which rules exist. Recorded, not closed.
 - **Git-history-based detection.** Test removal, coverage regression, and history rewriting are all
   detectable in principle and all require comparing against a previous state of the repository.
+- **A lifecycle for a rejected attestation.** `status: rejected` records that a human looked and
+  found a rule unmet, and this release is the first to use it — `ai.no-safety-bypass` in this
+  repository's own policy. It has no states after that one. Nothing distinguishes an open violation
+  from one whose conduct is historical and whose corrective action is in force, and nothing expires
+  a finding that has been discharged. Naming that gap is deliberate; the semantics were **not**
+  designed in the change that recorded the finding, because a mechanism for retiring a violation,
+  invented alongside the violation, can only soften it.
 - **Entropy-based secret scanning**, rejected as brittle; **dynamic-evaluation detection**, rejected
   because finding the call says nothing about the prohibition's qualifiers; **destructive-command
   detection**, rejected because `DROP TABLE` and `rm -rf` appear legitimately in migrations, test
