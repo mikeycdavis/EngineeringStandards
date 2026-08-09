@@ -99,7 +99,7 @@ source.
 
 ### Remove the stale `.skill` archives
 
-- **Status:** not started — independent of the blocker above
+- **Status:** done — 2026-08-08, confirmed by the owner before deletion
 - **Purpose:** `plan-handoff.skill`, `plan-structure.skill`, and `pre-push.skill` in
   `C:\Users\Mike\.claude\skills\` are zip archives each containing a single `SKILL.md`, dated well
   before the live directories of the same names. They are a second copy of three skills, already
@@ -112,6 +112,13 @@ source.
   ls ~/.claude/skills/*.skill 2>/dev/null | wc -l          # → 0
   ls ~/.claude/skills/plan-handoff/SKILL.md ~/.claude/skills/plan-structure/SKILL.md ~/.claude/skills/pre-push/SKILL.md
   ```
-  The second command must list all three files.
-- **Dependencies:** none. Confirm with the owner before deleting — they are the only copies of
-  whatever those skills said on 17 July, and this plan cannot establish whether that matters.
+  The second command must list all three files. Both confirmed after deletion.
+- **Dependencies:** none.
+- **What the archives actually contained,** established by extracting and diffing each against its
+  live counterpart before deleting: `plan-structure.skill` and `pre-push.skill` were byte-identical
+  to the live files. `plan-handoff.skill` differed by five lines, all of them superseded — the Step 1
+  sentence from before it learned about `artifacts/project-plan-breakdown/`, and the duplicated
+  "Transfer the reasoning" and "Surface the gotchas" rules that were removed as a defect. No unique
+  content was lost. Their internal timestamps disagreed with their filesystem dates (the `pre-push`
+  entry was stamped 2026-06-20 against the others' 2026-07-17), so they were not produced in a single
+  packaging pass.
