@@ -1,0 +1,46 @@
+flowchart TB
+    start(["Start: adopt the standards"])
+    impl{"Does the repo already contain<br/>meaningful implementation?"}
+    plan{"Is there a trustworthy original<br/>prompt or plan?"}
+
+    subgraph green["Greenfield adoption"]
+        g1["Add project-policy.yml"]
+        g2["Add PROJECT.md"]
+        g3["Run /plan-structure and /plan-handoff"]
+        g4["Create artifacts/project-plan-breakdown/"]
+        g1 --> g2 --> g3 --> g4
+    end
+
+    subgraph normalize["Normalize existing artifacts"]
+        n1["Add project-policy.yml"]
+        n2["Validate existing plan against Standards 4, 7, 8, 9"]
+        n3["Move the plan to artifacts/project-plan-breakdown/"]
+        n4["Record decisions already made as ADRs"]
+        n1 --> n2 --> n3 --> n4
+    end
+
+    subgraph recon["Reconstruction mode — Standard 44"]
+        r1["Inspect evidence before asking anything"]
+        r2["Run /codebase-docs"]
+        r3["Label every claim OBSERVED / INFERRED / UNKNOWN"]
+        r4["Ask only material unanswered questions"]
+        r5["Write reconstructed-baseline.md"]
+        r6["Write RECONSTRUCTED-PROMPT.md"]
+        r7["Write the decomposed plan"]
+        r1 --> r2 --> r3 --> r4 --> r5 --> r6 --> r7
+    end
+
+    validate["Validate: policy, then audit"]
+    classify["Classify every failure:<br/>fix, except, or not-applicable"]
+    done(["Adopted"])
+
+    start --> impl
+    impl -->|No| green
+    impl -->|Yes| plan
+    plan -->|Yes| normalize
+    plan -->|No| recon
+
+    green --> validate
+    normalize --> validate
+    recon --> validate
+    validate --> classify --> done

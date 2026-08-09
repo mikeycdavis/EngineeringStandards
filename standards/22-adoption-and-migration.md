@@ -106,8 +106,49 @@ fails, the project records an exception or plans the work; where an existing exc
 invalid — because its rule was made non-exemptible ([Standard 20](20-exceptions.md) R4) — that is a
 real failure to resolve, not a line to delete quietly.
 
+### R6 — The framework publishes an adoption guide, and it is a deliverable
+
+**A standards framework MUST publish an operator-facing adoption guide** — a single document telling
+a human or agent how to consume it correctly, distinct from the standards themselves.
+
+This is a requirement rather than a nicety because of what its absence costs. A repository of
+well-written rules with no adoption guide is complete and unusable: every adopter infers a workflow,
+each infers a slightly different one, and the differences surface later as projects that satisfy the
+same standards in incompatible ways. **The standards say what compliant work looks like; nothing else
+says how to get there.**
+
+The guide MUST cover, at minimum:
+
+- The deterministic **greenfield versus existing-project decision**, and where reconstruction
+  ([Standard 44](44-existing-project-reconstruction.md)) becomes mandatory
+- How to declare a version, add a policy, and validate it
+- How to classify a rule as failing, not-applicable, or excepted
+  ([Standard 34](34-dogfooding.md) R3)
+- How to interpret validator output and exit codes
+- How to upgrade to a newer version
+- What not to do
+
+Three constraints on the guide itself:
+
+- **It MUST NOT restate the standards.** It routes to them. A guide that summarises rules becomes a
+  second definition that drifts ([Standard 32](32-documentation-quality.md) R4).
+- **It MUST document what actually runs**, not what is specified. Where the two differ, the guide
+  names the real command and records the discrepancy — a recipe naming a command that does not exist
+  is a defect ([Standard 32](32-documentation-quality.md) R3), and adopters discover it at the worst
+  possible moment.
+- **It MUST state the framework's current limitations.** An adopter who learns from experience that
+  the validator does not read their policy has been misled by omission.
+
+**The guide MUST also prohibit copying the standards into the consuming repository.** A copied
+standard is a second definition that drifts silently and is only discovered when two projects
+disagree about what a rule means — [Standard 37](37-quality-bar.md) R5 at framework scale. Adopters
+reference a version and keep only project-specific declarations locally.
+
 ## Additions this standard makes beyond the source
 
+- R6 in full — the adoption guide as a required deliverable, its minimum contents, and the three
+  constraints on it. The source describes the migration flow without requiring that it be written
+  down anywhere an adopter can find it.
 - R3 in full — the non-destructive, evidence-preserving requirement and its enumerated list of what
   survives migration. The source describes the flow without saying what must not be damaged by it.
 - R4 in full — routing a missing plan to [Standard 44](44-existing-project-reconstruction.md), and
@@ -132,6 +173,22 @@ plan to move.
 Implemented in part by the **`project-reconstruction`** skill, which is R4's procedure — its Phase 0
 makes exactly the determination R4 asks for before step 4: whether the project has a trustworthy plan
 or needs reconstruction.
+
+**R6 is met.** [`INSTRUCTIONS.md`](../INSTRUCTIONS.md) is the adoption guide: eighteen sections, a
+minimum adoption recipe, and the greenfield / normalize / reconstruct decision flow as a Mermaid
+diagram whose source is [`docs/adoption-flow.mmd`](../docs/adoption-flow.mmd). It routes to the
+standards rather than restating them, opens with the prohibition on copying them, and closes with a
+table of the tooling's current limitations.
+
+It documents `standards audit` rather than `standards validate`, because that is what ships — the
+discrepancy with [Standard 23](23-standards-validator-cli.md) R2 is named in the guide instead of
+being papered over. `test/instructions.test.mjs` asserts that every command the guide shows actually
+exists, so the recipe cannot rot into a defect under
+[Standard 32](32-documentation-quality.md) R3.
+
+[`templates/`](../templates/) supplies what the recipe copies: `project-policy.yml` and `PROJECT.md`.
+The policy template is validated by the test suite against the real schema, so a template that would
+fail on an adopter's first command cannot be published.
 
 No skill covers the rest of the flow. `standards audit` supports step 7 partially, but because it
 does not yet read `project-policy.yml` it cannot perform steps 8 and 9 as written — it reports

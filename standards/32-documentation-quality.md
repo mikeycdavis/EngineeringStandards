@@ -165,11 +165,23 @@ Partially met, and the gaps are the ones R1 predicts.
 opening paragraph — a standard is the contract, its skill is the implementation — indexes all 44
 standards, and documents the layout and numbering convention, satisfying R5.
 
-**It does not answer five of R1's eight questions.** There is nothing on how a project adopts the
-standards, how validation works, how versioning works, how exceptions work, or how an agent should
-consume any of it. Four of those describe mechanisms that are documented but unbuilt, which is why
-the README cannot yet explain them without violating R3 — and it is better to be silent than to
-describe a command that does not exist.
+**R1 is now met.** The five previously-unanswered questions — adoption, validation, versioning,
+exceptions, and agent consumption — are each answered in a row of the README's *Adopting these
+standards* table, in a sentence, with a link onward. That is R1's intended shape: a routing document,
+not a second copy of the standards.
+
+The detail lives in [`INSTRUCTIONS.md`](../INSTRUCTIONS.md), which
+[Standard 22](22-adoption-and-migration.md) R6 requires. Splitting it this way is R4 in practice —
+the README says enough to orient a reader and points at the one document that owns the workflow,
+rather than growing a third description of it.
+
+Both documents describe what actually ships rather than what is specified: `INSTRUCTIONS.md` names
+`standards audit`, not the `standards validate` of
+[Standard 23](23-standards-validator-cli.md) R2, and records the discrepancy. A recipe naming a
+command that does not exist is exactly the R3 defect, and `test/instructions.test.mjs` asserts that
+every script and path the guide names exists — including a test that fails deliberately when the
+rename lands, so the guide is updated in the same change set
+([Standard 42](42-documentation-freshness.md) R2).
 
 **R2 is met.** The philosophy sentence was added to the README when this standard was written — it
 was a one-line gap that this document's own R2 made visible, and

@@ -1,0 +1,85 @@
+# Starting policy for a project adopting the engineering standards.
+#
+# Copy this to your repository root as `project-policy.yml`, then edit it. It is a starting point,
+# not a default to leave untouched — a policy nobody edited declares nothing about your project.
+#
+#   Validate it:  node <standards-repo>/scripts/policy.mjs ./project-policy.yml
+#   Shape:        schemas/project-policy.schema.json
+#   Meaning:      standards/18-machine-readable-project-policy.md
+#
+# Three rules the schema enforces, so you find out immediately rather than later:
+#
+#   * Rule IDs are canonical kebab-case (ADR 0002). The camelCase spellings that appear in the
+#     source specification are legacy aliases and will be rejected.
+#   * `applicability` and `exceptions` are different mechanisms and never substitute for each other.
+#       not-applicable = the rule has no subject in this project.
+#       exception      = the rule applies, and you knowingly do not satisfy it.
+#   * Nothing here asserts compliance. What you actually meet comes from a validation run.
+
+standardVersion: "1.0.0"
+project: "REPLACE-ME"
+
+# Every rule you adopt, and at what level. A rule you delete from this map is not "off" — it takes
+# the framework default, and a validator reports how many rules you left undeclared. Declare them.
+rules:
+  planning.breakdown-directory:
+    level: required
+  planning.one-file-per-section:
+    level: required
+  planning.acceptance-criteria:
+    level: required
+  planning.verification:
+    level: required
+  planning.handoff:
+    level: required
+
+  audit.business-state:
+    level: required
+  audit.actor-attribution:
+    level: required
+
+  ai.non-ui-capabilities:
+    level: required
+  ai.provider-neutral:
+    level: required
+  ai.propose-execute:
+    level: required
+  ai.destructive-approval:
+    level: required
+
+  architecture.project-manifest:
+    level: required
+  architecture.adr:
+    level: required
+
+  security.no-secrets-in-artifacts:
+    level: required
+
+  verification.before-completion:
+    level: required
+
+# Rules whose subject does not exist in your project. Delete the example and write your own.
+#
+# A not-applicable declaration is a claim about YOUR PROJECT, not about the rule, and it stops being
+# true the moment you add the capability — which is what `revisitWhen` is for. Every entry needs a
+# reason; an entry without one is indistinguishable from a rule somebody forgot.
+# applicability:
+#   audit.business-state:
+#     status: not-applicable
+#     reason: "Read-only reporting service; it holds no business state."
+#     reviewedAt: "2026-01-01"
+#     revisitWhen: "The service gains a write path."
+
+# Rules that DO apply and that you are knowingly not satisfying, with approval and a date.
+#
+# Reach for this only when the rule genuinely applies. If you are tempted to write an exception
+# because a requirement is inconvenient, the honest alternative is to leave the rule failing —
+# a visible failure is worth more than an approved one that stops being looked at. An exception
+# past its `expires` date is a compliance failure, not a resolution.
+exceptions: []
+  # - rule: ai.propose-execute
+  #   reason: "Legacy scheduler applies changes directly; separation lands with the queue migration."
+  #   approvedBy: "project-owner"
+  #   approvedAt: "2026-01-01"
+  #   expires: "2026-12-31"
+  #   reference: "ADR-0004"

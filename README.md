@@ -9,10 +9,26 @@ anything being installed there. A standard is the contract; its skill is the imp
 > can be traced, and a fresh engineer or agent can resume the work without relying on conversation
 > history.
 
-Every standard in the series resolves back to one of those four clauses. See
-[Standard 32](standards/32-documentation-quality.md) for what else this document is required to
-explain — five of its eight questions are not answered here yet, because they describe mechanisms
-that are specified and unbuilt.
+Every standard in the series resolves back to one of those four clauses.
+
+## Adopting these standards
+
+**Start with [INSTRUCTIONS.md](INSTRUCTIONS.md)** — the operator-facing guide for consuming this
+repository from another project. It covers the greenfield / existing-project decision, declaring a
+version, adding and validating `project-policy.yml`, classifying rules as failing, not-applicable, or
+excepted, interpreting exit codes, upgrading, and what not to do. It also states the tooling's
+current limitations, which matter more than the rules when you are starting out.
+
+Briefly, so this page answers the questions [Standard 32](standards/32-documentation-quality.md) R1
+requires of it:
+
+| Question | Short answer | Detail |
+| --- | --- | --- |
+| How a project adopts | Copy a policy from [`templates/`](templates/), declare a version, create the required artifacts, audit | [INSTRUCTIONS.md](INSTRUCTIONS.md), [Standard 22](standards/22-adoption-and-migration.md) |
+| How validation works | `npm run policy` checks the policy's shape; `npm run audit` scans a repository and reports findings with evidence labels | [Standard 23](standards/23-standards-validator-cli.md), [24](standards/24-validator-rules.md) |
+| How standards are versioned | Semantic. A new `required` rule is `MAJOR`; a `recommended` one is `MINOR`. Projects pin a version and are evaluated against the rules in force in it | [Standard 21](standards/21-versioning.md) |
+| How exceptions work | A rule that applies and is knowingly unmet, with reason, approver, date, and usually an expiry. Distinct from `not-applicable`, which means the rule has no subject in your project | [Standard 20](standards/20-exceptions.md), [34](standards/34-dogfooding.md) R3 |
+| How AI agents consume it | Agent instruction files point at `INSTRUCTIONS.md`, then `project-policy.yml`, then individual standards on demand — never all 44 up front | [Standard 17](standards/17-agent-instruction-files.md), [31](standards/31-whatsnext-compatibility.md) |
 
 ## Standards
 
@@ -46,17 +62,17 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | `schemas/project-policy.schema.json`, `scripts/jsonschema.mjs` | active |
 | 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | `scripts/policy.mjs` — declared and expiry-checked, not yet applied | active |
 | 21 | Versioning | [standards/21-versioning.md](standards/21-versioning.md) | *none — no framework version published yet* | active |
-| 22 | Adoption and Migration | [standards/22-adoption-and-migration.md](standards/22-adoption-and-migration.md) | `project-reconstruction` (R4) | active |
+| 22 | Adoption and Migration | [standards/22-adoption-and-migration.md](standards/22-adoption-and-migration.md) | [INSTRUCTIONS.md](INSTRUCTIONS.md), `project-reconstruction` | active |
 | 23 | Standards Validator CLI | [standards/23-standards-validator-cli.md](standards/23-standards-validator-cli.md) | `scripts/standards.mjs` — audited in the document | active |
 | 24 | Validator Rules | [standards/24-validator-rules.md](standards/24-validator-rules.md) | `scripts/standards.mjs` (partial) | active |
 | 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/standards.mjs` (partial) | active |
 | 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | enforced by the policy schema (partial) | active |
 | 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | *not implemented — no rule catalog exists yet* | active |
 | 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
-| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 55 tests, 3 files (partial) | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 63 tests, 4 files (partial) | active |
 | 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | *not implemented — no score is computed* | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
-| 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README (partial) | active |
+| 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README, [INSTRUCTIONS.md](INSTRUCTIONS.md) | active |
 | 33 | Bootstrap Experience | [standards/33-bootstrap-experience.md](standards/33-bootstrap-experience.md) | *not implemented — no `standards init`* | active |
 | 34 | Dogfooding | [standards/34-dogfooding.md](standards/34-dogfooding.md) | the repository itself (partial) | active |
 | 35 | Planning Requirements | [standards/35-planning-requirements.md](standards/35-planning-requirements.md) | `plan-structure`, `plan-handoff` | active |
@@ -94,7 +110,9 @@ Forward-looking designs that are not yet implemented:
 ## Layout
 
 ```text
+INSTRUCTIONS.md     How to adopt and use the framework from another project.
 standards/          One numbered normative document per standard (NN-<kebab-title>.md).
+templates/          What an adopting project copies.
 design/             Forward-looking designs, not yet implemented.
 schemas/            JSON Schemas for the structured contracts (Standard 19).
 project-policy.yml  This repository's own policy (Standard 18), the first dogfooded instance.
