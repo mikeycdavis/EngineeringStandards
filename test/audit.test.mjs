@@ -109,6 +109,34 @@ test("a comment naming a job library is not a job, but importing one is", () => 
   );
 });
 
+test("mentions inside a code file are not uses", () => {
+  // The structural fix for the recurring defect. test/fixtures/markers/src/commented.js is a real
+  // .js file containing commented-out routes, an abandoned worker in a block comment, SDK names in
+  // a comment, and code-shaped strings. No file-extension filter can help here — only the
+  // use/mention split can, which is why this test exists rather than another exclusion list.
+  const res = audit(fixture("markers"));
+  for (const id of ["detected-apis", "detected-jobs", "detected-integrations", "detected-ai-interfaces"]) {
+    assert.deepEqual(
+      evidenceOf(res, id),
+      [],
+      `${id} matched a mention: commented-out code and quoted strings are not usage`,
+    );
+  }
+  assert.deepEqual(
+    evidenceOf(res, "potential-unfinished-features"),
+    ["src/work.js"],
+    'the string "TODO: this string mentions a marker" must not count; only the real comment marker does',
+  );
+});
+
+test("the same signals, genuinely used, are still detected", () => {
+  // The other half. Without this, the test above could be satisfied by detecting nothing at all.
+  const res = audit(fixture("compliant"));
+  assert.deepEqual(evidenceOf(res, "detected-apis"), ["src/api/routes.js"], "a real app.get( call");
+  assert.deepEqual(evidenceOf(res, "detected-jobs"), ["src/jobs/nightly.js"], "a real bullmq import");
+  assert.deepEqual(evidenceOf(res, "detected-integrations"), ["src/api/routes.js"], "a real stripe import");
+});
+
 // ---------------------------------------------------------------------------
 // The delegated-liveness trap
 // ---------------------------------------------------------------------------

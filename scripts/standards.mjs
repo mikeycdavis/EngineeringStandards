@@ -6,11 +6,10 @@
  *   standards audit [path] [--json] [--dir=<path>] [--strict]
  *   node scripts/standards.mjs audit .
  *
- * This file implements the six descriptive finding categories only. They report what a repository
- * *has* and are always severity `info`. The judgemental categories (missing-*, potential-*,
- * *-discrepancies, standards-violations) are specified in design/standards-audit-cli.md and are not
- * implemented yet; `--strict` therefore cannot fail a run today, which is stated in the report
- * rather than left for a reader to discover.
+ * Implements all sixteen finding categories from design/standards-audit-cli.md: six descriptive ones
+ * that report what a repository has (always `info`), and ten that report something absent, unproven,
+ * or contradictory (`warning` or `error`). Coverage within several categories is deliberately
+ * shallow; the report says so rather than leaving a reader to assume a clean run means compliant.
  *
  * No third-party dependencies, by the decision recorded in design/standards-audit-cli.md.
  */
@@ -86,6 +85,134 @@ const CODE_EXT = new Set([
 
 /** True when this file's *content* may be scanned for a code signal. */
 const isCode = (f) => CODE_EXT.has(path.extname(f));
+
+// ---------------------------------------------------------------------------
+// Use versus mention
+// ---------------------------------------------------------------------------
+
+/**
+ * THE recurring defect in this tool, stated once so it is not rediscovered a sixth time.
+ *
+ * Every detector answers "does this repository use X?" by searching text for a string associated
+ * with X. That string occurs in two unrelated kinds of place: files that *use* X, and files that
+ * merely *mention* it — documentation, comments, test names, and this file's own pattern tables.
+ * Raw text search cannot distinguish the two, and five separate bugs have come from trying to fix it
+ * by narrowing which *files* are read. That was always the wrong axis: the fifth instance was a
+ * mention inside a code file.
+ *
+ * The fix is to scan only the positions where a use can occur, which means three scan modes matching
+ * the three kinds of evidence. Every content scan in this file goes through one of them, and a new
+ * detector that reaches for raw text is reintroducing the bug.
+ *
+ *   structureOf(f) code with comments removed AND string contents blanked — for structural signals
+ *                  like `app.get(`, `@Scheduled`, `new Queue(`. A call is never inside a string.
+ *   sourceOf(f)    code with comments removed, strings intact — for import matching only, because an
+ *                  import specifier *is* a string: `from "bullmq"`.
+ *   commentsOf(f)  comment text only — TODO/FIXME markers, which are by definition a comment
+ *                  convention, so a marker named in a string or in prose is correctly invisible.
+ */
+
+/** Comment syntax by extension. Enabling the wrong one corrupts the split — `//` is floor division
+ *  in Python, `--` is decrement in JavaScript, `#` starts a private field in JavaScript. */
+const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
+const HASH = [".py", ".rb", ".sh", ".ps1"];
+const COMMENT_SYNTAX = new Map([
+  ...C_LIKE.map((e) => [e, { line: "//", block: true }]),
+  ...HASH.map((e) => [e, { line: "#", block: false }]),
+  [".sql", { line: "--", block: true }],
+]);
+
+/**
+ * Split source into code and comments with a small state machine. String literals stay in the code
+ * half deliberately — import specifiers live inside them, so stripping strings would break the very
+ * detection this exists to protect.
+ *
+ * Approximate by design: it does not understand regex literals, Python docstrings, or heredocs. It
+ * only has to be right enough that a sentence in a comment stops being mistaken for a call.
+ */
+function splitSource(text, ext) {
+  const syntax = COMMENT_SYNTAX.get(ext);
+  if (!syntax) return { code: text, structure: text, comments: "" };
+
+  let code = "";
+  let structure = "";
+  let comments = "";
+  let mode = "code";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    const rest2 = text.substr(i, 2);
+
+    if (mode === "code") {
+      if (rest2 === syntax.line || (syntax.line.length === 1 && c === syntax.line)) {
+        mode = "line";
+        i += syntax.line.length;
+        continue;
+      }
+      if (syntax.block && rest2 === "/*") {
+        mode = "block";
+        i += 2;
+        continue;
+      }
+      if (c === "'" || c === '"' || c === "`") {
+        mode = c;
+        code += c;
+        structure += c; // the quote survives; its contents do not
+        i++;
+        continue;
+      }
+      code += c;
+      structure += c;
+      i++;
+      continue;
+    }
+
+    if (mode === "line") {
+      if (c === "\n") {
+        mode = "code";
+        code += "\n";
+        comments += "\n";
+        i++;
+        continue;
+      }
+      comments += c;
+      i++;
+      continue;
+    }
+
+    if (mode === "block") {
+      if (rest2 === "*/") {
+        mode = "code";
+        comments += "\n";
+        i += 2;
+        continue;
+      }
+      comments += c;
+      i++;
+      continue;
+    }
+
+    // Inside a string literal: preserved in the code half, escapes skipped.
+    if (c === "\\") {
+      code += text.substr(i, 2);
+      i += 2;
+      continue;
+    }
+    if (c === mode) {
+      mode = "code";
+      structure += c;
+    }
+    code += c;
+    i++;
+  }
+  return { code, structure, comments };
+}
+
+/** Populated once per run, alongside `contents`, so the split cost is paid a single time. */
+const sources = new Map();
+const sourceOf = (f) => sources.get(f)?.code ?? "";
+const structureOf = (f) => sources.get(f)?.structure ?? "";
+const commentsOf = (f) => sources.get(f)?.comments ?? "";
 
 const MAX_FILES = 20000;
 const MAX_READ_BYTES = 400_000;
@@ -322,8 +449,8 @@ function detectApis(files, contents) {
     if (/(^|\/)\w*Controller\.(cs|java|ts|js|py|rb)$/i.test(r)) return true;
     if (/(^|\/)(routes?|controllers?|api|endpoints?)\//i.test(r) && isCode(f)) return true;
     if (!isCode(f)) return false; // prose describing a route table is not a route
-    const text = contents.get(f);
-    return text ? API_CONTENT.some((re) => re.test(text)) : false;
+    const code = structureOf(f); // a commented-out or quoted route is not a route
+    return code ? API_CONTENT.some((re) => re.test(code)) : false;
   });
   if (handlers.length === 0) return;
 
@@ -373,9 +500,8 @@ function detectJobs(files, contents) {
   const jobs = files.filter((f) => {
     if (JOB_NAME.test(path.basename(f))) return true;
     if (!isCode(f)) return false; // prose naming Celery or BullMQ is not a scheduler
-    const text = contents.get(f);
-    if (!text) return false;
-    return JOB_CONTENT.some((re) => re.test(text)) || importPattern(JOB_PACKAGES).test(text);
+    if (JOB_CONTENT.some((re) => re.test(structureOf(f)))) return true;
+    return importPattern(JOB_PACKAGES).test(sourceOf(f)); // imports live in strings
   });
   if (jobs.length === 0) return;
 
@@ -430,8 +556,8 @@ function detectIntegrations(files, contents) {
   for (const [pattern, name] of INTEGRATION_SDK) {
     const re = importPattern(pattern);
     for (const f of files) {
-      const text = contents.get(f);
-      if (text && re.test(text)) {
+      const code = sourceOf(f);
+      if (code && re.test(code)) {
         if (!found.has(name)) found.set(name, []);
         found.get(name).push(rel(f));
       }
@@ -481,8 +607,8 @@ function detectAiInterfaces(files, contents) {
   for (const [pattern, name] of AI_SDK) {
     const re = importPattern(pattern);
     for (const f of files) {
-      const text = contents.get(f);
-      if (text && re.test(text)) {
+      const code = sourceOf(f);
+      if (code && re.test(code)) {
         if (!providers.has(name)) providers.set(name, []);
         providers.get(name).push(rel(f));
       }
@@ -596,26 +722,33 @@ function detectUnverifiedFunctionality(files) {
   });
 }
 
-const UNFINISHED = [
-  // Require the punctuation a real marker carries — `TODO:` or `TODO(owner)`. Without it, any file
-  // that discusses markers matches, which is how this tool's own test suite got flagged.
+/**
+ * Markers are a *comment* convention — that is what a TODO is. Scanned against commentsOf(), so a
+ * test named "a Markdown file naming TODO" and a sentence in a design document are both invisible to
+ * it, without needing either to be excluded by hand.
+ */
+const UNFINISHED_COMMENTS = [
   [/\b(TODO|FIXME|HACK|XXX)\b\s*[:(]/, "TODO/FIXME markers"],
+];
+
+/** Stubs and skipped tests are code constructs, so they are scanned against sourceOf(). */
+const UNFINISHED_CODE = [
   [/\bNotImplemented(Error|Exception)?\b|\braise NotImplementedError\b|\bthrow new NotImplementedException\b/, "unimplemented stubs"],
   [/\b(it|test|describe)\.skip\(|\bxit\(|@pytest\.mark\.skip|\[Ignore\]|\bt\.Skip\(/, "skipped tests"],
 ];
 
-function detectUnfinished(files, contents) {
+function detectUnfinished(files) {
   const byKind = new Map();
+  const record = (kind, f) => {
+    if (!byKind.has(kind)) byKind.set(kind, []);
+    byKind.get(kind).push(rel(f));
+  };
   for (const f of files) {
     if (!isCode(f)) continue; // a TODO in a Markdown file is a note, not an unfinished code path
-    const text = contents.get(f);
-    if (!text) continue;
-    for (const [re, kind] of UNFINISHED) {
-      if (re.test(text)) {
-        if (!byKind.has(kind)) byKind.set(kind, []);
-        byKind.get(kind).push(rel(f));
-      }
-    }
+    const comments = commentsOf(f);
+    const code = structureOf(f);
+    for (const [re, kind] of UNFINISHED_COMMENTS) if (comments && re.test(comments)) record(kind, f);
+    for (const [re, kind] of UNFINISHED_CODE) if (code && re.test(code)) record(kind, f);
   }
   if (byKind.size === 0) return;
 
@@ -929,7 +1062,10 @@ const files = await collectFiles(root, []);
 const contents = new Map();
 for (const f of files) {
   if (path.resolve(f) === SELF) continue; // see the SELF declaration above
-  if (TEXT_EXT.has(path.extname(f))) contents.set(f, await readText(f));
+  if (!TEXT_EXT.has(path.extname(f))) continue;
+  const text = await readText(f);
+  contents.set(f, text);
+  if (isCode(f)) sources.set(f, splitSource(text, path.extname(f)));
 }
 
 // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
@@ -944,7 +1080,7 @@ detectMissingDocs(files, contents);
 detectMissingPlanningArtifacts(files);
 detectMissingAuditInfrastructure(files);
 detectUnverifiedFunctionality(files);
-detectUnfinished(files, contents);
+detectUnfinished(files);
 detectDeadCode(files, contents);
 detectOpenQuestions(files, contents);
 await detectPlanDiscrepancies(files, contents);
