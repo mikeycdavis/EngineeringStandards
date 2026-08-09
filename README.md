@@ -28,15 +28,18 @@ requires of it:
 | How validation works | `npm run policy` checks the policy's shape; `npm run audit` scans a repository and reports findings with evidence labels | [Standard 23](standards/23-standards-validator-cli.md), [24](standards/24-validator-rules.md) |
 | How standards are versioned | Semantic. A new `required` rule is `MAJOR`; a `recommended` one is `MINOR`. Projects pin a version and are evaluated against the rules in force in it | [Standard 21](standards/21-versioning.md) |
 | How exceptions work | A rule that applies and is knowingly unmet, with reason, approver, date, and usually an expiry. Distinct from `not-applicable`, which means the rule has no subject in your project | [Standard 20](standards/20-exceptions.md), [34](standards/34-dogfooding.md) R3 |
-| How AI agents consume it | Agent instruction files point at `INSTRUCTIONS.md`, then `project-policy.yml`, then individual standards on demand — never all 44 up front | [Standard 17](standards/17-agent-instruction-files.md), [31](standards/31-whatsnext-compatibility.md) |
+| How AI agents consume it | Agent instruction files point at `INSTRUCTIONS.md`, then `project-policy.yml`, then individual standards on demand — never all 53 up front | [Standard 17](standards/17-agent-instruction-files.md), [31](standards/31-whatsnext-compatibility.md) |
 
 ## Standards
 
-The source specification for the whole series is committed at
-[artifacts/prompts/engineering-standards-spec.md](artifacts/prompts/engineering-standards-spec.md).
-It defines **44 standards, numbered 1–44 with no gaps**.
+The series derives from two reviewed source documents, both committed:
+[engineering-standards-spec.md](artifacts/prompts/engineering-standards-spec.md), which defines
+standards 1–44 as numbered items, and
+[second-fold-in-prompt.md](artifacts/prompts/second-fold-in-prompt.md), which defines the must-never
+layer, standards 45–53, as reviewed sections rather than numbered items. Together: **53 standards,
+numbered 1–53 with no gaps.**
 
-**All 44 are written.** What remains is implementation, which each document discloses in its own
+**All 53 are written.** What remains is implementation, which each document discloses in its own
 `## Implementation` section.
 
 | # | Standard | Doc | Implementing skill(s) | Status |
@@ -67,9 +70,9 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 24 | Validator Rules | [standards/24-validator-rules.md](standards/24-validator-rules.md) | `scripts/standards.mjs` (partial) | active |
 | 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/compliance.mjs` — full envelope | active |
 | 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | `rules/`, `scripts/catalog.mjs` | active |
-| 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | `rules/` — 24 rules, 8 categories | active |
+| 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | `rules/` — 50 rules, 16 categories | active |
 | 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
-| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 121 tests, 6 files | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 143 tests, 6 files | active |
 | 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | `scripts/compliance.mjs` | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
 | 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README, [INSTRUCTIONS.md](INSTRUCTIONS.md) | active |
@@ -85,6 +88,19 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 42 | Documentation Freshness | [standards/42-documentation-freshness.md](standards/42-documentation-freshness.md) | `scripts/standards.mjs`, `scripts/diagrams.mjs` — two checks of five | active |
 | 43 | Documentation Completion Requirement | [standards/43-documentation-completion.md](standards/43-documentation-completion.md) | *not implemented — belongs in `pre-push`* | active |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
+| 45 | Engineering Invariants | [standards/45-engineering-invariants.md](standards/45-engineering-invariants.md) | `rules/invariants.json`, `scripts/compliance.mjs` — the verdict cap | active |
+| 46 | Source Control Safety | [standards/46-source-control-safety.md](standards/46-source-control-safety.md) | `scripts/standards.mjs` — two of four detected | active |
+| 47 | Test Integrity | [standards/47-test-integrity.md](standards/47-test-integrity.md) | *review-required — the violation is a claim about why a test changed* | active |
+| 48 | Error Handling and Observability | [standards/48-error-handling-and-observability.md](standards/48-error-handling-and-observability.md) | `scripts/standards.mjs` — one of four detected | active |
+| 49 | Data Safety | [standards/49-data-safety.md](standards/49-data-safety.md) | *review-required — see the standard for why each* | active |
+| 50 | Security Prohibitions | [standards/50-security-prohibitions.md](standards/50-security-prohibitions.md) | `scripts/standards.mjs` — two of five detected | active |
+| 51 | Architecture Integrity | [standards/51-architecture-integrity.md](standards/51-architecture-integrity.md) | *review-required — boundaries are a project-specific fact* | active |
+| 52 | Concurrency and Shared State | [standards/52-concurrency-and-shared-state.md](standards/52-concurrency-and-shared-state.md) | *review-required — sharing depends on how code is invoked* | active |
+| 53 | AI Engineering Honesty | [standards/53-ai-engineering-honesty.md](standards/53-ai-engineering-honesty.md) | `quality.unfinished-work`; the rest review-required | active |
+
+Standards 45–53 are the **must-never layer**: prohibitions rather than requirements, built from the
+catalog's `forbidden` level and governed by [Standard 45](standards/45-engineering-invariants.md).
+See [ADR 0006](artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md).
 
 The canonical enumeration of the series lives in
 [artifacts/standards-source-inventory.json](artifacts/standards-source-inventory.json) — reviewed once
@@ -101,13 +117,17 @@ source extraction still agrees with it, and CI fails if it does not.
   — Mermaid source is canonical; SVG is a generated artifact, never hand-edited.
 - [artifacts/adr/0004-audit-and-validate-are-separate-commands.md](artifacts/adr/0004-audit-and-validate-are-separate-commands.md)
   — `audit` is evidence, `validate` is the verdict; and the v1 public surface this freezes.
+- [artifacts/adr/0005-attestations-are-recorded-human-evidence.md](artifacts/adr/0005-attestations-are-recorded-human-evidence.md)
+  — an attestation records a human review; it is evidence, never a fourth kind of waiver.
+- [artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md](artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md)
+  — the must-never layer is built from the catalog's `forbidden` level, reuses existing rules rather
+  than duplicating them, and caps the verdict where a prohibition went unexamined.
 
 ## Design documents
 
-Forward-looking designs that are not yet implemented:
-
 - [design/standards-audit-cli.md](design/standards-audit-cli.md) — the `standards audit .` command:
-  finding categories, JSON output schema, and detection sources. Design only; nothing is built.
+  finding categories, JSON output schema, and detection sources. **Implemented** since 1.0.0; the
+  document remains the record of the contract and the decisions behind it.
 
 ## Layout
 

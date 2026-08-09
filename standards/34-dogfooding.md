@@ -162,7 +162,7 @@ chooses, it is the evaluator reporting that it did not look. Standard 30 R3 keep
 passed count, Standard 38 R3 keeps it from satisfying completion, and the coverage line prints it
 next to the score so a reader cannot miss it.
 
-**The limit of that claim, stated plainly:** the catalog holds 24 rules, not every requirement across
+**The limit of that claim, stated plainly:** the catalog holds 50 rules, not every requirement across
 forty-four standards. The remainder still live as prose in each standard's `## Implementation`
 section — a real disclosure that nothing counts and nothing can notice going stale. R3 is satisfied
 over the rules that exist as rules.

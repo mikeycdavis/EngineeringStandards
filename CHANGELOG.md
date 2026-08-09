@@ -13,10 +13,152 @@ All notable changes to this framework. Versioning follows
 | Output schema | The validator's JSON envelope | `schemaVersion` in every report |
 | Package | The npm package | `package.json` |
 
-## Unreleased
+## 2.0.0 — 2026-08-09
 
-No rule was added, changed, or removed, so no version has been cut
-([Standard 21](standards/21-versioning.md)).
+**`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
+means. Three things can newly fail an adopter's `validate` **with no change to their code**:
+
+- New `forbidden` rules, five of which are mechanically detected.
+- One new `required` rule, `architecture.dependency-evaluation`.
+- The unestablished-prohibition verdict rule — an applicable `forbidden` rule nobody examined caps
+  the verdict at `NOT_EVALUATED` and exits 1.
+
+**What did not change:** the policy schema (a 1.x policy file still validates), any rule id or alias,
+and every exit-code meaning except the new `NOT_EVALUATED` trigger. See
+[Upgrading from 1.x to 2.0](INSTRUCTIONS.md#upgrading-from-1x-to-20).
+
+### Added — the must-never layer
+
+- **[Standard 45](standards/45-engineering-invariants.md)** — the umbrella. Defines what a
+  prohibition *is* here: the semantics of `forbidden` (satisfied by absence of violating evidence,
+  never by the project doing something), the exception discipline, the three verification classes
+  mapped onto the assurance triple that already existed, and the verdict rule. R1 is the
+  meta-standard — *standards and tests must never be weakened, removed, bypassed, or reclassified
+  solely to permit an implementation that would otherwise violate them* — as a non-exemptible rule.
+- **[46](standards/46-source-control-safety.md)** source control,
+  **[47](standards/47-test-integrity.md)** test integrity,
+  **[48](standards/48-error-handling-and-observability.md)** errors and observability,
+  **[49](standards/49-data-safety.md)** data safety,
+  **[50](standards/50-security-prohibitions.md)** security,
+  **[51](standards/51-architecture-integrity.md)** architecture,
+  **[52](standards/52-concurrency-and-shared-state.md)** concurrency,
+  **[53](standards/53-ai-engineering-honesty.md)** AI engineering honesty.
+- **26 catalog rules**, taking the catalog from 24 to 50: 23 `forbidden`, 1 `required`
+  (`architecture.dependency-evaluation`, at `warning`), 2 `recommended`. Nine are `nonExemptible` —
+  exactly the rules whose qualifier is internal to the prohibition.
+- **The `forbidden` level is now in use.** It has been defined since 1.0.0 and used by nothing.
+- **Multi-source inventory.** Standards may derive from more than one reviewed source document. Each
+  source declares an extraction mode; each entry names its source. `reviewed-sections` is for a
+  document with no numbered items: an entry names the headings it realizes, and
+  `scripts/fidelity.mjs` verifies its quotes against the text of *those sections* rather than the
+  whole file. A section may be claimed by one standard only, unless the entry sets `sharedSections`.
+
+### Added — detectors
+
+Five, each declaring in its doc comment which source view it scans and why — enforced by a test,
+because the use/mention defect was fixed four times by narrowing which *files* are read and each fix
+was insufficient.
+
+| Rule | View | Covers |
+| --- | --- | --- |
+| `scm.no-committed-env-files` | filename only | `.env` and variants; example/template/sample/vault permitted |
+| `security.no-secrets-in-artifacts` | `sourceOf` for code, raw text for config, never Markdown | Private-key headers and provider token prefixes. Excludes `.env` — one defect, one finding |
+| `errors.no-swallowed-exceptions` | `structureOf` **and** raw | A catch empty under both readings: no handling code and no justification comment |
+| `security.no-cert-bypass` | `structureOf` | `rejectUnauthorized: false` and its equivalents; a mention in a string or comment is not a bypass |
+| `security.no-sql-concat` | `sourceOf` | A full SQL statement interpolated into a template literal or f-string |
+
+### Changed
+
+- **`security.no-secrets-in-artifacts` moved from review-required to evaluated.**
+- **The verdict.** `NOT_EVALUATED` has a new trigger and, from that trigger, exits 1. The engine
+  change sits after the `NON_COMPLIANT` and `COMPLIANT_WITH_EXCEPTIONS` determinations so it cannot
+  intercept the exception machinery, and both boundaries are tested.
+- `test/audit.test.mjs`'s anchor test now resolves each `standardRef` against the file it names,
+  rather than checking every anchor against Standard 44.
+- The plan-breakdown detector tests content rather than presence (see below).
+
+### Completion report
+
+The source prompt asks for one at completion.
+
+| | |
+| --- | --- |
+| **Prohibitions introduced** | 26 rules across 9 standards, plus `security.no-secrets-in-artifacts` newly evaluated |
+| **Reused, not duplicated** | Secrets → [16](standards/16-security.md) R2 · destructive defaults → [2](standards/02-propose-vs-execute.md) R3 · scope → [10](standards/10-scope-change-management.md) R1 · contracts → [15](standards/15-ai-tool-contracts.md) · UI logic → [1](standards/01-human-and-ai-operability.md) R1 · stubs → [38](standards/38-definition-of-done.md) R5 · hidden skips → [30](standards/30-compliance-scoring.md) R3 and [28](standards/28-github-actions.md) R5 · duplicate-on-retry → [13](standards/13-idempotency.md). The full map is Standard 45 R4 |
+| **Automated** | 2 fully (`scm.no-committed-env-files` structural; `quality.unfinished-work` already) |
+| **Partial** | 3 code-analysis (`security.no-secrets-in-artifacts`, `errors.no-swallowed-exceptions`, `security.no-cert-bypass`, `security.no-sql-concat` — four detectors, all `partial`) |
+| **Review-required** | 19 `manual-review` rules. Each standard states why, and none claims a weak detector instead |
+| **Exceptions** | Defined per rule with conditions, justification, evidence, approval, and revisit conditions. Non-exemptible where the qualifier is internal: `meta.standards-not-weakened`, `testing.no-weakening-to-pass`, `testing.no-fabricated-results`, `errors.no-false-success`, `data.no-silent-discard`, `data.no-audit-corruption`, `security.no-disabled-access-controls`, `ai.no-fabricated-capabilities`, `ai.no-safety-bypass` |
+| **Tests added** | 143 total, up from 125. Positive and negative fixtures per detector; all four rows of the verdict semantics table; both exception-precedence boundaries; a required-level negative control; every mutation plant caught |
+| **Validation result** | Full gate green. `validate` reports `NOT_EVALUATED` on this repository — see below |
+| **Remaining blind spots** | Git-history detection (test removal, coverage regression, history rewriting — each needs a previous state to compare against) · entropy secret scanning (brittle) · dynamic-evaluation detection (finding the call says nothing about the qualifiers) · destructive-command detection (`DROP TABLE` and `rm -rf` appear legitimately in migrations, teardown, and build scripts) |
+
+### Dogfooded — this repository reports `NOT_EVALUATED` on itself
+
+Eight prohibitions have no subject here and are declared not-applicable against repository evidence:
+no database or migrations, no user data, no audit store, no production data, no authentication or
+authorization anywhere in `scripts/`, no dynamic evaluation, no retry logic, no concurrency.
+
+Eleven remain unestablished, and they are the ones about this framework's own development — whether
+a standard was weakened to let an implementation pass, whether a test was altered instead of a defect
+fixed, whether a capability was described without being checked. Those need a human review recorded
+as an attestation. An agent writing them would be manufacturing the evidence its own work needs to
+pass, which is the failure [Standard 53](standards/53-ai-engineering-honesty.md) R5 names.
+
+`architecture.no-hidden-global-state` is deliberately **not** declared not-applicable:
+`scripts/standards.mjs` holds module-level mutable state, so the rule has a real subject, and
+declaring it away because the process is short-lived would be the self-exemption
+[Standard 34](standards/34-dogfooding.md) R3 prohibits.
+
+**The verdict is honest and the exit code is 1.** That is the mechanism working on its author.
+
+### Also in this release
+
+Work that landed before the must-never layer and is folded in here rather than cut separately.
+
+- **`templates/AGENTS.md`, `templates/CLAUDE.md`, and `templates/copilot-instructions.md`** — all
+  three agent bootstrap templates [Standard 17](standards/17-agent-instruction-files.md) R1 names.
+  `AGENTS.md` carries R3's load sequence in order; the other two defer to it and hold only what is
+  specific to their own agent, so the three files cannot drift into competing definitions.
+- **`standards init` writes all three**, completing the seven artifacts
+  [Standard 33](standards/33-bootstrap-experience.md) R1 names.
+- Tests enforcing R2 mechanically: each template must be shorter than the standard it routes to,
+  each secondary file shorter than `AGENTS.md` and free of the load sequence, every template `init`
+  names must exist, and a template must exist for every file R1's verbatim list names — that last
+  check is what named the missing third template rather than leaving it to be noticed.
+- The defer check reads the templates **with comments stripped**. It had been passing on a mention
+  of `AGENTS.md` inside an explanatory comment — the part an adopter deletes on the way in — so a
+  template whose body had stopped deferring would still have passed.
+- **[Standard 44](standards/44-existing-project-reconstruction.md) R11** — tool-generated scaffolding
+  is never evidence about the project, the consuming-side mirror of Standard 33 R7. `standards init`
+  creates the plan directory *empty* in reconstruction mode, so a reconstruction that tests for the
+  presence of that directory reads the tool's own output as proof a plan exists and refuses to run at
+  exactly the moment it was needed.
+- **[Standard 44](standards/44-existing-project-reconstruction.md) R12 — the validated-search
+  invariant**, named so other standards can cite it: *a negative discovery result is evidence about
+  the search mechanism before it is evidence about the project.* `UNKNOWN` requires the failed search
+  to be recorded, and labels are one-way ratchets: `INFERRED` never becomes `OBSERVED` silently.
+  Cross-referenced from Standards 24 and 29, which are the same idea for validators and for tests.
+- **R9 provenance fields** — `confirmedBy` / `confirmedAt` / `question` / `reference`, deliberately
+  the same shape as attestation provenance and deliberately not the same mechanism: a reconstruction
+  confirmation is evidence about the *project*, an attestation is evidence about *rule compliance*.
+- **`undated-owner-confirmation`** — a `CONFIRMED_BY_OWNER` label with no `(YYYY-MM-DD)` in
+  `open-questions.md`. An answer whose age is unknown cannot be reassessed when the product changes.
+
+### Fixed
+
+- **The plan-breakdown detector tested presence, not content.** A `00-overview.md` holding nothing
+  but headings satisfied it — the same defect `hasContent()` fixed inside `init`, one level up where
+  nothing was left to catch it. It now reports an overview with no line outside its headings, and
+  says plainly in Standard 44's `## Implementation` where that check stops.
+- **`design/standards-audit-cli.md` claimed the audit was unimplemented.** It opened with "Nothing
+  described here is implemented" while `scripts/standards.mjs` had shipped all sixteen of its finding
+  categories since 1.0.0 — a Standard 32 R3 defect in the framework's own design record. Reframed as
+  the implemented contract, with a table of the three places implementation went past the design.
+- **`security.no-sql-concat` reported this repository on its first run.** The first version matched a
+  bare `SELECT`, `WHERE`, or `ORDER BY`, and flagged `const where = ` in `scripts/catalog.mjs` — an
+  ordinary variable named `where`. It now requires a full statement shape, and Standard 50 R3 records
+  the episode: the brittle-check prohibition catching a check written under it, one commit later.
 
 ### Added
 

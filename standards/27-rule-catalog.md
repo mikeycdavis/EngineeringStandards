@@ -168,7 +168,7 @@ ids, per [Standard 26](26-stable-rule-ids.md) R5.
 
 ## Implementation
 
-**Implemented.** `rules/` holds eight JSON files, one per category, carrying 24 rules. Every entry
+**Implemented.** `rules/` holds fourteen JSON files, one per category group, carrying 50 rules. Every entry
 declares `id`, `title`, `standard`, `category`, `level`, `severity`, `validationType`, `assurance`,
 `nonExemptible`, `introducedIn`, `description`, `rationale`, `remediation`, `aliases`, and the
 lifecycle trio — the last three present and null rather than absent, per R2.
@@ -192,12 +192,12 @@ rule ids.
 
 A further check asserts every catalog `standard` reference resolves to a document that exists. The
 converse — every enforceable requirement having a catalog entry — is **not** checked, and the catalog
-does not claim to cover all 44 standards. It covers what the evaluator and the policy speak in.
+does not claim to cover all 53 standards. It covers what the evaluator and the policy speak in.
 
 **That gap is now a reported metric rather than a footnote.** `coverage()` emits
 `frameworkCoverage` alongside every verdict — catalogued rules, evaluated rules, standards with
-rules, and standards *fully machine-represented* — and the audit prints it. Today: 24 rules across 14
-of 44 standards, 5 fully represented.
+rules, and standards *fully machine-represented* — and the audit prints it. Today: 50 rules across 23
+of 53 standards, 6 fully represented.
 
 `fullyMachineRepresentedStandards` is deliberately strict: a standard counts only when **every** rule
 it contributes is evaluated *and* carries assurance above `none`. A looser definition would let the

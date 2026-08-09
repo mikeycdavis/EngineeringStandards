@@ -28,7 +28,7 @@ you the wrong answer confidently.
 3. **The standards version** — `standardVersion` in that policy. It selects which revision of the
    standards below governs.
 4. **The applicable standard documents** — `<standards-repo>/standards/NN-*.md`, read on demand.
-   Open one when a rule is relevant to what you are doing; do not read all 44 up front.
+   Open one when a rule is relevant to what you are doing; do not read all 53 up front.
 5. **Current plan artifacts** — `artifacts/project-plan-breakdown/`.
 6. **Decision records** — `artifacts/adr/`.
 

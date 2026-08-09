@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The durable home of a numbered series of 44 engineering standards, and the tooling that checks a
+The durable home of a numbered series of 53 engineering standards, and the tooling that checks a
 repository against them. Each standard is a normative document stating what compliant work must look
 like; the executable procedures that carry them out live as global Claude Code skills. The audience
 is the repository owner and any AI agent working in a project that claims to follow these standards.
@@ -85,8 +85,8 @@ Project-specific constraints, not a restatement of the standards:
 - **Current release target:** none. Nothing merges to `master` and no release is cut until the plan
   has zero gaps — a deferred decision with an explicit trigger
   ([Standard 41](standards/41-decisions-assumptions-and-questions.md) R3).
-- **Known risks:** The rule catalog covers 24 rules, which is the set the evaluator and policy speak
-  in — not every requirement across 44 standards. The remainder is disclosed in prose in each
+- **Known risks:** The rule catalog covers 50 rules, which is the set the evaluator and policy speak
+  in — not every requirement across 53 standards. The remainder is disclosed in prose in each
   standard's `## Implementation` section, which nothing counts and nothing notices going stale.
 - **Known blockers:** none.
 - **Next recommended work:** `VERSION` and `CHANGELOG.md` ([Standard 21](standards/21-versioning.md)),

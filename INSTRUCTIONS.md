@@ -1,7 +1,7 @@
 # INSTRUCTIONS — how to adopt and use these standards
 
 **Operator-facing.** This document tells a human or an agent how to consume this repository from
-another project. It deliberately does **not** restate the 44 standards — those are in
+another project. It deliberately does **not** restate the 53 standards — those are in
 [`standards/`](standards/), and each one states its own requirements. This is the workflow around
 them.
 
@@ -54,12 +54,12 @@ inspection. They are not aliases and their exit codes mean different things — 
 
 ## 1. What this repository is
 
-A numbered series of 44 engineering standards, each a normative document stating what compliant work
+A numbered series of 53 engineering standards, each a normative document stating what compliant work
 must look like, plus the tooling that checks a repository against them.
 
 | Part | Role |
 | --- | --- |
-| [`standards/`](standards/) | What the rules mean. One document per standard, `01`–`44` |
+| [`standards/`](standards/) | What the rules mean. One document per standard, `01`–`53` |
 | [`schemas/`](schemas/) | What a valid policy looks like ([Standard 19](standards/19-json-schema.md)) |
 | [`templates/`](templates/) | What to create in your project |
 | [`scripts/`](scripts/) | How it is enforced |
@@ -401,7 +401,7 @@ everything else. **Do not paste the standards into any of them**
 ([Standard 17](standards/17-agent-instruction-files.md) R2) — an instruction file should get
 *shorter* as the standards grow, and a copied rule becomes the one an agent actually follows.
 
-An agent should **not** read all 44 standards before starting work. It should read the policy to
+An agent should **not** read all 53 standards before starting work. It should read the policy to
 learn what applies, and open a standard when a rule is relevant to what it is doing. Each standard's
 `## Implementation` section states what is actually built versus specified, which is the difference
 between a rule you can rely on and one you cannot.
@@ -492,6 +492,48 @@ a declared state rather than a failure.
 rule still means what its author intended
 ([Standard 26](standards/26-stable-rule-ids.md) R3).
 
+### Upgrading from 1.x to 2.0
+
+2.0.0 adds the must-never layer ([Standards 45–53](standards/45-engineering-invariants.md)), and
+**your `validate` can newly fail or cap with no change to your code.** Three things cause that:
+
+1. **New `forbidden` rules.** 23 of them, five mechanically detected. A detector finding a violation
+   in code you already had is a new `NON_COMPLIANT`.
+2. **One new `required` rule** — `architecture.dependency-evaluation`, at severity `warning`.
+3. **The unestablished-prohibition rule** ([Standard 45](standards/45-engineering-invariants.md) R6).
+   An applicable `forbidden` rule that is neither evaluated, attested, nor declared not-applicable
+   caps your verdict at `NOT_EVALUATED` and **exits 1**. This is the one that will surprise you: your
+   project can be doing nothing wrong and still not report `COMPLIANT`, because a prohibition nobody
+   looked for has established nothing. A `passing` prohibition means *no violation was found by the
+   stated search*; a prohibition with no search behind it means nothing at all.
+
+**Resolve each one, in this order.** There are four honest paths and deleting the rule from your
+policy is not among them — an undeclared rule is reported as undeclared:
+
+| Path | When |
+| --- | --- |
+| **Evaluate** | A detector exists. Fix what it found, or confirm it found nothing |
+| **Attest** | A human reviewed it. Record who, when, what was reviewed, and the paths — so the attestation goes stale when they change ([ADR 0005](artifacts/adr/0005-attestations-are-recorded-human-evidence.md)) |
+| **Declare not-applicable** | The rule has no subject in your project. Include `revisitWhen`, naming what would make it apply |
+| **Except** | The rule applies, the situation is real, and the rule is exemptible. Nine rules are not — an exception against those is rejected, not recorded |
+
+Expect the first 2.0 run to report `NOT_EVALUATED` rather than `NON_COMPLIANT`. That is the intended
+experience: it is telling you which prohibitions have not been examined, not accusing you of
+violating them. This repository's own policy went through exactly that, and its `## Applicability`
+section is a worked example of the third path.
+
+**What did not change**, so you do not have to look:
+
+- **The policy schema.** A 1.x `project-policy.yml` still validates unchanged.
+- **Rule IDs and aliases.** Nothing was renamed, deprecated, or removed.
+- **Exit-code meanings**, except that `NOT_EVALUATED` from the new trigger exits 1 rather than 0. A
+  missing or unreadable policy is still exit 2.
+- **`audit`.** Its contract, flags, and exit codes are untouched; it gained five detectors.
+
+**The inventory artifact changed shape** — `artifacts/standards-source-inventory.json` now lists
+`sources[]` and every entry names its source. This matters only if you have forked this repository or
+written a tool that reads that file. It is not part of the adoption surface.
+
 ## 19. What not to do
 
 - **Do not copy the standards into your repository.** Reference the version; keep declarations local.
@@ -519,7 +561,7 @@ Stated here rather than discovered later. Most of what this table used to say is
 
 | Gap | Consequence for you |
 | --- | --- |
-| The catalog covers 24 rules across 14 of 44 standards | Rules outside it are reported `not-evaluated` rather than passing — honest, but a `COMPLIANT` verdict covers less than the whole framework. The audit prints this as `frameworkCoverage` so you never have to remember it |
+| The catalog covers 50 rules across 23 of 53 standards | Rules outside it are reported `not-evaluated` rather than passing — honest, but a `COMPLIANT` verdict covers less than the whole framework. The audit prints this as `frameworkCoverage` so you never have to remember it |
 | Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`, never passing. Read the coverage line, not just the score |
 | No `standardVersion` resolution ([21](standards/21-versioning.md) R5) | With one published version there is nothing to resolve against; an unresolvable version is not yet rejected |
 

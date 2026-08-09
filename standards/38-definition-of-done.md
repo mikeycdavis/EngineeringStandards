@@ -229,8 +229,8 @@ carried forward, as at each previous assessment (7/2/5, then 9/4/1, then 12/2/0)
 closed the last version-dependent criterion: `standardVersion: "1.0.0"` now resolves to something
 published rather than being a forward declaration.
 
-**The one remaining partial is real and is not a version problem.** The catalog covers 24 rules
-across 14 of 44 standards, so what an agent can determine *mechanically* about this repository is
+**The one remaining partial is real and is not a version problem.** The catalog covers 50 rules
+across 23 of 53 standards, so what an agent can determine *mechanically* about this repository is
 narrower than what the standards specify. `frameworkCoverage` reports exactly that on every run,
 which is the honest handling — the gap is measured and published rather than argued away.
 

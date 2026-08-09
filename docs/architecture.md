@@ -19,7 +19,7 @@
 > any rendered SVG is a generated artifact ([ADR 0003](../artifacts/adr/0003-mermaid-is-the-canonical-diagram-source.md)).
 > Never hand-edit a render.
 
-> A repository of 44 numbered engineering standards, plus the command-line tooling that checks
+> A repository of 53 numbered engineering standards, plus the command-line tooling that checks
 > repositories — including this one — against them. Each standard is a normative Markdown document
 > stating what compliant work must look like; the executable procedure that carries a standard out
 > generally lives outside this repository as a global Claude Code skill. The audience is the
@@ -35,12 +35,13 @@ rather than filled with "none", except where their absence is a design decision 
 flowchart TB
     subgraph source["Source of truth"]
         spec["engineering-standards-spec.md<br/>items 1-44"]
+        spec2["second-fold-in-prompt.md<br/>reviewed sections"]
         inventory[("standards-source-inventory.json<br/>reviewed enumeration")]
     end
 
     subgraph normative["Normative content"]
-        stds["standards/01-44<br/>one document per standard"]
-        adrs["artifacts/adr/<br/>0001 0002 0003"]
+        stds["standards/01-53<br/>one document per standard"]
+        adrs["artifacts/adr/<br/>0001-0006"]
         design["design/<br/>audit CLI design"]
     end
 
@@ -67,9 +68,11 @@ flowchart TB
     end
 
     spec -->|extracted, compared| inv
+    spec2 -->|sections verified| inv
     inv -->|checks| inventory
     inventory -->|claims| stds
     spec -->|verbatim blocks| fid
+    spec2 -->|verbatim blocks| fid
     fid -->|checks| stds
 
     policy --> pol
@@ -107,7 +110,7 @@ npx -y @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.svg
 
 | Layer | Technology |
 |---|---|
-| Normative content | Markdown. `standards/` (44 numbered documents), `design/`, `artifacts/` (source spec, ADRs, plan) |
+| Normative content | Markdown. `standards/` (53 numbered documents), `design/`, `artifacts/` (source spec, ADRs, plan) |
 | Structured contracts | `project-policy.yml` (Standard 18), `schemas/project-policy.schema.json` (Standard 19) |
 | Tooling | Node.js ≥ 18, ESM, six `.mjs` files totalling ~2,070 lines. Only `node:` builtins. **Zero third-party dependencies** |
 | Tests | `node:test` + `node:assert/strict`, 47 tests across two files over 9 committed fixtures |
@@ -123,7 +126,7 @@ recorded in [`design/standards-audit-cli.md`](../design/standards-audit-cli.md),
 
 | Path | Holds |
 |---|---|
-| `standards/NN-<kebab-title>.md` | One normative document per standard, 01–44, zero-padded so listings sort numerically |
+| `standards/NN-<kebab-title>.md` | One normative document per standard, 01–53, zero-padded so listings sort numerically |
 | `design/` | Forward-looking designs. Currently the audit CLI design, which is what a reimplementation would be built from |
 | `schemas/` | JSON Schemas for the structured contracts |
 | `project-policy.yml` | This repository's own policy — the first dogfooded instance |
@@ -131,7 +134,7 @@ recorded in [`design/standards-audit-cli.md`](../design/standards-audit-cli.md),
 | `test/` | Tests and fixture repositories, including deliberately-malformed policies |
 | `artifacts/prompts/` | The source specification, and item 44 as originally pasted |
 | `artifacts/adr/` | Accepted decision records |
-| `artifacts/standards-source-inventory.json` | The canonical, human-reviewed enumeration of the 44 standards |
+| `artifacts/standards-source-inventory.json` | The canonical, human-reviewed enumeration of the 53 standards |
 | `artifacts/project-plan-breakdown/` | The plan, one file per section |
 | `docs/` | This document and its diagram source |
 

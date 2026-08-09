@@ -1,12 +1,13 @@
 flowchart TB
     subgraph source["Source of truth"]
         spec["engineering-standards-spec.md<br/>items 1-44"]
+        spec2["second-fold-in-prompt.md<br/>reviewed sections"]
         inventory[("standards-source-inventory.json<br/>reviewed enumeration")]
     end
 
     subgraph normative["Normative content"]
-        stds["standards/01-44<br/>one document per standard"]
-        adrs["artifacts/adr/<br/>0001 0002 0003"]
+        stds["standards/01-53<br/>one document per standard"]
+        adrs["artifacts/adr/<br/>0001-0006"]
         design["design/<br/>audit CLI design"]
     end
 
@@ -33,9 +34,11 @@ flowchart TB
     end
 
     spec -->|extracted, compared| inv
+    spec2 -->|sections verified| inv
     inv -->|checks| inventory
     inventory -->|claims| stds
     spec -->|verbatim blocks| fid
+    spec2 -->|verbatim blocks| fid
     fid -->|checks| stds
 
     policy --> pol
