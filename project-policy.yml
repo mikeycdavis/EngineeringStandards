@@ -245,3 +245,37 @@ attestations:
       # files change materially this stops matching, the attestation goes stale, and the rule
       # returns to not-evaluated until a human looks again.
       digest: "8c8103086465653b64676dca6077a754"
+
+  # Checkpoint items 1 and 2 of the must-never dogfood sweep, reviewed by the owner against the
+  # 2.0.0 work itself. The commit range is recorded as `revision` — informational, never computed —
+  # because a range is a claim about history and the digest is a claim about content. Both are here
+  # on purpose: the range says what was read, the digest says whether it still holds.
+  meta.standards-not-weakened:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "No standards, rule semantics, detector behavior, compliance assertions, or failure conditions were weakened to make Track A/B pass. The shared synthetic fixture was updated to state applicability explicitly after forbidden manual-review rules acquired verdict significance. Dedicated negative tests continue to prove that an unestablished forbidden rule caps the verdict at NOT_EVALUATED, including exception-precedence boundaries. Disclosure: the synthetic fixture declares meta.standards-not-weakened not-applicable because the fixture contains no standards or tests. That declaration would not be valid for a real governed project and is documented as fixture-only at establishedProhibitions() in test/compliance.test.mjs."
+    reference: "artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md"
+    reviewedAgainst:
+      paths:
+        - scripts/compliance.mjs
+        - test/compliance.test.mjs
+        - test/audit.test.mjs
+        - test/instructions.test.mjs
+      revision: "e3c4866..75b6e8c"
+      digest: "7804fedc67f3f19b37d059a1c2ab6faa"
+
+  testing.no-weakening-to-pass:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "The test suite was not weakened merely to accommodate the new forbidden-rule verdict semantics. No relevant assertion was relaxed or removed without a stricter replacement. The shared policy() helper was changed to model the intended empty synthetic project explicitly, while bare() retains full-catalog unevaluated-rule coverage and dedicated R6 fixtures prove the new NOT_EVALUATED cap, exception precedence, attestation behavior, N/A behavior, automated pass/failure behavior, and the required-rule negative control. Notable review event: three previously-green tests became red after Standard 45 R6 was implemented and the fixture model was changed in response; this review specifically examined that change and concludes that behavioral coverage was relocated and strengthened rather than suppressed."
+    reference: "standards/47-test-integrity.md"
+    reviewedAgainst:
+      paths:
+        - test/compliance.test.mjs
+        - test/audit.test.mjs
+        - test/instructions.test.mjs
+        - test/init.test.mjs
+      revision: "e3c4866..75b6e8c"
+      digest: "fee57b4cc01dc42194a27fda1713f0c6"
