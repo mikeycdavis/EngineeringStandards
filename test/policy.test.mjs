@@ -171,3 +171,19 @@ test("unsupported YAML constructs are errors, not guesses", () => {
 test("duplicate keys are rejected rather than silently overwritten", () => {
   assert.throws(() => parseYaml("rules:\n  a.b:\n    level: required\n  a.b:\n    level: optional"), YamlError);
 });
+
+test("an exception against a non-exemptible rule is reported by the policy checker", async () => {
+  // Caught here so an adopter learns it from `standards policy`, and independently in the compliance
+  // engine so skipping this command cannot bypass it (Standard 20 R4).
+  const result = await check("non-exemptible-exception");
+  assert.equal(result.status, "findings", "a non-exemptible waiver validated cleanly");
+  assert.equal(result.findings[0].id, "policy.non-exemptible-rule");
+  assert.match(result.findings[0].message, /security\.no-secrets-in-artifacts/);
+});
+
+test("the non-exemptible check does not fire on exemptible rules", async () => {
+  // The known-negative. Without it, a blanket rejection of all exceptions would pass the test above.
+  const result = await check("valid");
+  assert.equal(result.status, "ok");
+  assert.equal(result.findings.length, 0);
+});

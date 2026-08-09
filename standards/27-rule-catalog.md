@@ -193,3 +193,19 @@ rule ids.
 A further check asserts every catalog `standard` reference resolves to a document that exists. The
 converse — every enforceable requirement having a catalog entry — is **not** checked, and the catalog
 does not claim to cover all 44 standards. It covers what the evaluator and the policy speak in.
+
+**That gap is now a reported metric rather than a footnote.** `coverage()` emits
+`frameworkCoverage` alongside every verdict — catalogued rules, evaluated rules, standards with
+rules, and standards *fully machine-represented* — and the audit prints it. Today: 24 rules across 14
+of 44 standards, 5 fully represented.
+
+`fullyMachineRepresentedStandards` is deliberately strict: a standard counts only when **every** rule
+it contributes is evaluated *and* carries assurance above `none`. A looser definition would let the
+number rise by cataloguing rules nothing checks, which would make the metric reward the appearance of
+coverage over the fact of it.
+
+It is emitted **outside** the verdict and never combines with the score
+([Standard 30](30-compliance-scoring.md) R3). A coverage improvement must not be able to read as a
+compliance improvement — that is the same elevation [Standard 24](24-validator-rules.md) R2 forbids,
+one level up. A test asserts `frameworkCoverage` is absent from the verdict object and that supplying
+it does not alter the score.

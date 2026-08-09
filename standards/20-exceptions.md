@@ -158,6 +158,19 @@ being invisible in the output.
 `disposition: "expired-exception"`, and the verdict is `NON_COMPLIANT` — the semantics R3 requires,
 now enforced in two places (the policy checker and the verdict engine) with fixtures for both.
 
-**`nonExemptible` is carried in the catalog but not yet enforced.** `ai.destructive-approval` and
-`security.no-secrets-in-artifacts` declare it, and nothing currently rejects an exception written
-against them. That is the remaining gap in this standard.
+**`nonExemptible` is enforced.** `ai.destructive-approval` and `security.no-secrets-in-artifacts`
+declare it in the catalog, and an exception written against either is **rejected rather than
+recorded**, in both places independently: `scripts/policy.mjs` reports `policy.non-exemptible-rule`
+and exits `1`, and `scripts/compliance.mjs` produces a failing result with
+`disposition: "rejected-exception"` and a `NON_COMPLIANT` verdict.
+
+Two details that make the enforcement honest rather than cosmetic:
+
+- **Rejection is checked before expiry.** A non-exemptible waiver is invalid whether or not it has
+  lapsed, and reporting it merely as *expired* would imply that renewing it would work.
+- **The check is enforced twice on purpose.** Catching it only in the policy checker would let an
+  adopter who never runs that command reach a verdict where the waiver silently applied.
+
+The known-negative matters as much as the positive: a test confirms an exception against an
+*exemptible* rule still yields `COMPLIANT_WITH_EXCEPTIONS`, so a blanket rejection of all exceptions
+could not pass this suite. Fixture: `test/fixtures/policies/non-exemptible-exception.yml`.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadCatalog, resolve, assertBindings, CatalogError } from "../scripts/catalog.mjs";
+import { loadCatalog, resolve, assertBindings, coverage, CatalogError } from "../scripts/catalog.mjs";
 import { evaluate, envelope, STATUS } from "../scripts/compliance.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -229,4 +229,110 @@ test("status comes from the closed enumeration", () => {
   for (const p of [null, policy(), policy({ exceptions: [] })]) {
     assert.ok(allowed.has(run({ policy: p }).status));
   }
+});
+
+// --- Non-exemptible rules (Standard 20 R4) --------------------------------------------------------
+
+test("the catalog declares at least one non-exemptible rule", () => {
+  const rules = [...catalog.rules.values()].filter((r) => r.nonExemptible);
+  assert.ok(rules.length > 0, "nothing is non-exemptible, so the enforcement below proves nothing");
+  assert.ok(rules.some((r) => r.id === "security.no-secrets-in-artifacts"));
+});
+
+test("an exception against a non-exemptible rule is rejected, not applied", () => {
+  // A mechanism a project can switch off is not a prohibition. The waiver must fail deterministically
+  // whether or not the underlying rule is currently violated.
+  const verdict = run({
+    policy: policy({
+      exceptions: [
+        {
+          rule: "security.no-secrets-in-artifacts",
+          reason: "legacy bundle",
+          approvedBy: "owner",
+          approvedAt: "2026-01-01",
+          expires: "2027-01-01",
+        },
+      ],
+    }),
+    findings: [{ rule: "security.no-secrets-in-artifacts", message: "token found", evidence: ["config.json"] }],
+  });
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT, "a non-exemptible rule was waived");
+  const rejected = verdict.results.find((r) => r.disposition === "rejected-exception");
+  assert.ok(rejected, "no rejected-exception result was produced");
+  assert.equal(rejected.ruleId, "security.no-secrets-in-artifacts");
+  assert.equal(
+    verdict.results.filter((r) => r.disposition === "excepted").length,
+    0,
+    "the waiver was applied despite being rejected",
+  );
+});
+
+test("a non-exemptible waiver is rejected even when it has also expired", () => {
+  // Order matters: rejection is checked first, because an invalid waiver is invalid whether or not
+  // it has lapsed. Reporting it only as expired would imply renewing it would work.
+  const verdict = run({
+    policy: policy({
+      exceptions: [
+        { rule: "security.no-secrets-in-artifacts", reason: "x", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
+      ],
+    }),
+  });
+  assert.ok(verdict.results.some((r) => r.disposition === "rejected-exception"));
+  assert.ok(!verdict.results.some((r) => r.disposition === "expired-exception"));
+});
+
+test("an exemptible rule is still waivable — the check is not blanket", () => {
+  const verdict = run({
+    policy: policy({
+      exceptions: [
+        { rule: "architecture.adr", reason: "x", approvedBy: "owner", approvedAt: "2026-01-01", expires: "2027-01-01" },
+      ],
+    }),
+    findings: [{ rule: "architecture.adr", message: "no adr dir", evidence: [] }],
+  });
+  assert.equal(verdict.status, STATUS.COMPLIANT_WITH_EXCEPTIONS);
+});
+
+// --- Framework coverage ---------------------------------------------------------------------------
+
+test("coverage counts rules and standards without touching the verdict", () => {
+  const c = coverage(catalog, { evaluated: ALL, totalStandards: 44 });
+  assert.equal(c.cataloguedRules, catalog.rules.size);
+  assert.equal(c.standards, 44);
+  assert.ok(c.standardsWithRules > 0 && c.standardsWithRules <= 44);
+  assert.ok(c.fullyMachineRepresentedStandards <= c.standardsWithRules);
+});
+
+test("coverage is absent from the verdict and present in the envelope", () => {
+  // Framework maturity must never combine with compliance into one number: a coverage improvement
+  // would otherwise read as a compliance improvement.
+  const verdict = run({ policy: policy() });
+  assert.ok(!("frameworkCoverage" in verdict), "coverage leaked into the verdict");
+  assert.ok(!("coverage" in verdict.summary));
+  const report = envelope({ verdict, frameworkCoverage: coverage(catalog, { totalStandards: 44 }) });
+  assert.ok(report.frameworkCoverage);
+  assert.equal(report.score, verdict.score, "coverage altered the score");
+});
+
+test("fully-machine-represented is strict about assurance and evaluation", () => {
+  // A standard whose rules are catalogued but unevaluated is represented on paper, not in practice.
+  const none = coverage(catalog, { evaluated: [], totalStandards: 44 });
+  assert.equal(none.fullyMachineRepresentedStandards, 0);
+  assert.equal(none.evaluatedRules, 0);
+
+  // And a rule with assurance "none" cannot make its standard count, even when fully evaluated.
+  const noneAssurance = [...catalog.rules.values()].filter((r) => r.assurance === "none");
+  assert.ok(noneAssurance.length > 0, "no assurance-none rule exists, so this exclusion is untested");
+
+  const tainted = new Set(noneAssurance.map((r) => r.standard));
+  const all = coverage(catalog, { evaluated: ALL, totalStandards: 44 });
+
+  // With everything evaluated, the only standards that can fail to count are the tainted ones — so
+  // the represented count is exactly the standards that have rules, minus those.
+  assert.equal(
+    all.fullyMachineRepresentedStandards,
+    all.standardsWithRules - tainted.size,
+    "a standard containing an assurance-none rule was counted as fully machine-represented",
+  );
+  assert.ok(tainted.size > 0);
 });

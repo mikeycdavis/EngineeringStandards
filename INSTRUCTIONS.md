@@ -165,6 +165,12 @@ The distinction that matters most: **not-applicable is a claim about your projec
 rule.** *We have no background jobs* stops being true the day you add one — which is what
 `revisitWhen` records.
 
+**Some rules are non-exemptible.** `security.no-secrets-in-artifacts` and `ai.destructive-approval`
+declare this in the catalog, and an exception against either is **rejected, not recorded** — you get
+`policy.non-exemptible-rule` from the policy checker and a `NON_COMPLIANT` verdict from the audit. If
+such a rule genuinely has no subject in your project, declare it `not-applicable`; that is a
+different claim and it is permitted.
+
 Two things to resist:
 
 - **Do not waive an inconvenient rule.** A visible failure is worth more than an approved one, because
@@ -419,9 +425,8 @@ Stated here rather than discovered later. Most of what this table used to say is
 
 | Gap | Consequence for you |
 | --- | --- |
-| The catalog covers 24 rules, not every requirement across 44 standards | Rules outside it are reported `not-evaluated` rather than passing — which is honest, but means a `COMPLIANT` verdict covers less than the whole framework. Each standard's `## Implementation` section states its own coverage |
+| The catalog covers 24 rules across 14 of 44 standards | Rules outside it are reported `not-evaluated` rather than passing — honest, but a `COMPLIANT` verdict covers less than the whole framework. The audit prints this as `frameworkCoverage` so you never have to remember it |
 | Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`. Read the coverage line, not just the score |
-| `nonExemptible` is catalogued but not enforced | An exception written against a non-exemptible rule is currently recorded rather than rejected |
 | No `VERSION` or `CHANGELOG` ([21](standards/21-versioning.md)) | `standardVersion: "1.0.0"` is a forward declaration; nothing upstream publishes a version yet |
 | No `standards init` ([33](standards/33-bootstrap-experience.md)) | Bootstrap is manual — section 8 |
 | Command is `audit`, not `validate` ([23](standards/23-standards-validator-cli.md) R2) | Use `audit` until the rename lands |

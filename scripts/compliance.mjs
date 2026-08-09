@@ -52,9 +52,19 @@ export function evaluate({ catalog, policy, findings, evaluated, today }) {
 
   const activeExceptions = new Map();
   const expiredExceptions = [];
+  const rejectedExceptions = [];
   for (const entry of exceptions) {
     const rule = resolve(catalog, entry.rule);
     if (!rule) continue;
+    // A non-exemptible rule admits no exception. The waiver is REJECTED, not honoured and not
+    // quietly ignored: an exception engine that can waive a rule its standard declared
+    // non-exemptible has made the prohibition optional, which is not a prohibition
+    // (Standard 20 R4). Order matters — this is checked before expiry, because a non-exemptible
+    // waiver is invalid whether or not it has lapsed.
+    if (rule.nonExemptible) {
+      rejectedExceptions.push({ ...entry, rule: rule.id });
+      continue;
+    }
     if (entry.expires && entry.expires < today) expiredExceptions.push({ ...entry, rule: rule.id });
     else activeExceptions.set(rule.id, entry);
   }
@@ -100,6 +110,23 @@ export function evaluate({ catalog, policy, findings, evaluated, today }) {
       };
     }
     results.push(result);
+  }
+
+  for (const entry of rejectedExceptions) {
+    results.push({
+      ruleId: entry.rule,
+      status: RESULT.failed,
+      severity: "error",
+      level: "required",
+      validationType: "configuration",
+      assurance: "full",
+      disposition: "rejected-exception",
+      message: `${entry.rule} is non-exemptible; the exception against it is rejected, not applied.`,
+      evidence: ["project-policy.yml"],
+      files: ["project-policy.yml"],
+      remediation:
+        "Remove the exception and satisfy the rule. If the rule genuinely has no subject in this project, declare it not-applicable instead.",
+    });
   }
 
   for (const entry of expiredExceptions) {
@@ -187,7 +214,7 @@ function summarise(results, policy) {
 }
 
 /** The Standard 25 envelope. `schemaVersion` versions this format, independent of the others. */
-export function envelope({ verdict, project, standardVersion, auditedAt, repo }) {
+export function envelope({ verdict, project, standardVersion, auditedAt, repo, frameworkCoverage }) {
   return {
     schemaVersion: "1.0",
     standardVersion: standardVersion ?? null,
@@ -197,6 +224,9 @@ export function envelope({ verdict, project, standardVersion, auditedAt, repo })
     summary: verdict.summary,
     assurance: verdict.assurance,
     denominator: verdict.denominator,
+    // Framework maturity, sitting outside the verdict on purpose. It says how much of the framework
+    // has been turned into rules — never how compliant this project is.
+    frameworkCoverage: frameworkCoverage ?? null,
     auditedAt,
     results: verdict.results,
   };

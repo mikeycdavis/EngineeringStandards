@@ -75,8 +75,24 @@ function detectAliases(document) {
 }
 
 /** Compliance conditions that a well-formed policy can still fail. */
-function complianceFindings(document, today) {
+function complianceFindings(document, today, catalog) {
   const findings = [];
+
+  // Standard 20 R4: a rule its standard declared non-exemptible admits no exception. Caught here so
+  // an adopter learns it from `standards policy` rather than from a surprising audit verdict, and
+  // caught again in the compliance engine so it cannot be bypassed by skipping this command.
+  for (const entry of Array.isArray(document.exceptions) ? document.exceptions : []) {
+    const rule = catalog?.rules.get(entry.rule) ?? catalog?.rules.get(catalog?.aliases.get(entry.rule));
+    if (rule?.nonExemptible) {
+      findings.push({
+        id: "policy.non-exemptible-rule",
+        severity: "error",
+        message: `'${rule.id}' is non-exemptible; an exception against it is rejected, not recorded`,
+        remediation:
+          "Remove the exception and satisfy the rule. If it genuinely has no subject here, declare it not-applicable.",
+      });
+    }
+  }
 
   const exceptions = Array.isArray(document.exceptions) ? document.exceptions : [];
   for (const entry of exceptions) {
@@ -146,7 +162,15 @@ export async function checkPolicy(policyPath, schemaPath, today) {
   const errors = validate(document, schema);
   if (errors.length > 0) return { status: "invalid", errors, findings: [], aliases, document };
 
-  const findings = complianceFindings(document, today);
+  const catalog = await (async () => {
+    try {
+      const { loadCatalog } = await import("./catalog.mjs");
+      return await loadCatalog();
+    } catch {
+      return null; // A missing catalog disables the rule-aware checks; it never fakes a pass.
+    }
+  })();
+  const findings = complianceFindings(document, today, catalog);
   return { status: findings.length > 0 ? "findings" : "ok", errors: [], findings, aliases, document };
 }
 

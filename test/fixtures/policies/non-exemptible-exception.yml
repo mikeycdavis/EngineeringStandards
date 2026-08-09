@@ -1,0 +1,15 @@
+# Known-negative: an exception against a rule its standard declared non-exemptible.
+# Standard 20 R4 requires this to be REJECTED rather than recorded — a mechanism a project can
+# switch off is not a prohibition.
+standardVersion: "1.0.0"
+
+rules:
+  security.no-secrets-in-artifacts:
+    level: required
+
+exceptions:
+  - rule: security.no-secrets-in-artifacts
+    reason: "Legacy config bundles a token; rotation is scheduled."
+    approvedBy: "project-owner"
+    approvedAt: "2026-08-01"
+    expires: "2027-01-01"

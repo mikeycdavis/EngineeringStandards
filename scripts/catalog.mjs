@@ -142,3 +142,41 @@ export function assertBindings(catalog, ids) {
     );
   }
 }
+
+/**
+ * Framework maturity metadata — NOT part of the compliance score, and deliberately separate from it.
+ *
+ * The hazard this exists to counter: someone reads `COMPLIANT` and forgets that the catalog covers a
+ * subset of the framework. A verdict is a statement about the rules that exist as rules; this is a
+ * statement about how much of the framework has been turned into rules at all. Mixing the two would
+ * make a coverage improvement look like a compliance improvement, which is the elevation
+ * Standard 24 R2 forbids one level up.
+ *
+ * `fullyMachineRepresented` is deliberately strict: a standard counts only when every one of its
+ * catalogued rules is both evaluated by the validator AND carries assurance better than `none`.
+ * A standard whose rules are all catalogued but all unevaluated is represented on paper, not in
+ * practice, and a looser definition would let the number rise without the tooling improving.
+ */
+export function coverage(catalog, { evaluated = [], totalStandards = null } = {}) {
+  const examined = new Set(evaluated);
+  const byStandard = new Map();
+  for (const rule of catalog.rules.values()) {
+    if (!byStandard.has(rule.standard)) byStandard.set(rule.standard, []);
+    byStandard.get(rule.standard).push(rule);
+  }
+
+  let fullyMachineRepresented = 0;
+  for (const rules of byStandard.values()) {
+    const complete = rules.every((r) => examined.has(r.id) && r.assurance !== "none");
+    if (complete) fullyMachineRepresented++;
+  }
+
+  return {
+    cataloguedRules: catalog.rules.size,
+    evaluatedRules: [...catalog.rules.keys()].filter((id) => examined.has(id)).length,
+    standards: totalStandards,
+    standardsWithRules: byStandard.size,
+    fullyMachineRepresentedStandards: fullyMachineRepresented,
+    note: "Framework maturity, not compliance. A standard counts as fully machine-represented only when every rule it contributes is evaluated and carries assurance above none.",
+  };
+}

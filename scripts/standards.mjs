@@ -18,7 +18,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { loadCatalog, assertBindings } from "./catalog.mjs";
+import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { validate } from "./jsonschema.mjs";
@@ -134,9 +134,19 @@ function renderVerdict(report, policy) {
     out.push("");
   }
 
+  const c = report.frameworkCoverage;
+  if (c) {
+    out.push(
+      `  Framework: ${c.cataloguedRules} rule(s) catalogued across ${c.standardsWithRules} of ` +
+        `${c.standards ?? "?"} standards; ${c.fullyMachineRepresentedStandards} fully machine-represented.`,
+    );
+    out.push("");
+  }
+
   out.push("  The score is a summary statistic over evaluated required rules, not a measure of");
   out.push("  how much of the standard was verified. Status is the verdict; a skipped rule is");
-  out.push("  neither a pass nor a failure.");
+  out.push("  neither a pass nor a failure. Framework coverage is maturity of the tooling, not");
+  out.push("  compliance of this project — the two never combine into one number.");
   return out.join("\n");
 }
 const STD44 = "standards/44-existing-project-reconstruction.md";
@@ -1308,12 +1318,26 @@ const verdict = evaluate({
   today: new Date().toISOString().slice(0, 10),
 });
 
+// Framework maturity, read from this framework's own inventory rather than the target repository.
+// It travels beside the verdict and never inside it: a coverage improvement must never be able to
+// look like a compliance improvement.
+const totalStandards = await (async () => {
+  try {
+    const inventoryPath = path.join(path.dirname(SELF), "..", "artifacts/standards-source-inventory.json");
+    const inv = JSON.parse(await readFile(inventoryPath, "utf8"));
+    return inv.expectedCount ?? inv.standards?.length ?? null;
+  } catch {
+    return null;
+  }
+})();
+
 const report = envelope({
   verdict,
   project: policy.document?.project,
   standardVersion: policy.document?.standardVersion,
   auditedAt: new Date().toISOString(),
   repo: root.split(path.sep).join("/"),
+  frameworkCoverage: coverage(catalog, { evaluated: EVALUATED_RULES, totalStandards }),
 });
 
 if (JSON_OUT) {
