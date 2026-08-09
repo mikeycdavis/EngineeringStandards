@@ -1,0 +1,173 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkPolicy, LEGACY_ALIASES } from "../scripts/policy.mjs";
+import { parseYaml, YamlError } from "../scripts/yaml.mjs";
+import { validate, assertSchemaSupported, SchemaError } from "../scripts/jsonschema.mjs";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const SCHEMA = path.join(ROOT, "schemas/project-policy.schema.json");
+const FIXTURES = path.join(ROOT, "test/fixtures/policies");
+const TODAY = "2026-08-08";
+
+const fixture = (name) => path.join(FIXTURES, `${name}.yml`);
+const check = (name) => checkPolicy(fixture(name), SCHEMA, TODAY);
+
+// --- Known-positive ---------------------------------------------------------------------------
+
+test("this repository's own policy is valid", async () => {
+  const result = await checkPolicy(path.join(ROOT, "project-policy.yml"), SCHEMA, TODAY);
+  assert.deepEqual(result.errors, [], "schema errors in the repository's own policy");
+  assert.deepEqual(result.findings, []);
+  assert.equal(result.status, "ok");
+});
+
+test("a well-formed example policy validates", async () => {
+  const result = await check("valid");
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.status, "ok");
+});
+
+test("the compliant example exercises every section", async () => {
+  const result = await check("valid");
+  for (const section of ["rules", "applicability", "exceptions"]) {
+    assert.ok(result.document[section], `example policy does not exercise '${section}'`);
+  }
+});
+
+// --- Known-negative ---------------------------------------------------------------------------
+
+test("a malformed policy is rejected, and every distinct violation is reported", async () => {
+  const result = await check("invalid-shape");
+  assert.equal(result.status, "invalid");
+  const paths = result.errors.map((e) => e.path);
+  assert.ok(paths.includes("standardVersion"), "bad version not caught");
+  assert.ok(paths.includes("rules.planning.acceptance-criteria.level"), "bad level not caught");
+  assert.ok(paths.includes("rules.planning.verification.level"), "missing level not caught");
+  assert.ok(paths.includes("rules.planning.verification.severity"), "unknown property not caught");
+  assert.ok(paths.includes("applicability.audit.business-state.reason"), "missing reason not caught");
+  assert.ok(paths.includes("exceptions[0].approvedBy"), "unapproved exception not caught");
+});
+
+test("legacy camelCase keys are rejected and reported with their canonical form", async () => {
+  const result = await check("legacy-aliases");
+  assert.equal(result.status, "invalid", "aliases must not validate");
+  const mapped = new Map(result.aliases.map((a) => [a.alias, a.canonical]));
+  assert.equal(mapped.get("ai.uiCapabilitiesMustBeAgentOperable"), "ai.non-ui-capabilities");
+  assert.equal(mapped.get("ai.providerNeutral"), "ai.provider-neutral");
+  assert.equal(mapped.get("architecture.requireProjectManifest"), "architecture.project-manifest");
+});
+
+test("every legacy alias maps to a canonically-shaped rule ID", () => {
+  const canonical = /^[a-z][a-z0-9]*(\.[a-z0-9]+(-[a-z0-9]+)*)+$/;
+  for (const [alias, target] of LEGACY_ALIASES) {
+    assert.match(target, canonical, `alias ${alias} maps to a non-canonical ID`);
+    assert.ok(!LEGACY_ALIASES.has(target), `${target} is both canonical and an alias`);
+  }
+});
+
+test("this repository's policy contains no legacy aliases", async () => {
+  const result = await checkPolicy(path.join(ROOT, "project-policy.yml"), SCHEMA, TODAY);
+  assert.deepEqual(result.aliases, []);
+});
+
+// --- Exit-code semantics ----------------------------------------------------------------------
+
+test("an expired exception is a compliance failure, not a configuration error", async () => {
+  const result = await check("expired-exception");
+  assert.equal(result.status, "findings", "an expired exception must not be reported as invalid config");
+  assert.equal(result.findings[0].id, "policy.expired-exception");
+  assert.deepEqual(result.errors, []);
+});
+
+test("not-applicable and an exception on the same rule is a conflict", async () => {
+  const result = await check("conflicting-classification");
+  assert.equal(result.status, "findings");
+  assert.equal(result.findings[0].id, "policy.conflicting-classification");
+});
+
+test("a schema-invalid policy never reports compliance findings", async () => {
+  // Standard 30 R1: could-not-evaluate and checked-and-failed are different facts. A malformed
+  // policy must not produce a compliance verdict at all.
+  for (const name of ["invalid-shape", "legacy-aliases"]) {
+    const result = await check(name);
+    assert.equal(result.status, "invalid");
+    assert.deepEqual(result.findings, [], `${name} produced compliance findings from invalid config`);
+  }
+});
+
+// --- The evaluator's own honesty ---------------------------------------------------------------
+
+test("the schema uses only keywords the evaluator implements", async () => {
+  const schema = JSON.parse(await readFile(SCHEMA, "utf8"));
+  assert.doesNotThrow(() => assertSchemaSupported(schema));
+});
+
+test("an unimplemented schema keyword throws rather than being ignored", () => {
+  // The guard against silent under-validation: skipping a constraint reports PASS for a document
+  // that was never fully checked (Standard 24 R2).
+  assert.throws(() => assertSchemaSupported({ type: "object", oneOf: [] }), SchemaError);
+  assert.throws(() => validate({}, { type: "object", maxProperties: 1 }), SchemaError);
+});
+
+test("the evaluator rejects what the schema forbids — mutation check", () => {
+  // Reintroduce the defect the propertyNames pattern exists to prevent, and confirm it is caught.
+  // A pattern that accepted camelCase would let ADR 0002's decision be violated silently.
+  const schema = {
+    type: "object",
+    propertyNames: { type: "string", pattern: "^[a-z][a-z0-9]*(\\.[a-z0-9]+(-[a-z0-9]+)*)+$" },
+    additionalProperties: { type: "string" },
+  };
+  assert.deepEqual(validate({ "ai.provider-neutral": "required" }, schema), []);
+  assert.equal(validate({ "ai.providerNeutral": "required" }, schema).length, 1);
+});
+
+// --- The YAML subset ----------------------------------------------------------------------------
+
+test("the parser reads the policy shape", () => {
+  const parsed = parseYaml(
+    ['a: "1"', "b:", "  c: two", "d:", "  - e: three", "    f: four", "g: []"].join("\n"),
+  );
+  assert.deepEqual(parsed, {
+    a: "1",
+    b: { c: "two" },
+    d: [{ e: "three", f: "four" }],
+    g: [],
+  });
+});
+
+test("scalars are never coerced", () => {
+  // `standardVersion: 1.0` must reach the schema as a string so its pattern can reject it. A parser
+  // that produced a number would make that check unreachable.
+  const parsed = parseYaml('version: 1.0\nflag: true\ndate: 2026-08-08');
+  assert.equal(parsed.version, "1.0");
+  assert.equal(parsed.flag, "true");
+  assert.equal(parsed.date, "2026-08-08");
+});
+
+test("comments are stripped outside quotes and kept inside them", () => {
+  const parsed = parseYaml('a: value # trailing\nb: "has # inside"');
+  assert.equal(parsed.a, "value");
+  assert.equal(parsed.b, "has # inside");
+});
+
+test("unsupported YAML constructs are errors, not guesses", () => {
+  for (const source of [
+    "a: &anchor 1",
+    "a: *alias",
+    "a: |\n  block",
+    "a: {b: 1}",
+    "a: [1, 2]",
+    "---\na: 1",
+    "a: 1\na: 2",
+    "a:\n\tb: 1",
+  ]) {
+    assert.throws(() => parseYaml(source), YamlError, `accepted unsupported construct: ${source}`);
+  }
+});
+
+test("duplicate keys are rejected rather than silently overwritten", () => {
+  assert.throws(() => parseYaml("rules:\n  a.b:\n    level: required\n  a.b:\n    level: optional"), YamlError);
+});

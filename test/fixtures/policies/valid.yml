@@ -1,0 +1,29 @@
+# Known-positive: a well-formed policy exercising every section, including a live exception.
+standardVersion: "1.0.0"
+project: "ExampleApp"
+
+rules:
+  planning.acceptance-criteria:
+    level: required
+  planning.verification:
+    level: required
+  ai.provider-neutral:
+    level: recommended
+    note: "Adopted at recommended while the provider abstraction is introduced."
+  security.no-secrets-in-artifacts:
+    level: required
+
+applicability:
+  audit.business-state:
+    status: not-applicable
+    reason: "Read-only reporting service; it holds no business state."
+    reviewedAt: "2026-08-08"
+    revisitWhen: "The service gains a write path."
+
+exceptions:
+  - rule: ai.propose-execute
+    reason: "Legacy scheduler applies changes directly; separation lands with the queue migration."
+    approvedBy: "project-owner"
+    approvedAt: "2026-08-08"
+    expires: "2027-06-30"
+    reference: "ADR-0003"

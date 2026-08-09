@@ -117,9 +117,24 @@ one direction only.
 
 ## Implementation
 
-**Not implemented.** `scripts/standards.mjs` uses finding category ids — `missing-planning-artifacts`,
-`plan-code-discrepancies` — which are stable in practice but are *finding* categories rather than
-rule IDs, and do not follow the `category.name` form.
+**Partially implemented.** The canonical IDs are now in use and mechanically enforced.
+`project-policy.yml` declares all fifteen R1 rule IDs, and `schemas/project-policy.schema.json`
+enforces the `category.kebab-case-name` form through a `propertyNames` pattern — so a camelCase key
+cannot validate. R5's *one ID, one rule, everywhere* holds for the policy surface, and a mutation
+test in `test/policy.test.mjs` confirms the pattern actually rejects the alias form rather than
+merely being present.
+
+The alias table from [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md) lives in
+`scripts/policy.mjs` as `LEGACY_ALIASES`, which reports a legacy key alongside its canonical
+replacement instead of failing with an unhelpful pattern error. **This is a temporary home.** The
+table belongs in the catalog's `aliases` field ([Standard 27](27-rule-catalog.md) R2), and when the
+catalog lands it must *move* rather than be copied — two alias tables would recreate the dual
+identity that ADR precisely abolished.
+
+**Not implemented.** `scripts/standards.mjs` still uses finding category ids —
+`missing-planning-artifacts`, `plan-code-discrepancies` — which are stable in practice but are
+*finding* categories rather than rule IDs, and do not follow the `category.name` form. The validator
+and the policy therefore speak different vocabularies today.
 
 The two vocabularies will need reconciling when the catalog lands. That is a real migration, not a
 rename: anything already referencing a finding id would break, which is precisely the situation R3

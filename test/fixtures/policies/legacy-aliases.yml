@@ -1,0 +1,11 @@
+# Known-negative: the source specification's own camelCase policy keys. Rejected by the schema, and
+# reported with their canonical replacements (ADR 0002).
+standardVersion: "1.0.0"
+
+rules:
+  ai.uiCapabilitiesMustBeAgentOperable:
+    level: required
+  ai.providerNeutral:
+    level: required
+  architecture.requireProjectManifest:
+    level: required

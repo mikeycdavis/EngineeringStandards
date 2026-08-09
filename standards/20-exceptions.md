@@ -132,9 +132,24 @@ of required property R2 there exists to enforce.
 
 ## Implementation
 
-**No skill implements this standard.**
+**The declaration half is implemented; the application half is not.**
 
-`standards audit` does not read exceptions today, because it does not yet read
-`project-policy.yml`. Until it does, every finding it reports is unqualified by what the project has
-legitimately excepted itself from — which is the main reason its output cannot yet be read as a
-compliance verdict.
+`schemas/project-policy.schema.json` defines the exception shape and enforces its provenance
+requirements: `rule`, `reason`, `approvedBy`, and `approvedAt` are all required, so an exception
+nobody approved cannot validate. `scripts/policy.mjs` enforces expiry — an exception past its
+`expires` date is reported as `policy.expired-exception` at error severity and exits `1`, a
+compliance failure rather than a configuration error, which is the semantics R3 requires.
+
+It also enforces one rule this standard implies but does not state: **a rule may not be both
+declared not-applicable and carry an exception** (`policy.conflicting-classification`). The two
+mechanisms make opposite claims — *the rule has no subject here* versus *the rule applies and we
+knowingly do not satisfy it* — and a policy asserting both is ambiguous, with no safe way to pick
+one.
+
+Both behaviours have known-positive and known-negative fixtures in `test/fixtures/policies/`.
+
+**Not implemented:** `standards audit` still does not read `project-policy.yml`, so no exception yet
+suppresses or annotates a finding. Every finding it reports remains unqualified by what the project
+has legitimately excepted itself from, which is why its output is not yet a compliance verdict.
+`nonExemptible` ([Standard 27](27-rule-catalog.md)) is unenforced for the same reason — there is no
+catalog to read it from.

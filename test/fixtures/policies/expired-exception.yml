@@ -1,0 +1,13 @@
+# Schema-valid, compliance-failing: the waiver lapsed. Exit 1, not 2.
+standardVersion: "1.0.0"
+
+rules:
+  ai.propose-execute:
+    level: required
+
+exceptions:
+  - rule: ai.propose-execute
+    reason: "Migration window."
+    approvedBy: "project-owner"
+    approvedAt: "2024-01-01"
+    expires: "2025-01-01"

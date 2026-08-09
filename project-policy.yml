@@ -1,0 +1,91 @@
+# Project policy for the EngineeringStandards repository itself.
+#
+# This is the first dogfooded instance (Standard 34 R1) and therefore the pattern every adopting
+# project will copy — including its mistakes. Three rules govern what may appear here:
+#
+#   * Rule IDs are canonical only (ADR 0002). No camelCase aliases; the schema rejects them.
+#   * `applicability` and `exceptions` are different mechanisms and never substitute for each other.
+#     not-applicable = the rule has no subject in this project.
+#     exception      = the rule applies and this project knowingly does not satisfy it.
+#   * Nothing here asserts compliance. What this project actually meets is a validation result.
+#
+# Shape: schemas/project-policy.schema.json (Standard 19). Meaning: standards/18-machine-readable-project-policy.md.
+
+standardVersion: "1.0.0"
+project: "EngineeringStandards"
+
+rules:
+  planning.breakdown-directory:
+    level: required
+  planning.one-file-per-section:
+    level: required
+  planning.acceptance-criteria:
+    level: required
+  planning.verification:
+    level: required
+  planning.handoff:
+    level: required
+
+  audit.business-state:
+    level: required
+  audit.actor-attribution:
+    level: required
+
+  ai.non-ui-capabilities:
+    level: required
+  ai.provider-neutral:
+    level: required
+  ai.propose-execute:
+    level: required
+  ai.destructive-approval:
+    level: required
+
+  architecture.project-manifest:
+    level: required
+  architecture.adr:
+    level: required
+
+  security.no-secrets-in-artifacts:
+    level: required
+
+  verification.before-completion:
+    level: required
+
+# Rules whose subject does not exist in this repository. Each is a claim about THIS PROJECT, not
+# about the rule, and stops being true the moment the capability is added — hence `revisitWhen`.
+applicability:
+  audit.business-state:
+    status: not-applicable
+    reason: "No application state. This repository is documents, a CLI, and its tests; it performs no business mutations to audit."
+    reviewedAt: "2026-08-08"
+    revisitWhen: "Any command writes durable state outside the working tree."
+
+  audit.actor-attribution:
+    status: not-applicable
+    reason: "No mutations exist to attribute. Authorship of repository changes is carried by git, which is not the audit system this rule governs."
+    reviewedAt: "2026-08-08"
+    revisitWhen: "Any command writes durable state outside the working tree."
+
+  ai.non-ui-capabilities:
+    status: not-applicable
+    reason: "No user interface exists. Every capability is already a CLI invocation, so the rule's subject — a capability reachable only through a UI — cannot occur here."
+    reviewedAt: "2026-08-08"
+    revisitWhen: "Any interface other than the CLI is added."
+
+  ai.provider-neutral:
+    status: not-applicable
+    reason: "No AI provider is integrated. The repository has zero dependencies and calls no model."
+    reviewedAt: "2026-08-08"
+    revisitWhen: "Any capability calls a model provider."
+
+  ai.destructive-approval:
+    status: not-applicable
+    reason: "No destructive or high-impact action exists. Every command reads the working tree and writes only to stdout."
+    reviewedAt: "2026-08-08"
+    revisitWhen: "`standards init` lands — it writes files, and Standard 33 R2's overwrite permission is exactly this rule."
+
+# No exceptions. Every rule that applies here is either met or failing, and a failing rule is
+# reported as a failure rather than waived. `architecture.project-manifest` is currently failing:
+# PROJECT.md does not exist. That is deliberate — an exception would hide a gap that should stay
+# visible until it is closed (Standard 20, Standard 30 R2).
+exceptions: []

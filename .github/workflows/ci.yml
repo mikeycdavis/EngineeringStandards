@@ -27,6 +27,13 @@ jobs:
       - name: Source fidelity
         run: npm run fidelity
 
+      # Validates this repository's own project-policy.yml against schemas/project-policy.schema.json.
+      # Exit 2 (malformed policy) and exit 1 (a compliance condition such as an expired exception)
+      # are both failures here, and both are meant to be: a policy nothing can read is worse than
+      # one that reports a problem.
+      - name: Project policy
+        run: npm run policy
+
       - name: Test
         run: npm test
 

@@ -92,11 +92,19 @@ Forward-looking designs that are not yet implemented:
 ## Layout
 
 ```text
-standards/    One numbered normative document per standard (NN-<kebab-title>.md).
-design/       Forward-looking designs, not yet implemented.
+standards/          One numbered normative document per standard (NN-<kebab-title>.md).
+design/             Forward-looking designs, not yet implemented.
+schemas/            JSON Schemas for the structured contracts (Standard 19).
+project-policy.yml  This repository's own policy (Standard 18), the first dogfooded instance.
+scripts/            The audit CLI and the invariant checks CI runs.
+test/               Tests and fixture repositories, including known-negative policies.
 artifacts/
-  prompts/    Source spec material the standards were written from.
+  prompts/          Source spec material the standards were written from.
+  adr/              Accepted decision records.
 ```
+
+**Commands.** `npm test` · `npm run audit` · `npm run policy` · `npm run inventory` ·
+`npm run fidelity`. CI runs all five.
 
 **Numbering convention.** Standards files are named `NN-<kebab-title>.md`. Zero-pad single digits
 (`01-…` through `09-…`) when backfilling, so a directory listing sorts in numeric order.

@@ -134,27 +134,34 @@ not-applicable rules are `notEvaluated`, never a silent denominator adjustment.
 
 ## Implementation
 
-Two of R1's four artifacts exist.
+Three of R1's four artifacts exist.
 
-**Present.** `artifacts/adr/` holds two accepted decisions
+**Present.** `project-policy.yml` declares this repository's policy, validates against
+[Standard 19](19-json-schema.md)'s schema, and is checked in CI.
+`artifacts/adr/` holds two accepted decisions
 ([0001](../artifacts/adr/0001-canonical-status-vocabulary.md),
 [0002](../artifacts/adr/0002-canonical-rule-identity.md)).
 `artifacts/project-plan-breakdown/` holds the overview and three plan sections, written through
 `/plan-structure` and `/plan-handoff` as [Standard 35](35-planning-requirements.md) requires.
 
-**Absent.** There is no `PROJECT.md` and no `project-policy.yml`. The manifest is a straightforward
-gap ([Standard 6](06-project-manifest.md)). The policy is blocked in the same way
-[Standard 33](33-bootstrap-experience.md) is: there is no schema to validate it against
-([Standard 19](19-json-schema.md)) and no catalog for its keys to reference
-([Standard 27](27-rule-catalog.md)), and publishing the *first* policy anyone copies before either
-exists would set the pattern R1 warns about.
+**Absent.** There is no `PROJECT.md` ([Standard 6](06-project-manifest.md)). That gap is now recorded
+where R3 requires: `architecture.project-manifest` is declared `required` in the policy and is
+failing. It was deliberately *not* waived — an exception would have made a real gap disappear from
+view, and this is the rule the repository is most likely to be tempted to waive for its own
+convenience.
 
-**R3 is not satisfied, and this is the honest headline.** With no policy file, this repository has no
-place to record a rule as excepted or not applicable — so every standard it does not meet is
-currently *silently absent*, which is precisely the category R3 abolishes. What stands in for it is
-the `## Implementation` section each standard carries, stating in prose what is met, what is not, and
-why. That is a real disclosure and it is not machine-readable, so nothing counts it and nothing can
-notice when it goes stale.
+**R3 is now satisfied for the fifteen canonical rules, and this is the batch's substantive change.**
+Each is classified explicitly: ten `required` and evaluated, five declared `not-applicable` with a
+reason and a `revisitWhen` trigger. Nothing is silently absent among them, and the classifications
+are machine-readable rather than prose — a schema validates their shape, and
+`policy.conflicting-classification` rejects the one contradiction the two mechanisms allow.
+
+**The limit of that claim, stated plainly:** fifteen rules is the canonical set
+[Standard 26](26-stable-rule-ids.md) R1 enumerates, not the full set of requirements across
+forty-four standards. The remainder still live as prose in each standard's `## Implementation`
+section — a real disclosure that nothing counts and nothing can notice going stale. R3 is satisfied
+over the rules that exist as rules, and the rest awaits the catalog
+([Standard 27](27-rule-catalog.md)).
 
 **R4 is met.** `npm run audit` runs `scripts/standards.mjs audit .` — the same entry point, flags, and
 rule set a consuming project runs. Fixtures are excluded via a general `SKIP_DIRS` mechanism, added

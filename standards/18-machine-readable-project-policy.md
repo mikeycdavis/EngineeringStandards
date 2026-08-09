@@ -215,9 +215,25 @@ too substantial for an exception belongs.
 
 ## Implementation
 
-**No skill implements this standard.**
+**This repository now declares a policy.** `project-policy.yml` exists at the root, validates against
+[Standard 19](19-json-schema.md)'s schema, and is checked in CI. It is the first dogfooded instance
+([Standard 34](34-dogfooding.md) R1) and therefore the shape adopting projects will copy.
 
-`standards audit` does not read `project-policy.yml` today. Doing so is the single largest available
-improvement to that tool: a policy declaring which rules a project has adopted is exactly the input
-an audit needs to stop guessing which findings matter, and it would let a repository's own
-declaration decide whether a finding is a violation or an accepted state.
+Three decisions in it are worth naming, because they are the ones a copier inherits:
+
+- **Canonical rule IDs only.** All fifteen keys are the canonical form from
+  [Standard 26](26-stable-rule-ids.md) R1. The schema's `propertyNames` pattern rejects camelCase by
+  construction, so [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md) is enforced rather
+  than merely recorded, and a test asserts this repository's own policy contains no aliases.
+- **`applicability` is a separate section from `exceptions`**, not a variety of it. Five rules are
+  declared `not-applicable` here — the audit and AI rules whose subject this repository does not
+  have — each with a reason and a `revisitWhen` trigger, because not-applicable is a claim about the
+  *project* and stops being true when the capability is added.
+- **No exceptions, and one rule failing.** `architecture.project-manifest` is declared `required` and
+  is not met: there is no `PROJECT.md`. Waiving it with an exception would have hidden a gap that
+  should stay visible ([Standard 30](30-compliance-scoring.md) R2), so the policy records the
+  requirement and leaves the failure exposed.
+
+**Not implemented:** `standards audit` still does not read this file. Doing so remains the single
+largest available improvement to that tool — the policy is now exactly the input an audit needs to
+stop guessing which findings matter, and it is sitting unread.

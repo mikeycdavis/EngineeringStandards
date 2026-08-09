@@ -1,0 +1,16 @@
+# Known-negative: five distinct schema violations.
+standardVersion: "1.0"
+
+rules:
+  planning.acceptance-criteria:
+    level: mandatory
+  planning.verification:
+    severity: error
+
+applicability:
+  audit.business-state:
+    status: not-applicable
+
+exceptions:
+  - rule: security.no-secrets-in-artifacts
+    reason: "Unapproved."

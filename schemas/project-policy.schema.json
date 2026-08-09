@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EngineeringStandards/schemas/project-policy.schema.json",
+  "title": "Project Policy",
+  "description": "A project's declaration of which standards apply to it and at what level. Standard 18 defines the shape; Standard 19 governs this schema; ADR 0002 fixes rule identity. Keys under `rules` and `applicability` are canonical rule IDs and nothing else — the camelCase spellings that appear in the source specification are legacy aliases, are rejected here, and normalize to canonical IDs only on migration-aware input paths.",
+  "type": "object",
+  "required": ["standardVersion"],
+  "additionalProperties": false,
+
+  "properties": {
+    "standardVersion": {
+      "description": "The framework version this project is evaluated against (Standard 21). An unresolvable version is a configuration error, not a compliance failure.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+
+    "project": {
+      "description": "Project identity, carried into validator output as `project` (Standard 31 R2).",
+      "type": "string",
+      "minLength": 1
+    },
+
+    "rules": {
+      "description": "Level per rule. A rule absent from this map takes the framework default for the declared standardVersion; a validator reports how many rules were undeclared so absence is never mistaken for a decision.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ruleId" },
+      "additionalProperties": { "$ref": "#/$defs/ruleSetting" }
+    },
+
+    "applicability": {
+      "description": "Whether a rule's subject exists in this project at all. First-class, and deliberately NOT an exception: `not-applicable` means the rule has no subject here, whereas an exception means the rule applies and the project is knowingly not satisfying it (Standard 34 R3, Standard 38 R3). The two must never collapse into one mechanism.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ruleId" },
+      "additionalProperties": { "$ref": "#/$defs/applicabilityDeclaration" }
+    },
+
+    "exceptions": {
+      "description": "Approved, time-bounded waivers of rules that DO apply (Standard 20). An expired exception is a compliance failure, not a resolution.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/exception" }
+    }
+  },
+
+  "$defs": {
+    "ruleId": {
+      "description": "Canonical rule identity per Standard 26 R1 and ADR 0002: `category.kebab-case-name`, dot-separated, lower-case throughout. The pattern rejects legacy camelCase aliases such as `ai.uiCapabilitiesMustBeAgentOperable` by construction.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z0-9]+(-[a-z0-9]+)*)+$"
+    },
+
+    "level": {
+      "description": "Standard 18 R3. Levels are preferred over booleans because `true` cannot express a considered partial adoption.",
+      "type": "string",
+      "enum": ["required", "recommended", "optional", "forbidden"]
+    },
+
+    "ruleSetting": {
+      "type": "object",
+      "required": ["level"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "$ref": "#/$defs/level" },
+        "note": {
+          "description": "Why this project selected this level. Not a substitute for an exception.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+
+    "applicabilityDeclaration": {
+      "type": "object",
+      "required": ["status", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["applicable", "not-applicable"]
+        },
+        "reason": {
+          "description": "Required. A not-applicable declaration with no reason is indistinguishable from a rule that was forgotten, which is the failure Standard 34 R3 abolishes.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewedAt": {
+          "description": "When this judgement was last examined. Not-applicable is a claim about the PROJECT, not about the rule, and stops being true the moment the project gains the capability.",
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "revisitWhen": {
+          "description": "The condition under which this declaration must be re-examined — the applicability analogue of a deferred decision's trigger (Standard 41 R3).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+
+    "exception": {
+      "type": "object",
+      "required": ["rule", "reason", "approvedBy", "approvedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": { "$ref": "#/$defs/ruleId" },
+        "reason": { "type": "string", "minLength": 1 },
+        "approvedBy": {
+          "description": "Provenance. An exception nobody approved is a note (Standard 20).",
+          "type": "string",
+          "minLength": 1
+        },
+        "approvedAt": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "expires": {
+          "description": "Optional. Absence means the waiver is indefinite, which is a stronger claim than it looks and should be rare. An exception past its expiry is a compliance failure.",
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "reference": {
+          "description": "An ADR, issue, or work item carrying the decision.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

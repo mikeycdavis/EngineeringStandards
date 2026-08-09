@@ -138,10 +138,26 @@ once, under [ADR 0001](../artifacts/adr/0001-canonical-status-vocabulary.md).
 
 ## Implementation
 
-**No skill implements this standard**, and this repository does not yet publish
-`schemas/project-policy.schema.json` — it declares no policy of its own to validate.
+**Implemented.** `schemas/project-policy.schema.json` exists and is executed by `npm run policy`,
+which validates this repository's own `project-policy.yml` and runs in CI.
 
-The check with the best return, and the one most in the spirit of R4, is mechanical: assert that every
-enum in the schema matches the enumeration in the standard that owns it. That is the same class of
-invariant as `scripts/inventory.mjs`, which exists because a hand-maintained count of the standards
-silently went wrong.
+The evaluator is `scripts/jsonschema.mjs` — a small subset of JSON Schema, written because this
+repository has no dependencies. One property of it is load-bearing rather than incidental:
+**an unsupported keyword throws instead of being ignored.** A validator that silently skips a
+constraint it does not implement reports valid for a document it never fully checked, which is
+[Standard 24](24-validator-rules.md) R2's false green in its purest form. `assertSchemaSupported`
+runs before every validation and is separately asserted in `test/policy.test.mjs`.
+
+`format` is treated as the annotation the specification says it is, and claims nothing. Every
+`format: date` in the schema is paired with an equivalent `pattern`, so the assurance is carried by
+the pattern.
+
+The policy shape is YAML, so `scripts/yaml.mjs` parses a deliberately small subset and rejects
+everything outside it — anchors, block scalars, flow collections, duplicate keys, tabs. **Scalars
+are never coerced**: `standardVersion: 1.0` reaches the schema as the string `"1.0"` so its pattern
+can reject it, which a parser producing a number would have made unreachable.
+
+**R4 is not yet implemented.** Nothing asserts that the schema's enumerations match the standards
+that own them — the `level` enum here and [Standard 18](18-machine-readable-project-policy.md) R3
+agree by hand. That check is the same class of invariant as `scripts/inventory.mjs`, which exists
+because a hand-maintained count silently went wrong, and it is the next thing worth adding.

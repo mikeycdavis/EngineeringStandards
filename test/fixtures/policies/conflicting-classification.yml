@@ -1,0 +1,14 @@
+# Schema-valid, compliance-failing: a rule declared both not-applicable and excepted.
+standardVersion: "1.0.0"
+
+applicability:
+  audit.actor-attribution:
+    status: not-applicable
+    reason: "No mutations."
+    reviewedAt: "2026-08-08"
+
+exceptions:
+  - rule: audit.actor-attribution
+    reason: "Attribution not yet wired."
+    approvedBy: "project-owner"
+    approvedAt: "2026-08-08"
