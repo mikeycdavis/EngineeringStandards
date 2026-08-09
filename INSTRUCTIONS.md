@@ -212,18 +212,46 @@ Two things to resist:
   same outcome while hiding it, and is the mechanism
   [Standard 18](standards/18-machine-readable-project-policy.md) R1 prohibits.
 
-## 9. Bootstrapping a greenfield project
+## 9. Bootstrapping — `standards init`
 
-1. `project-policy.yml` from the template, edited
-2. `PROJECT.md` from the template ([Standard 6](standards/06-project-manifest.md))
-3. `/plan-structure` then `/plan-handoff`, writing every top-level section to its own file under
-   `artifacts/project-plan-breakdown/` ([Standard 35](standards/35-planning-requirements.md))
-4. `artifacts/adr/` for decisions ([Standard 11](standards/11-architecture-decision-records.md))
-5. `/codebase-docs` once there is something to document
-6. Audit, and resolve every finding per section 8
+```bash
+node <standards-repo>/scripts/standards.mjs init . --dry-run   # see what would happen
+node <standards-repo>/scripts/standards.mjs init .             # do it
+```
 
-[Standard 33](standards/33-bootstrap-experience.md) specifies a `standards init` that would do steps
-1–4 in one command. **It is not built yet** — do these by hand.
+`init` creates `project-policy.yml`, `PROJECT.md`, `artifacts/project-plan-breakdown/`, and
+`artifacts/adr/`. It detects which of three situations you are in and routes accordingly:
+
+| Mode | When | What it does |
+| --- | --- | --- |
+| `greenfield` | No implementation markers | Creates everything; next step is `/plan-structure` and `/plan-handoff` |
+| `existing-with-plan` | Implementation plus a real plan or original prompt | Creates what is missing; you **normalise** the existing plan rather than replacing it |
+| `reconstruction-required` | Implementation, no trustworthy plan | Creates the plan directory **empty**, sets `reconstructionRequired: true`, and hands off to [Standard 44](standards/44-existing-project-reconstruction.md) |
+
+**Mode detection is a guess and says so** — it is reported `INFERRED`, with the evidence it used.
+Override it with `--mode=<mode>`, which is reported `CONFIRMED_BY_OWNER`.
+
+### The safety contract
+
+- **It never overwrites.** A file that exists and differs is reported as a **conflict**, and nothing
+  is changed. Overwriting requires naming the exact path: `--force-overwrite=PROJECT.md`. Approving
+  one path does not approve another.
+- **`--dry-run` predicts the real run exactly**, because they are the same computation — the dry run
+  is the planning half without the writing half.
+- **Re-running is safe.** A second run recognises its own output and preserves it.
+- `preserved` and `conflicts` both mean nothing was written; the first is success, the second is
+  unfinished work.
+
+| Exit | Means |
+| --- | --- |
+| `0` | Completed, no conflicts |
+| `1` | Conflicts — nothing was changed, and you have to decide |
+| `2` | init could not run |
+
+`--json` emits the structured report, so an agent or WhatsNext can continue an onboarding flow it
+did not start.
+
+After `init`: run `/codebase-docs`, then `validate`, then resolve every failure per section 8.
 
 ## 10. Onboarding an existing project
 
@@ -459,7 +487,6 @@ Stated here rather than discovered later. Most of what this table used to say is
 | --- | --- |
 | The catalog covers 24 rules across 14 of 44 standards | Rules outside it are reported `not-evaluated` rather than passing — honest, but a `COMPLIANT` verdict covers less than the whole framework. The audit prints this as `frameworkCoverage` so you never have to remember it |
 | Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`, never passing. Read the coverage line, not just the score |
-| No `standards init` ([33](standards/33-bootstrap-experience.md)) | Bootstrap is manual — section 9 |
 | No `standardVersion` resolution ([21](standards/21-versioning.md) R5) | With one published version there is nothing to resolve against; an unresolvable version is not yet rejected |
 
 Each is recorded in the `## Implementation` section of the standard that specifies it.

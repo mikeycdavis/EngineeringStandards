@@ -102,7 +102,7 @@ test("the guide covers every section the adoption standard requires", async () =
     "Validating the policy",
     "Running the audit",
     "Classifying required / not-applicable / exception",
-    "Bootstrapping a greenfield project",
+    "Bootstrapping — `standards init`",
     "Onboarding an existing project",
     "The adoption decision flow",
     "Reconstruction mode",

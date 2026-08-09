@@ -78,14 +78,12 @@ applicability:
     reviewedAt: "2026-08-08"
     revisitWhen: "Any capability calls a model provider."
 
-  ai.destructive-approval:
-    status: not-applicable
-    reason: "No destructive or high-impact action exists. Every command reads the working tree and writes only to stdout."
-    reviewedAt: "2026-08-08"
-    revisitWhen: "`standards init` lands — it writes files, and Standard 33 R2's overwrite permission is exactly this rule."
-
-# No exceptions. Every rule that applies here is either met or failing, and a failing rule is
-# reported as a failure rather than waived. `architecture.project-manifest` is currently failing:
-# PROJECT.md does not exist. That is deliberate — an exception would hide a gap that should stay
-# visible until it is closed (Standard 20, Standard 30 R2).
+# ai.destructive-approval was declared not-applicable until 2026-08-09, with the trigger
+# "`standards init` lands — it writes files, and Standard 33 R2's overwrite permission is exactly
+# this rule." It landed, so the declaration was removed and the rule now applies at its catalog
+# level. That is the whole purpose of `revisitWhen`: an applicability claim is a statement about the
+# project at a moment, and this one stopped being true the moment the project gained the capability.
+#
+# No exceptions. Every rule that applies here is either met, failing, or honestly unevaluated, and a
+# failing rule is reported as a failure rather than waived (Standard 20, Standard 30 R2).
 exceptions: []

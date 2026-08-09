@@ -41,6 +41,8 @@ implementation language, detector internals, ordering of non-semantic output.
   the standards. Needs no policy; never produces a verdict.
 - **`standards validate`** — policy-aware compliance evaluation. Applies applicability, exceptions,
   and `nonExemptible`, and emits status, score, assurance, and framework coverage.
+- **`standards init`** — bootstrap. Creates missing artifacts, never overwrites without a per-path
+  opt-in, and routes greenfield / existing-with-plan / reconstruction-required.
 - **Rule catalog** (`rules/`) — 24 rules across 8 categories, each carrying identity, level,
   severity, validation type, assurance, exemptibility, lifecycle metadata, and remediation.
 - **Project policy** (`project-policy.yml`) and its **JSON Schema**, with `applicability` and
@@ -63,8 +65,6 @@ Stated here rather than discovered later, and each recorded in the standard that
   represented. Rules outside it report `not-evaluated` rather than passing, so a `COMPLIANT` verdict
   covers less than the whole framework. `frameworkCoverage` reports this on every run.
 - Several rules are `manual-review` or have no analyzer, and report `skipped / not-evaluated`.
-- **`standards init` is not built** ([Standard 33](standards/33-bootstrap-experience.md)). Bootstrap
-  is manual.
 - No rule has been deprecated or superseded yet, so the lifecycle fields are present and empty.
 
 ### Notes on getting here

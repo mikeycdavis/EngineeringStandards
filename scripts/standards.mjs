@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
+import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { validate } from "./jsonschema.mjs";
 
@@ -352,11 +353,15 @@ const positional = argv.slice(1).find((a) => !a.startsWith("--"));
 
 function usage(stream = process.stderr) {
   stream.write(
-    "Usage: standards <audit|validate> [path] [--json] [--dir=<path>] [--strict]\n\n" +
+    "Usage: standards <audit|validate|init> [path] [flags]\n\n" +
       "  audit          Evidence discovery. What a repository has and where it departs from\n" +
       "                 the standards. Needs no policy; never produces a verdict.\n" +
       "  validate       Policy-aware compliance evaluation. Loads project-policy.yml, applies\n" +
-      "                 applicability and exceptions, and produces the authoritative status.\n\n" +
+      "                 applicability and exceptions, and produces the authoritative status.\n" +
+      "  init           Bootstrap a project. Creates missing artifacts, never overwrites\n" +
+      "                 without an explicit per-path opt-in.\n\n" +
+      "  --dry-run      init only: report what would happen, write nothing.\n" +
+      "  --force-overwrite=<path>   init only: approve replacing one existing file.\n" +
       "  --json         Emit the structured report on stdout instead of the readable one.\n" +
       "  --dir=<path>   Target a directory other than the resolved project root.\n" +
       "  --strict       audit only: exit 1 when any finding needs attention.\n\n" +
@@ -383,7 +388,7 @@ if (!subcommand || subcommand === "--help" || subcommand === "-h") {
   usage(process.stdout);
   process.exit(subcommand ? EXIT_OK : EXIT_INVOCATION);
 }
-const COMMANDS = new Set(["audit", "validate"]);
+const COMMANDS = new Set(["audit", "validate", "init"]);
 if (!COMMANDS.has(subcommand)) {
   process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
   usage();
@@ -403,6 +408,45 @@ if (!COMMANDS.has(subcommand)) {
  * and a flag that changes the exit contract is a trap.
  */
 const VALIDATING = subcommand === "validate";
+
+// ---------------------------------------------------------------------------
+// init — bootstrap (Standard 33)
+//
+// Handled before the scan: init does not need an evidence survey, and running one would make a
+// bootstrap command slower than the thing it bootstraps.
+// ---------------------------------------------------------------------------
+
+if (subcommand === "init") {
+  const dryRun = argv.includes("--dry-run");
+  const modeFlag = argv.find((a) => a.startsWith("--mode="))?.slice("--mode=".length) ?? null;
+  const overwrite = argv
+    .filter((a) => a.startsWith("--force-overwrite="))
+    .map((a) => a.slice("--force-overwrite=".length));
+  const target = path.resolve(dirFlag ?? positional ?? ".");
+
+  let report;
+  try {
+    report = await planInit(target, { mode: modeFlag, overwrite });
+  } catch (error) {
+    process.stderr.write(`standards init: ${error.message}\n`);
+    process.exit(EXIT_INVOCATION);
+  }
+
+  // The dry run and the real run share one computation, so the report cannot disagree with what
+  // apply() then does (Standard 33 R5).
+  if (!dryRun) await applyInit(target, report);
+
+  if (JSON_OUT) {
+    process.stdout.write(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
+  } else {
+    process.stdout.write(renderInit(report, { dryRun }) + "\n");
+  }
+
+  // A conflict is unfinished work, not a failure of the command: nothing was changed and the
+  // operator has to decide. Exit 1 so a script notices, distinct from 2 which means init could
+  // not run at all.
+  process.exit(report.conflicts.length > 0 ? EXIT_FINDINGS : EXIT_OK);
+}
 
 // ---------------------------------------------------------------------------
 // Repository scan

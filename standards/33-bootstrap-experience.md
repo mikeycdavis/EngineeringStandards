@@ -195,14 +195,31 @@ and [Standard 11](11-architecture-decision-records.md) define the artifacts R1 g
 
 ## Implementation
 
-**Not implemented.** `scripts/standards.mjs` has one subcommand, `audit`, and no `init`.
+**Implemented.** `standards init`, in `scripts/init.mjs`.
 
-The dependency order is real rather than an excuse: `init` generates a `project-policy.yml`, and
-there is no schema for one ([Standard 19](19-json-schema.md)) and no canonical rule set for its keys
-to reference ([Standard 27](27-rule-catalog.md)). A bootstrap emitting a policy nothing can validate
-would seed every adopting project with a file whose correctness is unknowable.
+The module is split so the safety contract is structural rather than disciplinary: `plan()` is pure
+and decides what would happen, `apply()` is the only function that writes. **`--dry-run` is
+therefore not a second code path** — it is `plan()` without `apply()`, which is the only way to
+guarantee R5's requirement that a dry run predict the real run exactly.
 
-What exists is the far end of the flow: the `project-reconstruction` skill implements
-[Standard 44](44-existing-project-reconstruction.md) today, so R4's `existing-project` branch has a
-real destination. The missing piece is the detection and the report that route into it — which is
-also the smallest useful first version of this command, and worth building before the generation half.
+| Requirement | Implementation |
+| --- | --- |
+| R1 — generates the artifacts | `project-policy.yml`, `PROJECT.md`, `artifacts/project-plan-breakdown/`, `artifacts/adr/`, from `templates/`. A test asserts what it writes validates against the real schema |
+| R2 — non-destructive | A differing file is a `conflict`; nothing is written. Overwriting requires naming the exact path (`--force-overwrite=PROJECT.md`), and approving one path does not approve another |
+| R3 — idempotent | A second run recognises its own output and preserves it. Tested to three runs |
+| R4 — mode detection and routing | `greenfield`, `existing-with-plan`, `reconstruction-required`, reported `INFERRED` with the evidence used, overridable by `--mode` (reported `CONFIRMED_BY_OWNER`) |
+| R5 — dry run | Same computation as the real run |
+| R6 — machine-readable report | `--json`, with `schemaVersion`, `mode`, `created`, `preserved`, `conflicts`, `overwrites`, `reconstructionRequired`, and `nextStep` |
+
+**R4's prohibition is enforced and tested:** in `reconstruction-required` mode the plan directory is
+created **empty**, and a test asserts it stays empty. Scaffolding template sections over existing
+code is a fabricated history, indistinguishable from a real plan later. A second test asserts `init`
+does not reimplement reconstruction — it checks the source carries no evidence-label or baseline
+vocabulary, so the logic cannot quietly migrate here from
+[Standard 44](44-existing-project-reconstruction.md).
+
+**A real bug, caught by the tests and worth recording.** After creating an empty
+`artifacts/project-plan-breakdown/`, a second run read *its own scaffolding* as evidence that a plan
+existed, flipping the mode from `reconstruction-required` to `existing-with-plan` and erasing the
+`reconstructionRequired` signal. An empty plan directory is not a plan; a tool must not treat its own
+output as evidence about the project. Directory markers now require content.
