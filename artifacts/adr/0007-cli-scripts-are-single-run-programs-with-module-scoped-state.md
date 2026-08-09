@@ -10,15 +10,32 @@
 says what discharges the prohibition: a decision record naming **what the state is**, **who owns
 it**, and **how it is reset**. Global is not the violation; unnamed and unownable is.
 
-`scripts/standards.mjs` holds two module-level bindings that are mutated during a run:
+Three scripts hold module-level bindings that are mutated during a run. **The rule is categorical, so
+that this record cannot go stale by omission: every module-level accumulator, cache, and counter in
+`scripts/standards.mjs`, `scripts/inventory.mjs`, and `scripts/fidelity.mjs` is covered by this
+decision.** The complete enumeration as of 2.0.0:
 
-| Binding | Line | What it holds |
+| Script | Bindings | What they hold |
 | --- | --- | --- |
-| `findings` | `scripts/standards.mjs:550` | Every finding produced by the run, appended by `addFinding` |
-| `sources` | `scripts/standards.mjs:373` | Per-file `{ code, structure, comments }` views, written once during the read loop |
+| `standards.mjs` | `findings` (`:550`) | Every finding produced by the run, appended by `addFinding` |
+| | `sources` (`:373`) | Per-file `{ code, structure, comments }` views, written once in the read loop |
+| | `contents` (`:1653`) | Per-file raw text, written in the same loop and read by the document detectors |
+| `inventory.mjs` | `missing`, `unknown`, `duplicates`, `titleMismatches`, `brokenSections`, `duplicateSections` | Per-source disagreement accumulators |
+| | `detectedCount`, `countMismatch` | Running totals across sources |
+| `fidelity.mjs` | `failures` | Unverified verbatim claims |
+| | `claims` | Running count of claims checked |
+| | `wholeSource`, `sectionCache` | Read caches, so a source file is read and normalized once |
+| | `extractionOf`, `entryFor` | Inventory lookups, built once at start and never mutated after |
 
-`scripts/inventory.mjs` and `scripts/fidelity.mjs` hold module-level counters of the same kind
-(`detectedCount`, `countMismatch`, `claims`).
+Frozen lookup tables — `SKIP_DIRS`, `TEXT_EXT`, `CODE_EXT`, `COMMENT_SYNTAX`, `COMMANDS`,
+`CONFIG_EXT`, `SUPPORTED`, `ANNOTATIONS` — are module-level constants that are never written after
+initialization. They are configuration, not state, and this decision does not concern them.
+
+**Completeness is the point.** An earlier draft of this record listed `findings` and `sources` and
+glossed the other two scripts as holding "counters of the same kind". That was an incomplete
+enumeration presented as a complete one, which is worse than a categorical rule: a reader takes the
+list for the whole set. It was caught by the owner review this record exists to enable — `contents`
+sits in the same file, at the same level, written in the same loop as `sources`, and was missing.
 
 This was raised as a finding during the attestation review of 2.0.0, when
 `architecture.no-hidden-global-state` could not be attested clean: the rule has a real subject here,
@@ -34,13 +51,17 @@ Each script does its work at module top level — `scripts/standards.mjs:1692` o
 module *is* performing the run. There is no `main()` to call twice, and no second run can begin
 inside a process that has already done one.
 
-**What the state is.** `findings` is the run's output accumulator. `sources` is the run's parsed-file
-cache, and it exists to enforce the use/mention split: every content scan goes through `sourceOf`,
-`structureOf`, or `commentsOf`, and those read from `sources`. Threading both through fifteen
-detectors as parameters would add a parameter to every signature and change nothing about the
-lifetime.
+**What the state is.** The table above enumerates it. Every entry is one of three kinds: an
+**accumulator** the run appends its output to (`findings`, `failures`, and inventory's six
+disagreement lists), a **read cache** so a file is read and parsed once (`sources`, `contents`,
+`wholeSource`, `sectionCache`), or a **running count** (`claims`, `detectedCount`, `countMismatch`).
+`sources` earns its place specifically: it is what enforces the use/mention split, since every
+content scan goes through `sourceOf`, `structureOf`, or `commentsOf` and those read from it.
+Threading these through fifteen detectors as parameters would add a parameter to every signature and
+change nothing about the lifetime.
 
-**Who owns them.** The top-level run block at the bottom of each script. Within
+**Who owns them.** The top-level run block at the bottom of each script — one owner per script, and
+no binding above is written from more than one place. Within
 `scripts/standards.mjs`, `addFinding` (`:558`) is the **only** writer to `findings`, and the read
 loop (`:1692-1700`) is the only writer to `sources`. Detectors call `addFinding`; they never touch
 the array. That single-writer rule is what keeps the accumulator auditable, and it is the property to
@@ -74,8 +95,8 @@ rather than stretched:
   top level performs an audit would run the audit to obtain the helper.
 
 The refactor at that point is known: move the run block into an exported `run(root, options)` that
-constructs `findings` and `sources` per call and passes them through. It is mechanical and it is not
-worth doing before a second caller exists.
+constructs every binding in the table per call and passes them through. It is mechanical and it is
+not worth doing before a second caller exists.
 
 **One coupling this makes visible.** `detectUnverifiedFunctionality` (`:1026`) reads `findings`
 directly, to build on the capability findings the descriptive detectors produced earlier in the same
