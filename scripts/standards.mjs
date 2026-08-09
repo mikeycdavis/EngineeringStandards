@@ -31,6 +31,23 @@ const SELF = fileURLToPath(import.meta.url);
 const SCHEMA_VERSION = 1;
 const STD44 = "standards/44-existing-project-reconstruction.md";
 
+/**
+ * Requirement anchors, verified against the headings in that file. A standardRef that does not
+ * resolve is worse than none: it sends a reader to a page that does not explain the finding.
+ */
+const R = {
+  evidence: `${STD44}#r1--evidence-before-questions`,
+  fabrication: `${STD44}#r2--no-historical-fabrication`,
+  labeling: `${STD44}#r3--evidence-labeling`,
+  artifacts: `${STD44}#r4--required-artifacts-and-canonical-paths`,
+  baseline: `${STD44}#r5--baseline-contents`,
+  prompt: `${STD44}#r6--reconstructed-prompt`,
+  plan: `${STD44}#r7--reconstructed-plan-and-plan-items`,
+  questions: `${STD44}#r8--question-list`,
+  resolution: `${STD44}#r9--question-resolution`,
+  done: `${STD44}#r10--definition-of-done`,
+};
+
 /** Directories never worth walking: build output, dependencies, virtualenvs, caches. */
 const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "out", "bin", "obj", ".next", ".nuxt",
@@ -148,17 +165,17 @@ const findings = [];
  * convention or a content pattern is INFERRED — reporting a heuristic as observed is the fabrication
  * error R2 prohibits.
  */
-function addFinding({ id, category, label, evidence, message, standardRef }) {
+function addFinding({ id, category, severity = "info", label, evidence, message, standardRef }) {
   const shown = evidence.slice(0, MAX_EVIDENCE);
   const omitted = evidence.length - shown.length;
   findings.push({
     id,
     category,
-    severity: "info",
+    severity,
     label,
     evidence: shown,
     message: omitted > 0 ? `${message} (${evidence.length} total; ${omitted} not listed)` : message,
-    standardRef: standardRef ?? `${STD44}#r5--reconstructed-baseline-contents`,
+    standardRef: standardRef ?? R.baseline,
   });
 }
 
@@ -446,6 +463,369 @@ function detectAiInterfaces(files, contents) {
 }
 
 // ---------------------------------------------------------------------------
+// Detectors — absence, unfinished work, and discrepancy
+// ---------------------------------------------------------------------------
+
+const has = (p) => existsSync(path.join(root, p));
+const TEST_RE = /(^|\/)(tests?|spec|__tests__)\/|\.(test|spec)\.[jt]sx?$|_test\.(go|py)$|Tests?\.cs$|test_.*\.py$/i;
+const CI_FILES = [
+  ".github/workflows", "azure-pipelines.yml", ".gitlab-ci.yml", "Jenkinsfile",
+  ".circleci/config.yml", ".travis.yml", "bitbucket-pipelines.yml",
+];
+
+function detectMissingDocs(files, contents) {
+  const missing = [];
+  if (!files.some((f) => rel(f).toLowerCase() === "docs/architecture.md")) missing.push("docs/architecture.md");
+  const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
+  if (!readme) missing.push("README.md");
+  else if ((contents.get(readme) ?? "").trim().length < 400) missing.push(`${rel(readme)} (under 400 characters)`);
+  if (missing.length === 0) return;
+
+  addFinding({
+    id: "missing-documentation",
+    category: "Missing documentation",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: missing,
+    message: `No substantive architecture or overview documentation: ${missing.join(", ")}.`,
+    standardRef: R.done,
+  });
+}
+
+function detectMissingPlanningArtifacts(files) {
+  const dir = "artifacts/project-plan-breakdown";
+  if (!has(dir)) {
+    addFinding({
+      id: "missing-planning-artifacts",
+      category: "Missing planning artifacts",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: ["artifacts/"],
+      message: `No ${dir}/ directory exists.`,
+      standardRef: R.artifacts,
+    });
+    return;
+  }
+  if (!has(`${dir}/00-overview.md`)) {
+    addFinding({
+      id: "missing-planning-artifacts",
+      category: "Missing planning artifacts",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [`${dir}/`],
+      message: `${dir}/ exists but has no 00-overview.md.`,
+      standardRef: R.artifacts,
+    });
+  }
+}
+
+function detectMissingAuditInfrastructure(files) {
+  const tests = files.filter((f) => TEST_RE.test(rel(f)));
+  const ci = CI_FILES.filter((c) => has(c));
+  const missing = [];
+  if (tests.length === 0) missing.push("no test suite");
+  if (ci.length === 0) missing.push("no CI configuration");
+  if (missing.length === 0) return;
+
+  addFinding({
+    id: "missing-audit-infrastructure",
+    category: "Missing audit infrastructure",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: missing,
+    message: `The repository has ${missing.join(" and ")}; nothing mechanically verifies its behavior.`,
+    standardRef: R.done,
+  });
+}
+
+function detectUnverifiedFunctionality(files) {
+  const tests = files.filter((f) => TEST_RE.test(rel(f)));
+  if (tests.length > 0) return; // per-capability coverage mapping is not attempted; see the report note
+  const capabilities = findings.filter((f) =>
+    ["detected-apis", "detected-jobs", "detected-capabilities"].includes(f.id),
+  );
+  if (capabilities.length === 0) return;
+
+  addFinding({
+    id: "unverified-functionality",
+    category: "Unverified functionality",
+    severity: "warning",
+    label: "INFERRED",
+    evidence: uniq(capabilities.flatMap((f) => f.evidence)),
+    message:
+      `${capabilities.length} capability categor(ies) were detected but the repository has no test ` +
+      "files, so none of that functionality is verified.",
+    standardRef: R.done,
+  });
+}
+
+const UNFINISHED = [
+  [/\b(TODO|FIXME|HACK|XXX)\b/, "TODO/FIXME markers"],
+  [/\bNotImplemented(Error|Exception)?\b|\braise NotImplementedError\b|\bthrow new NotImplementedException\b/, "unimplemented stubs"],
+  [/\b(it|test|describe)\.skip\(|\bxit\(|@pytest\.mark\.skip|\[Ignore\]|\bt\.Skip\(/, "skipped tests"],
+];
+
+/**
+ * Markers like TODO and NotImplemented are code signals. Scanning prose for them flags any document
+ * that *names* a marker as *containing* one — this file's own design document was the first false
+ * positive. Restricting the scan to code extensions is the fix; a TODO in a Markdown file is a note,
+ * not an unfinished code path.
+ */
+const CODE_EXT = new Set([
+  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
+  ".kt", ".php", ".rs", ".razor", ".vue", ".svelte", ".sql", ".sh", ".ps1",
+]);
+
+function detectUnfinished(files, contents) {
+  const byKind = new Map();
+  for (const f of files) {
+    if (!CODE_EXT.has(path.extname(f))) continue;
+    const text = contents.get(f);
+    if (!text) continue;
+    for (const [re, kind] of UNFINISHED) {
+      if (re.test(text)) {
+        if (!byKind.has(kind)) byKind.set(kind, []);
+        byKind.get(kind).push(rel(f));
+      }
+    }
+  }
+  if (byKind.size === 0) return;
+
+  addFinding({
+    id: "potential-unfinished-features",
+    category: "Potential unfinished features",
+    severity: "warning",
+    label: "INFERRED",
+    evidence: uniq([...byKind.values()].flat()),
+    message: `Signals of unfinished work: ${[...byKind.keys()].sort().join(", ")}.`,
+    standardRef: R.done,
+  });
+}
+
+const ENTRYISH = /(^|\/)(index|main|app|Program|Startup|__init__|__main__|setup|conftest)\.[a-z]+$/i;
+
+function detectDeadCode(files, contents) {
+  const candidates = files.filter((f) => {
+    const r = rel(f);
+    if (!/\.(m?[jt]sx?|py|cs|go|rb)$/.test(r)) return false;
+    if (TEST_RE.test(r) || ENTRYISH.test(r)) return false;
+    return true;
+  });
+  const orphans = [];
+  for (const f of candidates) {
+    const stem = path.basename(rel(f)).replace(/\.[^.]+$/, "");
+    if (stem.length < 3) continue;
+    const referenced = files.some((other) => {
+      if (other === f) return false;
+      const text = contents.get(other);
+      return text ? text.includes(stem) : false;
+    });
+    if (!referenced) orphans.push(rel(f));
+  }
+  if (orphans.length === 0) return;
+
+  addFinding({
+    id: "potential-dead-code",
+    category: "Potential dead code",
+    severity: "info",
+    label: "INFERRED",
+    evidence: orphans,
+    message:
+      `${orphans.length} source file(s) whose name is referenced nowhere else in the repository. ` +
+      "Dynamic imports and reflection defeat this check, so treat each as a question, not a verdict.",
+    standardRef: R.done,
+  });
+}
+
+function detectOpenQuestions(files, contents) {
+  const qFile = files.find((f) => rel(f) === "artifacts/project-baseline/open-questions.md");
+  if (!qFile) return;
+  const text = contents.get(qFile) ?? "";
+  // Fixed, greppable marker written by the project-reconstruction skill's questions template.
+  const open = (text.match(/^\s*-?\s*\*\*Status:\*\*\s*open\s*$/gim) ?? []).length;
+  if (open === 0) return;
+
+  addFinding({
+    id: "open-reconstruction-questions",
+    category: "Open reconstruction questions",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: [rel(qFile)],
+    message: `${open} reconstruction question(s) remain unanswered by the project owner.`,
+    standardRef: R.questions,
+  });
+}
+
+/** Parse `### Title` items and their `- **Field:** value` lines out of a plan-breakdown file. */
+function parsePlanItems(text, file) {
+  const items = [];
+  let current = null;
+  for (const line of text.split(/\r?\n/)) {
+    const heading = line.match(/^###\s+(.*)$/);
+    if (heading) {
+      if (current) items.push(current);
+      current = { title: heading[1].trim(), file, fields: new Map() };
+      continue;
+    }
+    const field = line.match(/^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/);
+    if (field && current) current.fields.set(field[1].trim(), field[2].trim());
+  }
+  if (current) items.push(current);
+  return items;
+}
+
+const PLAN_FIELDS = ["Status", "Purpose", "Deliverables", "Acceptance Criteria", "Verification", "Dependencies"];
+
+async function detectPlanDiscrepancies(files, contents) {
+  const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
+  if (planFiles.length === 0) return;
+
+  const items = planFiles.flatMap((f) => parsePlanItems(contents.get(f) ?? "", rel(f)));
+  const executable = items.filter((i) => i.fields.has("Status"));
+  if (executable.length === 0) return;
+
+  const dangling = [];
+  const missingDeliverables = [];
+  const incomplete = [];
+
+  for (const item of executable) {
+    for (const field of PLAN_FIELDS) {
+      if (!item.fields.has(field)) incomplete.push(`${item.file} :: ${item.title} (no ${field})`);
+    }
+
+    let status = item.fields.get("Status") ?? "";
+    // The trap: under delegated liveness no plan item is ever `done`, so a check that only looks
+    // for `done` reports zero findings on the repositories that follow the standard most closely.
+    // Resolve the reference first, and treat one that resolves to nothing as a finding in itself.
+    const tracked = status.match(/tracked as\s+([A-Z]{2}-\d+)/i);
+    if (tracked) {
+      const id = tracked[1].toUpperCase();
+      const itemPath = path.join(root, "artifacts/backlog/items", `${id}.md`);
+      if (!existsSync(itemPath)) {
+        dangling.push(`${item.file} :: ${item.title} -> ${id}`);
+        continue;
+      }
+      const backlogText = await readText(itemPath);
+      status = (backlogText.match(/^status:\s*(\S+)/im) ?? [, "unknown"])[1];
+    }
+
+    if (!/^done\b/i.test(status)) continue;
+
+    const deliverables = item.fields.get("Deliverables") ?? "";
+    for (const token of deliverables.match(/`([^`]+)`/g) ?? []) {
+      const p = token.slice(1, -1).trim();
+      if (!/[\/.]/.test(p) || /\s/.test(p) || p.startsWith("http")) continue;
+      if (p.startsWith("C:") || p.startsWith("~")) continue; // outside the audited repository by design
+      if (!existsSync(path.join(root, p))) {
+        missingDeliverables.push(`${item.file} :: ${item.title} -> ${p}`);
+      }
+    }
+  }
+
+  if (dangling.length) {
+    addFinding({
+      id: "plan-code-discrepancies",
+      category: "Plan/code discrepancies",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: dangling,
+      message:
+        `${dangling.length} plan item(s) delegate status to a backlog id that does not exist. ` +
+        "Untracked work is presented as tracked.",
+      standardRef: R.plan,
+    });
+  }
+  if (missingDeliverables.length) {
+    addFinding({
+      id: "plan-code-discrepancies",
+      category: "Plan/code discrepancies",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: missingDeliverables,
+      message: `${missingDeliverables.length} plan item(s) are complete but name a deliverable that does not exist.`,
+      standardRef: R.plan,
+    });
+  }
+  if (incomplete.length) {
+    addFinding({
+      id: "standards-violations",
+      category: "Standards violations",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: incomplete,
+      message: `${incomplete.length} plan item field(s) are missing; R7 requires all six on every executable item.`,
+      standardRef: R.plan,
+    });
+  }
+}
+
+function detectDocDiscrepancies(files, contents) {
+  const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
+  if (!readme) return;
+  const text = contents.get(readme) ?? "";
+  const broken = [];
+
+  for (const token of text.match(/`([^`\n]+)`/g) ?? []) {
+    const p = token.slice(1, -1).trim();
+    if (!p.includes("/") || /\s/.test(p) || p.startsWith("http") || p.startsWith("-")) continue;
+    if (p.startsWith("C:") || p.startsWith("~") || p.startsWith("<")) continue;
+    const clean = p.replace(/\/$/, "");
+    if (!existsSync(path.join(root, clean))) broken.push(`${rel(readme)} -> ${p}`);
+  }
+
+  const pkgPath = files.find((f) => rel(f) === "package.json");
+  if (pkgPath) {
+    try {
+      const scripts = Object.keys(JSON.parse(contents.get(pkgPath) ?? "{}").scripts ?? {});
+      for (const m of text.match(/npm run ([\w:-]+)/g) ?? []) {
+        const name = m.replace("npm run ", "");
+        if (!scripts.includes(name)) broken.push(`${rel(readme)} -> npm run ${name}`);
+      }
+    } catch {
+      /* handled by other detectors */
+    }
+  }
+
+  if (broken.length === 0) return;
+  addFinding({
+    id: "doc-code-discrepancies",
+    category: "Documentation/code discrepancies",
+    severity: "error",
+    label: "OBSERVED",
+    evidence: uniq(broken),
+    message: `${broken.length} path(s) or command(s) named in the README do not exist.`,
+    standardRef: R.done,
+  });
+}
+
+function detectStandardsViolations(files, contents) {
+  const violations = [];
+  if (has("artifacts/project-baseline")) {
+    if (!has("artifacts/project-baseline/reconstructed-baseline.md")) {
+      violations.push(["artifacts/project-baseline/", "R4: baseline directory exists without reconstructed-baseline.md", R.artifacts]);
+    }
+    const promptFile = files.find((f) => rel(f) === "artifacts/project-baseline/RECONSTRUCTED-PROMPT.md");
+    if (promptFile) {
+      const t = contents.get(promptFile) ?? "";
+      if (!/reconstructed from the existing codebase/i.test(t)) {
+        violations.push([rel(promptFile), "R6: reconstructed prompt does not declare itself reconstructed", R.prompt]);
+      }
+    }
+  }
+  for (const [evidence, message, ref] of violations) {
+    addFinding({
+      id: "standards-violations",
+      category: "Standards violations",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: [evidence],
+      message,
+      standardRef: ref,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Reporting
 // ---------------------------------------------------------------------------
 
@@ -458,12 +838,15 @@ const DESCRIPTIVE = [
   ["detected-ai-interfaces", "Detected AI interfaces"],
 ];
 
+const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
+
 function renderHuman(fileCount) {
   const lines = [];
-  lines.push(`standards audit — ${rel(root) || path.basename(root)} (${root.split(path.sep).join("/")})`);
+  lines.push(`standards audit — ${path.basename(root)} (${root.split(path.sep).join("/")})`);
   lines.push(`${fileCount} file(s) scanned, ${findings.length} finding(s).`);
-  lines.push("");
 
+  lines.push("");
+  lines.push("What the repository has");
   for (const [id, title] of DESCRIPTIVE) {
     const hits = findings.filter((f) => f.id === id);
     if (hits.length === 0) {
@@ -477,12 +860,36 @@ function renderHuman(fileCount) {
     }
   }
 
+  const attention = findings
+    .filter((f) => f.severity !== "info" || !DESCRIPTIVE.some(([id]) => id === f.id))
+    .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+
   lines.push("");
-  lines.push("Only the six descriptive categories are implemented. The categories that report");
-  lines.push("something missing, unproven, or contradictory are specified in");
-  lines.push("design/standards-audit-cli.md and are not yet detected, so this run cannot tell you");
-  lines.push("the repository is compliant — only what it contains.");
-  if (STRICT) lines.push("--strict had no effect: no category that can fail a run is implemented yet.");
+  if (attention.length === 0) {
+    lines.push("Nothing needing attention was detected.");
+  } else {
+    lines.push("What needs attention");
+    for (const f of attention) {
+      lines.push(`  [${f.severity}] ${f.category} [${f.label}]`);
+      lines.push(`    ${f.message}`);
+      for (const e of f.evidence) lines.push(`      ${e}`);
+      lines.push(`    see ${f.standardRef}`);
+    }
+  }
+
+  const failing = findings.filter((f) => f.severity !== "info").length;
+  lines.push("");
+  lines.push(
+    `${findings.filter((f) => f.severity === "error").length} error(s), ` +
+      `${findings.filter((f) => f.severity === "warning").length} warning(s), ` +
+      `${findings.filter((f) => f.severity === "info").length} informational.`,
+  );
+  lines.push("");
+  lines.push("Coverage is partial by design. Detection is pattern-based and language-agnostic, so a");
+  lines.push("clean run means nothing matched the patterns — not that the repository is compliant.");
+  lines.push("Per-capability test coverage, dead-code reachability, and most standards requirements");
+  lines.push("are not mechanically checked. See design/standards-audit-cli.md.");
+  if (STRICT && failing > 0) lines.push(`--strict: exiting 1 because ${failing} finding(s) need attention.`);
   return lines.join("\n");
 }
 
@@ -497,12 +904,24 @@ for (const f of files) {
   if (TEXT_EXT.has(path.extname(f))) contents.set(f, await readText(f));
 }
 
+// Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
 detectArchitecture(files, contents);
 detectCapabilities(files, contents);
 detectApis(files, contents);
 detectJobs(files, contents);
 detectIntegrations(files, contents);
 detectAiInterfaces(files, contents);
+
+detectMissingDocs(files, contents);
+detectMissingPlanningArtifacts(files);
+detectMissingAuditInfrastructure(files);
+detectUnverifiedFunctionality(files);
+detectUnfinished(files, contents);
+detectDeadCode(files, contents);
+detectOpenQuestions(files, contents);
+await detectPlanDiscrepancies(files, contents);
+detectDocDiscrepancies(files, contents);
+detectStandardsViolations(files, contents);
 
 if (JSON_OUT) {
   process.stdout.write(
@@ -521,6 +940,4 @@ if (JSON_OUT) {
   process.stdout.write(renderHuman(files.length) + "\n");
 }
 
-// No implemented category can currently produce a non-info finding, so --strict never fails.
-// When the judgemental categories land, this becomes: findings.some(f => f.severity !== "info").
-process.exit(0);
+process.exit(STRICT && findings.some((f) => f.severity !== "info") ? 1 : 0);

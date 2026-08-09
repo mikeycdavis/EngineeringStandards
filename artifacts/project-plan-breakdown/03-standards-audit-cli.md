@@ -101,7 +101,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Implement the absence and discrepancy categories
 
-- **Status:** not started
+- **Status:** done — 2026-08-08, `scripts/standards.mjs`
 - **Purpose:** These are the categories with teeth — missing documentation, missing planning
   artifacts, missing audit infrastructure, unverified functionality, potential dead code, potential
   unfinished features, plan/code discrepancies, documentation/code discrepancies, open reconstruction
@@ -117,8 +117,19 @@ job; reconciling it against git stays `backlog-reconcile`'s.
     finding in its own right.
   - Every finding's `standardRef` points at a requirement anchor that exists in the referenced file.
 - **Verification:** run against a repository with a seeded backlog where every plan item is
-  `tracked as <id>`, and confirm the run reports real findings rather than zero.
+  `tracked as <id>`, and confirm the run reports real findings rather than zero. Done: a fixture in
+  which *every* item is `tracked as <id>` produced 4 errors and 4 warnings, including the two cases
+  that matter — an item resolved through its backlog item to `done` whose named deliverable does not
+  exist, and an item pointing at `ST-999`, which exists nowhere. A naive implementation returns zero
+  on this fixture. All 27 `standardRef` values across three repositories were checked against the
+  actual headings in the standard: none dangle.
 - **Dependencies:** the descriptive categories above.
+- **Second false positive, same root cause as the first.** The audit flagged
+  `design/standards-audit-cli.md` for unfinished work, because that document *names* the `TODO`,
+  `FIXME`, and `NotImplemented` markers the detector searches for. Prose that describes a code signal
+  is not an instance of it. Fixed by restricting the unfinished-work scan to code extensions;
+  Markdown is excluded, since a TODO in a document is a note rather than an unfinished code path. The
+  general rule now applied twice: **a content scan for a code signal must only read code.**
 - **The trap, stated plainly:** a naive `plan-code-discrepancies` implementation checks for plan items
   marked `done` whose deliverables are absent. Under the delegated-liveness convention Standard 44
   defines, a repository that has adopted the backlog skill has **no** plan item marked `done` — they
@@ -128,7 +139,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Close the delegated-reference integrity gap
 
-- **Status:** not started
+- **Status:** done — 2026-08-08, delivered as part of the discrepancy categories above
 - **Purpose:** Standard 44 requires that every `tracked as <backlog-id>` reference resolve to an item
   that exists, because a dangling one presents untracked work as tracked. **No tool checks this
   today.** `backlog-validate` validates backlog items against each other and has no knowledge of plan
@@ -137,9 +148,37 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 - **Acceptance Criteria:** a plan item referencing a backlog id that does not exist produces a finding
   whose `standardRef` points at Standard 44's R7.
 - **Verification:** construct a fixture with one plan item pointing at a nonexistent id; the audit
-  reports exactly one finding for it. Delete a referenced backlog item in a real repository and
-  confirm the next run catches it.
+  reports exactly one finding for it. Done — the fixture's `ST-999` item produces exactly one
+  `plan-code-discrepancies` finding at severity `error`, labeled `OBSERVED`, whose `standardRef` is
+  `standards/44-existing-project-reconstruction.md#r7--reconstructed-plan-and-plan-items`.
 - **Dependencies:** the discrepancy categories above.
 - **Do not implement this inside `backlog-validate`.** That script owns the backlog directory; giving
   it a second responsibility for files outside that directory couples two things that are otherwise
   independent, and it would then need to know about plan formats it has no other reason to parse.
+
+### Give the audit a test suite and CI
+
+- **Status:** not started
+- **Purpose:** The audit was run against its own repository and reported *no test suite and no CI
+  configuration*. That finding is correct. A tool whose output is "your repository is non-compliant"
+  has no standing to report that while being unverified itself, and two false positives have already
+  shipped in it — both caught by hand, neither by a test.
+- **Deliverables:** a fixture-based test suite exercising each implemented category, a `test` script
+  in `package.json`, and a CI workflow that runs it.
+- **Acceptance Criteria:**
+  - Every implemented finding category has at least one fixture that provokes it and one that must
+    *not* provoke it — the second is what catches the false positives this tool keeps producing.
+  - The two known false positives are locked in as regression tests: a file naming an SDK without
+    importing it must not produce `detected-integrations`, and a Markdown file naming `TODO` must not
+    produce `potential-unfinished-features`.
+  - A fixture where every plan item is `tracked as <id>` must produce findings, permanently guarding
+    the delegated-liveness trap.
+  - Running the audit against this repository must report no `error`-severity findings.
+- **Verification:** `npm test` exits 0 with every fixture asserted, and the CI workflow runs it on
+  push. `node scripts/standards.mjs audit . --strict` should then be a meaningful gate rather than one
+  that has never failed.
+- **Dependencies:** the implemented categories above. This item was created by the audit's own output
+  on 2026-08-08, not planned in advance.
+- **Note:** the fixtures used during development were written to a scratch directory and are not
+  committed. They are described in the verification notes above and would need rebuilding as
+  committed fixtures.
