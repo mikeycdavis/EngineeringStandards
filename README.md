@@ -26,7 +26,11 @@ Backfilling the remaining items as documents is in progress.
 | 9 | Verification | [standards/09-verification.md](standards/09-verification.md) | `pre-push` | active |
 | 10 | Scope Change Management | [standards/10-scope-change-management.md](standards/10-scope-change-management.md) | *none — a discipline, not a procedure* | active |
 | 11 | Architecture Decision Records | [standards/11-architecture-decision-records.md](standards/11-architecture-decision-records.md) | *none* | active |
-| 12–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 12 | Structured Errors | [standards/12-structured-errors.md](standards/12-structured-errors.md) | *none — defines the machine-interface contract* | active |
+| 13 | Idempotency | [standards/13-idempotency.md](standards/13-idempotency.md) | *none* | active |
+| 14 | Structured Results | [standards/14-structured-results.md](standards/14-structured-results.md) | *none* | active |
+| 15 | AI Tool Contracts | [standards/15-ai-tool-contracts.md](standards/15-ai-tool-contracts.md) | *none — completes the 12–15 baseline contract* | active |
+| 16–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 ## Decisions
