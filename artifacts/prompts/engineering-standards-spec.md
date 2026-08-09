@@ -13,10 +13,15 @@ Where this document and artifacts/prompts/original_prompt.md disagree in formatt
 is the higher-fidelity copy of item 44 — it was pasted directly as Markdown. Their substantive
 content agrees.
 
-NUMBERING. Top-level items run 1 to 44, but there is no item 8: the source skips from
-7. Acceptance Criteria to 9. Verification. That gap is in the source and has not been closed by
-renumbering. Item 22 (Adoption and Migration) contains its own nested 1-10 list, which is part of
-that item rather than a set of top-level standards.
+NUMBERING. Top-level items run 1 to 44 with no gaps - 44 standards in total.
+
+Note for anyone scanning this file programmatically: item 8 (Status Tracking) is the only heading
+written as "# 8. Status Tracking" with a Markdown prefix; every other item is a bare "N. Title". A
+regex anchored on "^[0-9]+\. " silently misses it, which happened once already and produced a
+confident claim that item 8 did not exist. Allow an optional "#" prefix.
+
+Item 22 (Adoption and Migration) contains its own nested 1-10 list, which is part of that item rather
+than a set of top-level standards.
 
 NOT AN INSTRUCTION. The document opens "Create a new repository named ai-engineering-standards."
 That is the original prompt's text, captured as source material. It has not been acted on.

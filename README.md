@@ -9,9 +9,7 @@ anything being installed there. A standard is the contract; its skill is the imp
 
 The source specification for the whole series is committed at
 [artifacts/prompts/engineering-standards-spec.md](artifacts/prompts/engineering-standards-spec.md).
-It defines 43 standards numbered 1–44 — **there is no item 8**; the source skips it, and the gap is
-preserved rather than closed by renumbering, because the numbers are how work refers to these
-standards.
+It defines **44 standards, numbered 1–44 with no gaps**.
 
 Backfilling the remaining items as documents is in progress.
 
@@ -20,7 +18,11 @@ Backfilling the remaining items as documents is in progress.
 | 1 | Human and AI Operability | [standards/01-human-and-ai-operability.md](standards/01-human-and-ai-operability.md) | *none — a design constraint* | active |
 | 2 | Propose vs Execute | [standards/02-propose-vs-execute.md](standards/02-propose-vs-execute.md) | *none — a design constraint* | active |
 | 3 | Auditing | [standards/03-auditing.md](standards/03-auditing.md) | *none — a design constraint* | active |
-| 4–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `plan-structure`, `plan-handoff`, `backlog`, `backlog-validate`, `backlog-reconcile`, `pre-push` | partly implemented as skills |
+| 4 | Planning Standards | [standards/04-planning-standards.md](standards/04-planning-standards.md) | `plan-structure`, `plan-handoff` | active |
+| 5 | Resumability | [standards/05-resumability.md](standards/05-resumability.md) | *none — a property of the repository* | active |
+| 6 | Project Manifest | [standards/06-project-manifest.md](standards/06-project-manifest.md) | *none* | active |
+| 7 | Acceptance Criteria | [standards/07-acceptance-criteria.md](standards/07-acceptance-criteria.md) | *none — partly checked by `standards audit`* | active |
+| 8–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile`, `pre-push` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 ## Design documents

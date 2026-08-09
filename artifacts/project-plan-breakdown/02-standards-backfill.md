@@ -15,9 +15,12 @@ What it contains: top-level items **1 through 44**, titled `1. Human and AI Oper
 
 Three facts about the source that the backfill must respect:
 
-- **There is no item 8.** The source skips from `7. Acceptance Criteria` to `9. Verification`. That
-  gap is in the original and MUST NOT be closed by renumbering — the numbers are how existing work
-  refers to these standards. There are therefore **43 standards**, not 44, and **42 to backfill**.
+- **There are 44 standards, numbered 1–44 with no gaps.** An earlier revision of this file claimed
+  there was no item 8. That was wrong. Item 8 (Status Tracking) is the only heading in the source
+  written as `# 8. Status Tracking` with a Markdown prefix; every other item is a bare `N. Title`, so
+  a regex anchored on `^[0-9]+\. ` missed it. The lesson is the same one the audit tool keeps
+  teaching: a scan that finds nothing is evidence about the scan before it is evidence about the
+  world. Verify a negative before recording it as fact.
 - **Item 22 (Adoption and Migration) contains a nested 1–10 list.** Those are steps within that item,
   not top-level standards.
 - **Fidelity is degraded.** The text was extracted from the rendered share page rather than the
@@ -48,7 +51,7 @@ Three further entries — `plan-handoff.skill`, `plan-structure.skill`, `pre-pus
 zip archives from an old packaging step, not live skills. They will drift from the real directories
 and are cleanup candidates, tracked in this section below.
 
-Note that 7 candidate skills cannot account for 43 standards. Most of the series is either implemented
+Note that 7 candidate skills cannot account for 44 standards. Most of the series is either implemented
 in ways that left no skill, or not implemented at all. The source text names the subject of each
 standard, so which is which is now answerable per item — but it must be established from each
 standard's content, not assumed from a skill's name.
@@ -64,13 +67,13 @@ standard's content, not assumed from a skill's name.
   states its range.
 - **Acceptance Criteria:** the committed text covers items 1–43 and is the owner's original, not a
   paraphrase or a reconstruction.
-- **Verification:** `ls artifacts/prompts/` shows the new file, and its item numbering runs to 44.
-  Done — one gap found and recorded rather than filled: there is no item 8.
+- **Verification:** `ls artifacts/prompts/` shows the new file, and its item numbering runs 1–44 with
+  no gaps. Confirmed after correcting a scanning error that had reported item 8 missing.
 - **Dependencies:** none — this is the root blocker.
 
 ### Write standards 1–43 as normative documents
 
-- **Status:** ready — unblocked 2026-08-08; 42 documents to write (there is no item 8)
+- **Status:** in-progress — 1–7 written; 36 remain (8–43)
 - **Purpose:** Give each standard the same normative contract Standard 44 has, so the series is
   citable, auditable, and enforceable rather than living only as skill behavior.
 - **Deliverables:** `standards/NN-<kebab-title>.md` for each item, zero-padded for single digits
@@ -83,9 +86,9 @@ standard's content, not assumed from a skill's name.
   - Each document names its implementing skill, or states explicitly that none exists.
   - Where a document's requirements and its skill disagree, the disagreement is resolved in the same
     change rather than deferred.
-- **Verification:** `ls standards/` lists 43 files sorting numerically — 1–7, 9–44, with no `08-`.
-  For each, confirm the Implementation section names a directory that exists under `~/.claude/skills/`,
-  or says none does.
+- **Verification:** `ls standards/` lists 44 files sorting numerically, `01-` through `44-`, with no
+  gaps. For each, confirm the Implementation section names a directory that exists under
+  `~/.claude/skills/`, or says none does.
 - **Dependencies:** the source specification above.
 
 ### Update the README index as standards land
