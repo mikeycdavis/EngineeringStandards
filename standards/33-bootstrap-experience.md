@@ -168,6 +168,34 @@ The report is a machine interface and carries the usual obligations: a `schemaVe
 ([Standard 24](24-validator-rules.md) R2). `created` lists files that exist. It does not mean they
 are correct, and nothing downstream may read it as compliance.
 
+### R7 — Generated scaffolding is never evidence about the project
+
+**Tool-generated scaffolding MUST NOT become evidence of pre-existing project intent merely because
+it exists on a subsequent run.**
+
+A bootstrap tool inspects a repository to decide what it is looking at, and then writes into that
+same repository. On the next run its own output is part of what it inspects. Unless the tool
+distinguishes the two, it will read its own scaffolding as a fact about the project — and the
+direction of that error is always toward *this project is further along than it is*.
+
+This repository's own instance: `init` creates an empty `artifacts/project-plan-breakdown/` in
+reconstruction mode, and a second run read that directory as evidence that a plan existed, flipping
+the mode away from `reconstruction-required` and erasing the `reconstructionRequired` signal. An
+empty plan directory is not a plan.
+
+Two consequences, both general:
+
+- **A marker must be evidence of content, not of existence.** A directory counts when it holds
+  something; a file counts when it says something. Presence alone is what the tool itself creates.
+- **A tool's detection MUST be idempotent with respect to its own output.** Running it twice must
+  produce the same determination as running it once, and this is worth an explicit test rather than
+  an assumption.
+
+The rule generalises past bootstrap to any adoption or reconstruction tooling
+([Standard 44](44-existing-project-reconstruction.md)): a reconstruction that treats its own
+`reconstructed-baseline.md` as an `OBSERVED` source on a later pass has laundered an inference into
+an observation.
+
 ## Additions this standard makes beyond the source
 
 - R3 in full — idempotence, and the limit of it.
@@ -177,6 +205,8 @@ are correct, and nothing downstream may read it as compliance.
   describes generation without distinguishing new projects from old ones, which is where the
   fabricated-history failure enters.
 - R5's dry-run and the requirement that it predict the real run exactly.
+- R7 in full — generated scaffolding is never evidence about the project. Found by this
+  repository's own tests; it generalises to any adoption or reconstruction tooling.
 - R6's bootstrap report in full.
 - R2's per-file permission model, the no-partial-files rule, and the directory-versus-file
   distinction. The source states the overwrite prohibition; these are what it takes to honour it.

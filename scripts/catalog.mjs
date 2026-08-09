@@ -104,7 +104,14 @@ export async function loadCatalog(dir = CATALOG_DIR) {
         if (rules.has(alias)) throw new CatalogError(`${where}: '${alias}' is both a rule id and an alias`);
         aliases.set(alias, rule.id);
       }
-      rules.set(rule.id, Object.freeze({ ...rule, source: file }));
+      if ("attestable" in rule && typeof rule.attestable !== "boolean") {
+        throw new CatalogError(`${where}: attestable must be a boolean when present`);
+      }
+      // Added in 1.1.0 as a widening (ADR 0005). Defaults to manual-review because those are the
+      // rules whose metadata already says a human is the evaluator; anything else must opt in
+      // explicitly, so attestation cannot become a universal override.
+      const attestable = rule.attestable ?? rule.validationType === "manual-review";
+      rules.set(rule.id, Object.freeze({ ...rule, attestable, source: file }));
     }
   }
 

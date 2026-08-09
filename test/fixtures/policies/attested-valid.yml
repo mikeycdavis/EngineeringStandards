@@ -1,0 +1,14 @@
+# Known-positive: a manual-review rule satisfied by recorded human judgement (ADR 0005).
+standardVersion: "1.0.0"
+
+rules:
+  ai.propose-execute:
+    level: required
+
+attestations:
+  ai.propose-execute:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "Reviewed the proposal and execution paths and their tests."
+    reference: "ADR-0004"

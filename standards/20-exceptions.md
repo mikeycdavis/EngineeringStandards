@@ -134,6 +134,12 @@ of required property R2 there exists to enforce.
 
 **Implemented, declaration and application.**
 
+Since 1.1.0 an exception is one of *four* mechanisms rather than three
+([ADR 0005](../artifacts/adr/0005-attestations-are-recorded-human-evidence.md)). The addition matters
+to this standard because it removes the main reason to misuse an exception: a `manual-review` rule
+that a human has verified is now recorded as an **attestation**, not waived. An exception still means
+exactly what R1 says — the rule applies and is knowingly unmet.
+
 `schemas/project-policy.schema.json` defines the exception shape and enforces its provenance
 requirements: `rule`, `reason`, `approvedBy`, and `approvedAt` are all required, so an exception
 nobody approved cannot validate. `scripts/policy.mjs` enforces expiry — an exception past its

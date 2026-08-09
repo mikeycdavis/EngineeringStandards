@@ -336,3 +336,134 @@ test("fully-machine-represented is strict about assurance and evaluation", () =>
   );
   assert.ok(tainted.size > 0);
 });
+
+// --- Attestations (ADR 0005) ------------------------------------------------------------------
+
+const attest = (over = {}) => ({
+  status: "approved",
+  reviewedBy: "project-owner",
+  reviewedAt: "2026-08-09",
+  evidence: "Reviewed the implementation and its tests.",
+  ...over,
+});
+
+test("the catalog marks manual-review rules attestable and others not", () => {
+  for (const rule of catalog.rules.values()) {
+    if (rule.validationType === "manual-review") assert.equal(rule.attestable, true, rule.id);
+    else assert.equal(rule.attestable, false, `${rule.id} is attestable but is not manual-review`);
+  }
+});
+
+test("an attested manual-review rule passes, and counts as manual review", () => {
+  const verdict = run({ policy: policy({ attestations: { "ai.propose-execute": attest() } }) });
+  const result = verdict.results.find((r) => r.ruleId === "ai.propose-execute");
+  assert.equal(result.status, "passed");
+  assert.equal(result.disposition, "attested");
+  assert.equal(result.validationType, "manual-review");
+  assert.ok(verdict.assurance.manualReview >= 1, "an attested rule must count as manual review");
+});
+
+test("an attested rule does NOT make the project COMPLIANT_WITH_EXCEPTIONS", () => {
+  // Nothing was waived. Collapsing attestation into exception semantics would make every
+  // human-verified rule look like a waived one (ADR 0005).
+  const verdict = run({ policy: policy({ attestations: { "ai.propose-execute": attest() } }) });
+  assert.equal(verdict.status, STATUS.COMPLIANT);
+});
+
+test("an attestation cannot override an automated failure", () => {
+  // Evidence outranks assertion (Standard 38 R4). This is also why an attestation cannot bypass a
+  // nonExemptible rule — not a separate prohibition, the automated failure simply survives.
+  // ai.destructive-approval is both manual-review (so genuinely attestable) and nonExemptible, so
+  // this case covers both prohibitions at once.
+  const rule = catalog.rules.get("ai.destructive-approval");
+  assert.equal(rule.attestable, true);
+  assert.equal(rule.nonExemptible, true);
+
+  const verdict = run({
+    policy: policy({ attestations: { "ai.destructive-approval": attest() } }),
+    findings: [{ rule: "ai.destructive-approval", message: "delete runs unguarded", evidence: ["cli.js"] }],
+  });
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+  assert.ok(
+    verdict.results.some((r) => r.disposition === "contradicted-attestation"),
+    "an attestation cleared an automated failure on a nonExemptible rule",
+  );
+});
+
+test("a rule the catalog does not mark attestable cannot be attested", () => {
+  const verdict = run({ policy: policy({ attestations: { "architecture.adr": attest() } }) });
+  assert.ok(
+    verdict.results.some((r) => r.disposition === "invalid-attestation"),
+    "a structural rule was satisfied by assertion",
+  );
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+});
+
+test("a rejected attestation is a failure, not silence", () => {
+  const verdict = run({
+    policy: policy({ attestations: { "ai.propose-execute": attest({ status: "rejected" }) } }),
+  });
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+  assert.ok(verdict.results.some((r) => r.disposition === "attested-rejected"));
+});
+
+test("an expired attestation returns the rule to not-evaluated, not to failure", () => {
+  const verdict = run({
+    policy: policy({ attestations: { "ai.propose-execute": attest({ expires: "2021-01-01" }) } }),
+  });
+  const result = verdict.results.find((r) => r.ruleId === "ai.propose-execute");
+  assert.equal(result.status, "skipped");
+  assert.equal(result.disposition, "not-evaluated");
+  assert.equal(verdict.status, STATUS.COMPLIANT, "a lapsed review is unreviewed, not known-bad");
+});
+
+test("a stale attestation returns the rule to not-evaluated", () => {
+  // What was reviewed is not what is there now, so the review establishes nothing.
+  const verdict = evaluate({
+    catalog,
+    policy: policy({
+      attestations: {
+        "ai.propose-execute": attest({
+          reviewedAgainst: { paths: ["scripts/init.mjs"], digest: "0000000000000000" },
+        }),
+      },
+    }),
+    findings: [],
+    evaluated: ALL,
+    today: TODAY,
+    digests: new Map([["ai.propose-execute", "ffffffffffffffff"]]),
+  });
+  assert.equal(
+    verdict.results.find((r) => r.ruleId === "ai.propose-execute").disposition,
+    "not-evaluated",
+  );
+});
+
+test("a matching digest keeps the attestation valid — the known-negative for staleness", () => {
+  const verdict = evaluate({
+    catalog,
+    policy: policy({
+      attestations: {
+        "ai.propose-execute": attest({
+          reviewedAgainst: { paths: ["scripts/init.mjs"], digest: "abcdef1234567890" },
+        }),
+      },
+    }),
+    findings: [],
+    evaluated: ALL,
+    today: TODAY,
+    digests: new Map([["ai.propose-execute", "abcdef1234567890"]]),
+  });
+  assert.equal(verdict.results.find((r) => r.ruleId === "ai.propose-execute").disposition, "attested");
+});
+
+test("this repository's own attestation is live, not stale", async () => {
+  // The dogfooding case: ai.destructive-approval moved not-applicable -> not-evaluated -> attested.
+  const { parseYaml } = await import("../scripts/yaml.mjs");
+  const doc = parseYaml(await readFile(path.join(ROOT, "project-policy.yml"), "utf8"));
+  const attestation = doc.attestations?.["ai.destructive-approval"];
+  assert.ok(attestation, "the dogfooded attestation is missing");
+  assert.equal(attestation.status, "approved");
+  assert.ok(attestation.reviewedAgainst?.digest, "no digest recorded — staleness would be undetectable");
+  assert.ok(attestation.reviewedAgainst.paths.includes("scripts/init.mjs"));
+});

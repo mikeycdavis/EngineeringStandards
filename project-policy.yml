@@ -87,3 +87,25 @@ applicability:
 # No exceptions. Every rule that applies here is either met, failing, or honestly unevaluated, and a
 # failing rule is reported as a failure rather than waived (Standard 20, Standard 30 R2).
 exceptions: []
+
+# Recorded human judgement for rules the catalog says a human evaluates (ADR 0005).
+#
+# An attestation is EVIDENCE, not a waiver. It never overrides an automated failure, and it goes
+# stale the moment the reviewed paths change — which is why `reviewedAgainst` names them.
+attestations:
+  ai.destructive-approval:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    # One line: scripts/yaml.mjs supports a deliberately small subset and rejects block scalars
+    # rather than guessing at them. The parser failing loudly here is the design working.
+    evidence: "Reviewed the standards init write path. Creating a missing artifact is ordinary execute; replacing an existing one is refused by default and reported as a conflict. Overwriting requires naming the exact path, and approving one path does not approve another. Verified by the safety-contract tests in test/init.test.mjs."
+    reference: "artifacts/adr/0004-audit-and-validate-are-separate-commands.md"
+    reviewedAgainst:
+      paths:
+        - scripts/init.mjs
+        - test/init.test.mjs
+      # Content digest of the paths above, printed by `standards validate` when absent. When those
+      # files change materially this stops matching, the attestation goes stale, and the rule
+      # returns to not-evaluated until a human looks again.
+      digest: "ec3048284585f7c9c045185ffaa966c3"

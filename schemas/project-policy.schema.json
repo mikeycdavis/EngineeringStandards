@@ -38,6 +38,13 @@
       "description": "Approved, time-bounded waivers of rules that DO apply (Standard 20). An expired exception is a compliance failure, not a resolution.",
       "type": "array",
       "items": { "$ref": "#/$defs/exception" }
+    },
+
+    "attestations": {
+      "description": "Recorded human judgement for rules the catalog says a human evaluates (ADR 0005, added in 1.1.0). An attestation is EVIDENCE, not a waiver: it says the rule applies and is satisfied on human review. It never overrides an automated failure, never applies to a rule the catalog marks non-attestable, and returns the rule to not-evaluated once stale or expired.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ruleId" },
+      "additionalProperties": { "$ref": "#/$defs/attestation" }
     }
   },
 
@@ -90,6 +97,53 @@
         },
         "revisitWhen": {
           "description": "The condition under which this declaration must be re-examined — the applicability analogue of a deferred decision's trigger (Standard 41 R3).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+
+    "attestation": {
+      "type": "object",
+      "required": ["status", "reviewedBy", "reviewedAt", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "Only `approved` establishes the requirement. `rejected` records that a human looked and found it unmet, which is a failure rather than silence.",
+          "type": "string",
+          "enum": ["approved", "rejected"]
+        },
+        "reviewedBy": { "type": "string", "minLength": 1 },
+        "reviewedAt": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "evidence": {
+          "description": "What was examined. Required, because an attestation without it is an assertion rather than evidence — the thing this mechanism exists to avoid.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": { "type": "string", "minLength": 1 },
+        "expires": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "reviewedAgainst": { "$ref": "#/$defs/reviewedAgainst" }
+      }
+    },
+
+    "reviewedAgainst": {
+      "description": "What the reviewer actually looked at. The validator digests these paths and compares; when the digest differs the attestation is stale and the rule returns to not-evaluated, because the thing reviewed is not the thing that is there now.",
+      "type": "object",
+      "required": ["paths"],
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "digest": {
+          "description": "Digest of the reviewed paths. Omit it on a first pass — the validator reports the current digest so it can be recorded.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16,64}$"
+        },
+        "revision": {
+          "description": "Informational revision identifier. Recorded, never computed — provider-neutral by design.",
           "type": "string",
           "minLength": 1
         }

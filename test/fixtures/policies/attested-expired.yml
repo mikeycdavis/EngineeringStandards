@@ -1,0 +1,15 @@
+# Known-negative: a lapsed attestation. Not a failure — the rule simply returns to not-evaluated,
+# because it is unreviewed again rather than known-bad.
+standardVersion: "1.0.0"
+
+rules:
+  ai.propose-execute:
+    level: required
+
+attestations:
+  ai.propose-execute:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2020-01-01"
+    evidence: "Reviewed long ago."
+    expires: "2021-01-01"

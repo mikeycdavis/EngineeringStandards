@@ -1,0 +1,13 @@
+# Known-negative: a human looked and found the rule unmet. That is a failure, not silence.
+standardVersion: "1.0.0"
+
+rules:
+  ai.propose-execute:
+    level: required
+
+attestations:
+  ai.propose-execute:
+    status: rejected
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "The scheduler applies changes directly; there is no proposal step."

@@ -129,6 +129,13 @@ function renderVerdict(report, policy) {
     for (const r of excepted) out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
     out.push("");
   }
+  const attested = report.results.filter((r) => r.disposition === "attested");
+  if (attested.length) {
+    out.push("  Attested (human review):");
+    for (const r of attested) out.push(`    ${r.ruleId} — ${r.attestation.reviewedBy}, ${r.attestation.reviewedAt}`);
+    out.push("");
+  }
+
   const na = report.results.filter((r) => r.disposition === "not-applicable");
   if (na.length) {
     out.push(`  Not applicable (${na.length}): ${na.map((r) => r.ruleId).join(", ")}`);
@@ -1405,12 +1412,43 @@ if (!VALIDATING) {
 // evidence. Nothing in this section redefines a rule or invents applicability.
 
 const policy = await loadProjectPolicy(root);
+
+/**
+ * Digest the paths each attestation says it reviewed, so a material change to them makes the
+ * attestation stale (ADR 0005 rule 4).
+ *
+ * Content-based rather than revision-based on purpose: invalidating every attestation on every
+ * commit would make the mechanism unusable, and it would be abandoned. Digesting what was actually
+ * reviewed invalidates on material change, which is the real requirement.
+ */
+async function attestationDigests(document, repoRoot) {
+  const { createHash } = await import("node:crypto");
+  const out = new Map();
+  for (const [ruleId, attestation] of Object.entries(document?.attestations ?? {})) {
+    const paths = attestation?.reviewedAgainst?.paths;
+    if (!Array.isArray(paths) || paths.length === 0) continue;
+    const hash = createHash("sha256");
+    for (const rel of [...paths].sort()) {
+      hash.update(rel);
+      try {
+        hash.update(await readFile(path.join(repoRoot, rel), "utf8"));
+      } catch {
+        hash.update("<missing>"); // A reviewed path that has since gone is itself a material change.
+      }
+    }
+    out.set(ruleId, hash.digest("hex").slice(0, 32));
+  }
+  return out;
+}
+
+const digests = await attestationDigests(policy.document, root);
 const verdict = evaluate({
   catalog,
   policy: policy.document,
   findings,
   evaluated: EVALUATED_RULES,
   today: new Date().toISOString().slice(0, 10),
+  digests,
 });
 
 // Framework maturity, read from this framework's own inventory rather than the target repository.
@@ -1441,6 +1479,15 @@ if (JSON_OUT) {
   process.stdout.write(JSON.stringify({ ...report, findings }, null, 2) + "\n");
 } else {
   process.stdout.write(renderVerdict(report, policy) + "\n");
+  // Print the current digest for any attestation that lacks one, so it can be recorded
+  // rather than computed by hand (ADR 0005).
+  for (const [ruleId, digest] of digests) {
+    const recorded = policy.document?.attestations?.[ruleId]?.reviewedAgainst?.digest;
+    if (!recorded) {
+      process.stdout.write(`\n  attestation ${ruleId}: current digest is ${digest}\n`);
+      process.stdout.write(`  Record it as reviewedAgainst.digest to make staleness detectable.\n`);
+    }
+  }
 }
 
 // A policy that could not be read, or none at all, is exit 2: a verdict was requested and there is

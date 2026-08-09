@@ -1,0 +1,14 @@
+# Known-negative: attesting a rule the catalog does not mark attestable. A structural rule is
+# evaluated by a machine; asserting it is satisfied is not evidence.
+standardVersion: "1.0.0"
+
+rules:
+  architecture.adr:
+    level: required
+
+attestations:
+  architecture.adr:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "Looks fine to me."

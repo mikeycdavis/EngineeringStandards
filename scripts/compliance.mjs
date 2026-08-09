@@ -35,11 +35,13 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, digests }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
+  const attestations = policy?.attestations ?? {};
   const examined = new Set(evaluated ?? []);
+  const currentDigests = digests ?? new Map();
 
   const byRule = new Map();
   for (const finding of findings) {
@@ -81,8 +83,27 @@ export function evaluate({ catalog, policy, findings, evaluated, today }) {
       continue;
     }
 
-    // Not evaluated: nothing examined it. Distinct from "examined and found nothing wrong".
-    if (!examined.has(rule.id)) {
+    // A recorded human judgement (ADR 0005). Checked BEFORE not-evaluated, because an attestation
+    // is precisely what turns "nobody looked" into "somebody looked" — but AFTER the automated
+    // findings are collected, because it may never override one.
+    const attestation = attestations[rule.id];
+    if (attestation) {
+      const hits = byRule.get(rule.id) ?? [];
+      const verdict = judgeAttestation(rule, attestation, hits, today, currentDigests);
+      if (verdict) {
+        results.push(verdict);
+        continue;
+      }
+      // Falls through: the attestation did not establish the requirement, so the rule is evaluated
+      // normally and typically lands on not-evaluated. Silently ignoring it would be worse.
+    }
+
+    // A manual-review rule is never established by an automated run. Without a valid attestation it
+    // is not-evaluated, even if the evaluator claims to have examined it and found nothing —
+    // "no automated finding" is not evidence for a requirement whose evaluator is a human. Reaching
+    // `passed` that way was possible before attestations existed, and it is the false green
+    // Standard 24 R2 forbids.
+    if (rule.validationType === "manual-review" || !examined.has(rule.id)) {
       results.push(
         base(rule, level, RESULT.skipped, "not-evaluated", `No implemented check evaluates ${rule.id}.`),
       );
@@ -146,6 +167,90 @@ export function evaluate({ catalog, policy, findings, evaluated, today }) {
   }
 
   return summarise(results, policy);
+}
+
+/**
+ * Decide what an attestation establishes. Returns a result, or null to fall through to normal
+ * evaluation — never a silent success.
+ *
+ * The rules are ADR 0005's, and the ordering is the interesting part: contradiction is checked
+ * first, because a human saying a rule is satisfied does not change what a check observed. Evidence
+ * outranks assertion (Standard 38 R4), and that is also why an attestation cannot bypass a
+ * nonExemptible rule — not as a separate prohibition, but because the automated failure survives.
+ */
+function judgeAttestation(rule, attestation, hits, today, digests) {
+  const fail = (disposition, message, remediation) => ({
+    ruleId: rule.id,
+    status: RESULT.failed,
+    severity: "error",
+    level: "required",
+    validationType: "configuration",
+    assurance: "full",
+    disposition,
+    message,
+    evidence: ["project-policy.yml"],
+    files: ["project-policy.yml"],
+    remediation,
+  });
+
+  if (!rule.attestable) {
+    return fail(
+      "invalid-attestation",
+      `${rule.id} is not attestable; the catalog says it is evaluated by ${rule.validationType}, not by human review.`,
+      "Remove the attestation. A rule the catalog does not mark attestable cannot be satisfied by assertion.",
+    );
+  }
+
+  if (hits.length > 0) {
+    return fail(
+      "contradicted-attestation",
+      `${rule.id} is attested as approved, but an automated check found: ${hits[0].message}`,
+      "Fix the finding. An attestation records human evidence; it never overrides what a check observed.",
+    );
+  }
+
+  if (attestation.status === "rejected") {
+    return fail(
+      "attested-rejected",
+      `${rule.id} was reviewed by ${attestation.reviewedBy} and found unmet.`,
+      "Satisfy the rule, then re-attest. A recorded rejection is a failure, not silence.",
+    );
+  }
+
+  if (attestation.expires && attestation.expires < today) {
+    return null; // Expired: back to not-evaluated. It is not a failure, it is unreviewed again.
+  }
+
+  const against = attestation.reviewedAgainst;
+  if (against?.digest) {
+    const current = digests.get(rule.id);
+    if (current && current !== against.digest) {
+      return null; // Stale: what was reviewed is not what is there now.
+    }
+  }
+
+  return {
+    ruleId: rule.id,
+    status: RESULT.passed,
+    severity: rule.severity,
+    level: "required",
+    validationType: "manual-review",
+    // Human judgement establishes the requirement, and does so without a machine. `manualReview` in
+    // the assurance breakdown is the honest home for it — never `automated`.
+    assurance: "full",
+    disposition: "attested",
+    message: `Attested by ${attestation.reviewedBy} on ${attestation.reviewedAt}: ${attestation.evidence}`,
+    evidence: against?.paths ?? [],
+    files: against?.paths ?? [],
+    remediation: rule.remediation,
+    attestation: {
+      reviewedBy: attestation.reviewedBy,
+      reviewedAt: attestation.reviewedAt,
+      evidence: attestation.evidence,
+      reference: attestation.reference ?? null,
+      expires: attestation.expires ?? null,
+    },
+  };
 }
 
 function base(rule, level, status, disposition, message) {

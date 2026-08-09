@@ -69,7 +69,7 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | `rules/`, `scripts/catalog.mjs` | active |
 | 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | `rules/` — 24 rules, 8 categories | active |
 | 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
-| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 111 tests, 6 files | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 121 tests, 6 files | active |
 | 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | `scripts/compliance.mjs` | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
 | 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README, [INSTRUCTIONS.md](INSTRUCTIONS.md) | active |
@@ -133,7 +133,8 @@ artifacts/
 `npm run policy` · `npm run diagrams` · `npm run inventory` · `npm run fidelity`. CI runs all seven.
 `standards init` bootstraps another project — see [INSTRUCTIONS.md](INSTRUCTIONS.md).
 
-**Version 1.0.0** — see [CHANGELOG.md](CHANGELOG.md) for what the release freezes.
+**Version 1.1.0** — see [CHANGELOG.md](CHANGELOG.md). 1.0.0 froze the public surface; 1.1.0 adds
+attestations as the fourth policy mechanism.
 
 **Numbering convention.** Standards files are named `NN-<kebab-title>.md`. Zero-pad single digits
 (`01-…` through `09-…`) when backfilling, so a directory listing sorts in numeric order.

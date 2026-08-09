@@ -192,6 +192,29 @@ Every rule you do not satisfy is exactly one of three things, and it must be rec
 | **Failure** | The rule applies and is not met. Work is outstanding | Nowhere — it stays visible as a failure |
 | **Not applicable** | The rule's subject does not exist in your project | `applicability:`, with a reason and ideally a `revisitWhen` |
 | **Exception** | The rule applies, is not met, and that is approved | `exceptions:`, with reason, approver, date, and usually an expiry |
+| **Attestation** | The rule applies, a human reviewed it, and it **is** satisfied | `attestations:`, with reviewer, date, and what was examined |
+
+**An attestation is evidence, not a waiver**, and the difference matters: an attested rule is simply
+satisfied and does **not** make you `COMPLIANT_WITH_EXCEPTIONS`. Use it for rules the catalog marks
+`manual-review`, where no analyzer exists and a person is the evaluator:
+
+```yaml
+attestations:
+  ai.destructive-approval:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "Reviewed the overwrite/approval behaviour and its tests."
+    reviewedAgainst:
+      paths: [scripts/init.mjs, test/init.test.mjs]
+      digest: "<validate prints it>"
+```
+
+Four rules bound it ([ADR 0005](artifacts/adr/0005-attestations-are-recorded-human-evidence.md)):
+it **cannot** override an automated failure; it **cannot** be used on a rule the catalog does not
+mark attestable; it goes **stale** when the reviewed paths change, returning the rule to
+`not-evaluated`; and an expired one is not verified. Omit `digest` on a first pass — `validate`
+prints the current one so you can record it.
 
 The distinction that matters most: **not-applicable is a claim about your project, not about the
 rule.** *We have no background jobs* stops being true the day you add one — which is what
