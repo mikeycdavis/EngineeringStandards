@@ -33,6 +33,13 @@ added, removed, or re-levelled; some projects that failed will now pass, which i
   cheapest repair available to it was to move files to satisfy a detector — the behaviour this
   framework argues against. All three locations now satisfy the rule; none still fails it.
 
+- **`standards init` offered to create `artifacts/adr/` beside a populated `docs/adr/`.** The audit
+  learned that [Standard 11](standards/11-architecture-decision-records.md) R1 accepts three
+  locations; `init` still knew one. An adopter following the bootstrap would have finished with two
+  ADR directories, one of them empty — the tool manufacturing the ambiguity it then reports. `init`
+  now preserves rather than creates when another accepted location already holds records. An *empty*
+  alternative does not count, because a directory with no records in it is not a home for decisions.
+
 ### Disclosed — two detectors assert repository state they never measured
 
 [ADR 0008](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).

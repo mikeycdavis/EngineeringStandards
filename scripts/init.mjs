@@ -45,7 +45,12 @@ const ARTIFACTS = [
   { path: "CLAUDE.md", template: "templates/CLAUDE.md" },
   { path: ".github/copilot-instructions.md", template: "templates/copilot-instructions.md" },
   { path: "artifacts/project-plan-breakdown/", directory: true },
-  { path: "artifacts/adr/", directory: true },
+  // `satisfiedBy` names the other locations that already meet the requirement. The ADR check accepts
+  // three (Standard 11 R1); creating a fourth, empty, beside a populated docs/adr/ would leave the
+  // project with two directories where one holds the decisions — the tool manufacturing the
+  // ambiguity it then reports. Found by running init against the first outside adopter, after the
+  // detector learned the alternatives and init did not.
+  { path: "artifacts/adr/", directory: true, satisfiedBy: ["docs/adr", "doc/adr"] },
 ];
 
 /**
@@ -141,10 +146,13 @@ export async function plan(root, options = {}) {
     if (artifact.directory) {
       // Creating a directory alongside existing contents is safe and expected; only writing a FILE
       // over one of that name is destructive (Standard 33 R2).
+      const alternative = (artifact.satisfiedBy ?? []).find((p) => hasContent(root, p));
       actions.push(
         exists
           ? { action: "preserve", path: artifact.path, reason: "directory already exists" }
-          : { action: "create", path: artifact.path, kind: "directory" },
+          : alternative
+            ? { action: "preserve", path: artifact.path, reason: `${alternative}/ already serves this` }
+            : { action: "create", path: artifact.path, kind: "directory" },
       );
       continue;
     }

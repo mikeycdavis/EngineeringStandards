@@ -273,3 +273,41 @@ test("a bootstrapped greenfield project validates against the real schema", asyn
     await cleanup(dir);
   }
 });
+
+// --- ADRs that already live somewhere conventional -------------------------------------------
+
+test("an existing docs/adr/ is not duplicated by an empty artifacts/adr/", async () => {
+  // Found against the first outside adopter. The audit learned that Standard 11 R1 accepts three
+  // locations; init still knew one, so it offered to create a fourth directory — empty — beside the
+  // populated one. Two ADR directories where one holds the decisions is the tool manufacturing the
+  // ambiguity it then reports.
+  const dir = await repo({
+    "src/index.js": "export const x = 1;\n",
+    "docs/adr/0001-a-decision.md": "# 1. A decision\n",
+  });
+  try {
+    const report = await plan(dir);
+    const adr = report.actions.find((a) => a.path === "artifacts/adr/");
+    assert.equal(adr.action, "preserve", "artifacts/adr/ must not be created when docs/adr/ holds ADRs");
+    assert.match(adr.reason, /docs\/adr/, "the reason must name what already serves the requirement");
+
+    await apply(dir, report);
+    assert.ok(!existsSync(path.join(dir, "artifacts/adr")), "nothing should have been created");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("an empty docs/adr/ does not count, and artifacts/adr/ is still created", async () => {
+  // The assertion that matters: a directory with no records in it is not a home for decisions, and
+  // treating it as one would silence the rule on the strength of an empty folder.
+  const dir = await repo({ "src/index.js": "export const x = 1;\n" });
+  try {
+    await mkdir(path.join(dir, "docs/adr"), { recursive: true });
+    const report = await plan(dir);
+    const adr = report.actions.find((a) => a.path === "artifacts/adr/");
+    assert.equal(adr.action, "create", "an empty docs/adr/ must not satisfy the requirement");
+  } finally {
+    await cleanup(dir);
+  }
+});
