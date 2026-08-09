@@ -239,14 +239,28 @@ function usage(stream = process.stderr) {
   );
 }
 
+/**
+ * Exit codes, per Standard 23 R3:
+ *   0 = validation completed; project compliant
+ *   1 = validation completed; compliance failures found
+ *   2 = validator / configuration / invocation error
+ *
+ * The 1/2 split matters to CI: 1 means this tool worked and the repository has problems; 2 means it
+ * could not reach a verdict at all. Collapsing them tells CI that a broken validator is a failing
+ * project, and the usual response to that is to weaken the check.
+ */
+const EXIT_OK = 0;
+const EXIT_FINDINGS = 1;
+const EXIT_INVOCATION = 2;
+
 if (!subcommand || subcommand === "--help" || subcommand === "-h") {
   usage(process.stdout);
-  process.exit(subcommand ? 0 : 1);
+  process.exit(subcommand ? EXIT_OK : EXIT_INVOCATION);
 }
 if (subcommand !== "audit") {
   process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
   usage();
-  process.exit(1);
+  process.exit(EXIT_INVOCATION);
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +281,7 @@ function findRoot(start) {
 const target = dirFlag ?? positional ?? ".";
 if (!existsSync(target)) {
   process.stderr.write(`standards: no such directory: ${target}\n`);
-  process.exit(1);
+  process.exit(EXIT_INVOCATION);
 }
 const root = dirFlag ? path.resolve(dirFlag) : findRoot(target);
 
@@ -1127,4 +1141,4 @@ if (JSON_OUT) {
   process.stdout.write(renderHuman(files.length) + "\n");
 }
 
-process.exit(STRICT && findings.some((f) => f.severity !== "info") ? 1 : 0);
+process.exit(STRICT && findings.some((f) => f.severity !== "info") ? EXIT_FINDINGS : EXIT_OK);

@@ -10,6 +10,7 @@
     "test": "node --test \"test/*.test.mjs\"",
     "audit": "node scripts/standards.mjs audit .",
     "inventory": "node scripts/inventory.mjs",
+    "fidelity": "node scripts/fidelity.mjs",
     "audit:strict": "node scripts/standards.mjs audit . --strict"
   },
   "engines": {

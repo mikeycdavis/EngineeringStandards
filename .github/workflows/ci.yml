@@ -23,6 +23,10 @@ jobs:
       - name: Source inventory
         run: npm run inventory
 
+      # Holds each standard to its own word: any block claiming to be verbatim source must be.
+      - name: Source fidelity
+        run: npm run fidelity
+
       - name: Test
         run: npm test
 

@@ -326,12 +326,20 @@ test("--strict fails only when something needs attention", () => {
   assert.equal(audit(fixture("compliant"), ["--strict"]).code, 0, "the compliant fixture must pass --strict");
 });
 
-test("bad invocations exit 1", () => {
+test("bad invocations exit 2, not 1", () => {
+  // Standard 23 R3: 1 means the tool worked and found problems; 2 means it could not reach a
+  // verdict. Collapsing them tells CI that a broken validator is a failing project.
   const run = (args) => spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
-  assert.equal(run([]).status, 1, "no subcommand");
-  assert.equal(run(["frobnicate"]).status, 1, "unknown subcommand");
-  assert.equal(run(["audit", path.join(HERE, "no-such-dir")]).status, 1, "missing directory");
-  assert.equal(run(["--help"]).status, 0);
+  assert.equal(run([]).status, 2, "no subcommand");
+  assert.equal(run(["frobnicate"]).status, 2, "unknown subcommand");
+  assert.equal(run(["audit", path.join(HERE, "no-such-dir")]).status, 2, "missing directory");
+  assert.equal(run(["--help"]).status, 0, "--help is a successful invocation");
+});
+
+test("findings exit 1 only under --strict; a clean run exits 0", () => {
+  assert.equal(audit(fixture("delegated")).code, 0, "warnings and errors alone must not fail CI");
+  assert.equal(audit(fixture("delegated"), ["--strict"]).code, 1, "--strict promotes them");
+  assert.equal(audit(fixture("compliant"), ["--strict"]).code, 0, "a compliant fixture passes --strict");
 });
 
 test("this repository has no error-severity findings", () => {
@@ -374,4 +382,20 @@ test("every implementedBy path exists, and every standards file is claimed", () 
   const out = JSON.parse(r.stdout);
   assert.deepEqual(out.brokenPaths, [], "an inventory entry points at a file that does not exist");
   assert.deepEqual(out.unclaimedFiles, [], "a standards/ file is not claimed by any inventory entry");
+});
+
+test("every block claimed as verbatim source really is", () => {
+  // Backticks added inside quoted source has happened three times — twice caught by hand, once only
+  // when this check was written. It is a failure mode, not a mistake, so it is mechanical now.
+  const r = spawnSync(process.execPath, [path.join(REPO, "scripts/fidelity.mjs"), "--json"], {
+    encoding: "utf8",
+  });
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.claims > 0, "the checker found no verbatim claims at all — it has stopped working");
+  assert.deepEqual(
+    out.failures,
+    [],
+    "a block claimed as source text does not appear in the source; reproduce it exactly or drop the claim",
+  );
+  assert.equal(r.status, 0);
 });

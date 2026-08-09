@@ -1,0 +1,140 @@
+# Standard 20 — Exceptions
+
+Projects occasionally need to violate a standard intentionally. An exception **waives applicability**
+— it never changes what the rule means, and it never silently expires into compliance.
+
+Source: item 20 of [`artifacts/prompts/engineering-standards-spec.md`](../artifacts/prompts/engineering-standards-spec.md).
+
+## Scope
+
+Applies to any project declaring compliance under
+[Standard 18](18-machine-readable-project-policy.md). This standard, with
+[21](21-versioning.md), [22](22-adoption-and-migration.md), and [23](23-standards-validator-cli.md),
+forms the governance layer: how a project departs from a standard, how the standard itself changes,
+how a project adopts it, and how any of it is checked.
+
+## Requirements
+
+### R1 — An exception waives applicability, never definition
+
+**An exception records that a rule does not apply to this project. It MUST NOT alter what the rule
+means.**
+
+This is [Standard 18](18-machine-readable-project-policy.md) R1 seen from the other side. That
+standard prohibits a policy from redefining a rule; this one supplies the legitimate alternative. The
+distinction in practice:
+
+```yaml
+# Permitted — the rule keeps its meaning; this project is recorded as not meeting it.
+exceptions:
+  - rule: ai.uiCapabilitiesMustBeAgentOperable
+    reason: "Offline desktop utility with no external capability layer."
+    approvedBy: "project-owner"
+    expires: "2027-01-01"
+```
+
+```yaml
+# NOT ALLOWED — this redefines the rule rather than waiving it.
+exceptions:
+  - rule: ai.providerNeutral
+    meaning: "Provider neutrality means we support two models from one vendor."
+```
+
+An exception leaves the project **countably non-compliant** with a named rule. That is the point: the
+gap stays visible and can be reported, which a redefinition destroys.
+
+### R2 — Required contents
+
+Exceptions should contain, reproduced verbatim from the source:
+
+```text
+rule
+reason
+approvedBy
+date
+optional expiration
+optional issue/reference
+```
+
+**Do not allow vague anonymous exceptions.**
+
+Restated as a hard rule, because "vague anonymous" is what a validator has to reject: an exception
+MUST name the rule, give a reason that explains the specific circumstance, and identify who approved
+it and when. An exception whose reason is "not applicable" or "legacy" is anonymous in the sense that
+matters — nobody can evaluate it later.
+
+`approvedBy` and `date` are **provenance**, and they are what makes an exception auditable rather than
+merely present. Six months later the questions are *who decided this* and *was it still true then*,
+and only provenance answers them.
+
+### R3 — Expiration, and what happens at it
+
+An exception SHOULD carry `expires` whenever the divergence is expected to be temporary.
+
+**An expired exception is a compliance failure, not a lapsed formality.** On the day it expires, the
+rule applies again in full, and a project still departing from it is non-compliant until the
+exception is renewed with fresh provenance or the departure is fixed.
+
+A validator MUST NOT treat an expired exception as still effective, and SHOULD report it distinctly
+from having no exception at all — "your exception expired on 2027-01-01" and "you never had one" are
+different situations calling for different responses.
+
+An exception with no `expires` is permanent until removed. That is legitimate — some divergences are
+structural — but it SHOULD be a deliberate choice rather than an omission, because a permanent
+exception is one nobody will ever revisit.
+
+### R4 — Some rules are non-exemptible
+
+**A standard MAY declare a rule non-exemptible, and an exception against such a rule MUST be
+rejected rather than recorded.**
+
+The first and clearest example is [Standard 16](16-security.md) R2 — secrets in artifacts. That
+prohibition admits no exception, because every listed artifact is durable: a secret placed in one is
+persisted, copied, and often published, and removing it later does not un-expose it. No project
+circumstance changes that.
+
+Non-exemptibility is a property of the *rule*, declared by its standard, and it MUST NOT be
+overridable by a project. A mechanism a project can switch off is not a prohibition.
+
+### R5 — Exceptions are visible and auditable
+
+**Exceptions should be visible and auditable.**
+
+They live in the policy file ([Standard 18](18-machine-readable-project-policy.md) R4), which is
+committed, reviewed, and read by agents — not in a comment, a wiki, or a conversation. A validator
+SHOULD report active exceptions in its output even when a project passes, because a pass with four
+exceptions and a pass with none are different results.
+
+Where an exception represents a significant architectural departure rather than a narrow waiver, it
+SHOULD also carry an ADR reference ([Standard 11](11-architecture-decision-records.md)) — the
+exception records *that* the rule is waived, the ADR records the decision behind it.
+
+## Additions this standard makes beyond the source
+
+- R1 in full — the waives-applicability versus alters-definition distinction, and its pairing with
+  Standard 18 R1.
+- R3's expiry semantics: an expired exception is a compliance failure, must not be honoured, and
+  should be reported distinctly from an absent one. The source names `optional expiration` without
+  saying what expiry does.
+- R4 in full — non-exemptible rules, and that non-exemptibility cannot be overridden by a project.
+- R2's reading of "vague anonymous" into a rejectable rule, and the framing of `approvedBy`/`date` as
+  provenance.
+- R5's rule that exceptions are reported even on a pass, and the ADR pairing.
+
+## Relationship to other standards
+
+[Standard 18](18-machine-readable-project-policy.md) R4 defines where exceptions live and their
+shape; this standard defines what they mean and when they stop working.
+[Standard 19](19-json-schema.md) validates their structure — provenance fields are exactly the kind
+of required property R2 there exists to enforce.
+[Standard 23](23-standards-validator-cli.md) is what reports them.
+[Standard 16](16-security.md) supplies the first non-exemptible rule.
+
+## Implementation
+
+**No skill implements this standard.**
+
+`standards audit` does not read exceptions today, because it does not yet read
+`project-policy.yml`. Until it does, every finding it reports is unqualified by what the project has
+legitimately excepted itself from — which is the main reason its output cannot yet be read as a
+compliance verdict.

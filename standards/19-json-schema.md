@@ -33,7 +33,9 @@ It MUST include, reproduced verbatim from the source:
 - directory/path fields
 - exception structures
 - unknown-property handling
-- provide clear validation errors
+
+The source adds, as a separate requirement rather than a list entry: **"Provide clear validation
+errors."** R6 below covers it.
 
 ### R3 — Unknown properties fail
 

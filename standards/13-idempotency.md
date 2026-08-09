@@ -29,7 +29,7 @@ needs this more than one retried hourly that recomputes a cache.
 
 Reproduced verbatim from the source:
 
-- `Idempotency-Key`
+- Idempotency-Key
 - command IDs
 - deduplication records
 - natural idempotency

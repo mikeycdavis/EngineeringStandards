@@ -34,7 +34,11 @@ Backfilling the remaining items as documents is in progress.
 | 17 | Agent Instruction Files | [standards/17-agent-instruction-files.md](standards/17-agent-instruction-files.md) | *none* | active |
 | 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | *none* | active |
 | 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | *none — no policy published yet* | active |
-| 20–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | *none* | active |
+| 21 | Versioning | [standards/21-versioning.md](standards/21-versioning.md) | *none — no `VERSION` published yet* | active |
+| 22 | Adoption and Migration | [standards/22-adoption-and-migration.md](standards/22-adoption-and-migration.md) | `project-reconstruction` (R4) | active |
+| 23 | Standards Validator CLI | [standards/23-standards-validator-cli.md](standards/23-standards-validator-cli.md) | `scripts/standards.mjs` — audited in the document | active |
+| 24–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 The canonical enumeration of the series lives in

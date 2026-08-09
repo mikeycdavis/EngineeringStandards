@@ -102,22 +102,22 @@
     {
       "number": 20,
       "title": "Exceptions",
-      "implementedBy": null
+      "implementedBy": "standards/20-exceptions.md"
     },
     {
       "number": 21,
       "title": "Versioning",
-      "implementedBy": null
+      "implementedBy": "standards/21-versioning.md"
     },
     {
       "number": 22,
       "title": "Adoption and Migration",
-      "implementedBy": null
+      "implementedBy": "standards/22-adoption-and-migration.md"
     },
     {
       "number": 23,
       "title": "Standards Validator CLI",
-      "implementedBy": null
+      "implementedBy": "standards/23-standards-validator-cli.md"
     },
     {
       "number": 24,
