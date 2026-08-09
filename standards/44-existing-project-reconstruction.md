@@ -25,6 +25,29 @@ the repository is not trustworthy for this purpose, and the discrepancy is itsel
 the existing history is partial — real for some areas, absent for others — reconstruct the areas it
 does not cover and treat the rest as evidence rather than overwriting it.
 
+Bootstrap tooling SHOULD make this determination explicitly rather than leaving it implicit, detecting
+which of three states a repository is in:
+
+| State | Route |
+| --- | --- |
+| Empty or new repository | Greenfield. Plan forward from the original prompt. |
+| Existing repository with an adequate plan | Not this standard. Continue from the existing plan. |
+| Existing repository with no adequate plan | This standard. Reconstruct. |
+
+### R0 — As-built before to-be
+
+**A reconstructed plan MUST describe reality first, and identify recommended changes separately.**
+
+An existing project MUST NOT be rewritten to match its reconstructed plan merely because the plan
+describes a cleaner architecture. The two are different claims and MUST NOT be blended: *as built* is
+a description of what exists, and *to be* is a proposal about what should. A plan that quietly
+presents the second as the first licenses large refactors nobody authorised, on the authority of a
+document the project's own tooling just generated.
+
+This applies throughout the artifacts this standard requires. The baseline (R5) describes what is.
+The plan (R7) MUST separate the current implementation from recommended future work, so a reader can
+always tell which they are looking at.
+
 When a project already exists and there is no trustworthy planning history, an original plan MUST NOT
 be invented from assumptions. A structured codebase reconstruction MUST be performed instead. The
 goal is an evidence-based baseline describing:

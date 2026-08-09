@@ -1,32 +1,34 @@
 # 02 — Backfilling standards 1–43
 
-Standard 44 is the only standard in this repository. Items 1 through 43 of the same numbered series
-exist as *behavior* — they were previously realized as global Claude Code skills — but not as
-documents here. This section covers turning them into normative documents alongside 44.
+Standard 44 is the only standard in this repository. The other items of the same numbered series
+exist as source text and, in part, as global Claude Code skills — but not yet as documents here. This
+section covers turning them into normative documents alongside 44.
 
-**This section is blocked, and the blocker is source material rather than effort.**
+## Source located — 2026-08-08
 
-## The blocker, stated precisely
+**The blocker is resolved.** The owner supplied a ChatGPT share link containing the original spec, and
+it is now committed verbatim at
+[`artifacts/prompts/engineering-standards-spec.md`](../prompts/engineering-standards-spec.md).
 
-The source text for items 1–43 is **not present anywhere on this machine**. Verified by searching the
-entire `C:\Users\Mike\.claude\` tree and every `artifacts/prompts/` directory under `F:\Repos\` for
-the numbered-heading pattern the series uses. The only numbered specification on disk is
-`artifacts/prompts/original_prompt.md` in this repository, which contains item 44 alone.
+What it contains: top-level items **1 through 44**, titled `1. Human and AI Operability` through
+`44. Existing Project Reconstruction`.
 
-One near-miss worth ruling out so nobody re-investigates it: `F:\Repos\ReleasePilot\artifacts\prompts\original_prompt.md`
-contains a heading `# 36. Engineering standards`. That is a **different numbering series** — a product
-specification for ReleasePilot whose items run 1–38 — and item 36 there is a section about
-engineering principles, not item 36 of this series. Do not treat it as source material.
+Three facts about the source that the backfill must respect:
 
-The project owner holds the source. Until it is committed to
-`artifacts/prompts/`, every item below is blocked.
+- **There is no item 8.** The source skips from `7. Acceptance Criteria` to `9. Verification`. That
+  gap is in the original and MUST NOT be closed by renumbering — the numbers are how existing work
+  refers to these standards. There are therefore **43 standards**, not 44, and **42 to backfill**.
+- **Item 22 (Adoption and Migration) contains a nested 1–10 list.** Those are steps within that item,
+  not top-level standards.
+- **Fidelity is degraded.** The text was extracted from the rendered share page rather than the
+  original Markdown, so list markers are stripped: bullets and ordered-list numbers inside an item's
+  body appear as bare lines. Wording and line order are intact. Where formatting matters,
+  `artifacts/prompts/original_prompt.md` is the higher-fidelity copy of item 44 and their substantive
+  content agrees.
 
-**Do not reconstruct these standards from the skills.** It is tempting, because the skills exist and
-are readable. It would also be exactly the failure Standard 44 exists to prevent: writing "Standard
-17 requires X" because a skill happens to do X is fabricating a requirement from an implementation
-and presenting inference as record. If the source is genuinely unrecoverable, that is a decision for
-the owner to make explicitly, and the resulting documents must be labeled as reconstructed — which
-is what Standard 44's own procedure is for, applied to this repository.
+The earlier conclusion that no source existed was correct about this machine — the spec lives in a
+ChatGPT conversation, which is exactly the failure mode standard 4 (Planning Standards) exists to
+prevent. Committing it is the fix.
 
 ## What the skills tell us, and what they do not
 
@@ -46,28 +48,29 @@ Three further entries — `plan-handoff.skill`, `plan-structure.skill`, `pre-pus
 zip archives from an old packaging step, not live skills. They will drift from the real directories
 and are cleanup candidates, tracked in this section below.
 
-Note that 7 candidate skills cannot account for 43 items. Most of the series is either implemented in
-ways that left no skill, or not implemented at all. Which is which cannot be determined without the
-source.
+Note that 7 candidate skills cannot account for 43 standards. Most of the series is either implemented
+in ways that left no skill, or not implemented at all. The source text names the subject of each
+standard, so which is which is now answerable per item — but it must be established from each
+standard's content, not assumed from a skill's name.
 
 ---
 
 ### Obtain and commit the source specification for items 1–43
 
-- **Status:** blocked — on the project owner
+- **Status:** done — 2026-08-08, `artifacts/prompts/engineering-standards-spec.md`
 - **Purpose:** Everything else in this section depends on it, and no substitute is acceptable.
 - **Deliverables:** the source text committed under `artifacts/prompts/`, following the existing
   naming — `original_prompt.md` holds item 44, so either extend that file or add a sibling whose name
   states its range.
 - **Acceptance Criteria:** the committed text covers items 1–43 and is the owner's original, not a
   paraphrase or a reconstruction.
-- **Verification:** `ls artifacts/prompts/` shows the new file, and its item numbering runs to 43
-  with no gaps. If gaps exist, record them here rather than filling them.
+- **Verification:** `ls artifacts/prompts/` shows the new file, and its item numbering runs to 44.
+  Done — one gap found and recorded rather than filled: there is no item 8.
 - **Dependencies:** none — this is the root blocker.
 
 ### Write standards 1–43 as normative documents
 
-- **Status:** blocked — on the item above
+- **Status:** ready — unblocked 2026-08-08; 42 documents to write (there is no item 8)
 - **Purpose:** Give each standard the same normative contract Standard 44 has, so the series is
   citable, auditable, and enforceable rather than living only as skill behavior.
 - **Deliverables:** `standards/NN-<kebab-title>.md` for each item, zero-padded for single digits
@@ -80,13 +83,14 @@ source.
   - Each document names its implementing skill, or states explicitly that none exists.
   - Where a document's requirements and its skill disagree, the disagreement is resolved in the same
     change rather than deferred.
-- **Verification:** `ls standards/` lists 44 files sorting numerically. For each, confirm the
-  Implementation section names a directory that exists under `~/.claude/skills/`, or says none does.
+- **Verification:** `ls standards/` lists 43 files sorting numerically — 1–7, 9–44, with no `08-`.
+  For each, confirm the Implementation section names a directory that exists under `~/.claude/skills/`,
+  or says none does.
 - **Dependencies:** the source specification above.
 
 ### Update the README index as standards land
 
-- **Status:** blocked — on the item above
+- **Status:** ready — unblocked, follows each standard as it lands
 - **Purpose:** [`README.md`](../../README.md) currently collapses 1–43 into a single
   "backfill pending" row. That row is accurate today and becomes a lie the moment the first backfilled
   standard lands.
