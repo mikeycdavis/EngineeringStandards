@@ -143,7 +143,18 @@ discipline. [Standard 20](20-exceptions.md) is the machinery those exceptions us
 
 | Requirement | Rule | State |
 | --- | --- | --- |
-| R1 | `security.no-secrets-in-artifacts` | Evaluated, `code-analysis`/`partial`. High-confidence shapes only; `.env` files excluded by design |
-| R2 | `scm.no-committed-env-files` | Evaluated, `structural`/`full`. Filename only — no content is read |
+| R1 | `security.no-secrets-in-artifacts` | Evaluated, `code-analysis`/`partial`. High-confidence shapes only; `.env` files excluded by design. **Working tree, not repository** |
+| R2 | `scm.no-committed-env-files` | Evaluated, `structural`/`partial`. Filename only — no content is read. **Working tree, not repository** |
 | R3 | `scm.no-generated-artifacts` | `manual-review`. Distinguishing accidental build output from a deliberate lockfile is a judgement about intent |
 | R4 | `scm.no-shared-history-rewrite` | `manual-review`. Requires history to compare against, which one snapshot does not have |
+
+**Known defect in R1 and R2, recorded in [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).**
+Both detectors walk the filesystem and report *tracked*. Nothing consults version control, so a
+gitignored `.env` is reported as a committed environment file, and the deliberately seeded fakes in a
+project's redaction tests are reported as committed credentials. Both then advise rotation.
+
+R2's assurance was `full` and is now `partial`: a check that cannot tell *present on disk* from
+*committed* has not established the requirement, and claiming otherwise is the assurance overstatement
+[Standard 31](31-whatsnext-compatibility.md) R6 exists to prevent — here, in the tool that supplies
+the number. Until the repository-metadata seam lands, a finding from either rule is evidence to
+verify with `git ls-files`, not a conclusion.

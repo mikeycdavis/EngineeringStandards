@@ -917,15 +917,27 @@ function detectArchitectureArtifacts() {
       standardRef: R.artifacts,
     });
   }
-  if (!has("artifacts/adr")) {
+  // Standard 11 R1 is a SHOULD, and it names one location out of several the industry settled on.
+  // `docs/adr/` and `doc/adr/` are what Nygard's original article and adr-tools established, and a
+  // project that followed the convention has recorded its decisions durably — which is the whole
+  // requirement. Failing it invites the one repair that helps nobody: moving files to satisfy a
+  // detector. The manifest check above already accepts two locations for exactly this reason.
+  //
+  // Deliberately not policy-declared. Detectors also serve `audit`, which takes no policy at all
+  // (ADR 0004), so a configurable path would make evidence discovery depend on configuration and
+  // give the two commands different answers about what the repository contains.
+  const adrDirs = ["artifacts/adr", "docs/adr", "doc/adr"];
+  if (!adrDirs.some((d) => has(d))) {
     addFinding({
       id: "missing-adr-directory",
       rule: "architecture.adr",
       category: "Missing planning artifacts",
       severity: "warning",
       label: "OBSERVED",
-      evidence: ["artifacts/"],
-      message: "No artifacts/adr/ directory exists; consequential decisions have nowhere durable to live.",
+      evidence: adrDirs,
+      message:
+        "No ADR directory exists (artifacts/adr/, docs/adr/ or doc/adr/); consequential decisions " +
+        "have nowhere durable to live.",
       standardRef: R.artifacts,
     });
   }
@@ -1279,6 +1291,35 @@ async function detectPlanDiscrepancies(files, contents) {
   }
 }
 
+/**
+ * Whether a backticked README token is a claim about a file in THIS working tree.
+ *
+ * Not everything containing a slash is a path. A README for a web service is full of `/api/health`
+ * and `/users/:id`, which are HTTP routes: they resolve against a running server, not a checkout.
+ * Reporting them as missing files tells an author to correct a document that was already right, and
+ * the likely repair — deleting a true statement, or adding a caveat Standard 32 forbids — leaves the
+ * README worse than the detector found it.
+ *
+ * The discriminator is the leading slash. Repository paths are written relative to the root
+ * (`src/index.ts`, `scripts/build.sh`); a leading slash means a URL path or a filesystem-absolute
+ * path, and neither is a claim about this repository. The exception is root-relative prose like
+ * `/src/index.ts`, so a leading-slash token still counts when its last segment carries a file
+ * extension — routes rarely do, files nearly always do.
+ *
+ * Erring toward silence is deliberate. A missed discrepancy is a check that did not fire; a false
+ * one spends an author's trust and teaches them to work around the tool. Both bugs this detector
+ * layer has shipped were false positives, and this was the third.
+ */
+function looksLikeRepositoryPath(p) {
+  if (!p.includes("/") || /\s/.test(p)) return false;
+  if (p.startsWith("http") || p.startsWith("//")) return false; // URL
+  if (p.startsWith("-")) return false; // a CLI flag that happens to carry a path
+  if (p.startsWith("~") || /^[A-Za-z]:/.test(p)) return false; // outside this repository
+  if (/[:{}<>*?#]/.test(p)) return false; // route parameter, glob, template, query, fragment
+  if (p.startsWith("/")) return /\.[a-z0-9]+$/i.test(path.basename(p));
+  return true;
+}
+
 function detectDocDiscrepancies(files, contents) {
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
   if (!readme) return;
@@ -1287,8 +1328,7 @@ function detectDocDiscrepancies(files, contents) {
 
   for (const token of text.match(/`([^`\n]+)`/g) ?? []) {
     const p = token.slice(1, -1).trim();
-    if (!p.includes("/") || /\s/.test(p) || p.startsWith("http") || p.startsWith("-")) continue;
-    if (p.startsWith("C:") || p.startsWith("~") || p.startsWith("<")) continue;
+    if (!looksLikeRepositoryPath(p)) continue;
     const clean = p.replace(/\/$/, "");
     if (!existsSync(path.join(root, clean))) broken.push(`${rel(readme)} -> ${p}`);
   }

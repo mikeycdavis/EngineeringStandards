@@ -564,6 +564,7 @@ Stated here rather than discovered later. Most of what this table used to say is
 | The catalog covers 50 rules across 23 of 53 standards | Rules outside it are reported `not-evaluated` rather than passing — honest, but a `COMPLIANT` verdict covers less than the whole framework. The audit prints this as `frameworkCoverage` so you never have to remember it |
 | Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`, never passing. Read the coverage line, not just the score |
 | No `standardVersion` resolution ([21](standards/21-versioning.md) R5) | With one published version there is nothing to resolve against; an unresolvable version is not yet rejected |
+| `scm.no-committed-env-files` and `security.no-secrets-in-artifacts` read the working tree, not the repository ([ADR 0008](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)) | Both say *tracked* and both mean *present on disk*. A gitignored `.env`, and the seeded fakes in redaction tests, are reported as committed secrets. If you see one of these, check `git ls-files` before you rotate anything — and do not write an exception for it, because the rule is wrong rather than inconvenient |
 
 Each is recorded in the `## Implementation` section of the standard that specifies it.
 

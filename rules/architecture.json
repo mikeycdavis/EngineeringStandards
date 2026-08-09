@@ -34,9 +34,9 @@
       "assurance": "partial",
       "nonExemptible": false,
       "introducedIn": "1.0.0",
-      "description": "artifacts/adr/ exists and holds records for consequential choices, including deliberate deviations from these standards.",
+      "description": "An ADR directory exists — artifacts/adr/, docs/adr/ or doc/adr/ — and holds records for consequential choices, including deliberate deviations from these standards.",
       "rationale": "A decision without its rejected alternatives is indistinguishable from an accident.",
-      "remediation": "Create artifacts/adr/ and record the decisions already made.",
+      "remediation": "Create artifacts/adr/, or keep the docs/adr/ convention if the project already follows it, and record the decisions already made.",
       "aliases": [
         "architecture.requireAdrForMajorDecisions"
       ],

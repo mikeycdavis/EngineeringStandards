@@ -22,6 +22,12 @@ Projects SHOULD maintain:
 artifacts/adr/
 ```
 
+`docs/adr/` and `doc/adr/` — the locations Nygard's original article and adr-tools established — also
+satisfy this requirement, and the validator accepts all three. The requirement is that decisions have
+a durable home, not that they have a particular one; a project already following the older convention
+gains nothing from moving the files, and a rule that made it move them would be teaching adopters to
+edit their repository to please a detector.
+
 ### R2 — Define an ADR template
 
 A project MUST create an ADR template, so that records are comparable rather than each being shaped
@@ -135,7 +141,10 @@ answers resolve an architectural question during a reconstruction.
 
 **No skill implements this standard.**
 
-`standards audit` does not check for `artifacts/adr/` today, nor for ADR numbering or status validity.
-Adding those checks is straightforward and is a candidate improvement — an absent ADR directory on a
-project with a database, an auth model, and an AI provider is a meaningful signal. What no tool can
-check is whether the decisions that *were* consequential are the ones that got recorded.
+`standards audit` checks that an ADR directory exists, in any of the three locations R1 accepts, and
+reports `architecture.adr` when none does. It does not check ADR numbering, status validity, or
+template conformance; those are candidate improvements. The catalog marks the rule
+`assurance: partial` for that reason.
+
+What no tool can check is whether the decisions that *were* consequential are the ones that got
+recorded — which is the substance of R3 and the larger half of this standard.

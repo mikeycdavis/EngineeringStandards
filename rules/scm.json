@@ -9,17 +9,17 @@
       "level": "forbidden",
       "severity": "error",
       "validationType": "structural",
-      "assurance": "full",
+      "assurance": "partial",
       "nonExemptible": false,
       "introducedIn": "2.0.0",
       "description": "No dotenv-style environment file is tracked. Example, template, sample, and vault variants are permitted, since they carry placeholders rather than values.",
       "rationale": "An environment file is where a project puts the values it must not publish, so the file's presence is the finding and no content scan is needed to establish it.",
-      "remediation": "Remove the file from tracking, add it to .gitignore, rotate anything it contained, and commit an example variant in its place.",
+      "remediation": "Confirm with `git ls-files` that the file is actually tracked before acting — the detector cannot yet tell tracked from present. If it is tracked: remove it from tracking, add it to .gitignore, rotate anything it contained, and commit an example variant in its place.",
       "aliases": [],
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "Filename only — the detector never reads the contents. security.no-secrets-in-artifacts excludes these files by design so that one defect produces one finding."
+      "$assuranceNote": "Filename only — the detector never reads the contents. It also walks the filesystem rather than consulting version control, so it cannot distinguish a tracked file from a gitignored one, and reports both (ADR 0008). That gap, not the absent content scan, is why this is partial rather than full. security.no-secrets-in-artifacts excludes these files by design so that one defect produces one finding."
     },
     {
       "id": "scm.no-generated-artifacts",

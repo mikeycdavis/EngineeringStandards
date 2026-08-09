@@ -13,6 +13,85 @@ All notable changes to this framework. Versioning follows
 | Output schema | The validator's JSON envelope | `schemaVersion` in every report |
 | Package | The npm package | `package.json` |
 
+## 2.0.1 — 2026-08-09
+
+**`PATCH`.** Two detector false positives, and the standards they had drifted from. No rule was
+added, removed, or re-levelled; some projects that failed will now pass, which is the fix working.
+
+### Fixed
+
+- **`documentation.code-consistency` read HTTP routes as filesystem paths.** A README naming
+  `/api/health` was told the path did not exist. The check now distinguishes repository paths from
+  URLs, routes, route parameters, globs and query strings: a leading slash means a route unless the
+  last segment carries a file extension. Root-relative file references such as `/src/index.ts` are
+  still checked, and a repository-relative path that genuinely does not exist is still reported.
+  This is the third false positive this detector layer has shipped, and the third whose fix was to
+  require evidence of the thing rather than a resemblance to it.
+- **`architecture.adr` accepted only `artifacts/adr/`.** [Standard 11](standards/11-architecture-decision-records.md)
+  R1 is a `SHOULD` naming one location out of several; `docs/adr/` and `doc/adr/` are what Nygard's
+  article and adr-tools established. A project following the older convention was failed, and the
+  cheapest repair available to it was to move files to satisfy a detector — the behaviour this
+  framework argues against. All three locations now satisfy the rule; none still fails it.
+
+### Disclosed — two detectors assert repository state they never measured
+
+[ADR 0008](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).
+`scm.no-committed-env-files` and `security.no-secrets-in-artifacts` both report *tracked* and both
+mean *present on disk*. A gitignored `.env` is reported as a committed environment file; the fakes
+seeded in a project's redaction tests are reported as committed credentials. Both then advise
+rotation, which is expensive, irreversible in the wrong direction, and — where the file was never
+committed — entirely unnecessary.
+
+Not fixed in this release. Answering *is this path tracked?* correctly means nested `.gitignore`
+files, negation ordering, `core.excludesFile`, `info/exclude`, sparse checkout, submodules,
+worktrees, symlinks, `intent-to-add`, `skip-worktree` and `assume-unchanged`, and reimplementing
+enough of that to be trustworthy is a maintenance project. The ADR records the decision to obtain the
+answer behind a narrow repository-metadata seam instead, and the rejected alternatives.
+
+- `scm.no-committed-env-files` assurance drops `full` → `partial`. A check that cannot tell *present*
+  from *committed* has not established its requirement, and saying `full` was the assurance
+  overstatement [Standard 31](standards/31-whatsnext-compatibility.md) R6 exists to prevent — in the
+  tool that supplies the number.
+- Both remediations now say to confirm with `git ls-files` before acting.
+- Recorded in [INSTRUCTIONS.md](INSTRUCTIONS.md)'s current-limitations table and in the
+  `## Implementation` sections of [Standard 16](standards/16-security.md) and
+  [Standard 46](standards/46-source-control-safety.md).
+
+**Do not write a [Standard 20](standards/20-exceptions.md) exception for either.** An exception says
+the rule applies and the project knowingly does not satisfy it. Using one here would record a
+compliance failure that did not happen and bury the tool's own defect in an adopter's policy file.
+
+### Changed — documentation caught up with the code
+
+- [Standard 31](standards/31-whatsnext-compatibility.md)'s Implementation section described a
+  contract that "largely could not" be honoured and a `{ schemaVersion, repo, auditedAt, findings }`
+  envelope. Both were true before 1.1.0 and neither is true now: `validate --json` emits the full
+  [Standard 25](standards/25-validator-output.md) envelope and every R2 guarantee is present, with
+  canonical `ruleId` on every result. Rewritten to describe what ships, with the two cautions a
+  consumer needs — `score` is meaningless under `NOT_EVALUATED`, and `frameworkCoverage` is tooling
+  maturity rather than compliance. The one genuine gap, [Standard 28](standards/28-github-actions.md)
+  R3, is now recorded as the open item it is.
+- [Standard 11](standards/11-architecture-decision-records.md)'s Implementation section said
+  `standards audit` does not check for an ADR directory. It has for some time.
+- [Standard 16](standards/16-security.md)'s Implementation section said the audit performs no secret
+  scanning. `security.no-secrets-in-artifacts` has scanned since 2.0.0. Rewritten to say what the
+  scan actually covers, and what it cannot.
+- [Standard 28](standards/28-github-actions.md) R3's copy-pasteable CI snippet used
+  `--format json`, which the CLI does not accept. It is `--json`, as
+  [Standard 23](standards/23-standards-validator-cli.md) already records.
+- [Standard 32](standards/32-documentation-quality.md) said the README indexes 44 standards. There
+  are 53.
+
+Four stale `## Implementation` sections in one pass is a pattern, not four accidents: each was
+accurate when written and nothing re-reads it afterwards, so the drift is invisible from the document
+— which stays internally coherent while becoming false.
+[Standard 42](standards/42-documentation-freshness.md)'s Implementation section now records this as
+its largest unchecked surface, with two partial checks that would have caught all four and need no
+judgement to run: parsing CLI invocations in fenced blocks against the flags the scripts accept, and
+testing negative capability claims (*does not check*, *no skill implements*) against the rule catalog.
+Both find only prose that understates what ships; overstatement stays a human-review problem that
+[Standard 32](standards/32-documentation-quality.md) R3 already owns.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
