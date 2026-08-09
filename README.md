@@ -5,6 +5,15 @@ that states what compliant work must look like. The **executable procedures** th
 live as global Claude Code skills in `~/.claude/skills/`, so they work in every repository without
 anything being installed there. A standard is the contract; its skill is the implementation.
 
+> Design every project so a human can understand it, an AI can operate it, every meaningful action
+> can be traced, and a fresh engineer or agent can resume the work without relying on conversation
+> history.
+
+Every standard in the series resolves back to one of those four clauses. See
+[Standard 32](standards/32-documentation-quality.md) for what else this document is required to
+explain — five of its eight questions are not answered here yet, because they describe mechanisms
+that are specified and unbuilt.
+
 ## Standards
 
 The source specification for the whole series is committed at
@@ -46,7 +55,11 @@ Backfilling the remaining items as documents is in progress.
 | 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/audit.test.mjs` (partial) | active |
 | 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | *not implemented — no score is computed* | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
-| 32–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README (partial) | active |
+| 33 | Bootstrap Experience | [standards/33-bootstrap-experience.md](standards/33-bootstrap-experience.md) | *not implemented — no `standards init`* | active |
+| 34 | Dogfooding | [standards/34-dogfooding.md](standards/34-dogfooding.md) | the repository itself (partial) | active |
+| 35 | Planning Requirements | [standards/35-planning-requirements.md](standards/35-planning-requirements.md) | `plan-structure`, `plan-handoff` | active |
+| 36–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 The canonical enumeration of the series lives in

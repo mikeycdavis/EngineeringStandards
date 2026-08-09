@@ -162,22 +162,22 @@
     {
       "number": 32,
       "title": "Documentation Quality",
-      "implementedBy": null
+      "implementedBy": "standards/32-documentation-quality.md"
     },
     {
       "number": 33,
       "title": "Bootstrap Experience",
-      "implementedBy": null
+      "implementedBy": "standards/33-bootstrap-experience.md"
     },
     {
       "number": 34,
       "title": "Dogfooding",
-      "implementedBy": null
+      "implementedBy": "standards/34-dogfooding.md"
     },
     {
       "number": 35,
       "title": "Planning Requirements",
-      "implementedBy": null
+      "implementedBy": "standards/35-planning-requirements.md"
     },
     {
       "number": 36,
