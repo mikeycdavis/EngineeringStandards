@@ -40,6 +40,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { sectionRe } from "./sections.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INVENTORY = path.join(ROOT, "artifacts/standards-source-inventory.json");
@@ -76,10 +77,6 @@ function extract(sourceText) {
   }
   return { found, duplicates };
 }
-
-/** A `##` or `###` heading with exactly this text. Anchored per line, like the item regex. */
-export const sectionRe = (name) =>
-  new RegExp(`^#{2,3}\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m");
 
 const inventory = JSON.parse(await readFile(INVENTORY, "utf8"));
 

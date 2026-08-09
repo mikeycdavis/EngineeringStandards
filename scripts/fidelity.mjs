@@ -36,6 +36,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { sectionText } from "./sections.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INVENTORY = path.join(ROOT, "artifacts/standards-source-inventory.json");
@@ -84,26 +85,6 @@ function blockAfter(lines, start) {
     return { kind: "list", text: body.join("\n"), line: start + 1 };
   }
   return null;
-}
-
-/**
- * The text of one `##`/`###` section: from its heading to the next heading at the same or a higher
- * level. A `###` under a claimed `##` therefore belongs to the claim, which is what a reader would
- * expect of "the X section".
- */
-function sectionText(sourceText, name) {
-  const lines = sourceText.split("\n");
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const start = lines.findIndex((l) => new RegExp(`^(#{2,3})\\s*${escaped}\\s*$`).test(l));
-  if (start === -1) return null;
-  const level = lines[start].match(/^#+/)[0].length;
-  const body = [lines[start]];
-  for (let i = start + 1; i < lines.length; i++) {
-    const m = lines[i].match(/^(#+)\s/);
-    if (m && m[1].length <= level) break;
-    body.push(lines[i]);
-  }
-  return body.join("\n");
 }
 
 const inventory = JSON.parse(await readFile(INVENTORY, "utf8"));

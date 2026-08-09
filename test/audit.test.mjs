@@ -607,3 +607,52 @@ test("every must-never detector declares which source view it scans", async () =
     );
   }
 });
+
+test("the section-heading rule has exactly one owner", async () => {
+  // Standard 51 R3, found by the attestation review of this repository's own 2.0.0 work. Section
+  // matching had been implemented twice — once in inventory.mjs and once in fidelity.mjs, each with
+  // its own hand-escaped regex, both landed in the same commit. Two copies of one concept disagree
+  // the first time either is fixed, and nothing records which is authoritative.
+  //
+  // This asserts the shape of the fix rather than the fix itself: the definition lives in
+  // scripts/sections.mjs and every consumer imports it. A second hand-rolled heading regex anywhere
+  // in scripts/ fails here.
+  const { readFile } = await import("node:fs/promises");
+  const { readdir } = await import("node:fs/promises");
+
+  const files = (await readdir(path.join(REPO, "scripts"))).filter((f) => f.endsWith(".mjs"));
+  const offenders = [];
+  for (const f of files) {
+    if (f === "sections.mjs") continue;
+    const src = await readFile(path.join(REPO, "scripts", f), "utf8");
+    // A heading-level character class outside the owner module is a second definition.
+    if (/#\{2,\s*3\}/.test(src)) offenders.push(`scripts/${f}`);
+  }
+  assert.deepEqual(offenders, [], "a section-heading regex exists outside scripts/sections.mjs");
+
+  for (const f of ["inventory.mjs", "fidelity.mjs"]) {
+    const src = await readFile(path.join(REPO, "scripts", f), "utf8");
+    assert.match(src, /from "\.\/sections\.mjs"/, `scripts/${f} does not import the shared definition`);
+  }
+});
+
+test("the shared section definition behaves the same for both of its consumers", async () => {
+  // The other half: one owner is only an improvement if the owner is correct. These are the two
+  // questions the consumers ask, against the real source document.
+  const { readFile } = await import("node:fs/promises");
+  const { sectionRe, sectionText } = await import("../scripts/sections.mjs");
+  const source = await readFile(path.join(REPO, "artifacts/prompts/second-fold-in-prompt.md"), "utf8");
+
+  assert.ok(sectionRe("Meta-standard").test(source), "a real heading must match");
+  assert.ok(!sectionRe("Bogus").test(source), "a heading that does not exist must not match");
+
+  const meta = sectionText(source, "Meta-standard");
+  assert.ok(meta.startsWith("## Meta-standard"), "the section starts at its own heading");
+  assert.ok(meta.includes("weakened, removed, bypassed"), "the section carries its own body");
+  assert.ok(!meta.includes("## Deliverables"), "the section stops at the next same-level heading");
+  assert.equal(sectionText(source, "Bogus"), null, "a missing heading is null, not an empty section");
+
+  // Regex metacharacters in a section name are escaped rather than interpreted — the property the
+  // two hand-written copies each had to get right separately.
+  assert.equal(sectionText(source, "Meta.standard"), null, "the dot must be literal, not any-char");
+});
