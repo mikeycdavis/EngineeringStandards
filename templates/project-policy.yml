@@ -16,7 +16,7 @@
 #       exception      = the rule applies, and you knowingly do not satisfy it.
 #   * Nothing here asserts compliance. What you actually meet comes from a validation run.
 
-standardVersion: "1.0.0"
+standardVersion: "2.0.0"
 project: "REPLACE-ME"
 
 # Every rule you adopt, and at what level. A rule you delete from this map is not "off" — it takes
@@ -57,6 +57,85 @@ rules:
 
   verification.before-completion:
     level: required
+
+  # The must-never layer (Standards 45-53). `forbidden` is the fourth level, and it behaves
+  # differently from the other three in a way worth understanding before you adopt it.
+  #
+  # A required rule is satisfied by your project DOING something, and there is a positive finding to
+  # point at. A forbidden rule is satisfied by the ABSENCE of a violation, and there is not. So a
+  # `passed` here means "no violation was found by the stated search" -- never "this project does
+  # not do that" (Standard 45 R2). Read each rule's assurance before relying on a clean result.
+  #
+  # And a forbidden rule that nobody has examined -- not evaluated, not attested, not declared
+  # not-applicable -- caps your verdict at NOT_EVALUATED rather than passing quietly
+  # (Standard 45 R6). For a required rule, not-evaluated means "we did not check that you did the
+  # thing". For a forbidden one it means "nobody looked for the prohibited behaviour", and a
+  # COMPLIANT verdict over an unexamined prohibition is a false green.
+  #
+  # You have four honest ways to establish each of these, in order of preference: let a detector
+  # evaluate it, attest to it after a human review, declare it not-applicable with a revisitWhen,
+  # or -- where the rule is exemptible and the situation is real -- except it. Deleting the line is
+  # not a fifth way; an undeclared rule is reported as undeclared.
+  meta.standards-not-weakened:
+    level: forbidden
+
+  scm.no-committed-env-files:
+    level: forbidden
+  scm.no-generated-artifacts:
+    level: recommended
+  scm.no-shared-history-rewrite:
+    level: forbidden
+
+  testing.no-weakening-to-pass:
+    level: forbidden
+  testing.no-fabricated-results:
+    level: forbidden
+  testing.no-tautological-tests:
+    level: recommended
+
+  errors.no-swallowed-exceptions:
+    level: forbidden
+  errors.no-false-success:
+    level: forbidden
+  errors.no-unbounded-retry:
+    level: forbidden
+  observability.no-silenced-failures:
+    level: forbidden
+
+  data.migration-rollback:
+    level: forbidden
+  data.no-silent-discard:
+    level: forbidden
+  data.no-audit-corruption:
+    level: forbidden
+  data.no-prod-data-in-dev:
+    level: forbidden
+
+  security.no-disabled-access-controls:
+    level: forbidden
+  security.no-cert-bypass:
+    level: forbidden
+  security.no-sql-concat:
+    level: forbidden
+  security.no-untrusted-exec:
+    level: forbidden
+
+  architecture.no-hidden-global-state:
+    level: forbidden
+  architecture.no-boundary-bypass:
+    level: forbidden
+  architecture.no-duplicate-implementations:
+    level: forbidden
+  architecture.dependency-evaluation:
+    level: required
+
+  concurrency.no-unmanaged-shared-state:
+    level: forbidden
+
+  ai.no-fabricated-capabilities:
+    level: forbidden
+  ai.no-safety-bypass:
+    level: forbidden
 
 # Rules whose subject does not exist in your project. Delete the example and write your own.
 #

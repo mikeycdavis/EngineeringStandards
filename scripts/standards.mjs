@@ -123,6 +123,21 @@ function renderVerdict(report, policy) {
     }
     out.push("");
   }
+  // Standard 45 R6. Named individually rather than counted: "3 unestablished prohibitions" tells a
+  // reader there is a problem, and this tells them which four things to do about it.
+  const unestablished = report.unestablishedProhibitions ?? [];
+  if (unestablished.length) {
+    out.push("  Unestablished prohibitions — nobody looked for these:");
+    for (const ruleId of unestablished) out.push(`    ${ruleId}`);
+    out.push("");
+    out.push("  A forbidden rule is satisfied by the absence of a violation, so a rule nothing has");
+    out.push("  examined has established nothing, and the verdict is capped at NOT_EVALUATED rather");
+    out.push("  than reporting COMPLIANT over an unexamined prohibition (Standard 45 R6).");
+    out.push("  Resolve each: evaluate it, attest to it after a human review, declare it");
+    out.push("  not-applicable with a revisitWhen, or except it where the rule is exemptible.");
+    out.push("");
+  }
+
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
     out.push("  Excepted:");
@@ -1545,4 +1560,8 @@ if (JSON_OUT) {
 // (Standard 30 R1, ADR 0004). A required-level failure is exit 1 regardless of score.
 if (policy.error || !policy.document) process.exit(EXIT_INVOCATION);
 if (report.status === "NON_COMPLIANT") process.exit(EXIT_FINDINGS);
+// Standard 45 R6: a must-never rule nobody examined must not gate-pass CI. This is exit 1 rather
+// than exit 2 because it is a statement about the project, not about the configuration — the policy
+// read fine, and what it says is that a prohibition went unexamined.
+if (report.unestablishedProhibitions?.length) process.exit(EXIT_FINDINGS);
 process.exit(EXIT_OK);

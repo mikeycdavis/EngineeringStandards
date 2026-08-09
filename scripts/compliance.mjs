@@ -297,14 +297,34 @@ function summarise(results, policy) {
   );
   const excepted = results.filter((r) => r.disposition === "excepted");
 
+  /**
+   * Standard 45 R6 — an applicable `forbidden` rule that nobody established caps the verdict.
+   *
+   * For a `required` rule, not-evaluated means "we did not check that you did the thing". For a
+   * `forbidden` rule it means "nobody looked for the prohibited behaviour", and reporting COMPLIANT
+   * over an unexamined prohibition is a false green at the verdict level — Standard 38 R3's
+   * principle applied to the verdict itself.
+   *
+   * Placed AFTER the NON_COMPLIANT and COMPLIANT_WITH_EXCEPTIONS determinations on purpose, so it
+   * cannot intercept the exception machinery. A rule that was excepted, rejected, or declared
+   * not-applicable has been LOOKED AT; the cap exists only for the case where nothing has happened
+   * at all. `not-applicable` results are already excluded, and an excepted or failed rule is not
+   * `skipped`, so neither can reach this list.
+   */
+  const unestablished = applicable.filter(
+    (r) => r.level === "forbidden" && r.status === RESULT.skipped && r.disposition === "not-evaluated",
+  );
+
   let status;
   if (!policy) status = STATUS.NOT_EVALUATED;
   else if (requiredFailures.length > 0) status = STATUS.NON_COMPLIANT;
   else if (excepted.length > 0) status = STATUS.COMPLIANT_WITH_EXCEPTIONS;
+  else if (unestablished.length > 0) status = STATUS.NOT_EVALUATED;
   else status = STATUS.COMPLIANT;
 
   return {
     status,
+    unestablishedProhibitions: unestablished.map((r) => r.ruleId),
     score,
     summary: counts,
     assurance,
@@ -332,6 +352,9 @@ export function envelope({ verdict, project, standardVersion, auditedAt, repo, f
     // Framework maturity, sitting outside the verdict on purpose. It says how much of the framework
     // has been turned into rules — never how compliant this project is.
     frameworkCoverage: frameworkCoverage ?? null,
+    // Standard 45 R6. Present on every run, empty when nothing is unestablished, so a consumer can
+    // distinguish "no prohibitions went unexamined" from "this validator predates the rule".
+    unestablishedProhibitions: verdict.unestablishedProhibitions ?? [],
     auditedAt,
     results: verdict.results,
   };

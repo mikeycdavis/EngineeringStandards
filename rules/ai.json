@@ -15,7 +15,9 @@
       "description": "Every meaningful action is invokable without the user interface, through a capability, command, API, or tool an authorized agent can call.",
       "rationale": "The UI must not be the only first-class client. Humans and agents operate the same underlying capabilities.",
       "remediation": "Expose the underlying capability the UI calls, and have the UI call it too.",
-      "aliases": ["ai.uiCapabilitiesMustBeAgentOperable"],
+      "aliases": [
+        "ai.uiCapabilitiesMustBeAgentOperable"
+      ],
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null
@@ -34,7 +36,9 @@
       "description": "Model providers sit behind an abstraction so capabilities remain stable when the model changes.",
       "rationale": "A capability that breaks when the model changes was never a capability.",
       "remediation": "Introduce a provider interface and move direct SDK calls behind it.",
-      "aliases": ["ai.providerNeutral"],
+      "aliases": [
+        "ai.providerNeutral"
+      ],
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null
@@ -53,7 +57,9 @@
       "description": "An agent can recommend a change without applying it.",
       "rationale": "Separating recommendation from application is what makes agent work reviewable before it takes effect.",
       "remediation": "Split the capability into a proposal that returns a plan and an execution that applies one.",
-      "aliases": ["ai.proposeExecuteSeparation"],
+      "aliases": [
+        "ai.proposeExecuteSeparation"
+      ],
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null
@@ -72,11 +78,53 @@
       "description": "Destructive or high-impact actions require explicit approval unless the project's policy says otherwise.",
       "rationale": "Irreversible action taken without approval cannot be undone by improving the process afterwards.",
       "remediation": "Gate the action behind an approval step that records who approved it.",
-      "aliases": ["ai.destructiveActionsRequireApproval"],
+      "aliases": [
+        "ai.destructiveActionsRequireApproval"
+      ],
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
       "$exemptibilityNote": "Non-exemptible: a project may declare this not-applicable when it has no destructive actions, but it may not waive approval while having them."
+    },
+    {
+      "id": "ai.no-fabricated-capabilities",
+      "title": "APIs, library capabilities, and repository state are not invented",
+      "standard": 53,
+      "category": "ai",
+      "level": "forbidden",
+      "severity": "error",
+      "validationType": "manual-review",
+      "assurance": "none",
+      "nonExemptible": true,
+      "introducedIn": "2.0.0",
+      "description": "No API, library capability, configuration option, or repository fact is asserted without having been checked. Where it could not be checked, the correct output says so and names the search that failed.",
+      "rationale": "Extends Standard 44 R2 forward in time: R2 prohibits fabricating a project's past, this prohibits fabricating its present. There is no supported reason to describe a capability nobody looked for, which is why no exception exists.",
+      "remediation": "Check the dependency's own surface, and where you could not, say what you searched for and where (Standard 44 R12).",
+      "aliases": [],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "Detecting a fabricated API means resolving every symbol against every dependency's real surface - a type checker's job, and one this framework does not do."
+    },
+    {
+      "id": "ai.no-safety-bypass",
+      "title": "Safety controls are not bypassed to complete a task",
+      "standard": 53,
+      "category": "ai",
+      "level": "forbidden",
+      "severity": "error",
+      "validationType": "manual-review",
+      "assurance": "none",
+      "nonExemptible": true,
+      "introducedIn": "2.0.0",
+      "description": "No permission prompt, approval gate, sandbox boundary, or framework rule is circumvented because it stood between an agent and a completed task. This includes manufacturing the evidence a rule requires rather than obtaining it.",
+      "rationale": "To complete a task is the qualifier and it is internal, so no exception can be legitimate. An agent that manufactures the attestations its own work needs has graded its own exam.",
+      "remediation": "Stop, report what the control blocked and why, and let a human decide (Standard 2).",
+      "aliases": [],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "A bypass is a claim about intent, and intent is not in the diff."
     }
   ]
 }

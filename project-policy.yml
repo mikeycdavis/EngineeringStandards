@@ -11,7 +11,7 @@
 #
 # Shape: schemas/project-policy.schema.json (Standard 19). Meaning: standards/18-machine-readable-project-policy.md.
 
-standardVersion: "1.0.0"
+standardVersion: "2.0.0"
 project: "EngineeringStandards"
 
 rules:
@@ -50,6 +50,75 @@ rules:
 
   verification.before-completion:
     level: required
+
+  # The must-never layer (Standards 45-53), adopted at 2.0.0 at its catalog level.
+  #
+  # `forbidden` differs from `required` in what satisfying it looks like: there is no positive
+  # artifact to point at, only the absence of a violation. A `passed` here means "no violation was
+  # found by the stated search" — never "this project does not do that" (Standard 45 R2). And a
+  # forbidden rule nobody has examined blocks COMPLIANT rather than passing quietly
+  # (Standard 45 R6), which is why every one of these is either evaluated, attested, or declared
+  # not-applicable below.
+  meta.standards-not-weakened:
+    level: forbidden
+
+  scm.no-committed-env-files:
+    level: forbidden
+  scm.no-generated-artifacts:
+    level: recommended
+  scm.no-shared-history-rewrite:
+    level: forbidden
+
+  testing.no-weakening-to-pass:
+    level: forbidden
+  testing.no-fabricated-results:
+    level: forbidden
+  testing.no-tautological-tests:
+    level: recommended
+
+  errors.no-swallowed-exceptions:
+    level: forbidden
+  errors.no-false-success:
+    level: forbidden
+  errors.no-unbounded-retry:
+    level: forbidden
+  observability.no-silenced-failures:
+    level: forbidden
+
+  data.migration-rollback:
+    level: forbidden
+  data.no-silent-discard:
+    level: forbidden
+  data.no-audit-corruption:
+    level: forbidden
+  data.no-prod-data-in-dev:
+    level: forbidden
+
+  security.no-disabled-access-controls:
+    level: forbidden
+  security.no-cert-bypass:
+    level: forbidden
+  security.no-sql-concat:
+    level: forbidden
+  security.no-untrusted-exec:
+    level: forbidden
+
+  architecture.no-hidden-global-state:
+    level: forbidden
+  architecture.no-boundary-bypass:
+    level: forbidden
+  architecture.no-duplicate-implementations:
+    level: forbidden
+  architecture.dependency-evaluation:
+    level: required
+
+  concurrency.no-unmanaged-shared-state:
+    level: forbidden
+
+  ai.no-fabricated-capabilities:
+    level: forbidden
+  ai.no-safety-bypass:
+    level: forbidden
 
 # Rules whose subject does not exist in this repository. Each is a claim about THIS PROJECT, not
 # about the rule, and stops being true the moment the capability is added — hence `revisitWhen`.

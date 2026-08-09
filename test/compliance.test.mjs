@@ -12,7 +12,47 @@ const TODAY = "2026-08-08";
 const catalog = await loadCatalog();
 const ALL = [...catalog.rules.keys()];
 
-const policy = (over = {}) => ({ standardVersion: "1.0.0", project: "Fixture", rules: {}, ...over });
+/**
+ * Every forbidden rule a human evaluates, declared not-applicable.
+ *
+ * Standard 45 R6 caps the verdict at NOT_EVALUATED when an applicable forbidden rule has been
+ * neither evaluated, attested, nor declared not-applicable — so from 2.0.0 a fixture that declares
+ * nothing is not a "clean project", it is a project over which nobody looked for 18 prohibitions.
+ * These declarations are what make the fixture honest, and the tests that specifically exercise the
+ * cap remove the one they are testing rather than the helper omitting them for everyone.
+ */
+const establishedProhibitions = () =>
+  Object.fromEntries(
+    [...catalog.rules.values()]
+      .filter((r) => r.level === "forbidden" && r.validationType === "manual-review")
+      .map((r) => [
+        r.id,
+        {
+          status: "not-applicable",
+          reason: "Fixture project; the rule has no subject here.",
+          reviewedAt: TODAY,
+          revisitWhen: "The fixture gains the capability this rule governs.",
+        },
+      ]),
+  );
+
+const policy = (over = {}) => ({
+  standardVersion: "1.0.0",
+  project: "Fixture",
+  rules: {},
+  ...over,
+  applicability: { ...establishedProhibitions(), ...(over.applicability ?? {}) },
+});
+
+/** No prohibitions established at all — for tests asserting a property over every catalog rule. */
+const bare = (over = {}) => ({ standardVersion: "1.0.0", project: "Fixture", rules: {}, ...over });
+
+/** The same fixture with one prohibition left unestablished, for the tests that exercise the cap. */
+const unestablishing = (ruleId, over = {}) => {
+  const p = policy(over);
+  delete p.applicability[ruleId];
+  return p;
+};
 const run = (opts) =>
   evaluate({ catalog, findings: [], evaluated: ALL, today: TODAY, ...opts });
 
@@ -151,7 +191,9 @@ test("a not-applicable rule is skipped and stays visible", () => {
 
 test("an unevaluated rule is skipped, never passed", () => {
   // Unknown is not a pass. This is the loophole Standard 38 R3 closes.
-  const verdict = evaluate({ catalog, policy: policy(), findings: [], evaluated: [], today: TODAY });
+  // `bare` rather than `policy`: this asserts a property of EVERY rule, so the fixture must not
+  // pre-declare any of them not-applicable.
+  const verdict = evaluate({ catalog, policy: bare(), findings: [], evaluated: [], today: TODAY });
   assert.equal(verdict.summary.passed, 0, "rules nothing examined were reported as passing");
   assert.equal(verdict.summary.skipped, catalog.rules.size);
   for (const r of verdict.results) assert.equal(r.disposition, "not-evaluated");
@@ -175,7 +217,7 @@ test("the assurance breakdown accounts for every applicable rule", () => {
   // Standard 30 R4: a breakdown that does not sum invites arithmetic producing a wrong answer
   // confidently.
   const verdict = run({
-    policy: policy({ applicability: { "audit.actor-attribution": { status: "not-applicable", reason: "x" } } }),
+    policy: bare({ applicability: { "audit.actor-attribution": { status: "not-applicable", reason: "x" } } }),
   });
   const { automated, manualReview, notEvaluated } = verdict.assurance;
   assert.equal(automated + manualReview + notEvaluated, verdict.denominator.applicable);
@@ -183,7 +225,7 @@ test("the assurance breakdown accounts for every applicable rule", () => {
 });
 
 test("a skipped rule never claims assurance", () => {
-  const verdict = evaluate({ catalog, policy: policy(), findings: [], evaluated: [], today: TODAY });
+  const verdict = evaluate({ catalog, policy: bare(), findings: [], evaluated: [], today: TODAY });
   for (const r of verdict.results) assert.equal(r.assurance, "none");
 });
 
@@ -466,4 +508,120 @@ test("this repository's own attestation is live, not stale", async () => {
   assert.equal(attestation.status, "approved");
   assert.ok(attestation.reviewedAgainst?.digest, "no digest recorded — staleness would be undetectable");
   assert.ok(attestation.reviewedAgainst.paths.includes("scripts/init.mjs"));
+});
+
+// --- Standard 45 R6: an unestablished prohibition blocks COMPLIANT -------------------------------
+//
+// A `forbidden` rule is satisfied by the ABSENCE of a violation, so a rule nothing examined has
+// established nothing. Reporting COMPLIANT over it is a false green at the verdict level. Every row
+// of the standard's semantics table has a test here, and the two boundary tests below are the ones
+// that matter most: the cap must not intercept the exception machinery, which has been looked at.
+
+const FORBIDDEN = "errors.no-swallowed-exceptions";   // forbidden, code-analysis, exemptible
+const FORBIDDEN_MANUAL = "data.no-prod-data-in-dev";  // forbidden, manual-review, exemptible
+const FORBIDDEN_LOCKED = "data.no-silent-discard";    // forbidden, manual-review, nonExemptible
+
+test("forbidden + automated + no violation is satisfied, and the verdict stands", () => {
+  const verdict = run({ policy: policy({ rules: { [FORBIDDEN]: { level: "forbidden" } } }) });
+  assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN).status, "passed");
+  assert.equal(verdict.status, STATUS.COMPLIANT);
+  assert.deepEqual(verdict.unestablishedProhibitions, []);
+});
+
+test("forbidden + automated + a violation is NON_COMPLIANT", () => {
+  const verdict = run({
+    policy: policy({ rules: { [FORBIDDEN]: { level: "forbidden" } } }),
+    findings: [{ rule: FORBIDDEN, message: "empty catch", evidence: ["src/a.js"] }],
+  });
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+  assert.deepEqual(verdict.unestablishedProhibitions, [], "a failure is examined, not unestablished");
+});
+
+test("forbidden + manual-review + a valid attestation is satisfied", () => {
+  const verdict = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, {
+      rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } },
+      attestations: { [FORBIDDEN_MANUAL]: attest() },
+    }),
+  });
+  assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL).disposition, "attested");
+  assert.equal(verdict.status, STATUS.COMPLIANT);
+  assert.deepEqual(verdict.unestablishedProhibitions, []);
+});
+
+test("forbidden + manual-review + no attestation caps the verdict at NOT_EVALUATED", () => {
+  const verdict = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, { rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } } }),
+  });
+  assert.equal(verdict.status, STATUS.NOT_EVALUATED);
+  assert.deepEqual(verdict.unestablishedProhibitions, [FORBIDDEN_MANUAL]);
+});
+
+test("forbidden + declared not-applicable is excluded, and does not cap the verdict", () => {
+  // Start from the fixture with this one rule REMOVED, then declare it explicitly — so the
+  // declaration under test is the one doing the work rather than the helper's default.
+  const p = unestablishing(FORBIDDEN_MANUAL, { rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } } });
+  p.applicability[FORBIDDEN_MANUAL] = {
+    status: "not-applicable",
+    reason: "This project holds no production data.",
+    reviewedAt: TODAY,
+    revisitWhen: "Any environment receives a production dataset.",
+  };
+  const verdict = run({ policy: p });
+  assert.equal(verdict.status, STATUS.COMPLIANT, "declaring it not-applicable IS looking at it");
+  assert.deepEqual(verdict.unestablishedProhibitions, []);
+});
+
+test("the cap does not intercept a valid exception on an exemptible forbidden rule", () => {
+  // The precedence boundary. Standard 20's semantics must survive Standard 45 R6 unchanged:
+  // an excepted rule has been examined and decided about, which is the opposite of unestablished.
+  const verdict = run({
+    policy: policy({
+      rules: { [FORBIDDEN]: { level: "forbidden" } },
+      exceptions: [
+        {
+          rule: FORBIDDEN,
+          reason: "Vendor SDK throws on a path we cannot influence; removal is tracked.",
+          approvedBy: "project-owner",
+          approvedAt: TODAY,
+          expires: "2027-01-01",
+        },
+      ],
+    }),
+    findings: [{ rule: FORBIDDEN, message: "empty catch", evidence: ["src/vendor.js"] }],
+  });
+  assert.equal(verdict.status, STATUS.COMPLIANT_WITH_EXCEPTIONS);
+  assert.deepEqual(verdict.unestablishedProhibitions, []);
+});
+
+test("the cap does not intercept a rejected exception on a non-exemptible forbidden rule", () => {
+  // The other boundary, and the more dangerous direction: if the cap ran first, a rejected
+  // exception would be downgraded from NON_COMPLIANT to NOT_EVALUATED — turning a refusal into
+  // a shrug.
+  assert.equal(resolve(catalog, FORBIDDEN_LOCKED).nonExemptible, true);
+  const verdict = run({
+    policy: policy({
+      rules: { [FORBIDDEN_LOCKED]: { level: "forbidden" } },
+      exceptions: [
+        {
+          rule: FORBIDDEN_LOCKED,
+          reason: "Attempting to waive a non-exemptible rule.",
+          approvedBy: "project-owner",
+          approvedAt: TODAY,
+        },
+      ],
+    }),
+  });
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+  assert.ok(verdict.results.some((r) => r.disposition === "rejected-exception"));
+});
+
+test("a required manual-review rule without an attestation still yields COMPLIANT", () => {
+  // The negative control. Only `forbidden` gets the cap: for a required rule, not-evaluated means
+  // "we did not check that you did the thing", and that has always been reported as a coverage
+  // number rather than a verdict. If this test ever fails, the cap has widened beyond its rule.
+  const verdict = run({ policy: policy({ rules: { "ai.propose-execute": { level: "required" } } }) });
+  const result = verdict.results.find((r) => r.ruleId === "ai.propose-execute");
+  assert.equal(result.disposition, "not-evaluated");
+  assert.equal(verdict.status, STATUS.COMPLIANT);
 });

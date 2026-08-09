@@ -1,0 +1,25 @@
+{
+  "$comment": "Rule catalog — engineering invariants. Standard 45. The meta-standard the rest of the framework rests on: every other check in this repository can be satisfied by deleting the check.",
+  "rules": [
+    {
+      "id": "meta.standards-not-weakened",
+      "title": "Standards and tests are not weakened to permit an implementation",
+      "standard": 45,
+      "category": "meta",
+      "level": "forbidden",
+      "severity": "error",
+      "validationType": "manual-review",
+      "assurance": "none",
+      "nonExemptible": true,
+      "introducedIn": "2.0.0",
+      "description": "No standard, test, applicability determination, evidence requirement, or verification mechanism is weakened, removed, bypassed, or reclassified solely to permit an implementation that would otherwise violate it.",
+      "rationale": "A framework whose rules yield to the code they judge is not judging anything. Revising a rule because it was wrong is ordinary work; revising it because the code under it fails is the failure this rule names, and the tell is that the change to the rule arrives after the implementation it unblocks.",
+      "remediation": "Restore the requirement and fix the implementation, or record the standard change on its own merits with the reasoning that would have applied had no implementation been pending.",
+      "aliases": [],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "Not automatable: the violation is a claim about WHY a change was made, and intent is not in the diff. Attestation is the evidence mechanism."
+    }
+  ]
+}

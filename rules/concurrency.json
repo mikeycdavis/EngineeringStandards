@@ -1,0 +1,25 @@
+{
+  "$comment": "Rule catalog — concurrency. Standard 52. One rule, deliberately: races, assumed atomicity, and unsynchronized shared state are one failure family with one remedy. Duplicate-on-retry routes to Standard 13.",
+  "rules": [
+    {
+      "id": "concurrency.no-unmanaged-shared-state",
+      "title": "Shared mutable state has defined synchronization behaviour",
+      "standard": 52,
+      "category": "concurrency",
+      "level": "forbidden",
+      "severity": "error",
+      "validationType": "manual-review",
+      "assurance": "none",
+      "nonExemptible": false,
+      "introducedIn": "2.0.0",
+      "description": "No state reachable from more than one execution context is left without a stated rule about how those contexts interleave, no operation is assumed atomic that is not, and no known race is left unrecorded.",
+      "rationale": "One rule for three prohibitions because they are one failure: code assuming an interleaving the runtime never promised. Splitting them would produce three findings for one defect and three not-evaluated entries for a project with no concurrency at all.",
+      "remediation": "State the synchronization rule — a lock, a queue, a transaction isolation level, immutability, single ownership, or a compare-and-swap. Defined as unnecessary, because the value is immutable, is a valid definition; undefined is the violation.",
+      "aliases": [],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "Whether state is shared depends on how the code is invoked, which is not visible where it is defined; whether synchronization is adequate depends on the invariant being protected, which is not in the code at all."
+    }
+  ]
+}
