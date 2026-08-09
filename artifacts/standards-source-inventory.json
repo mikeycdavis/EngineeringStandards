@@ -9,11 +9,11 @@
     {
       "path": "artifacts/prompts/second-fold-in-prompt.md",
       "extraction": "reviewed-sections",
-      "expectedCount": 0
+      "expectedCount": 9
     }
   ],
-  "reviewedOn": "2026-08-08",
-  "expectedCount": 44,
+  "reviewedOn": "2026-08-09",
+  "expectedCount": 53,
   "standards": [
     {
       "number": 1,
@@ -278,6 +278,91 @@
       "title": "Existing Project Reconstruction",
       "source": "artifacts/prompts/engineering-standards-spec.md",
       "implementedBy": "standards/44-existing-project-reconstruction.md"
+    },
+    {
+      "number": 45,
+      "title": "Engineering Invariants",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Meta-standard",
+        "Severity",
+        "Automatic enforcement"
+      ],
+      "implementedBy": "standards/45-engineering-invariants.md"
+    },
+    {
+      "number": 46,
+      "title": "Source Control Safety",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Source control"
+      ],
+      "implementedBy": "standards/46-source-control-safety.md"
+    },
+    {
+      "number": 47,
+      "title": "Test Integrity",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Testing"
+      ],
+      "implementedBy": "standards/47-test-integrity.md"
+    },
+    {
+      "number": 48,
+      "title": "Error Handling and Observability",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Errors",
+        "Observability"
+      ],
+      "implementedBy": "standards/48-error-handling-and-observability.md"
+    },
+    {
+      "number": 49,
+      "title": "Data Safety",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Data"
+      ],
+      "implementedBy": "standards/49-data-safety.md"
+    },
+    {
+      "number": 50,
+      "title": "Security Prohibitions",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Security"
+      ],
+      "implementedBy": "standards/50-security-prohibitions.md"
+    },
+    {
+      "number": 51,
+      "title": "Architecture Integrity",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Architecture",
+        "APIs"
+      ],
+      "implementedBy": "standards/51-architecture-integrity.md"
+    },
+    {
+      "number": 52,
+      "title": "Concurrency and Shared State",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "Concurrency"
+      ],
+      "implementedBy": "standards/52-concurrency-and-shared-state.md"
+    },
+    {
+      "number": 53,
+      "title": "AI Engineering Honesty",
+      "source": "artifacts/prompts/second-fold-in-prompt.md",
+      "sourceSections": [
+        "AI-generated engineering"
+      ],
+      "implementedBy": "standards/53-ai-engineering-honesty.md"
     }
   ]
 }
