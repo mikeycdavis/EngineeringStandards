@@ -68,6 +68,15 @@ entries and makes every change a conflict-prone edit to one file.
 CLI is designed to check *all* standards, so parking its design inside Standard 44 would strand it
 there when standards 1–43 land.
 
+**All work stays on `develop` until this plan is complete with zero gaps.** Do not merge to `master`,
+open a pull request, or cut a release while any item in any section is unfinished or blocked.
+Pushing `develop` to `origin` is fine and expected — that is a backup, not a release.
+
+*Why:* a standards repository is only credible if the series is whole. A `master` carrying Standard
+44 alone reads as though 44 is the standard, when it is one of forty-four. The gate is **zero gaps**,
+not "most items done": every section complete, and section 02's blocker resolved rather than deferred.
+As of the last update, `origin/master` sits at `cc1c373` and is deliberately behind.
+
 ## Constraints that apply to all work here
 
 - **Never fabricate history.** This constraint governs the repository's own documents, not just the
