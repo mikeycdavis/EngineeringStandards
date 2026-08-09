@@ -163,12 +163,25 @@ for. [Standard 15](15-ai-tool-contracts.md) governs how this format may change.
 
 ## Implementation
 
-`scripts/standards.mjs` emits `{ schemaVersion, repo, auditedAt, findings }`. Against this standard:
-`schemaVersion` is present but numeric rather than a string; `repo` corresponds to `project`; there is
-no `standardVersion`, `status`, `score`, or `summary`; and findings carry `id`, `category`,
-`severity`, `label`, `evidence`, `message`, and `standardRef` but no `status`, `validationType`,
-`files`, or `remediation`.
+**Implemented.** `scripts/compliance.mjs` builds R2's envelope and `standards audit --json` emits it:
+`schemaVersion` (now the string `"1.0"`), `standardVersion`, `project`, `status`, `score`, `summary`,
+`assurance`, `denominator`, `auditedAt`, and `results`. Every result carries R3's shape — `ruleId`,
+`status`, `severity`, `validationType`, `message`, `evidence`, `files`, `remediation` — plus `level`,
+`assurance`, and `disposition`.
 
-The `standardRef` field is an existing strengthening — it points at the requirement anchor that
-produced a finding, which this standard does not require and probably should. Do not remove it to
-match the shape here.
+`disposition` is an addition worth naming: it distinguishes `evaluated`, `not-evaluated`,
+`not-applicable`, `excepted`, and `expired-exception`. Without it, `status: "skipped"` cannot say
+*why*, and *nothing checked this* and *this rule has no subject here* are different facts that a
+consumer must be able to tell apart.
+
+**`schemaVersion` changed from the numeric `1` to the string `"1.0"`** when this landed. That is a
+breaking change to the output contract ([Standard 15](15-ai-tool-contracts.md)) made deliberately
+before anything consumed it, and the assertion in `test/audit.test.mjs` carries a comment saying so.
+
+R4 holds: `status` and `severity` are separate fields, and a `warning`-severity rule that fails is
+`status: failed` with a warning contribution. R5 holds on both surfaces — the score never appears
+without `summary` and `assurance`.
+
+The `standardRef` field on findings is an existing strengthening — it points at the requirement anchor
+that produced a finding, which this standard does not require and probably should. It is retained
+alongside the envelope rather than replaced by it.

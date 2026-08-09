@@ -1,0 +1,43 @@
+{
+  "$comment": "Rule catalog — reconstruction. Standard 44.",
+  "rules": [
+    {
+      "id": "reconstruction.baseline-artifacts",
+      "title": "Reconstruction artifacts are complete and self-declaring",
+      "standard": 44,
+      "category": "reconstruction",
+      "level": "required",
+      "severity": "error",
+      "validationType": "structural",
+      "assurance": "partial",
+      "nonExemptible": false,
+      "introducedIn": "1.0.0",
+      "description": "A project-baseline directory contains its required artifacts, and a reconstructed prompt declares itself reconstructed rather than presenting as an original.",
+      "rationale": "A reconstructed prompt that does not say so becomes indistinguishable from recorded intent, which is fabricated history.",
+      "remediation": "Complete the baseline artifacts, and open RECONSTRUCTED-PROMPT.md with its reconstruction disclaimer.",
+      "aliases": [],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null
+    },
+    {
+      "id": "reconstruction.open-questions",
+      "title": "Unresolved reconstruction questions stay visible",
+      "standard": 44,
+      "category": "reconstruction",
+      "level": "recommended",
+      "severity": "warning",
+      "validationType": "document",
+      "assurance": "full",
+      "nonExemptible": false,
+      "introducedIn": "1.0.0",
+      "description": "Questions the evidence could not answer are recorded with their status, and open ones are surfaced rather than quietly closed.",
+      "rationale": "An open question that stops being visible becomes an assumption nobody decided to make.",
+      "remediation": "Answer the question and mark it CONFIRMED_BY_OWNER, or leave it open deliberately.",
+      "aliases": [],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null
+    }
+  ]
+}

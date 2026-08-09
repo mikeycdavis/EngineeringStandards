@@ -121,5 +121,21 @@ test("the guide states the tooling's current limitations", async () => {
   // by omission (Standard 22 R6).
   const text = await read(GUIDE);
   assert.match(text, /Current limitations/i);
-  assert.match(text, /does not read `project-policy\.yml`/);
+
+  // The section must carry concrete gaps, not a reassuring heading over an empty table.
+  const section = text.slice(text.indexOf("Current limitations"));
+  const rows = [...section.matchAll(/^\| [^|-].*\|.*\|$/gm)];
+  assert.ok(rows.length >= 3, "the limitations section lists almost nothing — is it still honest?");
+
+  // And it must not still claim a limitation that has been closed. This guards the direction a
+  // documentation check usually misses: prose that was true when written and now understates the
+  // tooling is as wrong as prose that overstates it (Standard 32 R3).
+  const cli = await read(path.join(ROOT, "scripts/standards.mjs"));
+  if (/loadProjectPolicy/.test(cli)) {
+    assert.doesNotMatch(
+      section,
+      /audit does not read `project-policy\.yml`/,
+      "the audit reads the policy now; the limitations table is stale",
+    );
+  }
 });

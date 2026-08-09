@@ -117,25 +117,30 @@ one direction only.
 
 ## Implementation
 
-**Partially implemented.** The canonical IDs are now in use and mechanically enforced.
+**Implemented.** The canonical IDs are in use, mechanically enforced, and spoken by every surface.
 `project-policy.yml` declares all fifteen R1 rule IDs, and `schemas/project-policy.schema.json`
 enforces the `category.kebab-case-name` form through a `propertyNames` pattern — so a camelCase key
 cannot validate. R5's *one ID, one rule, everywhere* holds for the policy surface, and a mutation
 test in `test/policy.test.mjs` confirms the pattern actually rejects the alias form rather than
 merely being present.
 
-The alias table from [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md) lives in
-`scripts/policy.mjs` as `LEGACY_ALIASES`, which reports a legacy key alongside its canonical
-replacement instead of failing with an unhelpful pattern error. **This is a temporary home.** The
-table belongs in the catalog's `aliases` field ([Standard 27](27-rule-catalog.md) R2), and when the
-catalog lands it must *move* rather than be copied — two alias tables would recreate the dual
-identity that ADR precisely abolished.
+The alias table now lives in the catalog's `aliases` field
+([Standard 27](27-rule-catalog.md) R2) and `scripts/policy.mjs` **derives** `LEGACY_ALIASES` from it
+rather than restating it. It had been hand-maintained in that file; once the catalog landed, keeping
+it there would have been the dual identity [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md)
+abolished, reintroduced one layer down. A test asserts every alias resolves to a canonical rule and
+that no alias is itself a rule id.
 
-**Not implemented.** `scripts/standards.mjs` still uses finding category ids —
-`missing-planning-artifacts`, `plan-code-discrepancies` — which are stable in practice but are
-*finding* categories rather than rule IDs, and do not follow the `category.name` form. The validator
-and the policy therefore speak different vocabularies today.
+**The migration is done.** Every evaluative finding in `scripts/standards.mjs` now carries a `rule`
+field naming a canonical id, and `assertBindings` rejects any id the catalog does not define — on
+every audit run, not only in tests. The validator and the policy speak one vocabulary.
 
-The two vocabularies will need reconciling when the catalog lands. That is a real migration, not a
-rename: anything already referencing a finding id would break, which is precisely the situation R3
-exists to govern.
+Finding category ids (`missing-planning-artifacts`, `plan-code-discrepancies`) survive alongside them
+as the evaluator's internal grouping for its human report. They are deliberately **not** exposed as
+identity: [Standard 31](31-whatsnext-compatibility.md) R4's join key is `results[].ruleId`, and a
+consumer joining on a finding category would be joining on a presentation detail.
+
+Two rules bind to the same catalog entry from different detectors, which is correct — a rule may have
+several ways of being violated. One old finding id (`standards-violations`) turned out to cover two
+distinct rules and was split at the binding, which is precisely the reconciliation R5 described.
+

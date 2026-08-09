@@ -1,0 +1,25 @@
+{
+  "$comment": "Rule catalog — security. Standard 16.",
+  "rules": [
+    {
+      "id": "security.no-secrets-in-artifacts",
+      "title": "Secrets are not embedded in tracked artifacts",
+      "standard": 16,
+      "category": "security",
+      "level": "required",
+      "severity": "error",
+      "validationType": "structural",
+      "assurance": "partial",
+      "nonExemptible": true,
+      "introducedIn": "1.0.0",
+      "description": "Plans, handoffs, audit logs, documentation, and AI context reference secret identifiers rather than copying credentials or tokens.",
+      "rationale": "A secret committed once is compromised permanently, and removing it from HEAD does not remove it from history.",
+      "remediation": "Replace the value with a secret-store reference, then rotate the credential.",
+      "aliases": ["security.secretsInArtifacts"],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "A structural scan establishes that no secret was OBVIOUSLY embedded. It MUST NOT be reported as 'no secrets present' (Standard 24 R3)."
+    }
+  ]
+}

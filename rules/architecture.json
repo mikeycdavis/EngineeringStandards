@@ -1,0 +1,45 @@
+{
+  "$comment": "Rule catalog — architecture. Standards 6, 11.",
+  "rules": [
+    {
+      "id": "architecture.project-manifest",
+      "title": "The project has a manifest",
+      "standard": 6,
+      "category": "architecture",
+      "level": "required",
+      "severity": "error",
+      "validationType": "structural",
+      "assurance": "partial",
+      "nonExemptible": false,
+      "introducedIn": "1.0.0",
+      "description": "PROJECT.md or artifacts/project-manifest.md records purpose, stack, commands, environments, integrations, architectural rules, artifact locations, and current state.",
+      "rationale": "It is the file a fresh engineer or agent reads first, and nothing else answers what this is and what state it is in.",
+      "remediation": "Copy templates/PROJECT.md to the repository root and fill it in.",
+      "aliases": ["architecture.requireProjectManifest"],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "Existence is checked; whether its current-state fields are current is not."
+    },
+    {
+      "id": "architecture.adr",
+      "title": "Consequential decisions are recorded as ADRs",
+      "standard": 11,
+      "category": "architecture",
+      "level": "required",
+      "severity": "error",
+      "validationType": "structural",
+      "assurance": "partial",
+      "nonExemptible": false,
+      "introducedIn": "1.0.0",
+      "description": "artifacts/adr/ exists and holds records for consequential choices, including deliberate deviations from these standards.",
+      "rationale": "A decision without its rejected alternatives is indistinguishable from an accident.",
+      "remediation": "Create artifacts/adr/ and record the decisions already made.",
+      "aliases": ["architecture.requireAdrForMajorDecisions"],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "The evaluator sees whether the directory and records exist, not whether every consequential decision has one."
+    }
+  ]
+}

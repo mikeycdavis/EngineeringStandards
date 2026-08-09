@@ -1,0 +1,45 @@
+{
+  "$comment": "Rule catalog — auditing. Standard 3.",
+  "rules": [
+    {
+      "id": "audit.business-state",
+      "title": "Business-relevant state changes are auditable",
+      "standard": 3,
+      "category": "auditing",
+      "level": "required",
+      "severity": "error",
+      "validationType": "code-analysis",
+      "assurance": "partial",
+      "nonExemptible": false,
+      "introducedIn": "1.0.0",
+      "description": "Every meaningful change to business state is recorded. Derived, transient, or serialized metadata may be excluded where it can be safely reconstructed and has no compliance, security, or business-history value.",
+      "rationale": "A system whose state changes cannot be reconstructed cannot be audited, debugged, or trusted with compliance obligations.",
+      "remediation": "Record business mutations through an audit path that captures what changed.",
+      "aliases": ["auditing.businessStateChanges"],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "The evaluator observes whether audit infrastructure exists. It does not observe whether mutations use it. A pass is partial evidence and MUST NOT be reported as 'all business mutations are audited' (Standard 24 R2)."
+    },
+    {
+      "id": "audit.actor-attribution",
+      "title": "Mutations carry actor context",
+      "standard": 3,
+      "category": "auditing",
+      "level": "required",
+      "severity": "error",
+      "validationType": "code-analysis",
+      "assurance": "none",
+      "nonExemptible": false,
+      "introducedIn": "1.0.0",
+      "description": "Every mutation records whether it came from a user, API client, scheduled job, or a named agent, plus correlation or request identifiers.",
+      "rationale": "An audit trail that cannot say who caused a change answers the least useful half of the question.",
+      "remediation": "Attach actor and correlation identifiers to every audited mutation.",
+      "aliases": ["auditing.actorAttribution"],
+      "deprecatedIn": null,
+      "supersededBy": null,
+      "removedIn": null,
+      "$assuranceNote": "No analyzer exists. Reported as not-evaluated rather than passing (Standard 24 R4)."
+    }
+  ]
+}

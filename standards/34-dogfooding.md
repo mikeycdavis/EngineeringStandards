@@ -107,6 +107,7 @@ patch:
 | Blocks claimed as verbatim source were not verbatim — three times, one found only after a hand-check had "confirmed" it | `scripts/fidelity.mjs` |
 | The audit reported technologies this repository merely *names* in its own pattern tables | The use/mention split: separate structural, source, and comment views |
 | The audit failed on a `rules/` directory named in the README that does not exist | The README was corrected — the check was not weakened |
+| The compliance engine reported `architecture.project-manifest` failing at 89% | `PROJECT.md` was written. The failure was not waived, and the score was not the reason to act — the status was |
 
 The last is the pattern to hold to. **When the tool reports a true finding about this repository, the
 repository changes.** Weakening a correct check to make the self-audit green is self-exemption with
@@ -134,7 +135,7 @@ not-applicable rules are `notEvaluated`, never a silent denominator adjustment.
 
 ## Implementation
 
-Three of R1's four artifacts exist.
+**All four of R1's artifacts exist, and the repository's own audit reports `COMPLIANT`.**
 
 **Present.** `project-policy.yml` declares this repository's policy, validates against
 [Standard 19](19-json-schema.md)'s schema, and is checked in CI.
@@ -144,26 +145,30 @@ Three of R1's four artifacts exist.
 `artifacts/project-plan-breakdown/` holds the overview and three plan sections, written through
 `/plan-structure` and `/plan-handoff` as [Standard 35](35-planning-requirements.md) requires.
 
-**Absent.** There is no `PROJECT.md` ([Standard 6](06-project-manifest.md)). That gap is now recorded
-where R3 requires: `architecture.project-manifest` is declared `required` in the policy and is
-failing. It was deliberately *not* waived — an exception would have made a real gap disappear from
-view, and this is the rule the repository is most likely to be tempted to waive for its own
-convenience.
+**All four of R1's artifacts now exist.** `PROJECT.md` was the last, and the sequence it went through
+is the standard working as intended: the compliance engine reported
+`architecture.project-manifest` failing at a score of 89%, the failure was *not* waived — an exception
+would have made a real gap disappear from view — and the manifest was written instead. The rule this
+repository was most tempted to waive for its own convenience is the one it fixed.
 
-**R3 is now satisfied for the fifteen canonical rules, and this is the batch's substantive change.**
-Each is classified explicitly: ten `required` and evaluated, five declared `not-applicable` with a
-reason and a `revisitWhen` trigger. Nothing is silently absent among them, and the classifications
-are machine-readable rather than prose — a schema validates their shape, and
-`policy.conflicting-classification` rejects the one contradiction the two mechanisms allow.
+**R3 is enforced, not merely satisfied.** The audit reports every catalogued rule in one of exactly
+the three permitted classifications plus *not-evaluated*, and there is no fourth outcome available to
+it. This repository's own run: 9 required rules evaluated and passing, 5 declared `not-applicable`
+with a reason and a `revisitWhen` trigger, 12 reported `not-evaluated` because no implemented check
+examines them. **Nothing is silently absent, because the engine has no way to express that.**
 
-**The limit of that claim, stated plainly:** fifteen rules is the canonical set
-[Standard 26](26-stable-rule-ids.md) R1 enumerates, not the full set of requirements across
+`not-evaluated` deserves naming as the honest fourth *outcome* — it is not a classification a project
+chooses, it is the evaluator reporting that it did not look. Standard 30 R3 keeps it out of the
+passed count, Standard 38 R3 keeps it from satisfying completion, and the coverage line prints it
+next to the score so a reader cannot miss it.
+
+**The limit of that claim, stated plainly:** the catalog holds 24 rules, not every requirement across
 forty-four standards. The remainder still live as prose in each standard's `## Implementation`
 section — a real disclosure that nothing counts and nothing can notice going stale. R3 is satisfied
-over the rules that exist as rules, and the rest awaits the catalog
-([Standard 27](27-rule-catalog.md)).
+over the rules that exist as rules.
 
-**R4 is met.** `npm run audit` runs `scripts/standards.mjs audit .` — the same entry point, flags, and
+**R4 is met.** The verdict is produced by the same engine, from the same catalog, that a consuming
+project gets — there is no self-mode and no relaxed rule set. `npm run audit` runs `scripts/standards.mjs audit .` — the same entry point, flags, and
 rule set a consuming project runs. Fixtures are excluded via a general `SKIP_DIRS` mechanism, added
 after they were not, rather than by any self-referential special case.
 

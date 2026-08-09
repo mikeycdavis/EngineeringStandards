@@ -31,29 +31,18 @@ const DEFAULT_SCHEMA = path.join(ROOT, "schemas/project-policy.schema.json");
 const DEFAULT_POLICY = path.join(ROOT, "project-policy.yml");
 
 /**
- * Legacy policy keys from the source specification, and the canonical rule IDs they normalize to
- * (ADR 0002). Aliases resolve in one direction only and are never emitted.
+ * Legacy policy keys and the canonical rule IDs they normalize to (ADR 0002), derived from the rule
+ * catalog's `aliases` field rather than restated here.
  *
- * This table belongs in the rule catalog (Standard 27 R2's `aliases` field) and lives here only
- * because no catalog exists yet. When it lands, this constant moves rather than being duplicated —
- * two alias tables would be exactly the dual identity ADR 0002 abolished.
+ * This used to be a hand-maintained table in this file. Once the catalog landed that became a second
+ * definition of the same mapping — the dual identity ADR 0002 abolished, reintroduced one layer down.
+ * The catalog is the single source of rule identity and metadata; this module reads it.
  */
-export const LEGACY_ALIASES = new Map([
-  ["planning.requireBreakdownDirectory", "planning.breakdown-directory"],
-  ["planning.oneFilePerSection", "planning.one-file-per-section"],
-  ["planning.requireAcceptanceCriteria", "planning.acceptance-criteria"],
-  ["planning.requireVerificationSteps", "planning.verification"],
-  ["auditing.businessStateChanges", "audit.business-state"],
-  ["auditing.actorAttribution", "audit.actor-attribution"],
-  ["ai.uiCapabilitiesMustBeAgentOperable", "ai.non-ui-capabilities"],
-  ["ai.providerNeutral", "ai.provider-neutral"],
-  ["ai.proposeExecuteSeparation", "ai.propose-execute"],
-  ["ai.destructiveActionsRequireApproval", "ai.destructive-approval"],
-  ["architecture.requireProjectManifest", "architecture.project-manifest"],
-  ["architecture.requireAdrForMajorDecisions", "architecture.adr"],
-  ["security.secretsInArtifacts", "security.no-secrets-in-artifacts"],
-  ["verification.requiredBeforeCompletion", "verification.before-completion"],
-]);
+export const LEGACY_ALIASES = await (async () => {
+  const { loadCatalog } = await import("./catalog.mjs");
+  const catalog = await loadCatalog();
+  return new Map(catalog.aliases);
+})();
 
 /**
  * Flatten a nested policy section into dotted keys, so the source's `ai:` → `providerNeutral:`

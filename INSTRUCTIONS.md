@@ -132,9 +132,22 @@ node <standards-repo>/scripts/standards.mjs audit . --strict
 before making it your only CI signal, because a build that breaks on advisory findings is a build
 someone disables ([Standard 28](standards/28-github-actions.md)).
 
-**What the audit does not yet do:** it does not read `project-policy.yml`. Its findings are therefore
-unqualified by what you have declared not-applicable or excepted, and its output is **not yet a
-compliance verdict**. Treat it as evidence, and apply your policy yourself, until that gap closes.
+**The audit reads your `project-policy.yml`** and prints a verdict beneath the findings:
+
+```text
+Compliance
+  Status: COMPLIANT
+  Score:  100%  (required-level rules that were evaluated: 9)
+  Rules:  12 passed, 0 failed, 0 warning(s), 12 skipped
+  Cover:  12 automated, 0 manual-review, 7 not-evaluated
+```
+
+**Read the last two lines together.** 100% means every required rule that was *checked* passed; the
+coverage line says how many were not checked at all. A rule nothing evaluated is `skipped` — never a
+pass, and never a failure.
+
+Without a `project-policy.yml` the status is `NOT_EVALUATED` and the findings are observations rather
+than a verdict. That is not a failure state; it means nothing declared what applies here.
 
 ## 7. Classifying required / not-applicable / exception
 
@@ -402,15 +415,19 @@ rule still means what its author intended
 
 ## Current limitations of the tooling
 
-Stated here rather than discovered later. The standards are complete; the enforcement is not.
+Stated here rather than discovered later. Most of what this table used to say is now closed.
 
 | Gap | Consequence for you |
 | --- | --- |
-| The audit does not read `project-policy.yml` | Findings are unqualified by your declarations. Apply your policy yourself |
-| No rule catalog ([27](standards/27-rule-catalog.md)) | The audit reports finding *categories*, not the canonical rule IDs your policy uses |
-| No score or `status` ([30](standards/30-compliance-scoring.md)) | There is no single compliance verdict yet |
-| No `standards init` ([33](standards/33-bootstrap-experience.md)) | Bootstrap is manual — section 8 |
+| The catalog covers 24 rules, not every requirement across 44 standards | Rules outside it are reported `not-evaluated` rather than passing — which is honest, but means a `COMPLIANT` verdict covers less than the whole framework. Each standard's `## Implementation` section states its own coverage |
+| Several rules are `manual-review` or have no analyzer | They report `skipped / not-evaluated`. Read the coverage line, not just the score |
+| `nonExemptible` is catalogued but not enforced | An exception written against a non-exemptible rule is currently recorded rather than rejected |
 | No `VERSION` or `CHANGELOG` ([21](standards/21-versioning.md)) | `standardVersion: "1.0.0"` is a forward declaration; nothing upstream publishes a version yet |
+| No `standards init` ([33](standards/33-bootstrap-experience.md)) | Bootstrap is manual — section 8 |
 | Command is `audit`, not `validate` ([23](standards/23-standards-validator-cli.md) R2) | Use `audit` until the rename lands |
 
 Each is recorded in the `## Implementation` section of the standard that specifies it.
+
+**Closed since the first version of this guide:** the audit now reads `project-policy.yml`, applies
+applicability and exceptions, binds every finding to a canonical rule id, and emits a
+[Standard 30](standards/30-compliance-scoring.md) verdict with a score and an assurance breakdown.

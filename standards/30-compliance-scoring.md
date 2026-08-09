@@ -163,17 +163,24 @@ defines the enumeration for `status` and adds `assurance` to that envelope. R2's
 
 ## Implementation
 
-**Not implemented.** `scripts/standards.mjs` computes no score and emits no `status`. It reports
-findings and exits `0`, `1`, or `2`.
+**Implemented.** `scripts/compliance.mjs` computes the verdict from the catalog, the policy, and the
+evaluator's findings. `npm run audit` prints it and `--json` emits it.
 
-This is a deliberate ordering rather than an omission. A score requires a denominator, a denominator
-requires a rule catalog ([Standard 27](27-rule-catalog.md)), and a catalog requires the identity
-question settled ([ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md)). Emitting a
-percentage over an implicit, undocumented rule set would violate R5 on its first run — and a score
-that ships before the thing it divides by is exactly how a number becomes load-bearing before anyone
-agrees what it measures.
+Each requirement, and how it is enforced:
 
-What the tool does have is the honesty this standard rests on: every finding carries an evidence
-label, `potential-*` categories are labelled `INFERRED`, and the report states that coverage is
-partial. The `assurance` breakdown of R4 is the machine-readable form of what that report already
-says in prose.
+| Requirement | Implementation |
+| --- | --- |
+| R1 — status from a closed set | `STATUS`, with `NOT_EVALUATED` returned when the project declares no policy or its policy cannot be read |
+| R2 — a required failure means `NON_COMPLIANT` at any score | Status is computed from `requiredFailures.length`; the score is never an input. A test asserts one failure at a 90%+ score still yields `NON_COMPLIANT` |
+| R3 — skips never count as passes | A rule not in the evaluator's `EVALUATED_RULES` is `skipped / not-evaluated`, and `scored` counts only evaluated required rules. Two tests cover the numerator and the denominator separately |
+| R4 — assurance beside the score | `assurance: { automated, manualReview, notEvaluated }`, asserted to sum to the applicable-rule count |
+| R5 — the denominator is stated | `denominator: { total, applicable, scored, basis }` ships in the envelope and is printed next to the score |
+| R6 — score never appears alone | Both surfaces print `Status` above `Score`, and the human report closes by saying what the number is not |
+
+**This repository's own verdict is `COMPLIANT`, at 100% of 9 evaluated required rules, with 12
+skipped.** That pairing is the whole point of R3 and R4: the score says every required rule that was
+checked passed, and the coverage line says twelve rules were not checked at all. Read alone, `100%`
+would be a claim nobody earned.
+
+The `NOT_EVALUATED` path is exercised in practice rather than theoretically — every fixture
+repository lacks a policy, so each audit of one returns `NOT_EVALUATED` rather than a verdict.

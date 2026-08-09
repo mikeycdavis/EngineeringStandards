@@ -168,10 +168,28 @@ ids, per [Standard 26](26-stable-rule-ids.md) R5.
 
 ## Implementation
 
-**Not implemented.** This repository has no `rules/` directory. `scripts/standards.mjs` carries its
-rules implicitly, as detector functions with hardcoded ids, severities, and messages.
+**Implemented.** `rules/` holds eight JSON files, one per category, carrying 24 rules. Every entry
+declares `id`, `title`, `standard`, `category`, `level`, `severity`, `validationType`, `assurance`,
+`nonExemptible`, `introducedIn`, `description`, `rationale`, `remediation`, `aliases`, and the
+lifecycle trio — the last three present and null rather than absent, per R2.
 
-This is the largest remaining structural gap in the validator layer, and it is what would turn the
-tool from an auditor with opinions into an implementation of a declared catalog. It should not be
-built by transcribing the current detectors — several of them are finding *categories* rather than
-rules, and the reconciliation [Standard 26](26-stable-rule-ids.md) R5 describes has to happen first.
+`scripts/catalog.mjs` loads it and **throws rather than loading partially**: a catalog that silently
+dropped a malformed entry would shrink the denominator every score is computed over. It validates
+every enum, every required field, and the presence of the lifecycle trio at load time.
+
+R3's substantive constraint — that a rule may not claim `full` assurance from a `manual-review` or
+`code-analysis` validation type — is asserted in `test/compliance.test.mjs` rather than at load time.
+That placement is deliberate: it is a statement about how the catalog was *authored*, checkable once
+in CI, not a condition to re-verify on every audit run.
+
+**R4 is enforced by `assertBindings`.** Every rule id the evaluator reports against must exist in the
+catalog, checked on every audit run and asserted in `test/compliance.test.mjs`. This is the guard on
+the architectural rule the whole compliance system rests on: *the catalog defines rule identity and
+metadata, the policy defines project applicability, the evaluator produces evidence, and none of the
+three may redefine the others.* Without it an evaluator grows its own vocabulary one detector at a
+time — which is exactly how the audit came to speak in finding categories while the policy spoke in
+rule ids.
+
+A further check asserts every catalog `standard` reference resolves to a document that exists. The
+converse — every enforceable requirement having a catalog entry — is **not** checked, and the catalog
+does not claim to cover all 44 standards. It covers what the evaluator and the policy speak in.

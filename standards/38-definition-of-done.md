@@ -210,33 +210,42 @@ Against R1's fourteen criteria:
 | Criterion | State |
 | --- | --- |
 | Coherent v1 engineering standard | **Partial** — all 44 documents exist and cross-reference coherently; no `VERSION` or `CHANGELOG` declares a v1 ([21](21-versioning.md)) |
-| Standards have stable rule IDs | **Partial** — the fifteen canonical IDs of [26](26-stable-rule-ids.md) R1 are in use in the policy and enforced by a schema pattern; no catalog binds them to standards ([27](27-rule-catalog.md)) |
+| Standards have stable rule IDs | **Yes** — `rules/` defines 24, every one canonical, each naming its standard; `assertBindings` rejects any id the evaluator invents |
 | `project-policy.yml` has a JSON Schema | **Yes** — `schemas/project-policy.schema.json`, executed by `npm run policy` in CI |
 | Example policies validate successfully | **Yes** — one valid example and four known-negatives in `test/fixtures/policies/` |
 | CLI can validate another repository | **Yes** — `standards audit ../Other` and `--dir=` |
 | Human-readable and JSON output | **Yes** |
-| Validation has automated tests | **Yes** — 47 tests |
+| Validation has automated tests | **Yes** — 85 tests across five files |
 | Non-compliant fixture produces expected failures | **Yes** — every category has a provoking fixture and a non-provoking one |
-| An exception can suppress an applicable rule | **No** — exceptions are declared, schema-validated, and expiry-checked, but nothing applies them to a finding: `standards audit` does not read the policy ([20](20-exceptions.md)) |
+| An exception can suppress an applicable rule | **Yes** — a live exception yields `COMPLIANT_WITH_EXCEPTIONS`; an expired one is its own failing result. Fixtures cover both |
 | GitHub Actions runs tests and validation | **Yes** |
-| Repository follows its own planning/artifact rules | **Partial** — plan breakdown, ADRs, and `project-policy.yml` exist; `PROJECT.md` does not ([34](34-dogfooding.md)) |
-| A new AI agent can understand what was built and what is next | **Partial** — the policy is now machine-readable; current state and next work are still prose across forty-four `## Implementation` sections |
+| Repository follows its own planning/artifact rules | **Yes** — plan breakdown, ADRs, `project-policy.yml`, and `PROJECT.md` all exist, and the audit reports `COMPLIANT` |
+| A new AI agent can understand what was built and what is next | **Partial** — `PROJECT.md` now states current status, risks, and next work in one place; per-standard coverage is still prose across forty-four `## Implementation` sections |
 | No placeholder implementations or knowingly broken tests | **Yes** — no skipped tests, no stub commands |
-| Builds and tests using documented commands | **Yes** — `npm test`, `npm run audit`, `inventory`, `fidelity`, `policy` |
+| Builds and tests using documented commands | **Yes** — `npm test`, `npm run audit`, `policy`, `diagrams`, `inventory`, `fidelity` |
 
-**Nine met, four partial, one not** — recomputed from current evidence rather than carried forward
-from the previous assessment of seven, two, and five. The three criteria that moved to **Yes** all
-moved because the schema and policy landed together; the two that moved from **No** to **Partial**
-did so because rule identity is now enforced somewhere rather than only decided.
+**Twelve met, two partial, none outstanding** — recomputed from current evidence, not carried forward
+from the previous seven / two / five or the intermediate nine / four / one. Four criteria moved to
+**Yes** because the catalog and compliance engine landed together and made rule identity, exception
+application, and the repository's own artifact compliance mechanically checkable rather than asserted.
+
+**The two remaining partials are the same gap seen twice:** no `VERSION` or `CHANGELOG` publishes a
+v1, so `standardVersion: "1.0.0"` is a forward declaration; and the catalog covers 24 rules rather
+than every requirement across forty-four standards, so what an agent can determine mechanically is
+narrower than what the standards specify.
 
 **The release definition is still not satisfied**, which is consistent with the standing decision
 that this work stays on `develop` until the plan has no gaps.
 
-**R3 is now partly checkable here.** `project-policy.yml` gives the two resolutions besides
-*verified* a machine-readable home: five rules are classified `not-applicable` with reasons, and the
-exception mechanism is schema-enforced with expiry treated as a compliance failure. The limit is the
-one [Standard 34](34-dogfooding.md) records — fifteen canonical rules, not every requirement across
-forty-four standards. For the remainder this table is still the honest substitute, and it is prose.
+**R3 is now enforced rather than described.** `scripts/compliance.mjs` returns `skipped` with
+`disposition: "not-evaluated"` for any rule nothing examined, and a test asserts that a run with an
+empty evaluated-set reports **zero** passes. Unknown cannot become a pass by accident. The three
+permitted resolutions all have machine-readable homes: verified is a passing result, excepted carries
+its approval into the output, and not-applicable is a policy declaration with a reason.
+
+The limit is worth restating precisely, because it is what a `COMPLIANT` verdict here does *not*
+mean: 9 required rules were evaluated and passed, 12 were skipped, and 5 were declared not
+applicable. The verdict covers the rules that exist as rules — not the whole framework.
 
 **R5 is met.** **R6 is untested** — no release has been made, and `PROJECT.md` and `CHANGELOG.md`,
 two of the three artifacts it requires updated, do not yet exist.

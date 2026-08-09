@@ -18,6 +18,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadCatalog, assertBindings } from "./catalog.mjs";
+import { evaluate, envelope } from "./compliance.mjs";
+import { parseYaml } from "./yaml.mjs";
+import { validate } from "./jsonschema.mjs";
 
 /**
  * This file lists the very package names it searches for, so scanning it would report every SDK it
@@ -28,6 +32,113 @@ import path from "node:path";
 const SELF = fileURLToPath(import.meta.url);
 
 const SCHEMA_VERSION = 1;
+
+/**
+ * The rules this evaluator actually examines.
+ *
+ * This set is the difference between "no violation was observed" and "nothing looked". Every rule in
+ * the catalog that is NOT here is reported `skipped / not-evaluated` rather than passing, which is
+ * the whole of Standard 24 R4 and the reason Standard 38 R3 can refuse to let unknown satisfy
+ * completion. Adding a detector means adding its rule here; a test asserts the set and the
+ * detectors agree, so the two cannot drift apart silently.
+ */
+const EVALUATED_RULES = [
+  "architecture.project-manifest",
+  "architecture.adr",
+  "documentation.architecture",
+  "documentation.code-consistency",
+  "planning.breakdown-directory",
+  "planning.item-fields",
+  "planning.plan-code-consistency",
+  "audit.business-state",
+  "verification.before-completion",
+  "quality.unfinished-work",
+  "quality.dead-code",
+  "reconstruction.baseline-artifacts",
+  "reconstruction.open-questions",
+];
+
+/**
+ * Read and validate the target repository's project-policy.yml.
+ *
+ * A malformed or unreadable policy is an ERROR condition, never a compliance failure: the verdict
+ * becomes NOT_EVALUATED and the process exits 2 (Standard 30 R1). Reporting a broken configuration
+ * as NON_COMPLIANT would be a false red for the project and a false green for this tool.
+ */
+async function loadProjectPolicy(repoRoot) {
+  const file = path.join(repoRoot, "project-policy.yml");
+  if (!existsSync(file)) {
+    return { document: null, error: null, reason: "no project-policy.yml — nothing declares what applies here" };
+  }
+  const schemaPath = path.join(path.dirname(SELF), "..", "schemas/project-policy.schema.json");
+  try {
+    const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+    const document = parseYaml(await readFile(file, "utf8"));
+    const errors = validate(document, schema);
+    if (errors.length > 0) {
+      return {
+        document: null,
+        error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
+          errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
+      };
+    }
+    return { document, error: null };
+  } catch (error) {
+    return { document: null, error: `project-policy.yml could not be read: ${error.message}` };
+  }
+}
+
+/** Render the Standard 30 verdict beneath the human report. */
+function renderVerdict(report, policy) {
+  const out = [];
+  out.push("Compliance");
+  if (policy.error) {
+    out.push(`  ${policy.error}`);
+    out.push("  Status: NOT_EVALUATED — a policy that cannot be read is a configuration error,");
+    out.push("  not a compliance failure.");
+    return out.join("\n");
+  }
+  if (!policy.document) {
+    out.push(`  ${policy.reason}.`);
+    out.push("  Status: NOT_EVALUATED — findings above are observations, not a verdict.");
+    out.push("  Add project-policy.yml to get one; see INSTRUCTIONS.md.");
+    return out.join("\n");
+  }
+
+  const s = report.summary;
+  const a = report.assurance;
+  out.push(`  Status: ${report.status}`);
+  out.push(`  Score:  ${report.score === null ? "n/a" : report.score + "%"}  (${report.denominator.basis}: ${report.denominator.scored})`);
+  out.push(`  Rules:  ${s.passed} passed, ${s.failed} failed, ${s.warnings} warning(s), ${s.skipped} skipped`);
+  out.push(`  Cover:  ${a.automated} automated, ${a.manualReview} manual-review, ${a.notEvaluated} not-evaluated`);
+  out.push("");
+
+  const failed = report.results.filter((r) => r.status === "failed");
+  if (failed.length) {
+    out.push("  Failing:");
+    for (const r of failed) {
+      out.push(`    ${r.ruleId} [${r.level}] ${r.message}`);
+      out.push(`      -> ${r.remediation}`);
+    }
+    out.push("");
+  }
+  const excepted = report.results.filter((r) => r.disposition === "excepted");
+  if (excepted.length) {
+    out.push("  Excepted:");
+    for (const r of excepted) out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
+    out.push("");
+  }
+  const na = report.results.filter((r) => r.disposition === "not-applicable");
+  if (na.length) {
+    out.push(`  Not applicable (${na.length}): ${na.map((r) => r.ruleId).join(", ")}`);
+    out.push("");
+  }
+
+  out.push("  The score is a summary statistic over evaluated required rules, not a measure of");
+  out.push("  how much of the standard was verified. Status is the verdict; a skipped rule is");
+  out.push("  neither a pass nor a failure.");
+  return out.join("\n");
+}
 const STD44 = "standards/44-existing-project-reconstruction.md";
 
 /**
@@ -331,7 +442,7 @@ const findings = [];
  * convention or a content pattern is INFERRED — reporting a heuristic as observed is the fabrication
  * error R2 prohibits.
  */
-function addFinding({ id, category, severity = "info", label, evidence, message, standardRef }) {
+function addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule }) {
   const shown = evidence.slice(0, MAX_EVIDENCE);
   const omitted = evidence.length - shown.length;
   findings.push({
@@ -342,6 +453,10 @@ function addFinding({ id, category, severity = "info", label, evidence, message,
     evidence: shown,
     message: omitted > 0 ? `${message} (${evidence.length} total; ${omitted} not listed)` : message,
     standardRef: standardRef ?? R.baseline,
+    // The canonical rule this finding is evidence for (Standard 26, ADR 0002). Descriptive
+    // "observed/detected" findings carry none: they report what the repository HAS, not whether it
+    // complies, and binding them to a rule would manufacture a verdict out of an observation.
+    rule: rule ?? null,
   });
 }
 
@@ -660,6 +775,7 @@ function detectMissingDocs(files, contents) {
 
   addFinding({
     id: "missing-documentation",
+      rule: "documentation.architecture",
     category: "Missing documentation",
     severity: "warning",
     label: "OBSERVED",
@@ -669,11 +785,45 @@ function detectMissingDocs(files, contents) {
   });
 }
 
+/**
+ * Structural checks for the two architecture rules. Both are `assurance: partial` in the catalog:
+ * the file existing is not the same as the file being correct or current, and the catalog says so
+ * rather than leaving a reader to infer it (Standard 24 R2).
+ */
+function detectArchitectureArtifacts() {
+  const manifest = ["PROJECT.md", "artifacts/project-manifest.md"];
+  if (!manifest.some((f) => has(f))) {
+    addFinding({
+      id: "missing-project-manifest",
+      rule: "architecture.project-manifest",
+      category: "Missing planning artifacts",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: manifest,
+      message: "No project manifest exists; a fresh agent has nowhere to learn what this is or what state it is in.",
+      standardRef: R.artifacts,
+    });
+  }
+  if (!has("artifacts/adr")) {
+    addFinding({
+      id: "missing-adr-directory",
+      rule: "architecture.adr",
+      category: "Missing planning artifacts",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: ["artifacts/"],
+      message: "No artifacts/adr/ directory exists; consequential decisions have nowhere durable to live.",
+      standardRef: R.artifacts,
+    });
+  }
+}
+
 function detectMissingPlanningArtifacts(files) {
   const dir = "artifacts/project-plan-breakdown";
   if (!has(dir)) {
     addFinding({
       id: "missing-planning-artifacts",
+      rule: "planning.breakdown-directory",
       category: "Missing planning artifacts",
       severity: "warning",
       label: "OBSERVED",
@@ -686,6 +836,7 @@ function detectMissingPlanningArtifacts(files) {
   if (!has(`${dir}/00-overview.md`)) {
     addFinding({
       id: "missing-planning-artifacts",
+      rule: "planning.breakdown-directory",
       category: "Missing planning artifacts",
       severity: "warning",
       label: "OBSERVED",
@@ -706,6 +857,7 @@ function detectMissingAuditInfrastructure(files) {
 
   addFinding({
     id: "missing-audit-infrastructure",
+      rule: "audit.business-state",
     category: "Missing audit infrastructure",
     severity: "warning",
     label: "OBSERVED",
@@ -725,6 +877,7 @@ function detectUnverifiedFunctionality(files) {
 
   addFinding({
     id: "unverified-functionality",
+      rule: "verification.before-completion",
     category: "Unverified functionality",
     severity: "warning",
     label: "INFERRED",
@@ -768,6 +921,7 @@ function detectUnfinished(files) {
 
   addFinding({
     id: "potential-unfinished-features",
+      rule: "quality.unfinished-work",
     category: "Potential unfinished features",
     severity: "warning",
     label: "INFERRED",
@@ -801,6 +955,7 @@ function detectDeadCode(files, contents) {
 
   addFinding({
     id: "potential-dead-code",
+      rule: "quality.dead-code",
     category: "Potential dead code",
     severity: "info",
     label: "INFERRED",
@@ -822,6 +977,7 @@ function detectOpenQuestions(files, contents) {
 
   addFinding({
     id: "open-reconstruction-questions",
+      rule: "reconstruction.open-questions",
     category: "Open reconstruction questions",
     severity: "warning",
     label: "OBSERVED",
@@ -923,6 +1079,7 @@ async function detectPlanDiscrepancies(files, contents) {
   if (dangling.length) {
     addFinding({
       id: "plan-code-discrepancies",
+      rule: "planning.plan-code-consistency",
       category: "Plan/code discrepancies",
       severity: "error",
       label: "OBSERVED",
@@ -936,6 +1093,7 @@ async function detectPlanDiscrepancies(files, contents) {
   if (missingDeliverables.length) {
     addFinding({
       id: "plan-code-discrepancies",
+      rule: "planning.plan-code-consistency",
       category: "Plan/code discrepancies",
       severity: "error",
       label: "OBSERVED",
@@ -947,6 +1105,7 @@ async function detectPlanDiscrepancies(files, contents) {
   if (incomplete.length) {
     addFinding({
       id: "standards-violations",
+      rule: "planning.item-fields",
       category: "Standards violations",
       severity: "error",
       label: "OBSERVED",
@@ -987,6 +1146,7 @@ function detectDocDiscrepancies(files, contents) {
   if (broken.length === 0) return;
   addFinding({
     id: "doc-code-discrepancies",
+      rule: "documentation.code-consistency",
     category: "Documentation/code discrepancies",
     severity: "error",
     label: "OBSERVED",
@@ -1013,6 +1173,7 @@ function detectStandardsViolations(files, contents) {
   for (const [evidence, message, ref] of violations) {
     addFinding({
       id: "standards-violations",
+      rule: "reconstruction.baseline-artifacts",
       category: "Standards violations",
       severity: "error",
       label: "OBSERVED",
@@ -1114,6 +1275,7 @@ detectIntegrations(files, contents);
 detectAiInterfaces(files, contents);
 
 detectMissingDocs(files, contents);
+detectArchitectureArtifacts();
 detectMissingPlanningArtifacts(files);
 detectMissingAuditInfrastructure(files);
 detectUnverifiedFunctionality(files);
@@ -1124,21 +1286,47 @@ await detectPlanDiscrepancies(files, contents);
 detectDocDiscrepancies(files, contents);
 detectStandardsViolations(files, contents);
 
+// ---------------------------------------------------------------------------
+// Verdict — catalog + policy + findings (Standards 25, 27, 30)
+//
+// The three-way separation is deliberate and must not be violated here: the catalog defines rule
+// identity and metadata, project-policy.yml defines what applies to THIS project, and everything
+// above produces evidence. Nothing in this section redefines a rule or invents applicability.
+
+const catalog = await loadCatalog();
+assertBindings(
+  catalog,
+  findings.map((f) => f.rule).filter(Boolean),
+);
+
+const policy = await loadProjectPolicy(root);
+const verdict = evaluate({
+  catalog,
+  policy: policy.document,
+  findings,
+  evaluated: EVALUATED_RULES,
+  today: new Date().toISOString().slice(0, 10),
+});
+
+const report = envelope({
+  verdict,
+  project: policy.document?.project,
+  standardVersion: policy.document?.standardVersion,
+  auditedAt: new Date().toISOString(),
+  repo: root.split(path.sep).join("/"),
+});
+
 if (JSON_OUT) {
-  process.stdout.write(
-    JSON.stringify(
-      {
-        schemaVersion: SCHEMA_VERSION,
-        repo: root.split(path.sep).join("/"),
-        auditedAt: new Date().toISOString(),
-        findings,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
+  // Standard 25's envelope. `findings` is additive detail beyond the contract Standard 31 R2
+  // guarantees — a consumer joins on results[].ruleId, never on a finding category.
+  process.stdout.write(JSON.stringify({ ...report, findings }, null, 2) + "\n");
 } else {
   process.stdout.write(renderHuman(files.length) + "\n");
+  process.stdout.write(renderVerdict(report, policy) + "\n");
 }
 
+// A policy that could not be read is exit 2: could-not-evaluate is not non-compliance
+// (Standard 30 R1). A required-level failure is exit 1 regardless of score (Standard 30 R2).
+if (policy.error) process.exit(EXIT_INVOCATION);
+if (report.status === "NON_COMPLIANT") process.exit(EXIT_FINDINGS);
 process.exit(STRICT && findings.some((f) => f.severity !== "info") ? EXIT_FINDINGS : EXIT_OK);

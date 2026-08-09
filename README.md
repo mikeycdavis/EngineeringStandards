@@ -46,7 +46,7 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 3 | Auditing | [standards/03-auditing.md](standards/03-auditing.md) | *none — a design constraint* | active |
 | 4 | Planning Standards | [standards/04-planning-standards.md](standards/04-planning-standards.md) | `plan-structure`, `plan-handoff` | active |
 | 5 | Resumability | [standards/05-resumability.md](standards/05-resumability.md) | *none — a property of the repository* | active |
-| 6 | Project Manifest | [standards/06-project-manifest.md](standards/06-project-manifest.md) | *none* | active |
+| 6 | Project Manifest | [standards/06-project-manifest.md](standards/06-project-manifest.md) | [PROJECT.md](PROJECT.md) | active |
 | 7 | Acceptance Criteria | [standards/07-acceptance-criteria.md](standards/07-acceptance-criteria.md) | *none — partly checked by `standards audit`* | active |
 | 8 | Status Tracking | [standards/08-status-tracking.md](standards/08-status-tracking.md) | *canonical vocabulary — see [ADR 0001](artifacts/adr/0001-canonical-status-vocabulary.md)* | active |
 | 9 | Verification | [standards/09-verification.md](standards/09-verification.md) | `pre-push` | active |
@@ -58,19 +58,19 @@ It defines **44 standards, numbered 1–44 with no gaps**.
 | 15 | AI Tool Contracts | [standards/15-ai-tool-contracts.md](standards/15-ai-tool-contracts.md) | *none — completes the 12–15 baseline contract* | active |
 | 16 | Security | [standards/16-security.md](standards/16-security.md) | *none* | active |
 | 17 | Agent Instruction Files | [standards/17-agent-instruction-files.md](standards/17-agent-instruction-files.md) | *none* | active |
-| 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | `project-policy.yml` (declared; not yet read by the audit) | active |
+| 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | `project-policy.yml` — read by the audit | active |
 | 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | `schemas/project-policy.schema.json`, `scripts/jsonschema.mjs` | active |
-| 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | `scripts/policy.mjs` — declared and expiry-checked, not yet applied | active |
+| 20 | Exceptions | [standards/20-exceptions.md](standards/20-exceptions.md) | `scripts/policy.mjs`, `scripts/compliance.mjs` | active |
 | 21 | Versioning | [standards/21-versioning.md](standards/21-versioning.md) | *none — no framework version published yet* | active |
 | 22 | Adoption and Migration | [standards/22-adoption-and-migration.md](standards/22-adoption-and-migration.md) | [INSTRUCTIONS.md](INSTRUCTIONS.md), `project-reconstruction` | active |
 | 23 | Standards Validator CLI | [standards/23-standards-validator-cli.md](standards/23-standards-validator-cli.md) | `scripts/standards.mjs` — audited in the document | active |
 | 24 | Validator Rules | [standards/24-validator-rules.md](standards/24-validator-rules.md) | `scripts/standards.mjs` (partial) | active |
-| 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/standards.mjs` (partial) | active |
-| 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | enforced by the policy schema (partial) | active |
-| 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | *not implemented — no rule catalog exists yet* | active |
+| 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/compliance.mjs` — full envelope | active |
+| 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | `rules/`, `scripts/catalog.mjs` | active |
+| 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | `rules/` — 24 rules, 8 categories | active |
 | 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
-| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 63 tests, 4 files (partial) | active |
-| 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | *not implemented — no score is computed* | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 85 tests, 5 files | active |
+| 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | `scripts/compliance.mjs` | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
 | 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README, [INSTRUCTIONS.md](INSTRUCTIONS.md) | active |
 | 33 | Bootstrap Experience | [standards/33-bootstrap-experience.md](standards/33-bootstrap-experience.md) | *not implemented — no `standards init`* | active |
@@ -112,6 +112,8 @@ Forward-looking designs that are not yet implemented:
 ```text
 INSTRUCTIONS.md     How to adopt and use the framework from another project.
 standards/          One numbered normative document per standard (NN-<kebab-title>.md).
+rules/              The rule catalog — the source of machine truth for rule identity (Standard 27).
+PROJECT.md          This repository's own manifest (Standard 6).
 templates/          What an adopting project copies.
 design/             Forward-looking designs, not yet implemented.
 schemas/            JSON Schemas for the structured contracts (Standard 19).

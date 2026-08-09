@@ -44,8 +44,11 @@ jobs:
       - name: Test
         run: npm test
 
-      # The standards repository is audited by its own audit. This is not ceremony: it is the only
-      # thing that would catch the published standards and the tool that checks them drifting apart.
+      # The standards repository is audited by its own audit, and since the compliance engine landed
+      # this step also produces a Standard 30 verdict from rules/ and project-policy.yml. A
+      # required-level failure exits 1 and breaks the build; an unreadable policy exits 2. This is not
+      # ceremony: it is the only thing that would catch the published standards and the tool that
+      # checks them drifting apart.
       #
       # Deliberately not --strict. That flag fails on warnings too, which would turn every advisory
       # finding — a heuristic dead-code guess, a missing document — into a broken build, and the

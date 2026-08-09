@@ -132,7 +132,7 @@ of required property R2 there exists to enforce.
 
 ## Implementation
 
-**The declaration half is implemented; the application half is not.**
+**Implemented, declaration and application.**
 
 `schemas/project-policy.schema.json` defines the exception shape and enforces its provenance
 requirements: `rule`, `reason`, `approvedBy`, and `approvedAt` are all required, so an exception
@@ -148,8 +148,16 @@ one.
 
 Both behaviours have known-positive and known-negative fixtures in `test/fixtures/policies/`.
 
-**Not implemented:** `standards audit` still does not read `project-policy.yml`, so no exception yet
-suppresses or annotates a finding. Every finding it reports remains unqualified by what the project
-has legitimately excepted itself from, which is why its output is not yet a compliance verdict.
-`nonExemptible` ([Standard 27](27-rule-catalog.md)) is unenforced for the same reason — there is no
-catalog to read it from.
+**Now applied, not only declared.** `standards audit` reads `project-policy.yml` and
+`scripts/compliance.mjs` applies exceptions to the verdict: a required rule that fails under a live
+exception yields `COMPLIANT_WITH_EXCEPTIONS` rather than `NON_COMPLIANT`, and the result carries the
+exception's reason, approver, dates, and reference so the waiver travels with the finding rather than
+being invisible in the output.
+
+**An expired exception does not suppress anything.** It becomes its own failing result with
+`disposition: "expired-exception"`, and the verdict is `NON_COMPLIANT` — the semantics R3 requires,
+now enforced in two places (the policy checker and the verdict engine) with fixtures for both.
+
+**`nonExemptible` is carried in the catalog but not yet enforced.** `ai.destructive-approval` and
+`security.no-secrets-in-artifacts` declare it, and nothing currently rejects an exception written
+against them. That is the remaining gap in this standard.
