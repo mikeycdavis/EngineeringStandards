@@ -168,7 +168,9 @@ whether or not it crosses a network boundary.
 
 [Standard 1](01-human-and-ai-operability.md) R1 owns UI-only capabilities.
 [Standard 11](11-architecture-decision-records.md) is where every justification in this standard
-lives. [Standard 15](15-ai-tool-contracts.md) and [Standard 21](21-versioning.md) are what R5 routes
+lives.
+[ADR 0007](../artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md)
+is this repository's own R1 record, and the worked example of what one looks like. [Standard 15](15-ai-tool-contracts.md) and [Standard 21](21-versioning.md) are what R5 routes
 to. [Standard 48](48-error-handling-and-observability.md) R2 owns the source's HTTP-status
 prohibition. [Standard 22](22-adoption-and-migration.md) R6 is R3's principle stated for standards
 rather than code. [Standard 32](32-documentation-standards.md) is why a bypassed boundary is also a
@@ -181,7 +183,7 @@ exception discipline.
 
 | Requirement | Rule | State |
 | --- | --- | --- |
-| R1 | `architecture.no-hidden-global-state` | `manual-review`. A module-level mutable binding is trivial to find and says nothing about whether the state is hidden or owned |
+| R1 | `architecture.no-hidden-global-state` | `manual-review`. A module-level mutable binding is trivial to find and says nothing about whether the state is hidden or owned. **This repository has a real subject for it** — `findings` and `sources` in `scripts/standards.mjs` — and discharges R1 the way R1 asks, with [ADR 0007](../artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md) naming the state, its owner, and its reset boundary |
 | R2 | `architecture.no-boundary-bypass` | `manual-review`. Requires knowing where the boundaries are, which is a project-specific fact no scan has |
 | R3 | `architecture.no-duplicate-implementations` | `manual-review`. Similar code is not duplicated logic, and duplicated logic is often not similar code |
 | R4 | `architecture.dependency-evaluation` | `manual-review`, `required`/`warning`. A manifest shows which dependencies exist, never which were evaluated |

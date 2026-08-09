@@ -72,7 +72,7 @@ numbered 1–53 with no gaps.**
 | 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | `rules/`, `scripts/catalog.mjs` | active |
 | 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | `rules/` — 50 rules, 16 categories | active |
 | 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
-| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 143 tests, 6 files | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/` — 145 tests, 6 files | active |
 | 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | `scripts/compliance.mjs` | active |
 | 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
 | 32 | Documentation Quality | [standards/32-documentation-quality.md](standards/32-documentation-quality.md) | this README, [INSTRUCTIONS.md](INSTRUCTIONS.md) | active |
@@ -122,6 +122,9 @@ source extraction still agrees with it, and CI fails if it does not.
 - [artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md](artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md)
   — the must-never layer is built from the catalog's `forbidden` level, reuses existing rules rather
   than duplicating them, and caps the verdict where a prohibition went unexamined.
+- [artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md](artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md)
+  — the CLI scripts are commands, not libraries; module scope is run scope, and process exit is the
+  reset boundary. Standard 51 R1's required record for this repository's own global state.
 
 ## Design documents
 
