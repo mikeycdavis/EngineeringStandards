@@ -4,7 +4,10 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { plan, apply, detectMode, MODES } from "../scripts/init.mjs";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** A throwaway target repository. Fixtures are built rather than committed, because every one of
  *  them is defined by what it does NOT contain, and an empty directory does not survive git. */
@@ -307,6 +310,26 @@ test("an empty docs/adr/ does not count, and artifacts/adr/ is still created", a
     const report = await plan(dir);
     const adr = report.actions.find((a) => a.path === "artifacts/adr/");
     assert.equal(adr.action, "create", "an empty docs/adr/ must not satisfy the requirement");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("the policy it writes declares the framework version that wrote it", async () => {
+  // templates/project-policy.yml carried a literal standardVersion, so every release left it one
+  // behind and each new adopter declared a version nobody chose - then failed the outdated-version
+  // check on their first run, for a value the bootstrap had just written for them.
+  const { readFile: read } = await import("node:fs/promises");
+  const expected = (await read(path.join(REPO_ROOT, "VERSION"), "utf8")).trim();
+  const dir = await repo({ "src/index.js": "export const x = 1;\n" });
+  try {
+    await apply(dir, await plan(dir));
+    const policy = await read(path.join(dir, "project-policy.yml"), "utf8");
+    assert.match(
+      policy,
+      new RegExp(`^standardVersion: "${expected.replace(/\./g, "\.")}"$`, "m"),
+      "the written policy must declare the current framework version",
+    );
   } finally {
     await cleanup(dir);
   }

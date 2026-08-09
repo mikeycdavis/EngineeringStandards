@@ -40,6 +40,13 @@ added, removed, or re-levelled; some projects that failed will now pass, which i
   now preserves rather than creates when another accepted location already holds records. An *empty*
   alternative does not count, because a directory with no records in it is not a home for decisions.
 
+- **`standards init` wrote a `standardVersion` one release out of date.**
+  `templates/project-policy.yml` carried the literal `2.0.0`, so every release left it behind and
+  each new adopter declared a version nobody chose — then failed the outdated-version check on their
+  first run, for a value the bootstrap had just written for them. `init` now stamps the current
+  `VERSION` as it writes. A constant in a file releases do not touch is a maintenance obligation
+  nobody signed up for.
+
 ### Disclosed — two detectors assert repository state they never measured
 
 [ADR 0008](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).
