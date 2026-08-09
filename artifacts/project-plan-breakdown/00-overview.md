@@ -11,7 +11,9 @@ record, it says so inline.
 It does follow Standard 44's plan format — ordered files under `artifacts/project-plan-breakdown/`,
 with every executable item carrying Status, Purpose, Deliverables, Acceptance Criteria, Verification,
 and Dependencies — because that format is worth using generally, and because a standards repository
-that does not follow its own standards is not credible.
+that does not follow its own standards is not credible. Statuses use the canonical vocabulary of
+[Standard 8](../../standards/08-status-tracking.md), per
+[ADR 0001](../adr/0001-canonical-status-vocabulary.md).
 
 ## What this project is
 
@@ -27,20 +29,21 @@ implementation.
 | --- | --- |
 | Branch | `develop` (also the default branch for pull requests) |
 | Remote | `https://github.com/mikeycdavis/EngineeringStandards.git` |
-| Commits | `cc1c373` (README), `14177fa` (Standard 44), `9b20743` (delegated liveness) |
-| Tooling | None. No `package.json`, no npm, no CI, no tests. Every file is Markdown. |
+| Standards written | 16 of 44 — see [the index](../../README.md) |
+| Tooling | `scripts/standards.mjs` (the audit), `scripts/inventory.mjs` (the series invariant), a `node:test` suite, and GitHub Actions CI. Zero third-party dependencies. |
 | Platform | Windows 11; PowerShell is the primary shell, with a POSIX `sh` also available |
 
-Standards documents live in `standards/`, forward-looking designs in `design/`, and source
-specification material in `artifacts/prompts/`.
+Standards documents live in `standards/`, forward-looking designs in `design/`, decision records in
+`artifacts/adr/`, and source specification material in `artifacts/prompts/`. The canonical
+enumeration of the series is `artifacts/standards-source-inventory.json`.
 
 ## Sections
 
 | File | Covers | Status |
 | --- | --- | --- |
 | [`01-standard-44.md`](01-standard-44.md) | Standard 44 — Existing Project Reconstruction | complete |
-| [`02-standards-backfill.md`](02-standards-backfill.md) | Backfilling standards 1–43 as documents | blocked on source material |
-| [`03-standards-audit-cli.md`](03-standards-audit-cli.md) | Building the `standards audit` command | not started |
+| [`02-standards-backfill.md`](02-standards-backfill.md) | Backfilling the remaining standards as documents | in progress — 16 of 44 written |
+| [`03-standards-audit-cli.md`](03-standards-audit-cli.md) | Building the `standards audit` command | complete |
 
 ## Decisions on record
 
@@ -88,6 +91,20 @@ As of the last update, `origin/master` sits at `cc1c373` and is deliberately beh
   drifts is worse than no duplication at all, so any edit to shared material must be applied to both
   in the same change. Section 03's audit is the eventual mechanical guard; until it exists, this is
   enforced by hand.
+- **A negative discovery result must not become a durable project fact unless the discovery
+  mechanism was validated for the relevant input shape.** "No item 8 exists", "no TODOs found", "no
+  API exists", "no ADR exists", "no tests cover this", "the source is nowhere on this machine" — each
+  of these is, in the first instance, a fact about the search rather than about the world. Before
+  recording one as fact, establish that the mechanism could have found the thing had it been there:
+  run it against a case you know is positive, or check by a second, differently-shaped method.
+
+  This is not hypothetical. A regex anchored on `^[0-9]+\. ` reported that the source contained 43
+  standards; item 8 was the only one written with a Markdown heading prefix. That number was written
+  into three documents as established fact and propagated for several commits before the item turned
+  up by accident. `scripts/inventory.mjs` and its tests now enforce the invariant for the standards
+  series specifically, but the principle is general and applies to every "we looked and found
+  nothing" claim this project makes.
+
 - **Do not paraphrase source specification text.** Where a standard reproduces a list from
   `artifacts/prompts/original_prompt.md`, it reproduces it verbatim. Rewording a requirement while
   claiming to implement it is how a standard quietly stops matching its source.

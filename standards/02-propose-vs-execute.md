@@ -67,14 +67,37 @@ Offered as a default. A project may substitute its own, provided it covers the s
 | `execute` | Apply a reversible change to business state | Explicit grant per capability or capability group | **Required** — see [Standard 3](03-auditing.md) |
 | `privileged execute` | Apply an irreversible, destructive, financial, or production-impacting change | Explicit grant **plus** per-invocation approval by an authorized human | **Required**, including the approving actor |
 
-Three rules make the model usable rather than decorative:
+### Permission and approval are distinct
+
+**An actor's permission to invoke a capability and the approval a particular invocation requires are
+related but separate.** Holding the first does not satisfy the second.
+
+An agent may be authorised to call `deploy` — that is a property of the actor and the capability. A
+*production* deployment may still require approval — that is a property of this invocation's context
+and impact. The permission check answers "may this caller use this capability at all"; the approval
+check answers "may this specific action proceed now".
+
+Two consequences worth stating:
+
+- **A capability's tier is a floor, not a ceiling.** An `execute` capability may still demand
+  per-invocation approval when the arguments make a particular call high-impact. Environment, blast
+  radius, monetary value, and irreversibility are all legitimate grounds for escalating a single
+  invocation without reclassifying the capability.
+- **The two failures are different and must be reported differently.** A caller lacking permission is
+  refused; a caller awaiting approval is pending. [Standard 12](12-structured-errors.md) gives these
+  distinct codes — `PERMISSION_DENIED` against `REQUIRES_APPROVAL` — and an agent behaves differently
+  on each: the first means stop, the second means ask.
+
+Three further rules make the model usable rather than decorative:
 
 1. **A capability's tier is a property of its worst case, not its typical case.** A capability that
    usually edits a draft but can publish is `execute`, not `propose`.
 2. **Composition does not lower a tier.** A capability calling a `privileged execute` capability is
    itself `privileged execute`. Wrapping does not launder authority.
-3. **Denial must be legible.** An agent refused for want of authorization SHOULD be told which tier
-   the capability required, so it can request approval instead of retrying blindly.
+3. **Denial must be legible.** An agent refused SHOULD be told which permission or approval
+   requirement prevented execution, so it can request the right thing instead of retrying blindly.
+   "Denied" alone leaves it unable to distinguish a tier it will never hold from an approval it could
+   obtain by asking.
 
 ## Additions this standard makes beyond the source
 
@@ -86,6 +109,11 @@ the source. The five tiers are the source's; their meanings and consequences are
 R1's requirement that classification be *discoverable by the caller* is likewise an addition. The
 source requires the distinction to exist; making it machine-readable is this standard's reading of
 what makes it enforceable.
+
+The *Permission and approval are distinct* section is also an addition. The source requires that
+high-risk actions "support explicit authorization and approval controls" and names both, but does not
+say they are separate checks; conflating them is the most likely way to implement the requirement
+incorrectly, so the distinction is drawn explicitly.
 
 ## Implementation
 

@@ -1,0 +1,228 @@
+{
+  "$comment": "CANONICAL ENUMERATION. Reviewed by a human against artifacts/prompts/engineering-standards-spec.md and committed as the source of truth for how many standards exist and what they are called. Extraction from the source is tested AGAINST this file - this file is never regenerated from a run. A parser change must not be able to silently redefine the series. See scripts/inventory.mjs.",
+  "source": "artifacts/prompts/engineering-standards-spec.md",
+  "reviewedOn": "2026-08-08",
+  "expectedCount": 44,
+  "standards": [
+    {
+      "number": 1,
+      "title": "Human and AI Operability",
+      "implementedBy": "standards/01-human-and-ai-operability.md"
+    },
+    {
+      "number": 2,
+      "title": "Propose vs Execute",
+      "implementedBy": "standards/02-propose-vs-execute.md"
+    },
+    {
+      "number": 3,
+      "title": "Auditing",
+      "implementedBy": "standards/03-auditing.md"
+    },
+    {
+      "number": 4,
+      "title": "Planning Standards",
+      "implementedBy": "standards/04-planning-standards.md"
+    },
+    {
+      "number": 5,
+      "title": "Resumability",
+      "implementedBy": "standards/05-resumability.md"
+    },
+    {
+      "number": 6,
+      "title": "Project Manifest",
+      "implementedBy": "standards/06-project-manifest.md"
+    },
+    {
+      "number": 7,
+      "title": "Acceptance Criteria",
+      "implementedBy": "standards/07-acceptance-criteria.md"
+    },
+    {
+      "number": 8,
+      "title": "Status Tracking",
+      "implementedBy": "standards/08-status-tracking.md"
+    },
+    {
+      "number": 9,
+      "title": "Verification",
+      "implementedBy": "standards/09-verification.md"
+    },
+    {
+      "number": 10,
+      "title": "Scope Change Management",
+      "implementedBy": "standards/10-scope-change-management.md"
+    },
+    {
+      "number": 11,
+      "title": "Architecture Decision Records",
+      "implementedBy": "standards/11-architecture-decision-records.md"
+    },
+    {
+      "number": 12,
+      "title": "Structured Errors",
+      "implementedBy": "standards/12-structured-errors.md"
+    },
+    {
+      "number": 13,
+      "title": "Idempotency",
+      "implementedBy": "standards/13-idempotency.md"
+    },
+    {
+      "number": 14,
+      "title": "Structured Results",
+      "implementedBy": "standards/14-structured-results.md"
+    },
+    {
+      "number": 15,
+      "title": "AI Tool Contracts",
+      "implementedBy": "standards/15-ai-tool-contracts.md"
+    },
+    {
+      "number": 16,
+      "title": "Security",
+      "implementedBy": null
+    },
+    {
+      "number": 17,
+      "title": "Agent Instruction Files",
+      "implementedBy": null
+    },
+    {
+      "number": 18,
+      "title": "Machine-Readable Project Policy",
+      "implementedBy": null
+    },
+    {
+      "number": 19,
+      "title": "JSON Schema",
+      "implementedBy": null
+    },
+    {
+      "number": 20,
+      "title": "Exceptions",
+      "implementedBy": null
+    },
+    {
+      "number": 21,
+      "title": "Versioning",
+      "implementedBy": null
+    },
+    {
+      "number": 22,
+      "title": "Adoption and Migration",
+      "implementedBy": null
+    },
+    {
+      "number": 23,
+      "title": "Standards Validator CLI",
+      "implementedBy": null
+    },
+    {
+      "number": 24,
+      "title": "Validator Rules",
+      "implementedBy": null
+    },
+    {
+      "number": 25,
+      "title": "Validator Output",
+      "implementedBy": null
+    },
+    {
+      "number": 26,
+      "title": "Stable Rule IDs",
+      "implementedBy": null
+    },
+    {
+      "number": 27,
+      "title": "Rule Catalog",
+      "implementedBy": null
+    },
+    {
+      "number": 28,
+      "title": "GitHub Actions",
+      "implementedBy": null
+    },
+    {
+      "number": 29,
+      "title": "Testing",
+      "implementedBy": null
+    },
+    {
+      "number": 30,
+      "title": "Compliance Scoring",
+      "implementedBy": null
+    },
+    {
+      "number": 31,
+      "title": "WhatsNext Compatibility",
+      "implementedBy": null
+    },
+    {
+      "number": 32,
+      "title": "Documentation Quality",
+      "implementedBy": null
+    },
+    {
+      "number": 33,
+      "title": "Bootstrap Experience",
+      "implementedBy": null
+    },
+    {
+      "number": 34,
+      "title": "Dogfooding",
+      "implementedBy": null
+    },
+    {
+      "number": 35,
+      "title": "Planning Requirements",
+      "implementedBy": null
+    },
+    {
+      "number": 36,
+      "title": "Implementation Strategy",
+      "implementedBy": null
+    },
+    {
+      "number": 37,
+      "title": "Quality Bar",
+      "implementedBy": null
+    },
+    {
+      "number": 38,
+      "title": "Definition of Done",
+      "implementedBy": null
+    },
+    {
+      "number": 39,
+      "title": "Codebase Documentation Standard",
+      "implementedBy": null
+    },
+    {
+      "number": 40,
+      "title": "Diffable AI Changes",
+      "implementedBy": null
+    },
+    {
+      "number": 41,
+      "title": "Decisions, Assumptions, and Unresolved Questions",
+      "implementedBy": null
+    },
+    {
+      "number": 42,
+      "title": "Documentation Freshness",
+      "implementedBy": null
+    },
+    {
+      "number": 43,
+      "title": "Documentation Completion Requirement",
+      "implementedBy": null
+    },
+    {
+      "number": 44,
+      "title": "Existing Project Reconstruction",
+      "implementedBy": "standards/44-existing-project-reconstruction.md"
+    }
+  ]
+}

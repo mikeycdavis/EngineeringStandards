@@ -71,17 +71,20 @@ The failure mode is specific and common: a manifest that grows into a second arc
 becomes something nobody reads and nobody updates, and a stale orientation document is worse than
 none, because it is believed.
 
-### R4 — The volatile sections MUST be kept current
+### R4 — Fields representing current state are kept current
 
-Most of the manifest changes rarely. Five sections change constantly and are the ones a reader most
-relies on:
+Fields representing current project state SHOULD be updated whenever the underlying state materially
+changes — not on a schedule.
 
-`Current Status` · `Current Release Target` · `Known Blockers` · `Current Plan` ·
+At minimum, implementations should consider these volatile:
+
+`Current Status` · `Current Release Target` · `Known Risks` · `Known Blockers` ·
 `Next Recommended Work`
 
-These SHOULD be updated whenever the fact they record changes — not on a schedule. A `Next
-Recommended Work` naming work that shipped last month actively misleads the reader it exists to help,
-and is the single most likely part of this file to be wrong.
+This is a floor, not a closed list: a project whose manifest carries other state-bearing fields
+should treat those the same way. A `Next Recommended Work` naming work that shipped last month
+actively misleads the reader it exists to help, and is the single most likely part of this file to be
+wrong.
 
 ## Additions this standard makes beyond the source
 

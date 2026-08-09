@@ -261,8 +261,15 @@ what the original developer historically intended. It SHOULD describe:
 - recommended next work
 
 Every top-level section MUST follow the normal planning standard and be placed in
-`artifacts/project-plan-breakdown/` as ordered Markdown files. Every executable plan item MUST
-define, where applicable:
+`artifacts/project-plan-breakdown/` as ordered Markdown files.
+
+Plan items here carry **six** fields. This is a **context-specific strengthening of
+[Standard 7](07-acceptance-criteria.md)**, which establishes the general minimum of five — not a
+competing definition of a plan item. `Purpose` is added because reconstruction is precisely the case
+where an item's reason for existing cannot be recovered from history and so must be stated. A project
+satisfying this standard satisfies Standard 7 as well.
+
+Every executable plan item MUST define, where applicable:
 
 ```text
 Status

@@ -343,3 +343,35 @@ test("this repository has no error-severity findings", () => {
     "the standards repository must satisfy the standards it publishes",
   );
 });
+
+// ---------------------------------------------------------------------------
+// The source inventory invariant
+// ---------------------------------------------------------------------------
+
+test("source extraction agrees with the reviewed inventory", () => {
+  // The item-8 miss is the reason this exists: a regex anchored on the bare `N. Title` form found
+  // 43 standards, and that number became a durable project fact in three documents. The inventory is
+  // reviewed and committed; extraction is tested against it, so a parser change can disagree but
+  // never silently redefine the series.
+  const r = spawnSync(process.execPath, [path.join(REPO, "scripts/inventory.mjs"), "--json"], {
+    encoding: "utf8",
+  });
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.ok, true, `inventory disagreement: ${JSON.stringify(out, null, 2)}`);
+  assert.equal(r.status, 0);
+  assert.equal(out.detectedCount, out.expectedCount);
+  assert.equal(out.declaredCount, out.expectedCount);
+  assert.deepEqual(out.missing, []);
+  assert.deepEqual(out.unknown, []);
+  assert.deepEqual(out.duplicates, []);
+  assert.deepEqual(out.titleMismatches, []);
+});
+
+test("every implementedBy path exists, and every standards file is claimed", () => {
+  const r = spawnSync(process.execPath, [path.join(REPO, "scripts/inventory.mjs"), "--json"], {
+    encoding: "utf8",
+  });
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.brokenPaths, [], "an inventory entry points at a file that does not exist");
+  assert.deepEqual(out.unclaimedFiles, [], "a standards/ file is not claimed by any inventory entry");
+});

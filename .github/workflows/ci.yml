@@ -18,6 +18,11 @@ jobs:
       # No install step: the audit and its tests have no dependencies, by the decision recorded in
       # design/standards-audit-cli.md. If an `npm ci` ever appears here, that decision changed.
 
+      # Proves the standards series has not silently changed shape. The inventory is reviewed and
+      # committed; this compares source extraction against it rather than re-deriving the count.
+      - name: Source inventory
+        run: npm run inventory
+
       - name: Test
         run: npm test
 

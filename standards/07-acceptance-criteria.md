@@ -103,10 +103,19 @@ false the next time anyone ships.
 
 ## Relationship to other standards
 
-[Standard 44](44-existing-project-reconstruction.md) requires **six** fields on an executable item,
-adding `Purpose` to this standard's five. That is a deliberate strengthening for reconstructed plans,
-where an item's reason for existing is exactly what the missing history would otherwise have supplied.
-A project following Standard 44 satisfies this standard as well; the reverse does not hold.
+**This standard establishes the general minimum.** Five fields — `Status`, `Deliverables`,
+`Acceptance Criteria`, `Verification`, `Dependencies` — apply to every executable item in every
+project.
+
+[Standard 44](44-existing-project-reconstruction.md) adds a sixth, `Purpose`, for reconstructed
+plans. That is a **context-specific strengthening of this standard, not a competing definition of the
+plan item.** Reconstruction is precisely the case where an item's reason for existing cannot be
+recovered from history, so it has to be written down; ordinary planning has the conversation and the
+original prompt to supply it.
+
+The two therefore compose rather than conflict: a project following Standard 44 satisfies this
+standard as well, and a project not doing a reconstruction is not failing anything by carrying five
+fields rather than six.
 
 [Standard 8](08-status-tracking.md) governs the `Status` field's vocabulary.
 [Standard 4](04-planning-standards.md) governs where these items live.

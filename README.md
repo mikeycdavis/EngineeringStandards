@@ -33,6 +33,11 @@ Backfilling the remaining items as documents is in progress.
 | 16–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
+The canonical enumeration of the series lives in
+[artifacts/standards-source-inventory.json](artifacts/standards-source-inventory.json) — reviewed once
+against the source and committed, rather than re-derived on each run. `npm run inventory` proves
+source extraction still agrees with it, and CI fails if it does not.
+
 ## Decisions
 
 - [artifacts/adr/0001-canonical-status-vocabulary.md](artifacts/adr/0001-canonical-status-vocabulary.md)
