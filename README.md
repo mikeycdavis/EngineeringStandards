@@ -30,7 +30,11 @@ Backfilling the remaining items as documents is in progress.
 | 13 | Idempotency | [standards/13-idempotency.md](standards/13-idempotency.md) | *none* | active |
 | 14 | Structured Results | [standards/14-structured-results.md](standards/14-structured-results.md) | *none* | active |
 | 15 | AI Tool Contracts | [standards/15-ai-tool-contracts.md](standards/15-ai-tool-contracts.md) | *none — completes the 12–15 baseline contract* | active |
-| 16–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 16 | Security | [standards/16-security.md](standards/16-security.md) | *none* | active |
+| 17 | Agent Instruction Files | [standards/17-agent-instruction-files.md](standards/17-agent-instruction-files.md) | *none* | active |
+| 18 | Machine-Readable Project Policy | [standards/18-machine-readable-project-policy.md](standards/18-machine-readable-project-policy.md) | *none* | active |
+| 19 | JSON Schema | [standards/19-json-schema.md](standards/19-json-schema.md) | *none — no policy published yet* | active |
+| 20–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 The canonical enumeration of the series lives in

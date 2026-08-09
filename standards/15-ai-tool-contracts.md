@@ -73,13 +73,44 @@ parameter names:
 change** even though no signature moved. This is the requirement most often violated, because those
 fields do not look like interface.
 
-### R5 — Schemas are published and machine-readable
+### R5 — Contract version is not model or provider version
+
+**Changes to AI provider or model implementation do not by themselves require a tool-contract version
+change.** Version the contract on **externally observable semantics**: schemas, permissions, error
+behaviour, retry behaviour, and the guarantees the contract makes.
+
+The contract is the stable interface; what runs behind it is an implementation detail, and
+[Standard 1](01-human-and-ai-operability.md) R4 already requires domain logic not to depend on a
+specific provider. A capability moving from Claude to OpenAI, or between model versions, is not a
+breaking change when callers are still entitled to rely on exactly what they were before.
+
+The distinction only holds if it is applied honestly, so the test is what a caller may rely on:
+
+| Change | Contract version |
+| --- | --- |
+| Swapping provider or model, same schema and guarantees | No change |
+| A model producing better output within the same declared shape | No change |
+| Output schema narrows, widens, or changes type | Major or minor per R3 |
+| A previously guaranteed property is no longer guaranteed — determinism, latency bound, language, maximum length | **Major** |
+| An error code appears that callers could not previously receive | Minor |
+| An operation stops being safe to retry, or its tier rises | **Major** |
+
+The trap is a swap that quietly changes behaviour the contract *did* govern. If a capability
+guaranteed structured JSON matching a schema and now sometimes returns prose, that is a breaking
+change regardless of the fact that "only the model changed" — the guarantee was the contract, not the
+model. Where a project depends on properties like determinism or output language, those belong in the
+contract explicitly, or a provider swap will silently break callers who reasonably relied on them.
+
+Model and provider identity SHOULD still be recorded, but as auditable decision context under
+[Standard 3](03-auditing.md) R4 rather than as an interface version.
+
+### R6 — Schemas are published and machine-readable
 
 The schema MUST be retrievable by the agent that calls it, in the form it calls with — an OpenAPI
 document, an MCP tool listing, a function schema. Documentation describing an interface in prose is
 not a contract; it is a description of one, and the two drift.
 
-### R6 — Deprecate before removing
+### R7 — Deprecate before removing
 
 A capability or field being removed SHOULD be marked deprecated in a released version before it
 disappears, with the replacement named in the schema itself.
@@ -93,7 +124,9 @@ migration notice an autonomous consumer will ever see.
   recommendations to be defined; these are them.
 - R4 in full — that the versioned surface includes tiers, error semantics, idempotency requirements,
   and result fields. This is the integration point the machine-interface contract exists to enforce.
-- R5 and R6 in full.
+- R5 in full — the separation of contract version from model and provider version, its table, and
+  the rule that a guarantee the contract made is part of the contract however it was implemented.
+- R6 and R7 in full.
 - R1's observation about structured prompt contracts being the least version-controlled item on the
   list.
 

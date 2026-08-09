@@ -82,22 +82,22 @@
     {
       "number": 16,
       "title": "Security",
-      "implementedBy": null
+      "implementedBy": "standards/16-security.md"
     },
     {
       "number": 17,
       "title": "Agent Instruction Files",
-      "implementedBy": null
+      "implementedBy": "standards/17-agent-instruction-files.md"
     },
     {
       "number": 18,
       "title": "Machine-Readable Project Policy",
-      "implementedBy": null
+      "implementedBy": "standards/18-machine-readable-project-policy.md"
     },
     {
       "number": 19,
       "title": "JSON Schema",
-      "implementedBy": null
+      "implementedBy": "standards/19-json-schema.md"
     },
     {
       "number": 20,
