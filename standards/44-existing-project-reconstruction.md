@@ -6,9 +6,24 @@ the second case.
 
 ## Scope
 
-This standard applies when onboarding a **pre-existing project with no trustworthy original prompt,
-requirements document, or project plan**. Greenfield projects that have a genuine original prompt or
-plan are out of scope.
+The standards support two kinds of project:
+
+- **greenfield projects with an original prompt or project plan** — planned forward from that prompt,
+  through the ordinary planning standards. Not this standard.
+- **pre-existing projects with little or no reliable planning history** — the subject of this
+  standard.
+
+This standard therefore applies when onboarding a **pre-existing project with no trustworthy original
+prompt, requirements document, or project plan**. A greenfield project, or any project whose original
+prompt or plan is genuine and trusted, is out of scope: plan it forward rather than reconstructing it.
+Applying this standard to a project that already has a real plan is itself an error — it produces a
+reconstruction that competes with the authentic record.
+
+**Judging whether the existing history is trustworthy is the first decision**, and it is a judgement,
+not a lookup. A README is not a plan. A plan describing a product materially different from the one in
+the repository is not trustworthy for this purpose, and the discrepancy is itself a finding (R5). When
+the existing history is partial — real for some areas, absent for others — reconstruct the areas it
+does not cover and treat the rest as evidence rather than overwriting it.
 
 When a project already exists and there is no trustworthy planning history, an original plan MUST NOT
 be invented from assumptions. A structured codebase reconstruction MUST be performed instead. The
