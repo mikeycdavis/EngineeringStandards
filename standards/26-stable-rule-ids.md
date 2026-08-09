@@ -91,8 +91,13 @@ separate "policy key" namespace and no per-tool aliasing.
 
 Where a policy key and a rule ID differ in form — the source's policy shape uses
 `ai.uiCapabilitiesMustBeAgentOperable` while its rule ID list uses `ai.non-ui-capabilities` — that is
-a **defect to reconcile**, not two valid names. [Standard 27](27-rule-catalog.md) makes the catalog
-the single place that mapping is defined, and one of the two forms must win.
+a **defect to reconcile**, not two valid names.
+
+**This is resolved by [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md): the rule ID wins,
+and a policy key path, dot-joined, MUST equal the rule ID exactly.** The camelCase forms become
+recorded aliases in the catalog ([Standard 27](27-rule-catalog.md)) — accepted on read with a
+warning, resolved to the canonical ID, and never emitted. An alias is not a peer name and resolves in
+one direction only.
 
 ## Additions this standard makes beyond the source
 
@@ -100,7 +105,7 @@ the single place that mapping is defined, and one of the two forms must win.
   source says IDs should not change casually without saying what casually means or what happens when
   a change is warranted.
 - R4 and R5 in full, including the observation that the source's own policy keys and rule IDs do not
-  currently agree.
+  agree, and the resolution recorded in [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md).
 - R2's point that exceptions, not just external systems, depend on ID stability.
 
 ## Relationship to other standards

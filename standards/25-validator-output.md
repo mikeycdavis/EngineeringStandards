@@ -79,9 +79,14 @@ JSON output MUST carry its own `schemaVersion` and is a machine-facing contract 
 stops a reader inferring coverage from `passed`. A run with 21 passed and 12 skipped is a very
 different result from 21 passed and 0 skipped.
 
-`status` MUST come from a closed enumeration — `COMPLIANT`, `NON_COMPLIANT`, and a distinct value for
-"could not evaluate", which corresponds to [Standard 23](23-standards-validator-cli.md) exit `2` and
-MUST NOT be reported as `NON_COMPLIANT`.
+`status` MUST come from a closed enumeration, defined by [Standard 30](30-compliance-scoring.md) R1:
+`COMPLIANT`, `COMPLIANT_WITH_EXCEPTIONS`, `NON_COMPLIANT`, and `NOT_EVALUATED`. The last corresponds
+to [Standard 23](23-standards-validator-cli.md) exit `2` and MUST NOT be reported as
+`NON_COMPLIANT` — *could not check* and *checked and failed* are different facts.
+
+Where `score` is present, [Standard 30](30-compliance-scoring.md) R4 requires an `assurance`
+breakdown alongside it, so the number cannot imply that the same proportion of the standard was
+verified.
 
 ### R3 — Result shape
 
@@ -152,7 +157,9 @@ statistic.
 [Standard 23](23-standards-validator-cli.md) R4 requires this envelope and maps `status` to exit
 codes. [Standard 24](24-validator-rules.md) supplies `validationType` and the assurance rule this
 format exists to make checkable. [Standard 26](26-stable-rule-ids.md) supplies `ruleId`.
-[Standard 15](15-ai-tool-contracts.md) governs how this format may change.
+[Standard 30](30-compliance-scoring.md) defines the `status` enumeration and adds `assurance`.
+[Standard 31](31-whatsnext-compatibility.md) is the external consumer this envelope is the contract
+for. [Standard 15](15-ai-tool-contracts.md) governs how this format may change.
 
 ## Implementation
 

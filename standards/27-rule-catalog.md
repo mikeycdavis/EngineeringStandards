@@ -55,8 +55,8 @@ remediation: >
   Add an Acceptance Criteria section to the plan artifact.
 ```
 
-This standard adds four fields, disclosed below — `assurance`, `nonExemptible`, `standard`, and the
-lifecycle trio:
+This standard adds five fields, disclosed below — `assurance`, `nonExemptible`, `standard`,
+`aliases`, and the lifecycle trio:
 
 ```yaml
 id: audit.actor-attribution
@@ -69,6 +69,7 @@ assurance: partial
 introducedIn: 1.0.0
 nonExemptible: false
 standard: 3
+aliases: []
 description: ...
 rationale: ...
 remediation: ...
@@ -83,6 +84,7 @@ removedIn:
 | `assurance` | What the check can actually claim — `full`, `partial`, or `none`. Enforces [Standard 24](24-validator-rules.md) R2 as data rather than discipline |
 | `nonExemptible` | Whether an exception may be written against it ([Standard 20](20-exceptions.md) R4). A property of the rule, not of any project |
 | `standard` | The standard number the rule comes from, so a result can link to the prose |
+| `aliases` | Superseded spellings accepted on read and resolved to the canonical `id` ([ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md)). Never emitted; removing one is `MAJOR` |
 | `deprecatedIn`, `supersededBy`, `removedIn` | Lifecycle ([Standard 26](26-stable-rule-ids.md) R4) |
 
 **The lifecycle fields are present from the first release even when empty.** Adding them later means
@@ -148,7 +150,9 @@ Without this the version pin means nothing, which is the failure
 
 - The `assurance` field and R3's separation of it from `validationType` — the mechanism that makes
   [Standard 24](24-validator-rules.md) R2 data rather than discipline.
-- `nonExemptible` and `standard` fields.
+- `nonExemptible`, `standard`, and `aliases` fields — the last carrying
+  [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md)'s resolution of the policy-key /
+  rule-ID mismatch.
 - The lifecycle trio, and the rule that they exist from the first release even when empty.
 - R4's division-of-labour table and the mechanical check.
 - R5 in full — that rules are evaluated against the version in force for the project.

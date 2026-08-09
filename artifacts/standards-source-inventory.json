@@ -142,22 +142,22 @@
     {
       "number": 28,
       "title": "GitHub Actions",
-      "implementedBy": null
+      "implementedBy": "standards/28-github-actions.md"
     },
     {
       "number": 29,
       "title": "Testing",
-      "implementedBy": null
+      "implementedBy": "standards/29-testing.md"
     },
     {
       "number": 30,
       "title": "Compliance Scoring",
-      "implementedBy": null
+      "implementedBy": "standards/30-compliance-scoring.md"
     },
     {
       "number": 31,
       "title": "WhatsNext Compatibility",
-      "implementedBy": null
+      "implementedBy": "standards/31-whatsnext-compatibility.md"
     },
     {
       "number": 32,

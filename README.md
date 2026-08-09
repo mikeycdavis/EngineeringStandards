@@ -42,7 +42,11 @@ Backfilling the remaining items as documents is in progress.
 | 25 | Validator Output | [standards/25-validator-output.md](standards/25-validator-output.md) | `scripts/standards.mjs` (partial) | active |
 | 26 | Stable Rule IDs | [standards/26-stable-rule-ids.md](standards/26-stable-rule-ids.md) | *not implemented* | active |
 | 27 | Rule Catalog | [standards/27-rule-catalog.md](standards/27-rule-catalog.md) | *not implemented — no rule catalog exists yet* | active |
-| 28–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 28 | GitHub Actions | [standards/28-github-actions.md](standards/28-github-actions.md) | `.github/workflows/ci.yml` (partial) | active |
+| 29 | Testing | [standards/29-testing.md](standards/29-testing.md) | `test/audit.test.mjs` (partial) | active |
+| 30 | Compliance Scoring | [standards/30-compliance-scoring.md](standards/30-compliance-scoring.md) | *not implemented — no score is computed* | active |
+| 31 | WhatsNext Compatibility | [standards/31-whatsnext-compatibility.md](standards/31-whatsnext-compatibility.md) | *not implemented, by requirement — contract only* | active |
+| 32–43 | *(see the source spec)* | *backfill pending* | `codebase-docs`, `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 The canonical enumeration of the series lives in
@@ -54,6 +58,8 @@ source extraction still agrees with it, and CI fails if it does not.
 
 - [artifacts/adr/0001-canonical-status-vocabulary.md](artifacts/adr/0001-canonical-status-vocabulary.md)
   — one lifecycle vocabulary across plans, backlogs, and tooling.
+- [artifacts/adr/0002-canonical-rule-identity.md](artifacts/adr/0002-canonical-rule-identity.md)
+  — one rule identity across policy keys, exceptions, the catalog, and validator output.
 
 ## Design documents
 

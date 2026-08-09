@@ -162,6 +162,23 @@ Each section maps to standards: `planning` → [4](04-planning-standards.md) and
 either a standard nobody wrote or a setting nothing reads; both are defects, and
 [Standard 19](19-json-schema.md) is what catches them.
 
+**A policy key is a rule ID.** Per [ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md), the
+key path dot-joined MUST equal the canonical rule ID from
+[Standard 26](26-stable-rule-ids.md) R1 — so `ai.providerNeutral` above is canonically
+`ai.provider-neutral`, and `ai.uiCapabilitiesMustBeAgentOperable` is `ai.non-ui-capabilities`:
+
+```yaml
+ai:
+  non-ui-capabilities: required
+  provider-neutral: required
+  propose-execute: required
+```
+
+The camelCase spellings shown here and in the source are **aliases**, recorded in the catalog
+([Standard 27](27-rule-catalog.md)), accepted on read with a warning, and never emitted. There is no
+separate policy-key namespace: one name, used by the policy, the exception, the catalog, the result,
+and every external consumer.
+
 ### R6 — Boolean or level, but consistently
 
 The source's shape mixes booleans (`providerNeutral: true`) with levels
@@ -182,8 +199,10 @@ never to `forbidden`, which is a different claim entirely.
   not be weakened.
 - R4's exception structure and the reasoning that an exception must be explicit rather than achieved
   by lowering a level.
-- R5's mapping of policy sections to standards, and the rule that every key must correspond to a
-  requirement.
+- R5's mapping of policy sections to standards, the rule that every key must correspond to a
+  requirement, and the ruling that a policy key *is* a rule ID
+  ([ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md)). The source's own camelCase keys
+  become aliases; this is a departure from source text, disclosed here rather than presented as it.
 - R6 in full.
 
 ## Relationship to other standards
