@@ -60,7 +60,7 @@ standard's content, not assumed from a skill's name.
 
 ### Obtain and commit the source specification for items 1–43
 
-- **Status:** done — 2026-08-08, `artifacts/prompts/engineering-standards-spec.md`
+- **Status:** COMPLETE — 2026-08-08, `artifacts/prompts/engineering-standards-spec.md`
 - **Purpose:** Everything else in this section depends on it, and no substitute is acceptable.
 - **Deliverables:** the source text committed under `artifacts/prompts/`, following the existing
   naming — `original_prompt.md` holds item 44, so either extend that file or add a sibling whose name
@@ -73,7 +73,7 @@ standard's content, not assumed from a skill's name.
 
 ### Write standards 1–43 as normative documents
 
-- **Status:** in-progress — 1–7 written; 36 remain (8–43)
+- **Status:** IN_PROGRESS — 1–7 written; 36 remain (8–43)
 - **Purpose:** Give each standard the same normative contract Standard 44 has, so the series is
   citable, auditable, and enforceable rather than living only as skill behavior.
 - **Deliverables:** `standards/NN-<kebab-title>.md` for each item, zero-padded for single digits
@@ -93,7 +93,7 @@ standard's content, not assumed from a skill's name.
 
 ### Update the README index as standards land
 
-- **Status:** ready — unblocked, follows each standard as it lands
+- **Status:** READY — unblocked, follows each standard as it lands
 - **Purpose:** [`README.md`](../../README.md) currently collapses 1–43 into a single
   "backfill pending" row. That row is accurate today and becomes a lie the moment the first backfilled
   standard lands.
@@ -106,7 +106,7 @@ standard's content, not assumed from a skill's name.
 
 ### Remove the stale `.skill` archives
 
-- **Status:** done — 2026-08-08, confirmed by the owner before deletion
+- **Status:** COMPLETE — 2026-08-08, confirmed by the owner before deletion
 - **Purpose:** `plan-handoff.skill`, `plan-structure.skill`, and `pre-push.skill` in
   `C:\Users\Mike\.claude\skills\` are zip archives each containing a single `SKILL.md`, dated well
   before the live directories of the same names. They are a second copy of three skills, already

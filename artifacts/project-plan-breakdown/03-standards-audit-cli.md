@@ -14,6 +14,13 @@ the open-questions template exists solely so this audit can find unresolved ques
 Read the design document before implementing. This section covers the work; it does not restate the
 finding categories, the JSON schema, or the detection sources, all of which live there.
 
+> **Vocabulary note (2026-08-08).** This section was written before
+> [ADR 0001](../adr/0001-canonical-status-vocabulary.md) made Standard 8's vocabulary canonical.
+> References below to `tracked as <backlog-id>` as a *status value* describe the form that was in use
+> at the time and is now abolished — a reference to another system is not a status, and lives in a
+> separate `Tracked by` field. The delegation trap the section describes is unchanged and still
+> guarded; only the spelling moved. The historical record is left as written rather than rewritten.
+
 ## Decisions already made
 
 Both of this section's open questions are now answered in the design document. Read them there before
@@ -32,7 +39,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Decide the implementation language and distribution
 
-- **Status:** done — 2026-08-08, recorded in
+- **Status:** COMPLETE — 2026-08-08, recorded in
   [`design/standards-audit-cli.md`](../../design/standards-audit-cli.md) under *Implementation and
   distribution*
 - **Purpose:** Every later item depends on it, and the decision was genuinely open — this repository
@@ -63,7 +70,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Implement the descriptive finding categories
 
-- **Status:** done — 2026-08-08, `scripts/standards.mjs` and `package.json`
+- **Status:** COMPLETE — 2026-08-08, `scripts/standards.mjs` and `package.json`
 - **Purpose:** The six `info` categories — observed architecture, and detected capabilities, APIs,
   jobs, integrations, and AI interfaces — report what a repository *has*. They are the foundation the
   judgemental categories build on, and they are useful alone as a repository survey.
@@ -101,7 +108,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Implement the absence and discrepancy categories
 
-- **Status:** done — 2026-08-08, `scripts/standards.mjs`
+- **Status:** COMPLETE — 2026-08-08, `scripts/standards.mjs`
 - **Purpose:** These are the categories with teeth — missing documentation, missing planning
   artifacts, missing audit infrastructure, unverified functionality, potential dead code, potential
   unfinished features, plan/code discrepancies, documentation/code discrepancies, open reconstruction
@@ -139,7 +146,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Close the delegated-reference integrity gap
 
-- **Status:** done — 2026-08-08, delivered as part of the discrepancy categories above
+- **Status:** COMPLETE — 2026-08-08, delivered as part of the discrepancy categories above
 - **Purpose:** Standard 44 requires that every `tracked as <backlog-id>` reference resolve to an item
   that exists, because a dangling one presents untracked work as tracked. **No tool checks this
   today.** `backlog-validate` validates backlog items against each other and has no knowledge of plan
@@ -158,7 +165,7 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 
 ### Give the audit a test suite and CI
 
-- **Status:** done — 2026-08-08, `test/` and `.github/workflows/ci.yml`
+- **Status:** COMPLETE — 2026-08-08, `test/` and `.github/workflows/ci.yml`
 - **Purpose:** The audit was run against its own repository and reported *no test suite and no CI
   configuration*. That finding is correct. A tool whose output is "your repository is non-compliant"
   has no standing to report that while being unverified itself, and two false positives have already

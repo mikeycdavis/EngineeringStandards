@@ -161,6 +161,22 @@ test("a backlog id that resolves to nothing is reported", () => {
   assert.match(dangling[0].standardRef, /#r7--reconstructed-plan-and-plan-items$/);
 });
 
+test("status is canonical and Tracked by is a separate field", () => {
+  // Standard 8 R2: a reference to another system is not a status. The fixture uses the canonical
+  // vocabulary with `Tracked by` alongside it, and the audit must resolve through that field.
+  const res = audit(fixture("delegated"));
+  const plan = of(res, "plan-code-discrepancies");
+  assert.ok(plan.length >= 2, "both the dangling reference and the missing deliverable must be found");
+  assert.ok(
+    evidenceOf(res, "plan-code-discrepancies").some((e) => e.includes("ST-999")),
+    "a Tracked by pointing at a nonexistent backlog item is still caught",
+  );
+  assert.ok(
+    evidenceOf(res, "plan-code-discrepancies").some((e) => e.includes("ghost.js")),
+    "an item whose backlog entry is COMPLETE is still checked against its deliverables",
+  );
+});
+
 test("a delegated item resolved to done is checked against its deliverables", () => {
   const res = audit(fixture("delegated"));
   const missing = of(res, "plan-code-discrepancies").filter((f) =>

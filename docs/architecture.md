@@ -260,7 +260,7 @@ defects as the repository's own. The cost is that a genuine `fixtures/` director
 is skipped; a repository can still audit one directly with `--dir=`.
 
 **Delegated liveness, and the trap under it.** A plan item may delegate its status to a work tracker
-with `Status: tracked as <backlog-id>`. `detectPlanDiscrepancies` resolves that reference by reading
+with a separate `Tracked by` field. `detectPlanDiscrepancies` resolves that reference by reading
 `status:` from `artifacts/backlog/items/<id>.md` **before** judging, and treats an id resolving to
 nothing as an `error` in its own right. This matters because under delegation *no plan item is ever
 `done`* — so an implementation that only checks for `done` returns zero findings on precisely the

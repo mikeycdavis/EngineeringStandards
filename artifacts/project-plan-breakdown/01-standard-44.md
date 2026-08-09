@@ -17,7 +17,7 @@ satisfy them, and there is no automated check that enforces it.
 
 ### Write the normative standard document
 
-- **Status:** done — commit `14177fa`, amended by `9b20743`
+- **Status:** COMPLETE — commit `14177fa`, amended by `9b20743`
 - **Purpose:** State what a compliant reconstruction must look like, so that the procedure has a
   contract to satisfy and a later audit has requirements to cite.
 - **Deliverables:** [`standards/44-existing-project-reconstruction.md`](../../standards/44-existing-project-reconstruction.md)
@@ -44,7 +44,7 @@ satisfy them, and there is no automated check that enforces it.
 
 ### Build the `project-reconstruction` skill
 
-- **Status:** done — not committed anywhere; the skill is global by the decision recorded in
+- **Status:** COMPLETE — not committed anywhere; the skill is global by the decision recorded in
   [`00-overview.md`](00-overview.md)
 - **Purpose:** Provide the executable procedure the standard specifies, so a reconstruction can
   actually be run rather than merely required.
@@ -71,7 +71,7 @@ satisfy them, and there is no automated check that enforces it.
 
 ### Integrate with the existing skills
 
-- **Status:** done — global skill edits, uncommitted by the same decision
+- **Status:** COMPLETE — global skill edits, uncommitted by the same decision
 - **Purpose:** Make the new skill compose with the ones already in use, rather than competing with
   them for the same territory.
 - **Deliverables:** three edited skills:
@@ -93,7 +93,7 @@ satisfy them, and there is no automated check that enforces it.
 
 ### Design the audit CLI without building it
 
-- **Status:** done — commit `14177fa`
+- **Status:** COMPLETE — commit `14177fa`
 - **Purpose:** The source specification asks that a future `standards audit .` be designed but not
   implemented in v1. Designing it now is what lets the artifacts be shaped for machine reading before
   any tool exists; retrofitting a format is far more expensive than choosing one.

@@ -107,7 +107,7 @@ because that would hard-code a dependency on `~/.claude/skills/...` paths that e
 and not in CI, turning an absent global skill into a broken audit.
 
 What the audit needs from the backlog is far narrower than either option assumes: to resolve a
-`tracked as <backlog-id>` reference, it reads the `status:` line from the frontmatter of
+plan item's `Tracked by` reference, it reads the `status:` line from the frontmatter of
 `artifacts/backlog/items/<id>.md` directly. That is a stable file format documented in the `backlog`
 skill, not an API, and reading it duplicates no validation logic. Where no backlog exists, delegated
 references cannot appear, and the check is skipped rather than failed.
@@ -237,12 +237,13 @@ stay consistent with what the `project-reconstruction` skill writes:
   `artifacts/project-baseline/open-questions.md`. This is why the questions template uses a fixed,
   greppable `**Status:** open` / `**Status:** answered` line rather than free prose. Changing that
   line's format in the skill breaks this detection; the two must be changed together.
-- **`plan-code-discrepancies`** ← plan items whose `Status` and deliverables disagree. The plan-item
-  status vocabulary is `not-started`, `in-progress`, `blocked`, `done`, `dropped`, and
-  `tracked as <backlog-id>`. **The last value is the trap:** where a repository has adopted the
-  backlog skill, every plan item's status becomes `tracked as <id>` and none is ever `done`, so an
+- **`plan-code-discrepancies`** ← plan items whose `Status` and deliverables disagree. The plan-item status vocabulary is Standard 8's canonical set: `NOT_STARTED`, `READY`,
+  `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETE`, `DEFERRED`, `CANCELLED`. A reference to an
+  external tracker lives in a separate `Tracked by` field, never in `Status`. **Delegation is the
+  trap:** where a repository has adopted the
+  backlog skill, a plan item's own `Status` is a cached copy of the backlog item's, so an
   implementation that only checks for `done` reports zero findings on precisely the repositories that
-  follow the standard most completely. A `tracked as <id>` item must be resolved through the
+  follow the standard most completely. An item carrying `Tracked by` must be resolved through the
   referenced backlog item's status before the discrepancy check is applied — and an id that resolves
   to nothing is itself a finding.
 

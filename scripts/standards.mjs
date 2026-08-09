@@ -837,6 +837,23 @@ function parsePlanItems(text, file) {
 
 const PLAN_FIELDS = ["Status", "Purpose", "Deliverables", "Acceptance Criteria", "Verification", "Dependencies"];
 
+/**
+ * The canonical lifecycle vocabulary — Standard 8, decided in ADR 0001. Legacy tokens are accepted
+ * as aliases during migration (Standard 8 R6); a reference to another system is never a status, so
+ * `tracked as <id>` has no entry here and is read from a separate `Tracked by` field instead.
+ */
+const STATUS_ALIASES = {
+  "not-started": "NOT_STARTED", backlog: "NOT_STARTED", ready: "READY",
+  "in-progress": "IN_PROGRESS", blocked: "BLOCKED", "ready-for-review": "IN_REVIEW",
+  "in-review": "IN_REVIEW", done: "COMPLETE", dropped: "CANCELLED", declined: "CANCELLED",
+};
+const canonicalStatus = (raw) => {
+  const first = String(raw ?? "").trim().split(/[\s—-]+/)[0];
+  const upper = first.toUpperCase();
+  if (/^(NOT_STARTED|READY|IN_PROGRESS|BLOCKED|IN_REVIEW|COMPLETE|DEFERRED|CANCELLED)$/.test(upper)) return upper;
+  return STATUS_ALIASES[first.toLowerCase()] ?? upper;
+};
+
 async function detectPlanDiscrepancies(files, contents) {
   const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
   if (planFiles.length === 0) return;
@@ -854,11 +871,17 @@ async function detectPlanDiscrepancies(files, contents) {
       if (!item.fields.has(field)) incomplete.push(`${item.file} :: ${item.title} (no ${field})`);
     }
 
-    let status = item.fields.get("Status") ?? "";
-    // The trap: under delegated liveness no plan item is ever `done`, so a check that only looks
-    // for `done` reports zero findings on the repositories that follow the standard most closely.
-    // Resolve the reference first, and treat one that resolves to nothing as a finding in itself.
-    const tracked = status.match(/tracked as\s+([A-Z]{2}-\d+)/i);
+    let status = canonicalStatus(item.fields.get("Status"));
+    // The trap: where liveness is delegated to a backlog, the plan item's own status is a cached
+    // copy and the backlog is authoritative, so a check that trusts the plan item reports zero
+    // findings on the repositories that follow the standard most closely. Resolve the reference
+    // first, and treat one that resolves to nothing as a finding in itself.
+    //
+    // `Tracked by` is a separate field: a reference to another system is not a status (Standard 8
+    // R2). The legacy `Status: tracked as <id>` form is still read so older plans keep working.
+    const legacyTracked = String(item.fields.get("Status") ?? "").match(/tracked as\s+([A-Z]{2}-\d+)/i);
+    const trackedBy = (item.fields.get("Tracked by") ?? item.fields.get("TrackedBy") ?? "").match(/([A-Z]{2}-\d+)/i);
+    const tracked = trackedBy ?? legacyTracked;
     if (tracked) {
       const id = tracked[1].toUpperCase();
       const itemPath = path.join(root, "artifacts/backlog/items", `${id}.md`);
@@ -867,10 +890,10 @@ async function detectPlanDiscrepancies(files, contents) {
         continue;
       }
       const backlogText = await readText(itemPath);
-      status = (backlogText.match(/^status:\s*(\S+)/im) ?? [, "unknown"])[1];
+      status = canonicalStatus((backlogText.match(/^status:\s*(\S+)/im) ?? [, "unknown"])[1]);
     }
 
-    if (!/^done\b/i.test(status)) continue;
+    if (status !== "COMPLETE") continue;
 
     const deliverables = item.fields.get("Deliverables") ?? "";
     for (const token of deliverables.match(/`([^`]+)`/g) ?? []) {

@@ -275,13 +275,27 @@ Dependencies
 
 `/plan-structure` and `/plan-handoff` MUST be applied to the reconstructed plan.
 
-**Delegated liveness.** A project MAY delegate an item's status to a work tracker rather than
-maintaining it in the plan — for repositories using the `backlog` skill, by setting the item's
-`Status` to `tracked as <backlog-id>`. Where it does, the plan breakdown remains the record of what
-and why, the tracker becomes the single record of liveness, and status MUST NOT be maintained in
-both. Every delegated reference MUST resolve to an item that exists; a reference that resolves to
-nothing is a defect, because it presents untracked work as tracked. No current tooling verifies
-these references — see `design/standards-audit-cli.md`.
+**Status vocabulary.** Plan item `Status` values MUST use the canonical vocabulary defined by
+[Standard 8](08-status-tracking.md): `NOT_STARTED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`,
+`COMPLETE`, `DEFERRED`, `CANCELLED`.
+
+**Delegated liveness.** A project MAY delegate an item's liveness to a work tracker rather than
+maintaining it in the plan — for repositories using the `backlog` skill, by adding a separate
+**`Tracked by`** field naming the backlog id:
+
+```markdown
+- **Status:** IN_PROGRESS
+- **Tracked by:** ST-014
+```
+
+`Tracked by` MUST be a separate field. **A reference to another system is not a status**
+([Standard 8](08-status-tracking.md) R2) — an item tracked elsewhere still has a lifecycle state of
+its own, and writing the reference into `Status` destroys its ability to express that. An earlier
+version of this standard used `tracked as <backlog-id>` as a status value; that form is abolished.
+
+Where liveness is delegated, the plan breakdown remains the record of what and why, and the tracker
+is authoritative for state. Every `Tracked by` reference MUST resolve to an item that exists; one
+that resolves to nothing is a defect, because it presents untracked work as tracked.
 
 ### R8 — Question list
 
