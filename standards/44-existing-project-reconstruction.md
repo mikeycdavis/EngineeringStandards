@@ -237,6 +237,14 @@ Dependencies
 
 `/plan-structure` and `/plan-handoff` MUST be applied to the reconstructed plan.
 
+**Delegated liveness.** A project MAY delegate an item's status to a work tracker rather than
+maintaining it in the plan — for repositories using the `backlog` skill, by setting the item's
+`Status` to `tracked as <backlog-id>`. Where it does, the plan breakdown remains the record of what
+and why, the tracker becomes the single record of liveness, and status MUST NOT be maintained in
+both. Every delegated reference MUST resolve to an item that exists; a reference that resolves to
+nothing is a defect, because it presents untracked work as tracked. No current tooling verifies
+these references — see `design/standards-audit-cli.md`.
+
 ### R8 — Question list
 
 Where material uncertainty remains after repository analysis, a structured question list MUST be
