@@ -202,22 +202,22 @@
     {
       "number": 40,
       "title": "Diffable AI Changes",
-      "implementedBy": null
+      "implementedBy": "standards/40-diffable-ai-changes.md"
     },
     {
       "number": 41,
       "title": "Decisions, Assumptions, and Unresolved Questions",
-      "implementedBy": null
+      "implementedBy": "standards/41-decisions-assumptions-and-questions.md"
     },
     {
       "number": 42,
       "title": "Documentation Freshness",
-      "implementedBy": null
+      "implementedBy": "standards/42-documentation-freshness.md"
     },
     {
       "number": 43,
       "title": "Documentation Completion Requirement",
-      "implementedBy": null
+      "implementedBy": "standards/43-documentation-completion.md"
     },
     {
       "number": 44,

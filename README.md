@@ -20,7 +20,8 @@ The source specification for the whole series is committed at
 [artifacts/prompts/engineering-standards-spec.md](artifacts/prompts/engineering-standards-spec.md).
 It defines **44 standards, numbered 1–44 with no gaps**.
 
-Backfilling the remaining items as documents is in progress.
+**All 44 are written.** What remains is implementation, which each document discloses in its own
+`## Implementation` section.
 
 | # | Standard | Doc | Implementing skill(s) | Status |
 | --- | --- | --- | --- | --- |
@@ -63,7 +64,10 @@ Backfilling the remaining items as documents is in progress.
 | 37 | Quality Bar | [standards/37-quality-bar.md](standards/37-quality-bar.md) | *none — delegates to the standards it names* | active |
 | 38 | Definition of Done | [standards/38-definition-of-done.md](standards/38-definition-of-done.md) | *not implemented — release criteria not met* | active |
 | 39 | Codebase Documentation Standard | [standards/39-codebase-documentation.md](standards/39-codebase-documentation.md) | `codebase-docs` — **conflicts on R4**, see the document | active |
-| 40–43 | *(see the source spec)* | *backfill pending* | `backlog`, `backlog-validate`, `backlog-reconcile` | partly implemented as skills |
+| 40 | Diffable AI Changes | [standards/40-diffable-ai-changes.md](standards/40-diffable-ai-changes.md) | *none — ordinary source control is the mechanism* | active |
+| 41 | Decisions, Assumptions, and Unresolved Questions | [standards/41-decisions-assumptions-and-questions.md](standards/41-decisions-assumptions-and-questions.md) | `artifacts/adr/` (partial) | active |
+| 42 | Documentation Freshness | [standards/42-documentation-freshness.md](standards/42-documentation-freshness.md) | `scripts/standards.mjs` — one check of five | active |
+| 43 | Documentation Completion Requirement | [standards/43-documentation-completion.md](standards/43-documentation-completion.md) | *not implemented — belongs in `pre-push`* | active |
 | 44 | Existing Project Reconstruction | [standards/44-existing-project-reconstruction.md](standards/44-existing-project-reconstruction.md) | `project-reconstruction` | active |
 
 The canonical enumeration of the series lives in
