@@ -147,6 +147,64 @@ applicability:
     reviewedAt: "2026-08-08"
     revisitWhen: "Any capability calls a model provider."
 
+  # Must-never rules whose subject does not exist here (Standard 45 R6's third resolution path).
+  #
+  # Each is a claim about THIS PROJECT that was checked against the repository, not a convenient way
+  # to clear the verdict — the rules with a real subject here are left unestablished until a human
+  # attests to them, which is why this file still reports NOT_EVALUATED rather than COMPLIANT.
+  #
+  # Note what is NOT declared here: architecture.no-hidden-global-state has a real subject, because
+  # scripts/standards.mjs holds module-level mutable state. Declaring it not-applicable because the
+  # process is short-lived would be the self-exemption Standard 34 R3 prohibits.
+
+  data.migration-rollback:
+    status: not-applicable
+    reason: "No database and no migrations. The repository has zero dependencies, no schema, and no data store; the mongodb and postgres strings in scripts/standards.mjs are the detector's own pattern table, which is a mention rather than a use."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any persistent store is added, or any script alters data it did not create."
+
+  data.no-silent-discard:
+    status: not-applicable
+    reason: "No user data exists to discard. The tooling reads the repository's own files and writes reports; where a report truncates a long evidence list it says so in the message, and that is the closest thing here to the rule's subject."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any capability accepts and stores data on a user's behalf."
+
+  data.no-audit-corruption:
+    status: not-applicable
+    reason: "No audit or historical store exists. Change history is git's, which this framework does not write."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any command writes an audit record."
+
+  data.no-prod-data-in-dev:
+    status: not-applicable
+    reason: "No production environment and no production data exist. Every fixture under test/fixtures/ is authored for its test."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any environment holds real data, or any fixture is derived from a real dataset."
+
+  security.no-disabled-access-controls:
+    status: not-applicable
+    reason: "No authentication or authorization exists to disable. The CLI reads a local directory and writes to stdout; there is no identity, no session, no permission model, and no client-supplied claim anywhere in scripts/."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any capability authenticates a caller or makes an authorization decision."
+
+  security.no-untrusted-exec:
+    status: not-applicable
+    reason: "Nothing is executed as code. scripts/ contains no eval, no Function constructor, no node:vm, and no child_process; every input is parsed as data by scripts/yaml.mjs or JSON.parse."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any code path evaluates, spawns, or dynamically imports a value derived from input."
+
+  errors.no-unbounded-retry:
+    status: not-applicable
+    reason: "No retry logic exists. Every script is a single pass over local files with no network calls and no loops that re-attempt a failed operation."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any capability retries, reconnects, or polls."
+
+  concurrency.no-unmanaged-shared-state:
+    status: not-applicable
+    reason: "No concurrent execution. Each script is a single-threaded pass, and the test runner isolates test files in separate processes, so the module-level state in scripts/standards.mjs is reachable from exactly one execution context. That state is real and is architecture.no-hidden-global-state's subject, not this rule's."
+    reviewedAt: "2026-08-09"
+    revisitWhen: "Any script uses workers, threads, or in-process parallelism, or CI runs steps that share a mutable resource."
+
 # ai.destructive-approval was declared not-applicable until 2026-08-09, with the trigger
 # "`standards init` lands — it writes files, and Standard 33 R2's overwrite permission is exactly
 # this rule." It landed, so the declaration was removed and the rule now applies at its catalog
