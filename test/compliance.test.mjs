@@ -17,9 +17,24 @@ const ALL = [...catalog.rules.keys()];
  *
  * Standard 45 R6 caps the verdict at NOT_EVALUATED when an applicable forbidden rule has been
  * neither evaluated, attested, nor declared not-applicable — so from 2.0.0 a fixture that declares
- * nothing is not a "clean project", it is a project over which nobody looked for 18 prohibitions.
+ * nothing is not a "clean project", it is a project over which nobody looked for 19 prohibitions.
  * These declarations are what make the fixture honest, and the tests that specifically exercise the
  * cap remove the one they are testing rather than the helper omitting them for everyone.
+ *
+ * DO NOT COPY THIS BLOCK INTO A REAL POLICY. It is truthful only because this fixture is a bare
+ * policy object with `rules: {}`, no source tree, and no findings — a project with no contents has
+ * no subject for any of these rules. One declaration is fixture-only in a stronger sense:
+ *
+ *   `meta.standards-not-weakened` — its subject is the project's OWN standards and tests. Every
+ *   real project under this framework has those by definition, so `not-applicable` against it is
+ *   false for any real adopter, and writing it would be exactly the self-exemption
+ *   Standard 34 R3 abolishes. This fixture gets away with it only by having no standards and no
+ *   tests of its own to weaken.
+ *
+ * The repository's own policy does not make this declaration — `meta.standards-not-weakened` sits
+ * at `level: forbidden` with no applicability entry, and is resolved by owner attestation instead.
+ * Neither does `templates/project-policy.yml`, which an adopter copies. This shape lives here, in a
+ * test fixture, and nowhere else.
  */
 const establishedProhibitions = () =>
   Object.fromEntries(
