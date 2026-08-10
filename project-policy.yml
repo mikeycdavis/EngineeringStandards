@@ -423,6 +423,23 @@ attestations:
           revision: "d6e7127"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "7321a69c5c104227c2d8ff2296b5b82d"
+      - id: "review-architecture-no-hidden-global-state-003"
+        supersedes: "review-architecture-no-hidden-global-state-002"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content at 460992a. scripts/standards.mjs changed and ADR 0007 was amended in the same cycle as the fix rather than after the approval; scripts/inventory.mjs and scripts/fidelity.mjs are byte-identical. The original basis holds and was re-examined rather than assumed: the scripts remain single-run programs whose module scope is their run scope, single-writer ownership is unchanged, reset is still process exit, and nothing imports them. blockEnd, regexLiteralEnd and carriesJustification are pure functions and every binding inside splitSource is function-local. The boundary question this cycle raised was settled structurally rather than by interpretation: two module-level /g regexes introduced with the site-matching detector were state-capable objects whose safety rested on the calling idiom, so they became String.raw sources at module level with the matchers constructed inside the function that uses them. A string cannot hold lastIndex, so no judgement about it is required, and ADR 0007 now records the invariant: module scope may hold immutable matcher descriptions, while mutable matcher instances stay invocation-local. The declaration scan was re-run across the governed set: two new module-level bindings since d6e7127, both immutable strings, and three removed with the count conjunction. LIMITATION, inherited and deliberately not fixed in this cycle: ITEM_RE in scripts/inventory.mjs is a module-level /gm regex predating this rule. The evidence does not establish a live hidden-state failure, because its use through matchAll does not persist mutation, and widening the remediation into inventory.mjs would have staled an attestation reviewed minutes earlier for work outside the defect being fixed. Recorded as a dormant follow-on with a specific trigger: revisit when inventory.mjs is next substantively modified, or if a use is introduced that consumes the module-level regex directly and can persist lastIndex. LIMITATION carried forward unchanged: the declaration scan is not authoritative, because a binding mutated through an alias escapes it as surfaceLoss does, so completeness remains a review obligation rather than a mechanical guarantee."
+        reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+          revision: "460992a"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "3de8bdc4f6cb956caf9a41d155770b98"
 
   architecture.no-duplicate-implementations:
     reviews:
