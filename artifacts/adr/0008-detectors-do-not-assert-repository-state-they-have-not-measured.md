@@ -26,6 +26,22 @@ tests, which exist to assert that a seeded secret is **absent** from anything se
 That is the same defect one level along: the rule is asked *are secrets committed?* and answers *do
 files on disk contain credential-shaped strings?*
 
+**And the same gap produces false passes, which are worse.** The same adopter had `artifacts/` in its
+`.gitignore` — an entry left over from the .NET SDK's `ArtifactsPath` output convention, which that
+project does not enable. Its decomposed plan, its original prompt and its project manifest all lived
+under that directory. `planning.breakdown-directory`, `planning.one-file-per-section` and
+`architecture.project-manifest` all **passed**, because all three walk the filesystem and all three
+files were on disk. None was in the repository. A fresh clone would have had none of them, and
+[Standard 39](../../standards/39-codebase-documentation.md) R1's requirement that documentation be
+*repository-backed* was reported as satisfied by content that was not in the repository at all.
+
+`documentation.architecture` has the same hole, and so does any structural rule that establishes a
+requirement by finding a path.
+
+A false failure is annoying and visible: someone investigates and finds the tool was wrong. A false
+pass is silent, and the adopter learns their artefacts are missing when somebody clones. Of the two
+directions this defect runs in, the passing one is the more expensive.
+
 Those are different questions with different sources of truth, and the gap between them is not a
 tuning problem. A false positive here is worse than a missed detection, because its remediation is
 expensive and irreversible in the wrong direction: rotating a key that was never exposed costs real
@@ -89,6 +105,21 @@ module-scoped-state reasoning has to be re-read against it before the seam lands
 **Scope, so this does not become a general licence.** Repository metadata means the small set of
 questions detectors ask about tracked-ness. It is not a route to commit history, blame, remotes, or
 branch topology; a rule wanting any of those is a new decision, not an extension of this one.
+
+**The seam serves more rules than the two that motivated it.** Evidence now runs in both directions:
+
+| Direction | Rule | What happened |
+| --- | --- | --- |
+| False failure | `scm.no-committed-env-files` | A gitignored `.env` reported as a committed environment file, with rotation advised |
+| False failure | `security.no-secrets-in-artifacts` | Redaction-test fixtures reported as committed credentials |
+| False pass | `planning.breakdown-directory` | A gitignored plan directory reported as a decomposed plan on disk |
+| False pass | `planning.one-file-per-section` | The same files, same reason |
+| False pass | `architecture.project-manifest` | A gitignored `PROJECT.md` reported as a project manifest |
+| False pass (latent) | `documentation.architecture` | Would report a gitignored `docs/` as repository-backed documentation |
+
+Six rules, one root cause. When the seam is designed, `isTracked(path)` should be available to every
+structural detector rather than bolted onto the two that surfaced it first — and the passing-direction
+cases are the argument for prioritising it, because nothing surfaces them.
 
 **[Standard 31](../../standards/31-whatsnext-compatibility.md) consumers are unaffected in shape and
 affected in substance.** The envelope does not change. But a consumer that turns findings into work
