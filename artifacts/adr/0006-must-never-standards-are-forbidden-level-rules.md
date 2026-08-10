@@ -113,13 +113,33 @@ would be manufacturing the evidence its own work needs to pass — the failure
   since 1.x and 2.0 now disagree about which rules exist. Recorded, not closed.
 - **Git-history-based detection.** Test removal, coverage regression, and history rewriting are all
   detectable in principle and all require comparing against a previous state of the repository.
-- **A lifecycle for a rejected attestation.** `status: rejected` records that a human looked and
-  found a rule unmet, and this release is the first to use it — `ai.no-safety-bypass` in this
-  repository's own policy. It has no states after that one. Nothing distinguishes an open violation
-  from one whose conduct is historical and whose corrective action is in force, and nothing expires
-  a finding that has been discharged. Naming that gap is deliberate; the semantics were **not**
-  designed in the change that recorded the finding, because a mechanism for retiring a violation,
-  invented alongside the violation, can only soften it.
+- **A lifecycle for a rejected attestation, and — sharper — its exemption from freshness.**
+  `status: rejected` records that a human looked and found a rule unmet, and this release is the
+  first to use it: three times, in this repository's own policy. It has no states after that one.
+  Nothing distinguishes an open violation from one whose conduct is historical and whose corrective
+  action is in force, and nothing expires a finding that has been discharged.
+
+  The precise defect surfaced when `errors.no-false-success` was rejected and the code it was
+  rejected over was then rewritten. `judgeAttestation` returns the rejection at
+  `scripts/compliance.mjs:212`, **before** the expiry and digest checks below it, so the two
+  behaviours are asymmetric:
+
+  ```text
+  approved attestation → reviewed content changes → stale, and the rule returns to unestablished
+  rejected attestation → reviewed content changes → still rejected, forever
+  ```
+
+  A rejected attestation therefore bypasses freshness entirely. Its `reviewedAgainst.digest` is
+  recorded and never consulted. There are defensible reasons to preserve a historical failure — a
+  violation should not evaporate because a file moved — but the model currently conflates two facts
+  that should be independently representable: **that the reviewed conduct was found unmet**, and
+  **whether the implementation has since changed enough to need looking at again**. Today the first
+  permanently suppresses the second.
+
+  Naming the gap is deliberate and nothing here is redesigned. A mechanism for retiring a violation,
+  invented alongside the violation, can only soften it — and the live instance is better evidence
+  than any description of it, which is why `errors.no-false-success` is left exactly as it stands,
+  rejected against code that no longer exists in that form.
 - **`reviewedAgainst` can only digest files.** `scm.no-shared-history-rewrite` was attested on Git
   history — 28 fast-forward updates to `origin/develop`, no forced update, no `reset` or `rebase` in
   the local reflog. None of that is file-shaped, and the schema requires at least one path, so the

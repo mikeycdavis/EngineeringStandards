@@ -10,40 +10,63 @@
 says what discharges the prohibition: a decision record naming **what the state is**, **who owns
 it**, and **how it is reset**. Global is not the violation; unnamed and unownable is.
 
-Three scripts hold module-level bindings that are mutated during a run. **The rule is categorical, so
-that this record cannot go stale by omission: every module-level accumulator, cache, and counter in
-`scripts/standards.mjs`, `scripts/inventory.mjs`, and `scripts/fidelity.mjs` is covered by this
-decision.** The complete enumeration, eighteen bindings as of 2.0.0:
+Three scripts hold module-level bindings that carry state through a run.
 
-| Script | Bindings | What they hold |
-| --- | --- | --- |
-| `standards.mjs` | `findings` (`:550`) | Every finding produced by the run, appended by `addFinding` |
-| | `sources` (`:373`) | Per-file `{ code, structure, comments }` views, written once in the read loop |
-| | `contents` (`:1653`) | Per-file raw text, written in the same loop and read by the document detectors |
-| | `surfaceLoss` | Directories the walk could not list, and whether the file cap was reached |
-| | `unreadableFiles`, `truncatedFiles` | Files the read loop could not read, and those it read only in part |
-| | `evidenceSurface` | The derived summary of the four above, carried into the report |
-| `inventory.mjs` | `missing`, `unknown`, `duplicates`, `titleMismatches`, `brokenSections`, `duplicateSections` | Per-source disagreement accumulators |
-| | `detectedCount`, `countMismatch` | Running totals across sources |
-| `fidelity.mjs` | `failures` | Unverified verbatim claims |
-| | `claims` | Running count of claims checked |
-| | `wholeSource`, `sectionCache` | Read caches, so a source file is read and normalized once |
-| | `extractionOf`, `entryFor` | Inventory lookups, built once at start and never mutated after |
+**What this decision governs — the rule, not the list.** It covers every module-level *mutable
+accumulator, cache, counter, and derived run-state binding* in `scripts/standards.mjs`,
+`scripts/inventory.mjs`, and `scripts/fidelity.mjs` whose value is established or changed during
+execution. Frozen lookup tables and immutable configuration are excluded. **A derived binding
+assigned once from already-governed mutable state is still governed**, because it remains
+module-scoped for the lifetime of the process.
+
+The rule is what applies to a binding added tomorrow. **The table below is an audit aid and a current
+inventory — it is not the source of applicability**, and a binding missing from it is governed
+anyway. That distinction is the whole design: a record that depended on having remembered every name
+would be wrong the first time someone added one.
+
+| Script | Binding | Kind | What it holds |
+| --- | --- | --- | --- |
+| `standards.mjs` | `findings` (`:580`) | accumulator | Every finding produced by the run, appended by `addFinding` |
+| | `sources` (`:376`) | accumulator | Per-file `{ code, structure, comments }` views, written once in the read loop |
+| | `contents` (`:1695`) | accumulator | Per-file raw text, written in the same loop and read by the document detectors |
+| | `surfaceLoss` (`:1693`) | accumulator | Directories the walk could not list, and whether the file cap was reached |
+| | `unreadableFiles` (`:1696`), `truncatedFiles` (`:1697`) | accumulators | Files the read loop could not read, and those it read only in part |
+| | `evidenceSurface` (`:1761`) | derived run state | The summary of the four above, carried into the report |
+| | `report` (`:1896`) | derived run state | The verdict envelope, built once from `findings`, the catalog, and the policy |
+| `inventory.mjs` | `missing`, `unknown`, `duplicates`, `titleMismatches`, `brokenSections`, `duplicateSections` | accumulators | Per-source disagreement lists |
+| | `detectedCount` (`:89`), `countMismatch` (`:90`) | counters | Running totals across sources |
+| | `out` (`:201`) | accumulator | The output lines, appended through the reporting section and flushed at exit |
+| `fidelity.mjs` | `failures` | accumulator | Unverified verbatim claims |
+| | `claims` | counter | Running count of claims checked |
+| | `wholeSource`, `sectionCache` | caches | So a source file is read and normalized once |
+| | `extractionOf`, `entryFor` | derived run state | Inventory lookups, built once at start and never mutated after |
+| | `out` (`:180`) | accumulator | The output lines, as in `inventory.mjs` |
 
 Frozen lookup tables — `SKIP_DIRS`, `TEXT_EXT`, `CODE_EXT`, `COMMENT_SYNTAX`, `COMMANDS`,
-`CONFIG_EXT`, `SUPPORTED`, `ANNOTATIONS` — are module-level constants that are never written after
+`CONFIG_EXT`, `SUPPORTED`, `ANNOTATIONS` — are module-level constants never written after
 initialization. They are configuration, not state, and this decision does not concern them.
 
-**The categorical rule has already earned its keep.** The evidence-surface work added four bindings
-to `standards.mjs`, and they were added to the table in the same change rather than discovered
-missing by a later review. A record that enumerated only the bindings that existed when it was
-written would have been wrong within a week.
+**How the enumeration is checked, and what that is worth.** The current list was assembled with the
+help of a declaration-pattern scan over the three files. **That scan is not authoritative**: a
+binding mutated through an alias escapes it, as `surfaceLoss` does — it is written through the
+`loss` parameter of `collectFiles`, so a scan for `surfaceLoss.push` finds nothing. Completeness
+therefore remains a review obligation, not a mechanical guarantee, unless and until a sound detector
+exists. Recording that is the point: replacing one false proof of completeness with another would be
+no improvement.
 
-**Completeness is the point.** An earlier draft of this record listed `findings` and `sources` and
-glossed the other two scripts as holding "counters of the same kind". That was an incomplete
-enumeration presented as a complete one, which is worse than a categorical rule: a reader takes the
-list for the whole set. It was caught by the owner review this record exists to enable — `contents`
-sits in the same file, at the same level, written in the same loop as `sources`, and was missing.
+**This record has been incomplete at every review until this one, which is why the rule is
+categorical.** The first draft listed `findings` and `sources` and glossed the other two scripts as
+holding "counters of the same kind" — an incomplete enumeration presented as a complete one, which is
+worse than no list, because a reader takes the list for the whole set. That review added `contents`,
+which sits in the same file, at the same level, written in the same loop as `sources`.
+
+The list was then approved as *categorical and complete*, and it was neither: both `out`
+accumulators were module-level the whole time and absent from it, and `report` was too. The scan
+above found them; reading did not, twice. That is the same defect
+`ai.no-fabricated-capabilities` was rejected for at 2.0.0 — a completeness claim asserted without
+the check that would establish it — caught this time before the attestation rather than after. The
+lesson taken is not "enumerate more carefully" but the structural one above: **the rule governs,
+the table informs.**
 
 This was raised as a finding during the attestation review of 2.0.0, when
 `architecture.no-hidden-global-state` could not be attested clean: the rule has a real subject here,
@@ -55,25 +78,44 @@ would have been the self-exemption [Standard 34](../../standards/34-dogfooding.m
 **These scripts are single-run programs, and the module scope *is* the run scope. That is
 deliberate, and it is the boundary.**
 
-Each script does its work at module top level — `scripts/standards.mjs:1692` onward — so loading the
+Each script does its work at module top level — `scripts/standards.mjs:1693` onward — so loading the
 module *is* performing the run. There is no `main()` to call twice, and no second run can begin
 inside a process that has already done one.
 
-**What the state is.** The table above enumerates it. Every entry is one of three kinds: an
-**accumulator** the run appends its output to (`findings`, `failures`, and inventory's six
-disagreement lists), a **read cache** so a file is read and parsed once (`sources`, `contents`,
-`wholeSource`, `sectionCache`), or a **running count** (`claims`, `detectedCount`, `countMismatch`).
+**What the state is.** Four kinds, and the governing rule names all four rather than the instances:
+
+- **Accumulators** the run appends to — `findings`, `failures`, inventory's six disagreement lists,
+  the evidence-surface lists, and both `out` output buffers.
+- **Read caches** so a file is read and parsed once — `sources`, `contents`, `wholeSource`,
+  `sectionCache`.
+- **Counters** — `claims`, `detectedCount`, `countMismatch`.
+- **Derived run state**, assigned once from the above and then read — `evidenceSurface`, `report`,
+  `extractionOf`, `entryFor`. These are listed rather than excused. A binding that is written once
+  instead of repeatedly is still module-scoped for the process lifetime, and carving it out would
+  create precisely the fuzzy exception a later omission could hide behind.
+
 `sources` earns its place specifically: it is what enforces the use/mention split, since every
 content scan goes through `sourceOf`, `structureOf`, or `commentsOf` and those read from it.
 Threading these through fifteen detectors as parameters would add a parameter to every signature and
 change nothing about the lifetime.
 
 **Who owns them.** The top-level run block at the bottom of each script — one owner per script, and
-no binding above is written from more than one place. Within
-`scripts/standards.mjs`, `addFinding` (`:558`) is the **only** writer to `findings`, and the read
-loop (`:1692-1700`) is the only writer to `sources`. Detectors call `addFinding`; they never touch
-the array. That single-writer rule is what keeps the accumulator auditable, and it is the property to
-preserve if this file is ever refactored.
+no binding above is written from more than one place:
+
+- `findings` — `addFinding` (`:588`) is the **only** writer. Detectors call it; they never touch the
+  array.
+- `sources` and `contents` — the read loop (`:1698-1706`), which is their only writer.
+- `surfaceLoss` — written only by `collectFiles`, through its `loss` parameter. This is the one
+  binding whose writer is reached under a different name, which is why it is called out here and in
+  the scan limitation above.
+- `unreadableFiles` and `truncatedFiles` — the read loop, in the same pass.
+- `evidenceSurface` and `report` — assigned once each, at their declarations, and never written
+  again.
+- `out` in both `inventory.mjs` and `fidelity.mjs` — the reporting section at the foot of each
+  script, which builds the lines and flushes them immediately before exit.
+
+That single-writer rule is what keeps each binding auditable, and it is the property to preserve if
+any of these files is ever refactored.
 
 **How it is reset.** By process exit, and only by process exit. This is the part that must be stated
 rather than assumed:
@@ -106,10 +148,10 @@ The refactor at that point is known: move the run block into an exported `run(ro
 constructs every binding in the table per call and passes them through. It is mechanical and it is
 not worth doing before a second caller exists.
 
-**One coupling this makes visible.** `detectUnverifiedFunctionality` (`:1026`) reads `findings`
+**One coupling this makes visible.** `detectUnverifiedFunctionality` (`:1044`) reads `findings`
 directly, to build on the capability findings the descriptive detectors produced earlier in the same
 run. The detector pipeline is therefore **order-dependent**, and that ordering is expressed only by
-the sequence of calls in the run block plus the comment above it (`:1702`). Any refactor to
+the sequence of calls in the run block plus the comment above it (`:1769`). Any refactor to
 per-call state must preserve both the order and that comment — a shared accumulator read mid-pipeline
 is the part that would break silently.
 

@@ -130,12 +130,35 @@ the three rules was amended to accommodate its finding.
   `scripts/standards.mjs` held two module-level bindings and that the other two scripts held three.
   Both counts were false, the document existed to be evidence for a Standard 51 R1 discharge, and it
   reached the shared branch before the same review corrected it.
-- **`errors.no-false-success`** — `readText` turns an unreadable file into the empty string and
-  `collectFiles` turns an unreadable directory into an empty traversal, so a detector cannot tell
-  *nothing was found* from *nothing could be searched*, and the run still exits 0. Reads are also
+- **`errors.no-false-success`** — `readText` turned an unreadable file into the empty string and
+  `collectFiles` turned an unreadable directory into an empty traversal, so a detector could not tell
+  *nothing was found* from *nothing could be searched*, and the run still exited 0. Reads were also
   truncated silently at 400 KB. This is [Standard 44](standards/44-existing-project-reconstruction.md)
   R12 — a negative result is evidence about the search mechanism first — failing inside the tool
-  that supplies the evidence.
+  that supplies the evidence. **Since fixed** (below); the rejection stands as the record of what was
+  found, and deliberately has not been rewritten into an approval.
+
+### A clean audit result now states what it covered
+
+`readText` returns `{ ok, text, truncated, bytes }` and `collectFiles` records what it could not
+walk. Degraded reads still yield usable text — `""` for a failed read, the readable prefix for a
+truncated one — so findings from a prefix are real findings and are kept. What changed is that the
+caller can no longer mistake a partial search for a complete one. A fourth path of the same class
+was found while implementing and is surfaced with the other three: the `MAX_FILES` traversal cap
+stopped the walk silently.
+
+The human report says it on the line that would otherwise imply completeness, beside the file count,
+and `audit --json` carries an additive `evidenceSurface` object. Evidence loss is reported as audit
+state, not as a rule failure: the findings carry `rule: null`, the existing idiom for observations
+about what a repository *has* rather than whether it complies. Binding them to rules would make one
+unreadable file fail every rule whose detector would have read it. Truncation is `info` rather than
+`warning` — the cap is a deliberate bound, not a fault, and what it must never be is invisible.
+
+Five tests, using real permission denial rather than a mocked failure path, each verifying the
+restriction actually bit before asserting — a test that skipped when it could not restrict a path
+would be the false green the change is about. All three original behaviours were mutated back and
+each is caught. **Known gap, stated rather than implied:** the `MAX_FILES` branch is untested,
+because exercising it means creating twenty thousand files.
 
 **One rule took two reviews, and the defect in front of it was fixed between them.**
 `architecture.no-boundary-bypass` was reviewed and the first review deliberately reached no verdict.
@@ -172,12 +195,15 @@ counts.
 **Three limitations of the attestation model surfaced by using it in anger**, all recorded in
 [ADR 0006](artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md) and none filled
 here — a mechanism for retiring a violation, invented alongside the violation, could only soften it.
-A rejected attestation has no lifecycle. `reviewedAgainst` can only digest files, so a claim whose
-evidence is Git history cannot have its freshness established at all. And there is no state for
-*reviewed, inconclusive* — for one review cycle, `validate` filed `architecture.no-boundary-bypass`
-under "nobody looked for these" while somebody had. That one resolved itself when the underlying
-defect was fixed and the rule was attested, but only because the inconclusive state was temporary.
-A review that stays inconclusive still has nowhere to live.
+A rejected attestation has no lifecycle — and, sharper, it is exempt from freshness entirely:
+`judgeAttestation` returns the rejection before the staleness check, so an approved attestation goes
+stale when its reviewed content changes while a rejected one stays rejected forever. Rewriting the
+code `errors.no-false-success` was rejected over did not disturb its rejection at all. `reviewedAgainst`
+can only digest files, so a claim whose evidence is Git history cannot have its freshness established
+at all. And there is no state for *reviewed, inconclusive* — for one review cycle, `validate` filed
+`architecture.no-boundary-bypass` under "nobody looked for these" while somebody had. That one
+resolved when the underlying defect was fixed and the rule was attested, but only because the
+inconclusive state was temporary. A review that stays inconclusive still has nowhere to live.
 
 ### Also in this release
 
