@@ -244,6 +244,7 @@ attestations:
       # Content digest of the paths above, printed by `standards validate` when absent. When those
       # files change materially this stops matching, the attestation goes stale, and the rule
       # returns to not-evaluated until a human looks again.
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "8c8103086465653b64676dca6077a754"
 
   # Checkpoint items 1 and 2 of the must-never dogfood sweep, reviewed by the owner against the
@@ -263,6 +264,7 @@ attestations:
         - test/audit.test.mjs
         - test/instructions.test.mjs
       revision: "e3c4866..32c6735"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "cace15a22f970a74a5c02fffbb5dc6f6"
 
   testing.no-weakening-to-pass:
@@ -278,6 +280,7 @@ attestations:
         - test/instructions.test.mjs
         - test/init.test.mjs
       revision: "e3c4866..32c6735"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "1e902a77f58292e1124a9dc3d26e0362"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
@@ -295,6 +298,7 @@ attestations:
         - scripts/inventory.mjs
         - scripts/fidelity.mjs
       revision: "e3c4866..32c6735"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "3d34b4b9ba35ef356f167d95b7e7901e"
 
   architecture.no-duplicate-implementations:
@@ -310,6 +314,7 @@ attestations:
         - scripts/fidelity.mjs
         - test/audit.test.mjs
       revision: "e3c4866..32c6735"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "c0ad41f8f154c16d45caee90b61b920d"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
@@ -337,6 +342,7 @@ attestations:
         - standards/53-ai-engineering-honesty.md
         - rules/ai.json
       revision: "e3c4866..485a7be"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "987478ac625ac5dd971817d0db13d728"
 
   # Checkpoint item 3.
@@ -351,6 +357,7 @@ attestations:
         - .github/workflows/ci.yml
         - standards/47-test-integrity.md
       revision: "e3c4866..43fdad2"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "67e715137bb27786760d2ad52eb65d69"
 
   # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
@@ -369,6 +376,7 @@ attestations:
       paths:
         - standards/46-source-control-safety.md
       revision: "e3c4866..32c6735"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "29d3354ddae4596a0ebe6c5cdb4a02c5"
 
   # Checkpoint item 4, the second REJECTED entry. The finding is read from the code rather than
@@ -385,6 +393,7 @@ attestations:
         - scripts/standards.mjs
         - standards/48-error-handling-and-observability.md
       revision: "e3c4866..43fdad2"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "f784c84393fbae9ddd0d13ae4dcd23f3"
 
   # Checkpoint item 8, resolved in a second review after the defect in front of it was fixed. The
@@ -405,6 +414,7 @@ attestations:
         - test/compliance.test.mjs
         - standards/51-architecture-integrity.md
       revision: "e3c4866..32c6735"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "ede95d3d8407d5488c05d75a1c7f7469"
 
   # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
@@ -420,4 +430,5 @@ attestations:
         - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
         - standards/53-ai-engineering-honesty.md
       revision: "e3c4866..43fdad2"
+      digestAlgorithm: "working-tree-bytes-sha256-v1"
       digest: "2fcfe3dbdf285c1b03b56c732bd7a0e6"

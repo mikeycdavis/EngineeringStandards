@@ -474,30 +474,17 @@ test("an expired attestation returns the rule to not-evaluated, not to failure",
   assert.equal(verdict.status, STATUS.COMPLIANT, "a lapsed review is unreviewed, not known-bad");
 });
 
-test("a stale attestation returns the rule to not-evaluated", () => {
-  // What was reviewed is not what is there now, so the review establishes nothing.
-  const verdict = evaluate({
-    catalog,
-    policy: policy({
-      attestations: {
-        "ai.propose-execute": attest({
-          reviewedAgainst: { paths: ["scripts/init.mjs"], digest: "0000000000000000" },
-        }),
-      },
-    }),
-    findings: [],
-    evaluated: ALL,
-    today: TODAY,
-    digests: new Map([["ai.propose-execute", "ffffffffffffffff"]]),
-  });
-  assert.equal(
-    verdict.results.find((r) => r.ruleId === "ai.propose-execute").disposition,
-    "not-evaluated",
-  );
-});
+// --- Freshness is a separate axis from what the human decided -----------------------------------
+//
+// `approved` records a decision; freshness records whether that decision can still be established
+// against the present repository. Only the conjunction establishes a rule. The states that fail to
+// establish are NOT interchangeable: "the reviewed file changed", "the digest predates a mechanism
+// that cannot be reproduced", and "the comparison could not be performed at all" are three
+// different statements about three different situations, and rendering any of them as "nobody
+// looked" is the conflation this axis exists to remove.
 
-test("a matching digest keeps the attestation valid — the known-negative for staleness", () => {
-  const verdict = evaluate({
+const judge = (state) =>
+  evaluate({
     catalog,
     policy: policy({
       attestations: {
@@ -509,9 +496,50 @@ test("a matching digest keeps the attestation valid — the known-negative for s
     findings: [],
     evaluated: ALL,
     today: TODAY,
-    digests: new Map([["ai.propose-execute", "abcdef1234567890"]]),
-  });
-  assert.equal(verdict.results.find((r) => r.ruleId === "ai.propose-execute").disposition, "attested");
+    freshness: state ? new Map([["ai.propose-execute", state]]) : undefined,
+  }).results.find((r) => r.ruleId === "ai.propose-execute");
+
+test("only a fresh attestation establishes the rule — the known-negative for every other state", () => {
+  const established = judge({ state: "fresh", detail: null });
+  assert.equal(established.disposition, "attested");
+  assert.equal(established.status, "passed");
+});
+
+test("each non-establishing freshness state is reported as itself, not as 'nobody looked'", () => {
+  for (const [state, detail] of [
+    ["stale", "committed content changed since review"],
+    ["legacy-unverifiable", "digest recorded under working-tree-bytes-sha256-v1"],
+    ["evidence-unavailable", "not a git repository"],
+  ]) {
+    const r = judge({ state, detail });
+
+    // The verdict consequence is unchanged: unestablished, so the Standard 45 R6 cap still reaches
+    // it. Pinning both fields matters — a result that stopped being skipped/not-evaluated would
+    // silently escape the cap while looking correct in the console.
+    assert.equal(r.status, "skipped", `${state} must not establish the rule`);
+    assert.equal(r.disposition, "not-evaluated", `${state} must remain capped by Standard 45 R6`);
+
+    // The reason survives, on its own axis, and the message says a human reviewed it.
+    assert.equal(r.freshness, state);
+    assert.match(r.message, /was reviewed by/, `${state} must not read as an unexamined rule`);
+    assert.ok(r.message.includes(detail), `${state} must carry why it could not be established`);
+  }
+});
+
+test("legacy-unverifiable tells the reader not to recompute the old digest", () => {
+  // The migration rule: classifying old provenance is permitted, upgrading its evidentiary strength
+  // without a new review is not. The remediation has to say so, or someone will "fix" the state by
+  // pasting in a freshly computed value and laundering unverifiable provenance into a verified one.
+  const r = judge({ state: "legacy-unverifiable", detail: "not reproducible" });
+  assert.match(r.remediation, /must not be recomputed/i);
+});
+
+test("an unrecorded digest still establishes — the documented first-pass workflow", () => {
+  // The schema invites omitting `digest` so the validator can report the current one. That is the
+  // one non-establishing-looking state that still establishes, and it is a disclosed hole rather
+  // than a designed one: an attestation that never records a digest is never subject to staleness.
+  assert.equal(judge({ state: "unrecorded", detail: null }).disposition, "attested");
+  assert.equal(judge(undefined).disposition, "attested", "an absent freshness map behaves as unrecorded");
 });
 
 test("this repository's own attestation is live, not stale", async () => {

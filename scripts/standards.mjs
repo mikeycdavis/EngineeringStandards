@@ -23,6 +23,13 @@ import { evaluate, envelope } from "./compliance.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { validate } from "./jsonschema.mjs";
+import {
+  classifyFreshness,
+  repositoryAvailable,
+  repositoryDigest,
+  DIGEST_ALGORITHM,
+  FRESHNESS,
+} from "./repository.mjs";
 
 /**
  * This file lists the very package names it searches for, so scanning it would report every SDK it
@@ -132,12 +139,37 @@ function renderVerdict(report, policy) {
   // reader there is a problem, and this tells them which four things to do about it.
   const unestablished = report.unestablishedProhibitions ?? [];
   if (unestablished.length) {
-    out.push("  Unestablished prohibitions — nobody looked for these:");
-    for (const ruleId of unestablished) out.push(`    ${ruleId}`);
-    out.push("");
+    // Unestablished is one verdict consequence with two very different causes, and collapsing them
+    // would tell a reader nobody looked at a rule a human demonstrably reviewed. A rule whose
+    // attestation could not be established is listed with the reason it could not be, because
+    // "no search happened" and "the search happened and its provenance cannot be verified" call for
+    // different work.
+    const freshnessOf = new Map(
+      report.results.filter((r) => r.freshness).map((r) => [r.ruleId, r]),
+    );
+    const unexamined = unestablished.filter((id) => !freshnessOf.has(id));
+    const unverified = unestablished.filter((id) => freshnessOf.has(id));
+
+    if (unexamined.length) {
+      out.push("  Unestablished prohibitions — nobody looked for these:");
+      for (const ruleId of unexamined) out.push(`    ${ruleId}`);
+      out.push("");
+    }
+    if (unverified.length) {
+      out.push("  Unestablished prohibitions — reviewed, but the review does not establish the");
+      out.push("  current state:");
+      for (const ruleId of unverified) {
+        out.push(`    ${ruleId} [${freshnessOf.get(ruleId).freshness}]`);
+      }
+      out.push("");
+      out.push("  A human recorded a review of each of these. What cannot be established is that the");
+      out.push("  review still describes what is here now, and an approval that cannot be established");
+      out.push("  does not establish the rule. This is not a finding against the project.");
+      out.push("");
+    }
     out.push("  A forbidden rule is satisfied by the absence of a violation, so a rule nothing has");
-    out.push("  examined has established nothing, and the verdict is capped at NOT_EVALUATED rather");
-    out.push("  than reporting COMPLIANT over an unexamined prohibition (Standard 45 R6).");
+    out.push("  established has established nothing, and the verdict is capped at NOT_EVALUATED");
+    out.push("  rather than reporting COMPLIANT over an unexamined prohibition (Standard 45 R6).");
     out.push("  Resolve each: evaluate it, attest to it after a human review, declare it");
     out.push("  not-applicable with a revisitWhen, or except it where the rule is exemptible.");
     out.push("");
@@ -1958,34 +1990,45 @@ if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
  * commit would make the mechanism unusable, and it would be abandoned. Digesting what was actually
  * reviewed invalidates on material change, which is the real requirement.
  */
-async function attestationDigests(document, repoRoot) {
-  const { createHash } = await import("node:crypto");
+function attestationFreshness(document, repoRoot) {
+  const repo = repositoryAvailable(repoRoot);
   const out = new Map();
   for (const [ruleId, attestation] of Object.entries(document?.attestations ?? {})) {
-    const paths = attestation?.reviewedAgainst?.paths;
-    if (!Array.isArray(paths) || paths.length === 0) continue;
-    const hash = createHash("sha256");
-    for (const rel of [...paths].sort()) {
-      hash.update(rel);
-      try {
-        hash.update(await readFile(path.join(repoRoot, rel), "utf8"));
-      } catch {
-        hash.update("<missing>"); // A reviewed path that has since gone is itself a material change.
-      }
-    }
-    out.set(ruleId, hash.digest("hex").slice(0, 32));
+    const against = attestation?.reviewedAgainst;
+    if (!against?.paths?.length) continue;
+    out.set(ruleId, classifyFreshness(repoRoot, against, repo));
   }
-  return out;
+  return { states: out, repo };
 }
 
-const digests = await attestationDigests(policy.document, root);
+const { states: freshness, repo } = attestationFreshness(policy.document, root);
+
+// Repository content is the source of truth for attestation freshness, and its absence is a fact
+// about the search mechanism rather than about the project (Standard 44 R12). It is reported as an
+// infrastructure finding carrying no rule, exactly as evidence-surface loss is, so that it can never
+// become a second compliance owner — the affected attestations independently fail to establish their
+// rules, and that is where the compliance consequence lives. It does not exit 2: one unavailable
+// provenance source must not discard every other result the run established.
+if (!repo.available && freshness.size > 0) {
+  addFinding({
+    id: "repository-evidence-unavailable",
+    category: "evidence-surface",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: [...freshness.keys()],
+    message:
+      `Attestation freshness could not be established for ${freshness.size} rule(s): ${repo.reason}. ` +
+      `Repository content identifies what was reviewed; without it, no approval establishes a rule.`,
+    standardRef: R.search,
+  });
+}
 const verdict = evaluate({
   catalog,
   policy: policy.document,
   findings,
   evaluated: EVALUATED_RULES,
   today: new Date().toISOString().slice(0, 10),
-  digests,
+  freshness,
 });
 
 // Framework maturity, read from this framework's own inventory rather than the target repository.
@@ -2016,14 +2059,25 @@ if (JSON_OUT) {
   process.stdout.write(JSON.stringify({ ...report, findings }, null, 2) + "\n");
 } else {
   process.stdout.write(renderVerdict(report, policy) + "\n");
-  // Print the current digest for any attestation that lacks one, so it can be recorded
-  // rather than computed by hand (ADR 0005).
-  for (const [ruleId, digest] of digests) {
-    const recorded = policy.document?.attestations?.[ruleId]?.reviewedAgainst?.digest;
-    if (!recorded) {
-      process.stdout.write(`\n  attestation ${ruleId}: current digest is ${digest}\n`);
-      process.stdout.write(`  Record it as reviewedAgainst.digest to make staleness detectable.\n`);
+  // Report the current digest for any attestation that lacks one, so it can be recorded rather
+  // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
+  // replacement for a record that already carries one would invite exactly the substitution this
+  // mechanism forbids — a legacy value swapped for a reproducible one without a new review.
+  for (const [ruleId, state] of freshness) {
+    if (state.state !== FRESHNESS.unrecorded) continue;
+    const against = policy.document?.attestations?.[ruleId]?.reviewedAgainst;
+    const current = repositoryDigest(root, against?.paths ?? []);
+    if (!current.ok) {
+      process.stdout.write(
+        `\n  attestation ${ruleId}: no digest can be offered — ${current.missing.join(", ")} ` +
+          `has no committed identity.\n`,
+      );
+      continue;
     }
+    process.stdout.write(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
+    process.stdout.write(
+      `  Record it as reviewedAgainst.digest with digestAlgorithm: ${DIGEST_ALGORITHM}.\n`,
+    );
   }
 }
 

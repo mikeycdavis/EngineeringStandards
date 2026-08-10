@@ -127,7 +127,7 @@
     },
 
     "reviewedAgainst": {
-      "description": "What the reviewer actually looked at. The validator digests these paths and compares; when the digest differs the attestation is stale and the rule returns to not-evaluated, because the thing reviewed is not the thing that is there now.",
+      "description": "What the reviewer actually looked at. The validator identifies these paths in the repository and compares; when the identity differs the attestation is stale and the rule returns to not-evaluated, because the thing reviewed is not the thing that is there now. Freshness is a separate axis from what the human decided: an approval that cannot be established as current does not establish the rule, and the reason it could not be established is reported rather than collapsed into 'nobody looked'.",
       "type": "object",
       "required": ["paths"],
       "additionalProperties": false,
@@ -141,6 +141,16 @@
           "description": "Digest of the reviewed paths. Omit it on a first pass — the validator reports the current digest so it can be recorded.",
           "type": "string",
           "pattern": "^[0-9a-f]{16,64}$"
+        },
+        "digestAlgorithm": {
+          "description": "How the digest was produced, named by its semantics rather than a version number. 'git-blob-set-sha256-v1' digests each reviewed path together with its committed blob identity, which is invariant across checkouts and platforms. Absence of this field means 'working-tree-bytes-sha256-v1', the superseded mechanism that hashed whatever bytes one checkout happened to materialise; such a record is classified legacy-unverifiable rather than compared, because it cannot be reproduced. A digest is never rewritten to change its algorithm — recomputing an old record under the new mechanism would upgrade the evidentiary strength of provenance without a new review.",
+          "type": "string",
+          "enum": ["git-blob-set-sha256-v1", "working-tree-bytes-sha256-v1"]
+        },
+        "source": {
+          "description": "Where content identity comes from. 'git' requires an available repository and a committed identity for every reviewed path; when either is missing the result is evidence unavailability, never staleness and never a quietly weaker substitute. Absent means git, the only source defined today.",
+          "type": "string",
+          "enum": ["git"]
         },
         "revision": {
           "description": "Informational revision identifier. Recorded, never computed — provider-neutral by design.",

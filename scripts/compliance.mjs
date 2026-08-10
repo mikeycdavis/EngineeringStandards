@@ -35,13 +35,13 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, digests }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
   const attestations = policy?.attestations ?? {};
   const examined = new Set(evaluated ?? []);
-  const currentDigests = digests ?? new Map();
+  const attestationFreshness = freshness ?? new Map();
 
   // The single owner of rule-metadata resolution. A result constructor never invents a field the
   // catalog owns: `level` belongs to the catalog and the policy may restate it for this project,
@@ -108,7 +108,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
     const attestation = attestations[rule.id];
     if (attestation) {
       const hits = byRule.get(rule.id) ?? [];
-      const verdict = judgeAttestation(rule, level, attestation, hits, today, currentDigests);
+      const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);
       if (verdict) {
         results.push(verdict);
         continue;
@@ -197,7 +197,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
  * outranks assertion (Standard 38 R4), and that is also why an attestation cannot bypass a
  * nonExemptible rule — not as a separate prohibition, but because the automated failure survives.
  */
-function judgeAttestation(rule, level, attestation, hits, today, digests) {
+function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   const fail = (disposition, message, remediation) => ({
     ruleId: rule.id,
     status: RESULT.failed,
@@ -241,11 +241,46 @@ function judgeAttestation(rule, level, attestation, hits, today, digests) {
   }
 
   const against = attestation.reviewedAgainst;
-  if (against?.digest) {
-    const current = digests.get(rule.id);
-    if (current && current !== against.digest) {
-      return null; // Stale: what was reviewed is not what is there now.
-    }
+
+  /**
+   * Freshness is a separate axis from what the human decided.
+   *
+   * `approved` records a decision; freshness records whether that decision can still be established
+   * against the present repository. Only their conjunction establishes a rule — and when it fails,
+   * the *reason* is carried rather than collapsed. "The reviewed file changed", "the digest predates
+   * a mechanism that cannot be reproduced", and "the comparison could not be performed at all" are
+   * three different statements, and rendering the second or third as the first would be the same
+   * class of error the mechanism exists to prevent. Returning null here, as this once did, said
+   * "nobody looked" about a rule a human demonstrably reviewed.
+   *
+   * The result stays `skipped` / `not-evaluated` so the Standard 45 R6 cap keeps firing over it
+   * unchanged: an unestablished prohibition is unestablished however it got there. `freshness` is
+   * the new axis and the message names it. Only `unrecorded` still establishes, preserving the
+   * documented first-pass workflow where the digest is omitted so the validator can report it.
+   */
+  const fresh = freshness.get(rule.id) ?? { state: "unrecorded", detail: null };
+  if (fresh.state !== "fresh" && fresh.state !== "unrecorded") {
+    return {
+      ruleId: rule.id,
+      status: RESULT.skipped,
+      severity: rule.severity,
+      level,
+      validationType: "manual-review",
+      assurance: "none",
+      disposition: "not-evaluated",
+      freshness: fresh.state,
+      message:
+        `${rule.id} was reviewed by ${attestation.reviewedBy} on ${attestation.reviewedAt}, but that ` +
+        `review does not establish the current state: ${fresh.detail}.`,
+      evidence: against?.paths ?? ["project-policy.yml"],
+      files: against?.paths ?? ["project-policy.yml"],
+      remediation:
+        fresh.state === "legacy-unverifiable"
+          ? "Re-review against current committed content and record a new digest with its digestAlgorithm. The recorded value is historical evidence: it must not be recomputed into a new one."
+          : fresh.state === "evidence-unavailable"
+            ? "Repository content could not be identified for the reviewed paths. Make it available, or record the review against paths the repository tracks."
+            : "Review the changed paths again and record the new digest.",
+    };
   }
 
   return {
