@@ -4,7 +4,10 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { plan, apply, detectMode, MODES } from "../scripts/init.mjs";
+import { fileURLToPath } from "node:url";
+import { plan, apply, detectMode, MODES, stampVersion } from "../scripts/init.mjs";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** A throwaway target repository. Fixtures are built rather than committed, because every one of
  *  them is defined by what it does NOT contain, and an empty directory does not survive git. */
@@ -294,4 +297,45 @@ test("an existing docs/adr/ is not duplicated by an empty artifacts/adr/", async
   } finally {
     await cleanup(dir);
   }
+});
+
+test("the policy it writes declares the framework version that wrote it", async () => {
+  // templates/project-policy.yml carried a literal standardVersion, so every release left it one
+  // behind and each new adopter declared a version nobody chose - then failed the outdated-version
+  // check on their first run, for a value the bootstrap had just written for them.
+  const { readFile: read } = await import("node:fs/promises");
+  const expected = (await read(path.join(REPO_ROOT, "VERSION"), "utf8")).trim();
+  const dir = await repo({ "src/index.js": "export const x = 1;\n" });
+  try {
+    await apply(dir, await plan(dir));
+    const policy = await read(path.join(dir, "project-policy.yml"), "utf8");
+    assert.match(
+      policy,
+      new RegExp(`^standardVersion: "${expected.replace(/\./g, "\.")}"$`, "m"),
+      "the written policy must declare the current framework version",
+    );
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("stampVersion takes the version from VERSION, not from the template it was given", async () => {
+  // The end-to-end test above cannot tell stamping from luck: templates/project-policy.yml and
+  // VERSION currently agree, so it passes whether or not the stamp happens. This one creates the
+  // mismatch that actually occurred on the parallel branch — VERSION 2.0.1 against a template still
+  // reading 2.0.0 — and proves the canonical source wins over whatever text the template carries.
+  const { readFile: read } = await import("node:fs/promises");
+  const expected = (await read(path.join(REPO_ROOT, "VERSION"), "utf8")).trim();
+  const pattern = new RegExp(`^standardVersion: "${expected.replace(/\./g, "\.")}"$`, "m");
+
+  const stamped = stampVersion('standardVersion: "0.0.1-stale"\nproject: "X"\n');
+  assert.match(stamped, pattern, "the written version must come from VERSION");
+  assert.ok(!stamped.includes("0.0.1-stale"), "the stale template value survived the stamp");
+  assert.ok(stamped.includes('project: "X"'), "stamping must not disturb the rest of the document");
+
+  // CRLF: a checkout with core.autocrlf leaves \r before the \n, so an end-anchored pattern would
+  // silently fail to match on Windows and the stamp would quietly not happen — the kind of no-op
+  // that looks like it worked everywhere it was tested.
+  const crlf = stampVersion('standardVersion: "0.0.1-stale"\r\nproject: "X"\r\n');
+  assert.ok(!crlf.includes("0.0.1-stale"), "the stamp must survive CRLF line endings");
 });

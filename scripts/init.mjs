@@ -23,7 +23,7 @@
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,6 +80,27 @@ const has = (root, p) => existsSync(path.join(root, p));
  * `reconstructionRequired` signal. An empty plan directory is not a plan, and a tool must not treat
  * its own scaffolding as evidence about the project.
  */
+/**
+ * The framework version, read at write time rather than baked into the templates.
+ *
+ * `templates/project-policy.yml` carried a literal `standardVersion`, which meant every release
+ * left it one behind and each new adopter declared a version nobody chose — then failed the
+ * outdated-version check on their first run, for a value the bootstrap had just written for them.
+ * A constant in a file that a release does not touch is a maintenance obligation nobody signed up
+ * for; reading VERSION removes it rather than adding another thing to remember.
+ */
+export function stampVersion(content) {
+  const version = readFileSync(path.join(FRAMEWORK, "VERSION"), "utf8").trim();
+  // Not anchored to end-of-line — though not for the reason this arrived with. The ported comment
+  // said a trailing `$` fails on a `core.autocrlf` checkout because of the `\r`. That was checked
+  // during reconciliation and is **false in JavaScript**, whose LineTerminator set includes CR, so
+  // `$` under `/m` matches before it and both forms stamp CRLF correctly. Left unanchored because
+  // that is the form that shipped and the behaviour is identical; the claim is corrected rather than
+  // carried, since an unverified statement about the runtime is the defect this framework rejects
+  // elsewhere. The CRLF case is pinned by a test rather than by argument either way.
+  return content.replace(/^standardVersion: "[^"]*"/m, `standardVersion: "${version}"`);
+}
+
 function hasContent(root, p) {
   const target = path.join(root, p);
   if (!existsSync(target)) return false;
@@ -157,7 +178,7 @@ export async function plan(root, options = {}) {
       continue;
     }
 
-    const content = await readFile(path.join(FRAMEWORK, artifact.template), "utf8");
+    const content = stampVersion(await readFile(path.join(FRAMEWORK, artifact.template), "utf8"));
 
     if (!exists) {
       actions.push({ action: "create", path: artifact.path, kind: "file", bytes: content.length });
@@ -232,7 +253,10 @@ export async function apply(root, planned) {
     }
     if (action.action === "create" || action.action === "overwrite") {
       const artifact = ARTIFACTS.find((a) => a.path === action.path);
-      const content = await readFile(path.join(FRAMEWORK, artifact.template), "utf8");
+      // Through the same helper as plan(). These two read the templates independently, so any
+      // transformation applied to one and not the other lands in the report or on disk but never
+      // both — a divergence that shows up as a dry run promising what the real run does not do.
+      const content = stampVersion(await readFile(path.join(FRAMEWORK, artifact.template), "utf8"));
       await mkdir(path.dirname(path.join(root, action.path)), { recursive: true });
       await writeFile(path.join(root, action.path), content, "utf8");
       done.push(action.path);
