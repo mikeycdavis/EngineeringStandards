@@ -357,6 +357,23 @@ attestations:
           revision: "e3c4866..32c6735"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "3d34b4b9ba35ef356f167d95b7e7901e"
+      - id: "review-architecture-no-hidden-global-state-002"
+        supersedes: "review-architecture-no-hidden-global-state-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content, after ADR 0007 was remediated in d6e7127 and BECAUSE it needed remediating. The prior cycle re-reviewed eight approved attestations and this one was deliberately held back: a declaration scan found four module-level derived run-state bindings added to scripts/standards.mjs, the version-guard pair FRAMEWORK_VERSION and declaredVersion and the provenance pair freshness and repo, none recorded, and scripts/attestations.mjs added as a whole governed script including the only let in the set, also unrecorded. The rule text governed them throughout, so this was a stale record rather than a live violation, but the record is what an attestation approves. Approving a knowingly incomplete record would have repeated the documented failure immediately after mechanically demonstrating it. Verified after remediation: the governed set is four scripts, eleven bindings were added to the table with per-binding writers, and the scope statement now defines the set by BEHAVIOUR rather than by having been listed, so a script holding run state is governed the moment it exists whether or not the document names it yet. scripts/repository.mjs and scripts/reviews.mjs are recorded as outside the set with the reason: they hold no module-level bindings beyond exported frozen identifiers, a deliberate constraint when the Git seam was opened so that opening it would not enlarge what this decision governs. The scan was re-run across all four governed scripts. Mutable top-level bindings are detectedCount and countMismatch in inventory.mjs, claims in fidelity.mjs, and document in attestations.mjs, all four in the table; standards.mjs has no top-level let or var. The document binding is called out as the single exception to const-at-declaration with its reason stated, so a later reader does not tidy it into a const that cannot express the exit-2 path. Process exit remains the only reset boundary and the three invalidation conditions still hold. LIMITATION, stated rather than resolved: the declaration scan is NOT authoritative, because a binding mutated through an alias escapes it exactly as surfaceLoss does through the loss parameter of collectFiles. Completeness remains a review obligation and not a mechanical guarantee. MATERIAL LIMITATION carried forward explicitly: this record has now been found incomplete at four consecutive reviews. The categorical rule survived every one of them; the inventory table did not. This approval therefore covers the current state and the ownership and reset semantics, and it does NOT assert that the table is mechanically complete or that human enumeration is a sufficient control against hidden global state. Four consecutive misses are evidence that it is not, and a sounder structural detector or a design that eliminates module-level run state is recorded as a dormant follow-on rather than started here."
+        reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+          revision: "d6e7127"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "7321a69c5c104227c2d8ff2296b5b82d"
 
   architecture.no-duplicate-implementations:
     reviews:
