@@ -113,6 +113,25 @@ answer the ten questions without any conversation history.
 all three files it names, and `standards init` writes all three. R3's load sequence is the spine of
 the `AGENTS.md` template, in order, with each step naming the path it routes to.
 
+**The operating rules inside `AGENTS.md` are generated, not authored.** `standards init` replaces the
+region between two markers in the template with a block produced by `scripts/agent-instructions.mjs`,
+stamped with the framework version the bootstrap declares. This is the one place a bootstrap document
+carries rule content, and its shape is what keeps it inside R4 rather than outside R2: every line
+names the standard requirement, rule id, or decision record that governs it, so the block is an index
+into the canonical text rather than a copy of it — and it says that about itself. A test resolves each
+citation against the file it names, because a pointer to a requirement that does not exist reads as
+canonical backing while leading nowhere. Generation is also what prevents the fork R2 describes: the
+framework holds the only editable copy, an edit made inside the markers is replaced on the next run,
+and the block states that before an adopter can make one. Length stays bounded by R2's own test,
+applied to what an adopter actually receives rather than to the template alone.
+
+**What generation does not do.** `init` still refuses to replace an `AGENTS.md` that exists and
+differs, so a project bootstrapped under an earlier version keeps its old block and is shown a
+conflict rather than silently rewritten (Standard 33 R2). There is no regeneration command, so
+bringing an existing instruction file up to a newer version is a manual step today. The version
+stamped into the block is what makes that gap visible instead of invisible, which is the whole reason
+it is stamped.
+
 `CLAUDE.md` and `copilot-instructions.md` are deliberately near-empty and defer to `AGENTS.md`.
 Three full instruction files would reproduce R2's fork two levels down — the same content in three
 places, drifting apart, with nothing recording which one an agent actually followed. Each secondary

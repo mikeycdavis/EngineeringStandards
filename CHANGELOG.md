@@ -374,6 +374,18 @@ Work that landed before the must-never layer and is folded in here rather than c
 - The defer check reads the templates **with comments stripped**. It had been passing on a mention
   of `AGENTS.md` inside an explanatory comment — the part an adopter deletes on the way in — so a
   template whose body had stopped deferring would still have passed.
+- **`standards init` now generates the agent operating rules into `AGENTS.md`**
+  ([ADR 0012](artifacts/adr/0012-agent-operating-rules-are-generated-not-authored.md)) — ten lines
+  telling an agent to read the policy first, to treat `audit` as evidence and `validate` as the
+  verdict, never to call a skipped rule passing, never to weaken a standard or manufacture a result
+  to obtain green output, never to self-attest, and never to bypass a safety control because it
+  blocks completion. `scripts/agent-instructions.mjs` is the only editable copy; the block is written
+  between markers and replaced on each run, carries the framework version read through the same
+  `frameworkVersion()` as the policy stamp, and names the standard requirement, rule id, or ADR that
+  governs every line — which is what keeps it an index under Standard 17 R4 rather than the fork R2
+  prohibits. Tests resolve each citation against the file it names and assert the generated file
+  stays shorter than the standard it routes to. It remains instruction generation, not enforcement:
+  `validate` is still the authority and CI is still the gate.
 - **[Standard 44](standards/44-existing-project-reconstruction.md) R11** — tool-generated scaffolding
   is never evidence about the project, the consuming-side mirror of Standard 33 R7. `standards init`
   creates the plan directory *empty* in reconstruction mode, so a reconstruction that tests for the

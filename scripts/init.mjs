@@ -27,6 +27,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { injectAgentInstructions } from "./agent-instructions.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRAMEWORK = path.resolve(HERE, "..");
@@ -88,9 +89,18 @@ const has = (root, p) => existsSync(path.join(root, p));
  * outdated-version check on their first run, for a value the bootstrap had just written for them.
  * A constant in a file that a release does not touch is a maintenance obligation nobody signed up
  * for; reading VERSION removes it rather than adding another thing to remember.
+ *
+ * One reader, one answer. `frameworkVersion()` is the only place in the framework that decides what
+ * version governs a bootstrap, and both the policy stamp and the generated agent instructions go
+ * through it — a second read of VERSION elsewhere would be a second implementation of the same
+ * decision, which is what `architecture.no-duplicate-implementations` forbids.
  */
+export function frameworkVersion() {
+  return readFileSync(path.join(FRAMEWORK, "VERSION"), "utf8").trim();
+}
+
 export function stampVersion(content) {
-  const version = readFileSync(path.join(FRAMEWORK, "VERSION"), "utf8").trim();
+  const version = frameworkVersion();
   // Not anchored to end-of-line — though not for the reason this arrived with. The ported comment
   // said a trailing `$` fails on a `core.autocrlf` checkout because of the `\r`. That was checked
   // during reconciliation and is **false in JavaScript**, whose LineTerminator set includes CR, so
@@ -99,6 +109,20 @@ export function stampVersion(content) {
   // carried, since an unverified statement about the runtime is the defect this framework rejects
   // elsewhere. The CRLF case is pinned by a test rather than by argument either way.
   return content.replace(/^standardVersion: "[^"]*"/m, `standardVersion: "${version}"`);
+}
+
+/**
+ * The content init would write for one artifact: the template, stamped and generated.
+ *
+ * Both `plan()` and `apply()` call this and nothing else, for the same reason `--dry-run` is
+ * `plan()` without `apply()` — a transformation applied on one path and not the other produces a
+ * dry run that promises what the real run does not do (Standard 33 R5). It is also what keeps the
+ * idempotence comparison honest: `plan()` compares the file on disk against the *generated* text,
+ * so a project whose block is a version behind is reported as differing rather than as matching.
+ */
+async function renderTemplate(artifact) {
+  const raw = await readFile(path.join(FRAMEWORK, artifact.template), "utf8");
+  return injectAgentInstructions(stampVersion(raw), frameworkVersion());
 }
 
 function hasContent(root, p) {
@@ -178,7 +202,7 @@ export async function plan(root, options = {}) {
       continue;
     }
 
-    const content = stampVersion(await readFile(path.join(FRAMEWORK, artifact.template), "utf8"));
+    const content = await renderTemplate(artifact);
 
     if (!exists) {
       actions.push({ action: "create", path: artifact.path, kind: "file", bytes: content.length });
@@ -256,7 +280,7 @@ export async function apply(root, planned) {
       // Through the same helper as plan(). These two read the templates independently, so any
       // transformation applied to one and not the other lands in the report or on disk but never
       // both — a divergence that shows up as a dry run promising what the real run does not do.
-      const content = stampVersion(await readFile(path.join(FRAMEWORK, artifact.template), "utf8"));
+      const content = await renderTemplate(artifact);
       await mkdir(path.dirname(path.join(root, action.path)), { recursive: true });
       await writeFile(path.join(root, action.path), content, "utf8");
       done.push(action.path);

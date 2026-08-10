@@ -45,6 +45,15 @@ Adoption workflow, commands, and the audit/validate distinction: `<standards-rep
 - **Never rely on chat history as the sole project record.** Conversation is transient working
   context. If something is needed to continue the work, it belongs in the repository.
 
+<!-- BEGIN standards:agent-operating-rules -->
+<!--
+`standards init` replaces everything between these two markers with the operating rules generated
+from the framework version this project declares. Do not write rules here by hand: an edit inside
+the markers is overwritten on the next run, and a rule that exists only here has no canonical text
+behind it, which is the fork Standard 17 R2 prohibits.
+-->
+<!-- END standards:agent-operating-rules -->
+
 ## This project specifically
 
 <!-- The part no standard can supply. Fill it in; delete what does not apply. -->
