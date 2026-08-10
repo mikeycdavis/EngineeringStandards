@@ -1,0 +1,33 @@
+# Dogfooding the reusable check on the repository that defines it.
+#
+# **This job is expected to be red, and a green run is a defect report.** This repository is
+# intentionally `NON_COMPLIANT`: three rules carry recorded human rejections, so the authoritative
+# local verdict is exit 1. The acceptance target for this workflow is not that GitHub turns green —
+# it is that the distributed check reproduces the local verdict faithfully. Success looks like the
+# job summary reporting the same counts and the same three failing rules a local
+# `npm run validate` reports, and exiting 1 for the same reason.
+#
+# A green run would mean the verdict changed somewhere in transport, which is the failure this step
+# exists to detect.
+#
+# The pin is a commit SHA in both places — the workflow file's revision and the framework revision it
+# executes — because there is no released tag and a moving ref would let the check change what it
+# enforces between two runs of the same commit. A test asserts the two agree.
+#
+# This is deliberately NOT a required check. Making it one would make `develop` unmergeable while
+# those rejections stand, which is an organization-enforcement decision rather than part of proving
+# distribution fidelity (ADR 0013).
+
+name: standards-dogfood
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate-self:
+    uses: mikeycdavis/EngineeringStandards/.github/workflows/standards-validate.yml@2b8a97308457a6d504c4ecceb7ecdb70179be8c3
+    with:
+      standards-ref: 2b8a97308457a6d504c4ecceb7ecdb70179be8c3
