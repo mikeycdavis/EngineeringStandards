@@ -30,6 +30,7 @@ import {
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
+import { currentReview } from "./reviews.mjs";
 
 /**
  * This file lists the very package names it searches for, so scanning it would report every SDK it
@@ -1993,8 +1994,11 @@ if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
 function attestationFreshness(document, repoRoot) {
   const repo = repositoryAvailable(repoRoot);
   const out = new Map();
-  for (const [ruleId, attestation] of Object.entries(document?.attestations ?? {})) {
-    const against = attestation?.reviewedAgainst;
+  for (const [ruleId, record] of Object.entries(document?.attestations ?? {})) {
+    // Freshness describes what may establish the rule now, so it is computed for the newest review
+    // event. Earlier events keep their own recorded provenance and are reported by
+    // `npm run attestations`; they are history, and history does not go stale.
+    const against = currentReview(ruleId, record)?.reviewedAgainst;
     if (!against?.paths?.length) continue;
     out.set(ruleId, classifyFreshness(repoRoot, against, repo));
   }
@@ -2065,7 +2069,7 @@ if (JSON_OUT) {
   // mechanism forbids — a legacy value swapped for a reproducible one without a new review.
   for (const [ruleId, state] of freshness) {
     if (state.state !== FRESHNESS.unrecorded) continue;
-    const against = policy.document?.attestations?.[ruleId]?.reviewedAgainst;
+    const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
     const current = repositoryDigest(root, against?.paths ?? []);
     if (!current.ok) {
       process.stdout.write(

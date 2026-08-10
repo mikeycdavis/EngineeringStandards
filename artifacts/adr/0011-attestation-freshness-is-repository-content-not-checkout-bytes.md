@@ -139,12 +139,69 @@ nothing is redesigned here. "A human found this violation at revision X" remains
 "the current revision still violates this rule" requires current evidence, and the schema cannot yet
 say both. That stays open.
 
-## Deferred
+## A review is an event, not mutable state
 
-- **Attestation history.** Re-review overwrites `reviewedAgainst`, so recording a new provenance
-  record destroys the one it replaces — against the principle that migrating provenance must never
-  erase what is being migrated from. Prose evidence accumulates by convention today; the structured
-  record does not. This must be settled **before** the eleven re-reviews, not after.
+Writing the section above surfaced the next required invariant. A provenance migration cannot be
+honest if the act of re-establishing provenance destroys the record that proved the migration was
+necessary — and re-review overwrote `reviewedAgainst`, so the mechanism meant to complete this
+migration would have performed the exact operation it forbids, on its first use.
+
+> **No operation that records a new review may alter or delete any previously recorded review
+> event.** Re-review appends provenance; it never rewrites it.
+
+That is stronger and simpler than a rule about digests, and it settles the shape:
+
+```yaml
+attestations:
+  architecture.no-hidden-global-state:
+    reviews:
+      - id: review-…-001          # immutable once written
+        status: approved
+        reviewedAgainst: { digestAlgorithm: working-tree-bytes-sha256-v1, digest: <legacy> }
+      - id: review-…-002
+        supersedes: review-…-001
+        reviewedAgainst: { source: git, digestAlgorithm: git-blob-set-sha256-v1, digest: <new> }
+```
+
+**One homogeneous sequence, no `current:` / `history:` split.** Moving a record between them would
+itself be a mutation, and would invite two schemas for one kind of thing. "Current" is derived: the
+newest structurally valid event. There is no second source of truth.
+
+**`supersedes` means *successor record*, never *the previous judgement was false*.** A rejected
+historical review remains a rejected historical review forever. That is what will eventually let the
+model say *a violation was found at revision X* and *remediation was reviewed and accepted at
+revision Y* without pretending the first never happened.
+
+**Identity is explicit, not positional.** Every event carries a stable `id`, ids must be unique, and
+stored order must already agree with `reviewedAt`. Validating that agreement is what makes taking
+the last element safe; selecting "latest" by array position alone would make the file's layout the
+chronology, so reordering two lines would change which review establishes a rule with nothing
+recording that it did. A malformed history establishes nothing rather than establishing whatever
+happens to sit last.
+
+**The migration wraps; it does not judge.** Each existing record becomes the first event in its own
+history with an id added, and every substantive field — status, reviewer, timestamp, evidence,
+reference, expiry, paths, revision, digest value — preserved exactly. Verified across all eleven,
+zero mismatches, and idempotent. No judgement is created by a schema migration, and the wrapped
+events remain `legacy-unverifiable` afterwards, which is the point.
+
+**The single-record shape is a ramp with an end.** It is accepted for the migration window and will
+be rejected once the transition completes. Teaching the evaluator to support two shapes indefinitely
+is how a migration format becomes permanent architecture.
+
+Implementing this needed `oneOf` in `scripts/jsonschema.mjs`, which had refused it by design rather
+than ignoring it — the module's strictness working exactly as intended. The test that used `oneOf`
+as its example of an unimplemented keyword was silently proven vacuous by that change; its example
+was replaced with one the evaluator genuinely lacks, and a new assertion covers an unsupported
+keyword nested inside a `oneOf` branch.
+
+The rejected-attestation lifecycle is deliberately **not** settled here. Disposition and freshness
+are now independently representable for every event, which is what that design will need, but how a
+newer event supersedes an older rejection for current-state compliance remains
+[ADR 0010](0010-human-review-may-always-contribute-negative-evidence.md)'s question. The schema
+makes the future state representable; it does not decide it.
+
+## Deferred
 - **Prohibiting creation of legacy-format attestations.** The validator classifies them; it does not
   yet refuse to accept a newly written one.
 - **Creation-time strictness.** Recording an attestation against an untracked path should be refused

@@ -108,8 +108,33 @@ test("the schema uses only keywords the evaluator implements", async () => {
 test("an unimplemented schema keyword throws rather than being ignored", () => {
   // The guard against silent under-validation: skipping a constraint reports PASS for a document
   // that was never fully checked (Standard 24 R2).
-  assert.throws(() => assertSchemaSupported({ type: "object", oneOf: [] }), SchemaError);
+  //
+  // This test used `oneOf` as its example until `oneOf` was implemented for the attestation-record
+  // migration window, at which point the assertion stopped proving anything. The example is
+  // replaced rather than deleted: what is under test is the refusal to ignore an unimplemented
+  // keyword, not any particular keyword, so it needs one the evaluator genuinely lacks.
+  assert.throws(() => assertSchemaSupported({ type: "object", allOf: [] }), SchemaError);
   assert.throws(() => validate({}, { type: "object", maxProperties: 1 }), SchemaError);
+
+  // And implementing `oneOf` must not have opened a hole one level down: an unsupported keyword
+  // inside a branch is still an unimplemented constraint, and must still throw rather than be
+  // swallowed by the branch's throwaway error list.
+  assert.throws(() => validate({}, { oneOf: [{ type: "object", maxProperties: 1 }] }), SchemaError);
+});
+
+test("oneOf accepts exactly one shape, and reports both failure modes", () => {
+  // The migration window depends on this: an attestation record is either a review sequence or the
+  // legacy single record, and must not be able to be both at once.
+  const either = {
+    oneOf: [
+      { type: "object", required: ["reviews"], additionalProperties: false, properties: { reviews: { type: "array" } } },
+      { type: "object", required: ["status"], additionalProperties: false, properties: { status: { type: "string" } } },
+    ],
+  };
+  assert.deepEqual(validate({ reviews: [] }, either), []);
+  assert.deepEqual(validate({ status: "approved" }, either), []);
+  assert.equal(validate({}, either).length, 1, "a value matching no shape is reported");
+  assert.match(validate({}, either)[0].message, /matched none/);
 });
 
 test("the evaluator rejects what the schema forbids — mutation check", () => {

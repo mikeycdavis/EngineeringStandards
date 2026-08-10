@@ -546,8 +546,14 @@ test("this repository's own attestation is live, not stale", async () => {
   // The dogfooding case: ai.destructive-approval moved not-applicable -> not-evaluated -> attested.
   const { parseYaml } = await import("../scripts/yaml.mjs");
   const doc = parseYaml(await readFile(path.join(ROOT, "project-policy.yml"), "utf8"));
-  const attestation = doc.attestations?.["ai.destructive-approval"];
-  assert.ok(attestation, "the dogfooded attestation is missing");
+  const record = doc.attestations?.["ai.destructive-approval"];
+  assert.ok(record, "the dogfooded attestation is missing");
+
+  // The record is an append-only sequence now, so the assertions run against the newest event.
+  const reviews = record.reviews;
+  assert.ok(Array.isArray(reviews) && reviews.length >= 1, "attestations are review-event sequences");
+  const attestation = reviews[reviews.length - 1];
+  assert.ok(attestation.id, "every review event carries a stable id");
   assert.equal(attestation.status, "approved");
   assert.ok(attestation.reviewedAgainst?.digest, "no digest recorded — staleness would be undetectable");
   assert.ok(attestation.reviewedAgainst.paths.includes("scripts/init.mjs"));

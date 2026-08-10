@@ -30,6 +30,7 @@ import {
   LEGACY_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
+import { reviewsOf, currentReview, reviewProblems, isLegacyShape } from "./reviews.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -37,6 +38,7 @@ const EXIT_INVOCATION = 2;
 
 const args = process.argv.slice(2);
 const JSON_OUT = args.includes("--json");
+const MIGRATE = args.includes("--migrate");
 const dirArg = args.find((a) => a.startsWith("--dir="));
 const root = path.resolve(dirArg ? dirArg.slice("--dir=".length) : ".");
 
@@ -48,10 +50,104 @@ try {
   process.exit(EXIT_INVOCATION);
 }
 
+/**
+ * Wrap each single-record attestation as the first event in its own history.
+ *
+ * This is a *shape* migration and nothing else. It adds the identity the event model needs and
+ * leaves every substantive field exactly as written: status, reviewer, timestamp, evidence,
+ * reference, expiry, reviewed paths, revision, and digest value. No judgement is created by a
+ * schema migration, and none is altered — the legacy event stays `legacy-unverifiable` afterwards,
+ * which is the point. It is idempotent: a record already in event form is returned untouched, so
+ * running it twice cannot append a duplicate of history.
+ *
+ * The edit is textual rather than a YAML re-serialisation. The evidence fields are long prose
+ * paragraphs carrying the actual review record, and round-tripping them through a writer this
+ * repository does not have would reflow or re-escape the very text the migration exists to
+ * preserve. Reindenting known-good lines and inserting two of them changes nothing else.
+ */
+function migrateText(text) {
+  const lines = text.split("\n");
+  const out = [];
+  let inAttestations = false;
+  let pending = null; // Rule whose body we are reindenting.
+  const flush = () => (pending = null);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    if (/^attestations:\s*$/.test(line)) {
+      inAttestations = true;
+      out.push(line);
+      continue;
+    }
+    if (inAttestations && /^[a-zA-Z]/.test(line)) {
+      inAttestations = false;
+      flush();
+    }
+    if (!inAttestations) {
+      out.push(line);
+      continue;
+    }
+
+    const ruleStart = line.match(/^ {2}([a-z][\w.-]*):\s*$/);
+    if (ruleStart) {
+      flush();
+      // Already migrated? Look ahead for `reviews:` before the next rule key.
+      let already = false;
+      for (let j = i + 1; j < lines.length; j += 1) {
+        if (/^ {2}\S/.test(lines[j]) || /^[a-zA-Z]/.test(lines[j])) break;
+        if (/^ {4}reviews:\s*$/.test(lines[j])) {
+          already = true;
+          break;
+        }
+      }
+      out.push(line);
+      if (already) continue;
+
+      pending = ruleStart[1];
+      out.push("    reviews:");
+      out.push(`      - id: "review-${pending.replace(/\./g, "-")}-001"`);
+      continue;
+    }
+
+    if (pending && /^ {4}\S/.test(line)) {
+      // First body line becomes part of the `- id:` block; every line gains four spaces of indent.
+      out.push(`    ${line}`);
+      continue;
+    }
+    if (pending && /^ {6,}/.test(line)) {
+      out.push(`    ${line}`);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+if (MIGRATE) {
+  const file = path.join(root, "project-policy.yml");
+  const original = await readFile(file, "utf8");
+  const migrated = migrateText(original);
+  if (migrated === original) {
+    process.stdout.write("Already in review-event form; nothing to migrate.\n");
+    process.exit(EXIT_OK);
+  }
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(file, migrated);
+  process.stdout.write("project-policy.yml migrated to review events. Verify with npm run policy.\n");
+  process.exit(EXIT_OK);
+}
+
 const repo = repositoryAvailable(root);
 const entries = Object.entries(document?.attestations ?? {});
 
-const rows = entries.map(([ruleId, attestation]) => {
+// One row per review EVENT, not per rule. Two events for one rule stay independently inspectable,
+// which is the whole point of an append-only history: "what happened" and "what establishes this
+// now" are different questions and a report that only showed the current event could answer just
+// one of them.
+const rows = entries.flatMap(([ruleId, record]) => {
+  const current = currentReview(ruleId, record);
+  return reviewsOf(record).map((attestation) => {
   const against = attestation?.reviewedAgainst;
   const algorithm = against?.digestAlgorithm ?? (against?.digest ? LEGACY_ALGORITHM : null);
   const freshness = against?.paths?.length
@@ -59,6 +155,10 @@ const rows = entries.map(([ruleId, attestation]) => {
     : FRESHNESS.unrecorded;
   return {
     rule: ruleId,
+    id: attestation?.id ?? null,
+    current: attestation === current,
+    shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
+    supersedes: attestation?.supersedes ?? null,
     disposition: attestation?.status ?? null,
     algorithm,
     freshness,
@@ -79,6 +179,7 @@ const rows = entries.map(([ruleId, attestation]) => {
               ? "repository evidence unavailable — establish it, then re-review"
               : "no digest recorded — record one to make staleness detectable",
   };
+  });
 });
 
 /**
@@ -87,6 +188,7 @@ const rows = entries.map(([ruleId, attestation]) => {
  * for. A violation exits 1: the policy is internally inconsistent about its own provenance.
  */
 const violations = [];
+for (const [ruleId, record] of entries) violations.push(...reviewProblems(ruleId, record));
 for (const r of rows) {
   if (r.algorithm === null && r.paths.length > 0 && r.freshness !== FRESHNESS.unrecorded) {
     violations.push(`${r.rule}: a recorded digest carries no digestAlgorithm`);

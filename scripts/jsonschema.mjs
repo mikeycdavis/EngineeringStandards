@@ -12,6 +12,9 @@
  * checked, which is the false green of Standard 24 R2 in its purest form. If a future schema adds
  * `oneOf`, this module fails loudly until someone implements it.
  *
+ * `oneOf` is implemented; see check(). Its branches are evaluated against a throwaway error list,
+ * because under `oneOf` a failing alternative is the normal case rather than a finding.
+ *
  * `format` is treated as an annotation and NOT validated, which is what the specification says it
  * is. Every `format` in the policy schema is paired with an equivalent `pattern`, so the assurance
  * is carried by the pattern; the annotation claims nothing.
@@ -36,6 +39,7 @@ const SUPPORTED = new Set([
   "items",
   "minItems",
   "format",
+  "oneOf",
 ]);
 
 /** Keywords that carry no constraint we evaluate. */
@@ -76,6 +80,34 @@ function check(value, schema, root, path, errors) {
 
   if (schema.$ref !== undefined) {
     check(value, resolveRef(schema.$ref, root), root, path, errors);
+    return;
+  }
+
+  /**
+   * `oneOf` — exactly one branch must validate.
+   *
+   * Branches are checked against a throwaway error list so a failing alternative does not pollute
+   * the report: under `oneOf` a branch failing is the normal case, not a finding. Only the count
+   * matters. Zero matches reports the value as satisfying no alternative; more than one reports the
+   * schema as ambiguous, which is a defect in the schema rather than the document, and saying so is
+   * the difference between a validator that helps and one that blames the wrong file.
+   *
+   * A SchemaError from a branch still propagates: an unsupported keyword inside an alternative is
+   * an unimplemented constraint wherever it sits, and swallowing it would reintroduce exactly the
+   * silent skip this module refuses to perform.
+   */
+  if (schema.oneOf !== undefined) {
+    let matched = 0;
+    for (const branch of schema.oneOf) {
+      const branchErrors = [];
+      check(value, branch, root, path, branchErrors);
+      if (branchErrors.length === 0) matched += 1;
+    }
+    if (matched === 0) {
+      errors.push({ path, message: `matched none of the ${schema.oneOf.length} permitted shapes` });
+    } else if (matched > 1) {
+      errors.push({ path, message: `matched ${matched} permitted shapes; the schema is ambiguous here` });
+    }
     return;
   }
 

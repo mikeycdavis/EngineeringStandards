@@ -16,6 +16,7 @@
  */
 
 import { resolve } from "./catalog.mjs";
+import { currentReview, reviewProblems } from "./reviews.mjs";
 
 export const STATUS = {
   COMPLIANT: "COMPLIANT",
@@ -105,7 +106,32 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // A recorded human judgement (ADR 0005). Checked BEFORE not-evaluated, because an attestation
     // is precisely what turns "nobody looked" into "somebody looked" — but AFTER the automated
     // findings are collected, because it may never override one.
-    const attestation = attestations[rule.id];
+    // An attestation is an append-only sequence of review events; what may establish the rule is
+    // the newest one. History stays visible in the policy and in `npm run attestations`, so the two
+    // questions — what happened historically, and what currently establishes this rule — are
+    // answered independently rather than by one mutable record that the latest review overwrites.
+    const record = attestations[rule.id];
+    const structural = reviewProblems(rule.id, record);
+    if (structural.length > 0) {
+      // A malformed history establishes nothing rather than establishing whatever happens to be
+      // last. Selecting by position from a sequence whose order is unverified would make the file's
+      // layout the chronology.
+      results.push({
+        ruleId: rule.id,
+        status: RESULT.failed,
+        severity: rule.severity,
+        level,
+        validationType: "configuration",
+        assurance: "full",
+        disposition: "invalid-attestation",
+        message: `${rule.id} has a malformed review history: ${structural.join("; ")}.`,
+        evidence: ["project-policy.yml"],
+        files: ["project-policy.yml"],
+        remediation: "Give every review a unique id and record them in chronological order.",
+      });
+      continue;
+    }
+    const attestation = currentReview(rule.id, record);
     if (attestation) {
       const hits = byRule.get(rule.id) ?? [];
       const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);

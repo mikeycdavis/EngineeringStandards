@@ -36,6 +36,7 @@ import {
   LEGACY_ALGORITHM,
   FRESHNESS,
 } from "../scripts/repository.mjs";
+import { reviewsOf, currentReview, reviewProblems, isLegacyShape } from "../scripts/reviews.mjs";
 
 const git = (cwd, ...args) => {
   const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", windowsHide: true });
@@ -277,6 +278,7 @@ test("the inventory reports every attestation and refuses to auto-upgrade any of
   for (const a of json.attestations) {
     assert.equal(a.autoUpgradable, false, `${a.rule} must never be marked auto-upgradable`);
     assert.ok(a.disposition, `${a.rule} must report what the human decided`);
+    assert.ok(a.id, `${a.rule} must report which review event this is`);
     assert.ok(a.freshness, `${a.rule} must report whether that decision establishes current state`);
   }
 });
@@ -296,5 +298,90 @@ test("every recorded digest names the algorithm that produced it", () => {
       a.algorithm === "git-blob-set-sha256-v1" || a.algorithm === "working-tree-bytes-sha256-v1",
       `${a.rule} records a digest under an unnamed algorithm: ${a.algorithm}`,
     );
+  }
+});
+
+// --- Reviews are events, not mutable state ------------------------------------------------------
+//
+// The invariant, stronger and simpler than talking about digests specifically:
+//
+//   No operation that records a new review may alter or delete any previously recorded review event.
+//
+// Re-review appends provenance; it never rewrites it. That is what keeps the record proving a
+// migration was necessary alive through the migration that answers it.
+
+const review = (over = {}) => ({
+  id: "review-001",
+  status: "approved",
+  reviewedBy: "owner",
+  reviewedAt: "2026-08-01",
+  evidence: "looked at it",
+  ...over,
+});
+
+test("the newest review is the one eligible to establish, and earlier ones stay inspectable", () => {
+  const record = {
+    reviews: [
+      review({ id: "r1", reviewedAt: "2026-08-01", status: "rejected" }),
+      review({ id: "r2", reviewedAt: "2026-08-09", supersedes: "r1" }),
+    ],
+  };
+  assert.equal(currentReview("x.y", record).id, "r2");
+  assert.equal(reviewsOf(record).length, 2, "history remains fully readable");
+  assert.equal(reviewsOf(record)[0].status, "rejected", "a rejected review stays rejected forever");
+});
+
+test("appending a review leaves every earlier event byte-identical", () => {
+  // The migration invariant, asserted directly. Appending is the only way to record a new judgement,
+  // so the operation that records one cannot be the operation that destroys the last one.
+  const first = review({ id: "r1", reviewedAgainst: { paths: ["a.mjs"], digest: "abcdef1234567890" } });
+  const snapshot = JSON.stringify(first);
+  const record = { reviews: [first] };
+
+  record.reviews.push(review({ id: "r2", reviewedAt: "2026-08-09", supersedes: "r1" }));
+
+  assert.equal(JSON.stringify(record.reviews[0]), snapshot, "the predecessor must be untouched");
+  assert.equal(currentReview("x.y", record).id, "r2");
+});
+
+test("a malformed history establishes nothing rather than establishing the last element", () => {
+  // Selecting by array position from an unvalidated sequence would make the file's layout the
+  // chronology: reorder two lines and the established review changes with nothing recording it.
+  const duplicate = { reviews: [review({ id: "r1" }), review({ id: "r1", reviewedAt: "2026-08-09" })] };
+  assert.match(reviewProblems("x.y", duplicate).join(), /duplicate review id/);
+  assert.equal(currentReview("x.y", duplicate), null);
+
+  const misordered = {
+    reviews: [review({ id: "r1", reviewedAt: "2026-08-09" }), review({ id: "r2", reviewedAt: "2026-08-01" })],
+  };
+  assert.match(reviewProblems("x.y", misordered).join(), /chronological order/);
+  assert.equal(currentReview("x.y", misordered), null);
+
+  const anonymous = { reviews: [{ status: "approved", reviewedBy: "o", reviewedAt: "2026-08-01", evidence: "e" }] };
+  assert.match(reviewProblems("x.y", anonymous).join(), /has no id/);
+
+  const dangling = { reviews: [review({ id: "r1" }), review({ id: "r2", reviewedAt: "2026-08-09", supersedes: "nope" })] };
+  assert.match(reviewProblems("x.y", dangling).join(), /supersedes nope, which is not recorded/);
+});
+
+test("the legacy single-record shape is still readable during the migration window", () => {
+  const legacy = { status: "approved", reviewedBy: "owner", reviewedAt: "2026-08-01", evidence: "e" };
+  assert.equal(isLegacyShape(legacy), true);
+  assert.equal(reviewsOf(legacy).length, 1);
+  assert.equal(currentReview("x.y", legacy).status, "approved");
+  assert.deepEqual(reviewProblems("x.y", legacy), [], "an unmigrated record is not itself an error");
+});
+
+test("this repository's own policy is fully migrated and every event carries provenance metadata", () => {
+  const r = spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${REPO_ROOT}`, "--json"],
+    { encoding: "utf8" },
+  );
+  const json = JSON.parse(r.stdout);
+  assert.deepEqual(json.violations, []);
+  for (const a of json.attestations) {
+    assert.equal(a.shape, "review-event", `${a.rule} is still in the pre-migration shape`);
+    assert.ok(a.id, `${a.rule} has an event without an id`);
   }
 });

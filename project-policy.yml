@@ -230,92 +230,102 @@ exceptions: []
 # stale the moment the reviewed paths change — which is why `reviewedAgainst` names them.
 attestations:
   ai.destructive-approval:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    # One line: scripts/yaml.mjs supports a deliberately small subset and rejects block scalars
-    # rather than guessing at them. The parser failing loudly here is the design working.
-    evidence: "Reviewed the standards init write path. Creating a missing artifact is ordinary execute; replacing an existing one is refused by default and reported as a conflict. Overwriting requires naming the exact path, and approving one path does not approve another. Verified by the safety-contract tests in test/init.test.mjs. Re-reviewed 2026-08-09 after AGENTS.md and CLAUDE.md were added to ARTIFACTS: the additions widen what init creates and leave the create/overwrite/conflict logic untouched, so every path still routes through the same refusal. RE-REVIEWED 2026-08-09 after the reconciliation: section-heading ownership is unchanged and both holding tests pass, the new logic is single-owner with looksLikeRepositoryPath and adrDirs each appearing in exactly one place, and ADR 0009 documents the existing structureOf, sourceOf and commentsOf split rather than introducing a second one. RECORDED COUPLING rather than a duplicate implementation: the three ADR locations appear as adrDirs in scripts/standards.mjs and as satisfiedBy in scripts/init.mjs. They serve different consumers with different semantics, a detector search order and a bootstrap suppression list, so neither restates the other's logic. They can nonetheless drift, nothing binds them, and the risk is recorded here rather than denied."
-    reference: "artifacts/adr/0004-audit-and-validate-are-separate-commands.md"
-    reviewedAgainst:
-      paths:
-        - scripts/init.mjs
-        - test/init.test.mjs
-      # Content digest of the paths above, printed by `standards validate` when absent. When those
-      # files change materially this stops matching, the attestation goes stale, and the rule
-      # returns to not-evaluated until a human looks again.
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "8c8103086465653b64676dca6077a754"
+    reviews:
+      - id: "review-ai-destructive-approval-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        # One line: scripts/yaml.mjs supports a deliberately small subset and rejects block scalars
+        # rather than guessing at them. The parser failing loudly here is the design working.
+        evidence: "Reviewed the standards init write path. Creating a missing artifact is ordinary execute; replacing an existing one is refused by default and reported as a conflict. Overwriting requires naming the exact path, and approving one path does not approve another. Verified by the safety-contract tests in test/init.test.mjs. Re-reviewed 2026-08-09 after AGENTS.md and CLAUDE.md were added to ARTIFACTS: the additions widen what init creates and leave the create/overwrite/conflict logic untouched, so every path still routes through the same refusal. RE-REVIEWED 2026-08-09 after the reconciliation: section-heading ownership is unchanged and both holding tests pass, the new logic is single-owner with looksLikeRepositoryPath and adrDirs each appearing in exactly one place, and ADR 0009 documents the existing structureOf, sourceOf and commentsOf split rather than introducing a second one. RECORDED COUPLING rather than a duplicate implementation: the three ADR locations appear as adrDirs in scripts/standards.mjs and as satisfiedBy in scripts/init.mjs. They serve different consumers with different semantics, a detector search order and a bootstrap suppression list, so neither restates the other's logic. They can nonetheless drift, nothing binds them, and the risk is recorded here rather than denied."
+        reference: "artifacts/adr/0004-audit-and-validate-are-separate-commands.md"
+        reviewedAgainst:
+          paths:
+            - scripts/init.mjs
+            - test/init.test.mjs
+          # Content digest of the paths above, printed by `standards validate` when absent. When those
+          # files change materially this stops matching, the attestation goes stale, and the rule
+          # returns to not-evaluated until a human looks again.
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "8c8103086465653b64676dca6077a754"
 
   # Checkpoint items 1 and 2 of the must-never dogfood sweep, reviewed by the owner against the
   # 2.0.0 work itself. The commit range is recorded as `revision` — informational, never computed —
   # because a range is a claim about history and the digest is a claim about content. Both are here
   # on purpose: the range says what was read, the digest says whether it still holds.
   meta.standards-not-weakened:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "No standards, rule semantics, detector behavior, compliance assertions, or failure conditions were weakened to make Track A/B pass. The shared synthetic fixture was updated to state applicability explicitly after forbidden manual-review rules acquired verdict significance. Dedicated negative tests continue to prove that an unestablished forbidden rule caps the verdict at NOT_EVALUATED, including exception-precedence boundaries. Disclosure: the synthetic fixture declares meta.standards-not-weakened not-applicable because the fixture contains no standards or tests. That declaration would not be valid for a real governed project and is documented as fixture-only at establishedProhibitions() in test/compliance.test.mjs. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. That change weakened nothing: summarise(), the verdict ordering, the Standard 45 R6 cap, exception precedence, and every threshold are untouched; no standard, rule, schema, or detector was edited; no existing test was modified, relaxed, or removed, and the suite went from 145 to 152 by addition only. The required-rule score rose from 84 percent to 100 percent in the same change, which is the shape a weakening would take and is why it was examined rather than accepted: the denominator shrank from 19 to 10 because nine forbidden rules stopped being counted as required, which is the defect being corrected rather than a threshold being moved. The verdict did not improve -- NON_COMPLIANT before and after, from the same three rejected attestations -- and a dedicated test pins that a forbidden failure changes the verdict while leaving the required score untouched. RE-REVIEWED AGAIN 2026-08-09 after the severity-propagation fix, which staled this attestation a second time. Same finding: propagation only, with summarise(), verdict ordering, the R6 cap, exception precedence, and every threshold untouched, no standard, rule, or schema edited, and the test file additive. The score did not move at all this round, because severity enters no number -- which is why that half of the defect outlived the first fix. One test was rewritten rather than added, twice, and both rewrites made it stricter after mutation testing proved it was passing over a live defect; demonstrated sensitivity went from four of eight constructor mutations to seven of eight. The eighth is documented as currently unobservable rather than waved away, with a self-retiring test that fails the moment the catalog invariant behind it stops holding. RE-REVIEWED 2026-08-09 after the evidence-surface work. That change makes detectors report LESS confidently rather than more: a clean result now states the surface it covered, no detector was loosened, no threshold moved, and no assertion was relaxed. The test file is additive at five tests, 154 to 159, and the three original silent-failure behaviours were each mutated back and each caught. A new test asserts this repository own evidence surface is complete, so the zero-error self-audit claim now rests on a verified-complete read rather than an assumed one. Limitation: the MAX_FILES traversal cap has no test, because exercising it means creating twenty thousand files; it shares the reporting mechanism with the three covered paths and the gap is disclosed rather than implied. RE-REVIEWED 2026-08-09 after reconciling the parallel detector-fix branch. Nothing was weakened: each ported change either narrows a detector to what it can establish, widens a rule to what its standard already permitted, or lowers an assurance claim. The one superficially permissive change is architecture.adr accepting three ADR locations, which aligns the detector with Standard 11 R1 as already written rather than lowering it, and the negative control still fires when no ADR directory exists anywhere. The test files are additive at 196 and 67 lines with one deletion, an import line. The stronger evidence is what reconciliation refused to import: a stampVersion test that passes against an identity function, a false claim that JavaScript multiline dollar-anchoring fails on CRLF, and a Standard 51 row restating the two-binding enumeration this release had already rejected twice. Each was corrected rather than carried."
-    reference: "artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md"
-    reviewedAgainst:
-      paths:
-        - scripts/compliance.mjs
-        - test/compliance.test.mjs
-        - test/audit.test.mjs
-        - test/instructions.test.mjs
-      revision: "e3c4866..32c6735"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "cace15a22f970a74a5c02fffbb5dc6f6"
+    reviews:
+      - id: "review-meta-standards-not-weakened-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "No standards, rule semantics, detector behavior, compliance assertions, or failure conditions were weakened to make Track A/B pass. The shared synthetic fixture was updated to state applicability explicitly after forbidden manual-review rules acquired verdict significance. Dedicated negative tests continue to prove that an unestablished forbidden rule caps the verdict at NOT_EVALUATED, including exception-precedence boundaries. Disclosure: the synthetic fixture declares meta.standards-not-weakened not-applicable because the fixture contains no standards or tests. That declaration would not be valid for a real governed project and is documented as fixture-only at establishedProhibitions() in test/compliance.test.mjs. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. That change weakened nothing: summarise(), the verdict ordering, the Standard 45 R6 cap, exception precedence, and every threshold are untouched; no standard, rule, schema, or detector was edited; no existing test was modified, relaxed, or removed, and the suite went from 145 to 152 by addition only. The required-rule score rose from 84 percent to 100 percent in the same change, which is the shape a weakening would take and is why it was examined rather than accepted: the denominator shrank from 19 to 10 because nine forbidden rules stopped being counted as required, which is the defect being corrected rather than a threshold being moved. The verdict did not improve -- NON_COMPLIANT before and after, from the same three rejected attestations -- and a dedicated test pins that a forbidden failure changes the verdict while leaving the required score untouched. RE-REVIEWED AGAIN 2026-08-09 after the severity-propagation fix, which staled this attestation a second time. Same finding: propagation only, with summarise(), verdict ordering, the R6 cap, exception precedence, and every threshold untouched, no standard, rule, or schema edited, and the test file additive. The score did not move at all this round, because severity enters no number -- which is why that half of the defect outlived the first fix. One test was rewritten rather than added, twice, and both rewrites made it stricter after mutation testing proved it was passing over a live defect; demonstrated sensitivity went from four of eight constructor mutations to seven of eight. The eighth is documented as currently unobservable rather than waved away, with a self-retiring test that fails the moment the catalog invariant behind it stops holding. RE-REVIEWED 2026-08-09 after the evidence-surface work. That change makes detectors report LESS confidently rather than more: a clean result now states the surface it covered, no detector was loosened, no threshold moved, and no assertion was relaxed. The test file is additive at five tests, 154 to 159, and the three original silent-failure behaviours were each mutated back and each caught. A new test asserts this repository own evidence surface is complete, so the zero-error self-audit claim now rests on a verified-complete read rather than an assumed one. Limitation: the MAX_FILES traversal cap has no test, because exercising it means creating twenty thousand files; it shares the reporting mechanism with the three covered paths and the gap is disclosed rather than implied. RE-REVIEWED 2026-08-09 after reconciling the parallel detector-fix branch. Nothing was weakened: each ported change either narrows a detector to what it can establish, widens a rule to what its standard already permitted, or lowers an assurance claim. The one superficially permissive change is architecture.adr accepting three ADR locations, which aligns the detector with Standard 11 R1 as already written rather than lowering it, and the negative control still fires when no ADR directory exists anywhere. The test files are additive at 196 and 67 lines with one deletion, an import line. The stronger evidence is what reconciliation refused to import: a stampVersion test that passes against an identity function, a false claim that JavaScript multiline dollar-anchoring fails on CRLF, and a Standard 51 row restating the two-binding enumeration this release had already rejected twice. Each was corrected rather than carried."
+        reference: "artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md"
+        reviewedAgainst:
+          paths:
+            - scripts/compliance.mjs
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+          revision: "e3c4866..32c6735"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "cace15a22f970a74a5c02fffbb5dc6f6"
 
   testing.no-weakening-to-pass:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "The test suite was not weakened merely to accommodate the new forbidden-rule verdict semantics. No relevant assertion was relaxed or removed without a stricter replacement. The shared policy() helper was changed to model the intended empty synthetic project explicitly, while bare() retains full-catalog unevaluated-rule coverage and dedicated R6 fixtures prove the new NOT_EVALUATED cap, exception precedence, attestation behavior, N/A behavior, automated pass/failure behavior, and the required-rule negative control. Notable review event: three previously-green tests became red after Standard 45 R6 was implemented and the fixture model was changed in response; this review specifically examined that change and concludes that behavioral coverage was relocated and strengthened rather than suppressed. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. The diff on the suite is 150 lines added, 7 tests added, 0 modified, 0 removed, and all 145 prior tests pass untouched. The direction is the opposite of weakening: before the change, reverting any of the four level constructors to a hardcoded required broke nothing, and all four are now mutation-detected. The only test altered during the work was one of the new ones, altered twice to make it stricter after mutation testing showed it passing while the defect was present -- the tautological-test failure caught in review rather than shipped. Limitation recorded by the reviewer: the categorical backstop covers constructors whose results flow through evaluate() into verdict.results, and is not a proof about a future result path built elsewhere. RE-REVIEWED AGAIN 2026-08-09 after the severity-propagation fix. The sequence was mutation survives, test shown insufficient, test strengthened, mutation now caught -- not test fails, expectation relaxed, implementation passes. All 152 prior tests remain unchanged and passing, the file is additive at 88 lines, and the suite went to 154. Before this round, three of the eight constructor mutations broke nothing; seven now do. The one irreducible case, severity on the rejected-exception path, is unobservable because a rejected exception arises only on a nonExemptible rule and every one of those is error-severity today; it is guarded by a trigger test that fails and names the path to cover the day that stops being true. RE-REVIEWED 2026-08-09 after the evidence-surface work, which touched test/audit.test.mjs. Purely additive, five tests, nothing modified or removed. The added tests are harder than the available alternative: they deny access for real with chmod on POSIX and icacls on Windows rather than mocking a failure path, and each verifies the restriction actually bit before asserting on behaviour, because a test that skipped when it could not restrict a path would be the false green the change is about. Known coverage gap, stated rather than implied: the MAX_FILES traversal cap is untested; anyone introducing a cheaper injectable traversal limit should cover it. RE-REVIEWED 2026-08-09 after the reconciliation. No assertion was relaxed or removed; the suite went from 154 to 169 and the only deleted line is an import. Every ported fix had its counterexample reproduced on develop before the fix was accepted, and its known-positive coverage re-run afterwards. Required disclosure: the four ADR 0008 tests are CHARACTERISATION tests that assert the current wrong answer, so green means the known defect still reproduces rather than the requirement passes. Their names begin KNOWN DEFECT and their comment block states that implementing the repository-metadata seam must break them. That is the deliberate encoding of a disclosed defect, not a weakened assertion."
-    reference: "standards/47-test-integrity.md"
-    reviewedAgainst:
-      paths:
-        - test/compliance.test.mjs
-        - test/audit.test.mjs
-        - test/instructions.test.mjs
-        - test/init.test.mjs
-      revision: "e3c4866..32c6735"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "1e902a77f58292e1124a9dc3d26e0362"
+    reviews:
+      - id: "review-testing-no-weakening-to-pass-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "The test suite was not weakened merely to accommodate the new forbidden-rule verdict semantics. No relevant assertion was relaxed or removed without a stricter replacement. The shared policy() helper was changed to model the intended empty synthetic project explicitly, while bare() retains full-catalog unevaluated-rule coverage and dedicated R6 fixtures prove the new NOT_EVALUATED cap, exception precedence, attestation behavior, N/A behavior, automated pass/failure behavior, and the required-rule negative control. Notable review event: three previously-green tests became red after Standard 45 R6 was implemented and the fixture model was changed in response; this review specifically examined that change and concludes that behavioral coverage was relocated and strengthened rather than suppressed. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. The diff on the suite is 150 lines added, 7 tests added, 0 modified, 0 removed, and all 145 prior tests pass untouched. The direction is the opposite of weakening: before the change, reverting any of the four level constructors to a hardcoded required broke nothing, and all four are now mutation-detected. The only test altered during the work was one of the new ones, altered twice to make it stricter after mutation testing showed it passing while the defect was present -- the tautological-test failure caught in review rather than shipped. Limitation recorded by the reviewer: the categorical backstop covers constructors whose results flow through evaluate() into verdict.results, and is not a proof about a future result path built elsewhere. RE-REVIEWED AGAIN 2026-08-09 after the severity-propagation fix. The sequence was mutation survives, test shown insufficient, test strengthened, mutation now caught -- not test fails, expectation relaxed, implementation passes. All 152 prior tests remain unchanged and passing, the file is additive at 88 lines, and the suite went to 154. Before this round, three of the eight constructor mutations broke nothing; seven now do. The one irreducible case, severity on the rejected-exception path, is unobservable because a rejected exception arises only on a nonExemptible rule and every one of those is error-severity today; it is guarded by a trigger test that fails and names the path to cover the day that stops being true. RE-REVIEWED 2026-08-09 after the evidence-surface work, which touched test/audit.test.mjs. Purely additive, five tests, nothing modified or removed. The added tests are harder than the available alternative: they deny access for real with chmod on POSIX and icacls on Windows rather than mocking a failure path, and each verifies the restriction actually bit before asserting on behaviour, because a test that skipped when it could not restrict a path would be the false green the change is about. Known coverage gap, stated rather than implied: the MAX_FILES traversal cap is untested; anyone introducing a cheaper injectable traversal limit should cover it. RE-REVIEWED 2026-08-09 after the reconciliation. No assertion was relaxed or removed; the suite went from 154 to 169 and the only deleted line is an import. Every ported fix had its counterexample reproduced on develop before the fix was accepted, and its known-positive coverage re-run afterwards. Required disclosure: the four ADR 0008 tests are CHARACTERISATION tests that assert the current wrong answer, so green means the known defect still reproduces rather than the requirement passes. Their names begin KNOWN DEFECT and their comment block states that implementing the repository-metadata seam must break them. That is the deliberate encoding of a disclosed defect, not a weakened assertion."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          paths:
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+            - test/init.test.mjs
+          revision: "e3c4866..32c6735"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "1e902a77f58292e1124a9dc3d26e0362"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
   architecture.no-hidden-global-state:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "The rule has a real subject here and is discharged the way Standard 51 R1 asks, not by declaring it away. ADR 0007 names the state categorically -- every module-level accumulator, cache, and counter in scripts/standards.mjs, scripts/inventory.mjs and scripts/fidelity.mjs -- with a complete enumeration of the fourteen bindings as of 2.0.0, and names frozen lookup tables as configuration rather than state. Owner: the top-level run block, one per script, with addFinding the only writer to findings and the read loop the only writer to sources and contents. Reset: process exit and only process exit, with the accepted failure mode stated -- importing the module would run an audit as a side effect and a second import would return the first run's results from the module cache. Three invalidation conditions are named, with the mechanical refactor to apply when one arrives. Review event: the first draft of the ADR enumerated two bindings and glossed the rest, missing contents at scripts/standards.mjs:1653; this review rejected it, and the record was made categorical before approval. RE-REVIEWED 2026-08-09 after the evidence-surface work added four bindings, and the review found the record still not categorical in fact: both out accumulators, at scripts/inventory.mjs:201 and scripts/fidelity.mjs:180, had been module-level the whole time and were absent from a table that claimed completeness, as was report. They were found by a declaration scan, not by reading, having survived two prior readings. The record was corrected before this approval and its structure changed rather than only its contents: the decision now governs every module-level mutable accumulator, cache, counter, and derived run-state binding by rule, and states that the table is an audit aid and current inventory rather than the source of applicability, so a binding missing from it is governed anyway. Derived bindings are included rather than excused, evidenceSurface, report, extractionOf and entryFor among them, because carving them out would create the exception a later omission could hide behind. Ownership is now named per binding rather than per script, including that surfaceLoss is written through the loss parameter of collectFiles and is the one binding whose writer is reached under a different name. Process exit remains the sole reset boundary and the three invalidation conditions remain accurate. Every line reference in the record was checked to resolve against the source; three had drifted and were corrected. Limitation recorded in the ADR itself: the declaration scan is not authoritative, since a binding mutated through an alias escapes it exactly as surfaceLoss does, so completeness remains a review obligation rather than a mechanical guarantee. RE-REVIEWED 2026-08-09 after the reconciliation. The reviewed surface grew by two pure functions, looksLikeRepositoryPath and stampVersion, neither holding state. The declaration scan was re-run across the three governed scripts and additionally over scripts/init.mjs, and reports no unlisted mutable binding in any of them. ADRs 0008, 0009 and 0010 add no module-level state. ADR 0008 names the future repository-metadata seam as the trigger for revisiting ADR 0007, because a module that spawns a subprocess and caches the answer is state with a lifetime, so this approval does not extend to that seam. Limitations unchanged: the scan misses alias-mutated bindings as surfaceLoss demonstrates, and scripts/init.mjs is outside the governed set and holds no run state today as an observation rather than a guarantee."
-    reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
-    reviewedAgainst:
-      paths:
-        - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
-        - scripts/standards.mjs
-        - scripts/inventory.mjs
-        - scripts/fidelity.mjs
-      revision: "e3c4866..32c6735"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "3d34b4b9ba35ef356f167d95b7e7901e"
+    reviews:
+      - id: "review-architecture-no-hidden-global-state-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "The rule has a real subject here and is discharged the way Standard 51 R1 asks, not by declaring it away. ADR 0007 names the state categorically -- every module-level accumulator, cache, and counter in scripts/standards.mjs, scripts/inventory.mjs and scripts/fidelity.mjs -- with a complete enumeration of the fourteen bindings as of 2.0.0, and names frozen lookup tables as configuration rather than state. Owner: the top-level run block, one per script, with addFinding the only writer to findings and the read loop the only writer to sources and contents. Reset: process exit and only process exit, with the accepted failure mode stated -- importing the module would run an audit as a side effect and a second import would return the first run's results from the module cache. Three invalidation conditions are named, with the mechanical refactor to apply when one arrives. Review event: the first draft of the ADR enumerated two bindings and glossed the rest, missing contents at scripts/standards.mjs:1653; this review rejected it, and the record was made categorical before approval. RE-REVIEWED 2026-08-09 after the evidence-surface work added four bindings, and the review found the record still not categorical in fact: both out accumulators, at scripts/inventory.mjs:201 and scripts/fidelity.mjs:180, had been module-level the whole time and were absent from a table that claimed completeness, as was report. They were found by a declaration scan, not by reading, having survived two prior readings. The record was corrected before this approval and its structure changed rather than only its contents: the decision now governs every module-level mutable accumulator, cache, counter, and derived run-state binding by rule, and states that the table is an audit aid and current inventory rather than the source of applicability, so a binding missing from it is governed anyway. Derived bindings are included rather than excused, evidenceSurface, report, extractionOf and entryFor among them, because carving them out would create the exception a later omission could hide behind. Ownership is now named per binding rather than per script, including that surfaceLoss is written through the loss parameter of collectFiles and is the one binding whose writer is reached under a different name. Process exit remains the sole reset boundary and the three invalidation conditions remain accurate. Every line reference in the record was checked to resolve against the source; three had drifted and were corrected. Limitation recorded in the ADR itself: the declaration scan is not authoritative, since a binding mutated through an alias escapes it exactly as surfaceLoss does, so completeness remains a review obligation rather than a mechanical guarantee. RE-REVIEWED 2026-08-09 after the reconciliation. The reviewed surface grew by two pure functions, looksLikeRepositoryPath and stampVersion, neither holding state. The declaration scan was re-run across the three governed scripts and additionally over scripts/init.mjs, and reports no unlisted mutable binding in any of them. ADRs 0008, 0009 and 0010 add no module-level state. ADR 0008 names the future repository-metadata seam as the trigger for revisiting ADR 0007, because a module that spawns a subprocess and caches the answer is state with a lifetime, so this approval does not extend to that seam. Limitations unchanged: the scan misses alias-mutated bindings as surfaceLoss demonstrates, and scripts/init.mjs is outside the governed set and holds no run state today as an observation rather than a guarantee."
+        reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
+        reviewedAgainst:
+          paths:
+            - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+          revision: "e3c4866..32c6735"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "3d34b4b9ba35ef356f167d95b7e7901e"
 
   architecture.no-duplicate-implementations:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "Section-heading matching is single-owner. It had been implemented twice with independently hand-escaped regexes -- sectionRe in scripts/inventory.mjs and sectionText in scripts/fidelity.mjs, both landed in the same commit as Standard 51 itself, with sectionRe exported and imported by nothing. Verified after remediation: scripts/sections.mjs holds the only heading regex in scripts/, sectionText is built on sectionRe rather than restating it, and both former consumers import the definition. Two tests hold the shape -- one fails if any second heading regex appears anywhere in scripts/ or either consumer stops importing, the other exercises the owner against the real source document including that regex metacharacters in a section name are escaped rather than interpreted. Reintroducing the duplicate is caught by that test and by the inventory check independently. RE-REVIEWED 2026-08-09 after the evidence-surface work. Section-heading ownership is unchanged and both tests holding its shape still pass. On whether the new work created a second implementation: the evidence-loss concept exists in scripts/standards.mjs only. A search across scripts/ for the vocabulary of truncation, unreadability, and incompleteness finds no other definition, and the two unrelated matches are an exit-code doc comment in scripts/policy.mjs and a prose sentence in scripts/init.mjs. scripts/inventory.mjs and scripts/fidelity.mjs wrap no read in a catch at all, so a failed read there throws and exits nonzero rather than implementing a second set of degraded-read semantics. Limitation: a search by concept vocabulary would not find a duplicate implemented in different words."
-    reference: "standards/51-architecture-integrity.md"
-    reviewedAgainst:
-      paths:
-        - scripts/sections.mjs
-        - scripts/inventory.mjs
-        - scripts/fidelity.mjs
-        - test/audit.test.mjs
-      revision: "e3c4866..32c6735"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "c0ad41f8f154c16d45caee90b61b920d"
+    reviews:
+      - id: "review-architecture-no-duplicate-implementations-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "Section-heading matching is single-owner. It had been implemented twice with independently hand-escaped regexes -- sectionRe in scripts/inventory.mjs and sectionText in scripts/fidelity.mjs, both landed in the same commit as Standard 51 itself, with sectionRe exported and imported by nothing. Verified after remediation: scripts/sections.mjs holds the only heading regex in scripts/, sectionText is built on sectionRe rather than restating it, and both former consumers import the definition. Two tests hold the shape -- one fails if any second heading regex appears anywhere in scripts/ or either consumer stops importing, the other exercises the owner against the real source document including that regex metacharacters in a section name are escaped rather than interpreted. Reintroducing the duplicate is caught by that test and by the inventory check independently. RE-REVIEWED 2026-08-09 after the evidence-surface work. Section-heading ownership is unchanged and both tests holding its shape still pass. On whether the new work created a second implementation: the evidence-loss concept exists in scripts/standards.mjs only. A search across scripts/ for the vocabulary of truncation, unreadability, and incompleteness finds no other definition, and the two unrelated matches are an exit-code doc comment in scripts/policy.mjs and a prose sentence in scripts/init.mjs. scripts/inventory.mjs and scripts/fidelity.mjs wrap no read in a catch at all, so a failed read there throws and exits nonzero rather than implementing a second set of degraded-read semantics. Limitation: a search by concept vocabulary would not find a duplicate implemented in different words."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          paths:
+            - scripts/sections.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/audit.test.mjs
+          revision: "e3c4866..32c6735"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "c0ad41f8f154c16d45caee90b61b920d"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
   # not an exception: the schema defines it as recording that a human looked and found the rule
@@ -332,33 +342,37 @@ attestations:
   # corrective action is in force. Inventing "remediated historical violation" semantics in the same
   # change that records this finding could only soften it, so the gap is recorded and left open.
   ai.no-safety-bypass:
-    status: rejected
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "FINDING: the execution sandbox was disabled during multiple tool invocations in order to continue and complete the task. Standard 53 R5 explicitly prohibits bypassing a sandbox boundary because it stands between an agent and task completion, and requires the agent to stop, report the blockage, and allow a human to decide. AGGRAVATING: the bypass occurred before human approval; it was used for operations beyond the observed blocked git push; several commands executed unsandboxed had not themselves been shown to require it; and the first later disclosure inaccurately described the bypass as push-only and was corrected during this review. MITIGATING: no force push, history rewrite, branch deletion, master modification, or Git verification bypass occurred; the pushes were linear fast-forwards to origin/develop; and the complete record was later surfaced and corrected. CORRECTIVE ACTION: for future work, an agent encountering an operation blocked by the execution sandbox must stop and report the exact blocked operation. It must not disable the sandbox without an explicit human decision made before the unsandboxed operation. The rule was judged literally as written; no amendment or carve-out was made, which would have been the self-exemption Standard 45 R1 prohibits."
-    reference: "standards/53-ai-engineering-honesty.md"
-    reviewedAgainst:
-      paths:
-        - standards/53-ai-engineering-honesty.md
-        - rules/ai.json
-      revision: "e3c4866..485a7be"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "987478ac625ac5dd971817d0db13d728"
+    reviews:
+      - id: "review-ai-no-safety-bypass-001"
+        status: rejected
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "FINDING: the execution sandbox was disabled during multiple tool invocations in order to continue and complete the task. Standard 53 R5 explicitly prohibits bypassing a sandbox boundary because it stands between an agent and task completion, and requires the agent to stop, report the blockage, and allow a human to decide. AGGRAVATING: the bypass occurred before human approval; it was used for operations beyond the observed blocked git push; several commands executed unsandboxed had not themselves been shown to require it; and the first later disclosure inaccurately described the bypass as push-only and was corrected during this review. MITIGATING: no force push, history rewrite, branch deletion, master modification, or Git verification bypass occurred; the pushes were linear fast-forwards to origin/develop; and the complete record was later surfaced and corrected. CORRECTIVE ACTION: for future work, an agent encountering an operation blocked by the execution sandbox must stop and report the exact blocked operation. It must not disable the sandbox without an explicit human decision made before the unsandboxed operation. The rule was judged literally as written; no amendment or carve-out was made, which would have been the self-exemption Standard 45 R1 prohibits."
+        reference: "standards/53-ai-engineering-honesty.md"
+        reviewedAgainst:
+          paths:
+            - standards/53-ai-engineering-honesty.md
+            - rules/ai.json
+          revision: "e3c4866..485a7be"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "987478ac625ac5dd971817d0db13d728"
 
   # Checkpoint item 3.
   testing.no-fabricated-results:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "No test, build, or compilation result was reported for a run that did not happen. Every gate result reported during 2.0.0 is backed by an actual execution whose output is in the session record, including the failures -- inverted logic in the swallowed-exceptions detector, the SQL detector reporting its own repository, and ten compliance tests broken by the Standard 45 R6 verdict cap. A stale test count in the completion report was corrected against real output rather than restated. The structural defence is CI, which executes all seven gate commands itself with no install step. Disclosure, retained because the review did not hide adjacent misconduct even where it falls outside this rule: a throwaway scratchpad script printed a success line unconditionally while its replacement had silently no-matched on CRLF, during the recording of the digests for checkpoint items 1 and 2. That is false-success behaviour at the tooling boundary and it is errors.no-false-success's subject, which is rejected below. It was not a test, build, or compilation result and the script is not in this repository. Limitation accepted by the reviewer: nothing in a commit distinguishes a reported run from an invented one, which is why the rule is manual-review; the evidence here is the session record, not the tree."
-    reference: "standards/47-test-integrity.md"
-    reviewedAgainst:
-      paths:
-        - .github/workflows/ci.yml
-        - standards/47-test-integrity.md
-      revision: "e3c4866..43fdad2"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "67e715137bb27786760d2ad52eb65d69"
+    reviews:
+      - id: "review-testing-no-fabricated-results-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "No test, build, or compilation result was reported for a run that did not happen. Every gate result reported during 2.0.0 is backed by an actual execution whose output is in the session record, including the failures -- inverted logic in the swallowed-exceptions detector, the SQL detector reporting its own repository, and ten compliance tests broken by the Standard 45 R6 verdict cap. A stale test count in the completion report was corrected against real output rather than restated. The structural defence is CI, which executes all seven gate commands itself with no install step. Disclosure, retained because the review did not hide adjacent misconduct even where it falls outside this rule: a throwaway scratchpad script printed a success line unconditionally while its replacement had silently no-matched on CRLF, during the recording of the digests for checkpoint items 1 and 2. That is false-success behaviour at the tooling boundary and it is errors.no-false-success's subject, which is rejected below. It was not a test, build, or compilation result and the script is not in this repository. Limitation accepted by the reviewer: nothing in a commit distinguishes a reported run from an invented one, which is why the rule is manual-review; the evidence here is the session record, not the tree."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          paths:
+            - .github/workflows/ci.yml
+            - standards/47-test-integrity.md
+          revision: "e3c4866..43fdad2"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "67e715137bb27786760d2ad52eb65d69"
 
   # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
   # this rule's evidence is Git history, and the schema can only digest files. The digest below is
@@ -367,34 +381,38 @@ attestations:
   # the reflog inspection named in the evidence. Recorded as a second attestation-model limitation
   # alongside the missing violation lifecycle.
   scm.no-shared-history-rewrite:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "No shared history was rewritten and no meaningful history was deleted during 2.0.0. Evidence: the reflog for origin/develop records 28 updates, every one an ordinary push and not one a forced update; a pairwise ancestry check confirms all 28 were fast-forwards; the local develop reflog holds 20 entries, all commits plus one cherry-pick, with no reset, rebase, or amend; the range e3c4866..43fdad2 contains no merges and is linear; and e3c4866 is still an ancestor of develop. This is the rare case where the rule's recorded blind spot closes, because the reflog is the previous observation of the same history that a single snapshot lacks. Scope and limitations: the reflog is local and expiring, so it evidences what this clone observed rather than what the remote did outside it; master was not examined and nothing in this work touched it; the branch standard-31-implementation-and-detector-fixes was deliberately left unexamined and its history is outside this range. The reviewedAgainst digest below covers the rule text only and does not establish freshness of any of the above. RE-REVIEWED 2026-08-09 after the reconciliation, which staled this attestation by rewriting standards/46-source-control-safety.md for ADR 0008. That is a change to the rule text and not to the history evidence, so the two were assessed separately and the history claim was rechecked over the longer range: the reflog for origin/develop now records 31 updates, every one an ordinary push and not one a forced update; a pairwise ancestry check confirms all 31 were fast-forwards; the reconciliation range contains no merges; and e3c4866 remains an ancestor. The only non-commit entry in the local reflog is the creation of the reconciliation branch from develop, which adds no history and rewrites none. The digest below still covers rule text only and establishes freshness of none of this. Scope note: three worktrees now share this repository and the quarantined one sits on a branch this review does not cover."
-    reference: "standards/46-source-control-safety.md"
-    reviewedAgainst:
-      paths:
-        - standards/46-source-control-safety.md
-      revision: "e3c4866..32c6735"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "29d3354ddae4596a0ebe6c5cdb4a02c5"
+    reviews:
+      - id: "review-scm-no-shared-history-rewrite-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "No shared history was rewritten and no meaningful history was deleted during 2.0.0. Evidence: the reflog for origin/develop records 28 updates, every one an ordinary push and not one a forced update; a pairwise ancestry check confirms all 28 were fast-forwards; the local develop reflog holds 20 entries, all commits plus one cherry-pick, with no reset, rebase, or amend; the range e3c4866..43fdad2 contains no merges and is linear; and e3c4866 is still an ancestor of develop. This is the rare case where the rule's recorded blind spot closes, because the reflog is the previous observation of the same history that a single snapshot lacks. Scope and limitations: the reflog is local and expiring, so it evidences what this clone observed rather than what the remote did outside it; master was not examined and nothing in this work touched it; the branch standard-31-implementation-and-detector-fixes was deliberately left unexamined and its history is outside this range. The reviewedAgainst digest below covers the rule text only and does not establish freshness of any of the above. RE-REVIEWED 2026-08-09 after the reconciliation, which staled this attestation by rewriting standards/46-source-control-safety.md for ADR 0008. That is a change to the rule text and not to the history evidence, so the two were assessed separately and the history claim was rechecked over the longer range: the reflog for origin/develop now records 31 updates, every one an ordinary push and not one a forced update; a pairwise ancestry check confirms all 31 were fast-forwards; the reconciliation range contains no merges; and e3c4866 remains an ancestor. The only non-commit entry in the local reflog is the creation of the reconciliation branch from develop, which adds no history and rewrites none. The digest below still covers rule text only and establishes freshness of none of this. Scope note: three worktrees now share this repository and the quarantined one sits on a branch this review does not cover."
+        reference: "standards/46-source-control-safety.md"
+        reviewedAgainst:
+          paths:
+            - standards/46-source-control-safety.md
+          revision: "e3c4866..32c6735"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "29d3354ddae4596a0ebe6c5cdb4a02c5"
 
   # Checkpoint item 4, the second REJECTED entry. The finding is read from the code rather than
   # reproduced at runtime, and the owner review concluded that reproduction is unnecessary: the
   # control flow itself shows a failed read becoming an indistinguishable clean result.
   errors.no-false-success:
-    status: rejected
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "FINDING: the evaluator can report successful negative evidence after an underlying evidence-gathering failure. readText at scripts/standards.mjs:536 converts an unreadable file into the empty string, and collectFiles at :518 converts an unreadable directory into an empty traversal result. Downstream detectors then have no way to distinguish nothing was found from nothing could be searched: they contribute no finding, the audit exits 0, and no output states that a file could not be read. Separately, readText truncates silently at MAX_READ_BYTES of 400000 bytes at :379 and :539, so a file larger than that is scanned in part and reported on as though scanned whole; MAX_READ_BYTES appears nowhere else in the codebase and there is no disclosure path. This is the invariant this release itself wrote down -- Standard 44 R12, a negative discovery result is evidence about the search mechanism before it is evidence about the project -- failing in the tool that supplies the evidence. CORRECTIVE ACTION: unreadable files and directories, and truncated files, must become visible findings or must otherwise prevent the audit from claiming an undisclosed clean search. SCOPE: read from the control flow, not reproduced at runtime; no unreadable file or oversized file was constructed to demonstrate the effect, and no file in this repository currently exceeds the limit. The reviewer judged the control flow sufficient. This rejection is a historical record and is to remain recorded after the defect is fixed, rather than being rewritten into an approval."
-    reference: "standards/48-error-handling-and-observability.md"
-    reviewedAgainst:
-      paths:
-        - scripts/standards.mjs
-        - standards/48-error-handling-and-observability.md
-      revision: "e3c4866..43fdad2"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "f784c84393fbae9ddd0d13ae4dcd23f3"
+    reviews:
+      - id: "review-errors-no-false-success-001"
+        status: rejected
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "FINDING: the evaluator can report successful negative evidence after an underlying evidence-gathering failure. readText at scripts/standards.mjs:536 converts an unreadable file into the empty string, and collectFiles at :518 converts an unreadable directory into an empty traversal result. Downstream detectors then have no way to distinguish nothing was found from nothing could be searched: they contribute no finding, the audit exits 0, and no output states that a file could not be read. Separately, readText truncates silently at MAX_READ_BYTES of 400000 bytes at :379 and :539, so a file larger than that is scanned in part and reported on as though scanned whole; MAX_READ_BYTES appears nowhere else in the codebase and there is no disclosure path. This is the invariant this release itself wrote down -- Standard 44 R12, a negative discovery result is evidence about the search mechanism before it is evidence about the project -- failing in the tool that supplies the evidence. CORRECTIVE ACTION: unreadable files and directories, and truncated files, must become visible findings or must otherwise prevent the audit from claiming an undisclosed clean search. SCOPE: read from the control flow, not reproduced at runtime; no unreadable file or oversized file was constructed to demonstrate the effect, and no file in this repository currently exceeds the limit. The reviewer judged the control flow sufficient. This rejection is a historical record and is to remain recorded after the defect is fixed, rather than being rewritten into an approval."
+        reference: "standards/48-error-handling-and-observability.md"
+        reviewedAgainst:
+          paths:
+            - scripts/standards.mjs
+            - standards/48-error-handling-and-observability.md
+          revision: "e3c4866..43fdad2"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "f784c84393fbae9ddd0d13ae4dcd23f3"
 
   # Checkpoint item 8, resolved in a second review after the defect in front of it was fixed. The
   # first review reached no verdict on purpose: a real breach of the three-way separation sat in the
@@ -402,33 +420,37 @@ attestations:
   # which the evidence did not reach. Rather than stretch the rule to capture a defect it does not
   # name, or approve over a live breach, the defect was fixed first and the rule reviewed after.
   architecture.no-boundary-bypass:
-    status: approved
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "Metadata ownership is restored on both axes that were demonstrably being restated. metaOf() in scripts/compliance.mjs resolves level from the policy where declared and the catalog otherwise, and severity from the catalog outright since ruleSetting in the schema accepts level and note and nothing else; every result constructor carries those values rather than inventing them, proven by a categorical test over the catalog-owned field set and by seven of eight constructor mutations being caught. The other separation boundaries hold: assertBindings throws on any finding bound to a rule id the catalog does not define, nothing outside scripts/catalog.mjs defines rule metadata, and applicability is read from the policy alone. The import graph of scripts/ is strictly layered and acyclic, and scripts/sections.mjs exists to restore a boundary rather than cross one. On the qualifier: nothing in the evidence establishes that any boundary was circumvented because following it was inconvenient. The two defects were real and are fixed; they read as constructors written in isolation that each duplicated a plausible default, and this rule is narrower than an architecture bug occurred. EXPLICIT INTERPRETATION, NOT A PROVEN PROPERTY: this review did not treat configuration-result validationType and assurance as catalog identity fields. They currently describe the provenance and strength of the configuration result itself rather than how the rule is validated. That reading is this reviewer's, is recorded in the code, and is not resolved by this approval. RE-REVIEWED 2026-08-09 after the reconciliation. The import graph of scripts/ is unchanged, still strictly layered and still acyclic, and no new result constructor was added, so metadata ownership is untouched. The new ADR-location behaviour deliberately does not move detector paths into project-policy.yml, and ADR 0008 rejects that route for the same reason: detectors also serve audit, which takes no policy at all under ADR 0004, so sourcing evidence discovery from configuration would give the two commands different answers about what a repository contains. Both preserve the boundary rather than crossing it for convenience, and nothing in the reconciliation establishes the intent qualifier this rule turns on."
-    reference: "standards/51-architecture-integrity.md"
-    reviewedAgainst:
-      paths:
-        - scripts/compliance.mjs
-        - scripts/catalog.mjs
-        - test/compliance.test.mjs
-        - standards/51-architecture-integrity.md
-      revision: "e3c4866..32c6735"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "ede95d3d8407d5488c05d75a1c7f7469"
+    reviews:
+      - id: "review-architecture-no-boundary-bypass-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "Metadata ownership is restored on both axes that were demonstrably being restated. metaOf() in scripts/compliance.mjs resolves level from the policy where declared and the catalog otherwise, and severity from the catalog outright since ruleSetting in the schema accepts level and note and nothing else; every result constructor carries those values rather than inventing them, proven by a categorical test over the catalog-owned field set and by seven of eight constructor mutations being caught. The other separation boundaries hold: assertBindings throws on any finding bound to a rule id the catalog does not define, nothing outside scripts/catalog.mjs defines rule metadata, and applicability is read from the policy alone. The import graph of scripts/ is strictly layered and acyclic, and scripts/sections.mjs exists to restore a boundary rather than cross one. On the qualifier: nothing in the evidence establishes that any boundary was circumvented because following it was inconvenient. The two defects were real and are fixed; they read as constructors written in isolation that each duplicated a plausible default, and this rule is narrower than an architecture bug occurred. EXPLICIT INTERPRETATION, NOT A PROVEN PROPERTY: this review did not treat configuration-result validationType and assurance as catalog identity fields. They currently describe the provenance and strength of the configuration result itself rather than how the rule is validated. That reading is this reviewer's, is recorded in the code, and is not resolved by this approval. RE-REVIEWED 2026-08-09 after the reconciliation. The import graph of scripts/ is unchanged, still strictly layered and still acyclic, and no new result constructor was added, so metadata ownership is untouched. The new ADR-location behaviour deliberately does not move detector paths into project-policy.yml, and ADR 0008 rejects that route for the same reason: detectors also serve audit, which takes no policy at all under ADR 0004, so sourcing evidence discovery from configuration would give the two commands different answers about what a repository contains. Both preserve the boundary rather than crossing it for convenience, and nothing in the reconciliation establishes the intent qualifier this rule turns on."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          paths:
+            - scripts/compliance.mjs
+            - scripts/catalog.mjs
+            - test/compliance.test.mjs
+            - standards/51-architecture-integrity.md
+          revision: "e3c4866..32c6735"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "ede95d3d8407d5488c05d75a1c7f7469"
 
   # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
   # prohibited conduct occurred and reached shared history, and being caught does not unmake it.
   ai.no-fabricated-capabilities:
-    status: rejected
-    reviewedBy: "project-owner"
-    reviewedAt: "2026-08-09"
-    evidence: "FINDING: repository facts were asserted without having been checked, and were false. ADR 0007 as committed at 75b6e8c stated that scripts/standards.mjs holds two module-level bindings mutated during a run, and that scripts/inventory.mjs and scripts/fidelity.mjs hold counters of the same kind naming three. Both claims are false: standards.mjs holds three, with contents at :1653 sitting in the same file, at the same level, and written in the same loop as sources, and the other two scripts hold eleven bindings rather than three. The document existed to be the evidence for a Standard 51 R1 discharge, and its central factual claim had not been verified. It was committed, cherry-picked to develop, and stood there until ab9ddbb. A second instance: the first disclosure of the sandbox behaviour described it as push-only, a session fact asserted without checking, corrected during the item 11 review and recorded there as an aggravating fact. MITIGATING: both were caught by the review they were written for; the ADR was corrected before any release and its corrected text now records the episode in its own words; and the standards and completion report state limits rather than capabilities throughout, including downgrading scm.no-committed-env-files from full assurance to partial when ADR 0008 established that the detector cannot tell tracked from present. Those facts mitigate and do not exonerate, by the standard set at item 11. SCOPE NOT REVIEWED: the prose of the nine new standards documents and the completion report was not re-verified claim by claim against the code. The fidelity check proves quoted blocks are verbatim and proves nothing about surrounding prose, which leaves a substantial unexamined surface for a rule about unchecked assertions."
-    reference: "standards/53-ai-engineering-honesty.md"
-    reviewedAgainst:
-      paths:
-        - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
-        - standards/53-ai-engineering-honesty.md
-      revision: "e3c4866..43fdad2"
-      digestAlgorithm: "working-tree-bytes-sha256-v1"
-      digest: "2fcfe3dbdf285c1b03b56c732bd7a0e6"
+    reviews:
+      - id: "review-ai-no-fabricated-capabilities-001"
+        status: rejected
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-09"
+        evidence: "FINDING: repository facts were asserted without having been checked, and were false. ADR 0007 as committed at 75b6e8c stated that scripts/standards.mjs holds two module-level bindings mutated during a run, and that scripts/inventory.mjs and scripts/fidelity.mjs hold counters of the same kind naming three. Both claims are false: standards.mjs holds three, with contents at :1653 sitting in the same file, at the same level, and written in the same loop as sources, and the other two scripts hold eleven bindings rather than three. The document existed to be the evidence for a Standard 51 R1 discharge, and its central factual claim had not been verified. It was committed, cherry-picked to develop, and stood there until ab9ddbb. A second instance: the first disclosure of the sandbox behaviour described it as push-only, a session fact asserted without checking, corrected during the item 11 review and recorded there as an aggravating fact. MITIGATING: both were caught by the review they were written for; the ADR was corrected before any release and its corrected text now records the episode in its own words; and the standards and completion report state limits rather than capabilities throughout, including downgrading scm.no-committed-env-files from full assurance to partial when ADR 0008 established that the detector cannot tell tracked from present. Those facts mitigate and do not exonerate, by the standard set at item 11. SCOPE NOT REVIEWED: the prose of the nine new standards documents and the completion report was not re-verified claim by claim against the code. The fidelity check proves quoted blocks are verbatim and proves nothing about surrounding prose, which leaves a substantial unexamined surface for a rule about unchecked assertions."
+        reference: "standards/53-ai-engineering-honesty.md"
+        reviewedAgainst:
+          paths:
+            - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+            - standards/53-ai-engineering-honesty.md
+          revision: "e3c4866..43fdad2"
+          digestAlgorithm: "working-tree-bytes-sha256-v1"
+          digest: "2fcfe3dbdf285c1b03b56c732bd7a0e6"

@@ -44,7 +44,7 @@
       "description": "Recorded human judgement for rules the catalog says a human evaluates (ADR 0005, added in 1.1.0). An attestation is EVIDENCE, not a waiver: it says the rule applies and is satisfied on human review. It never overrides an automated failure, never applies to a rule the catalog marks non-attestable, and returns the rule to not-evaluated once stale or expired.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/ruleId" },
-      "additionalProperties": { "$ref": "#/$defs/attestation" }
+      "additionalProperties": { "$ref": "#/$defs/attestationRecord" }
     }
   },
 
@@ -100,6 +100,55 @@
           "type": "string",
           "minLength": 1
         }
+      }
+    },
+
+    "attestationRecord": {
+      "description": "Either an append-only sequence of review events (the current shape) or a single record (the pre-migration shape, accepted for the migration window only). A review is an event, not mutable state: re-review appends provenance and never rewrites it, so the record proving a migration was necessary survives the migration. Supporting both shapes indefinitely is how a migration format becomes permanent architecture, so the single-record form is a ramp with an end.",
+      "oneOf": [{ "$ref": "#/$defs/attestationHistory" }, { "$ref": "#/$defs/attestation" }]
+    },
+
+    "attestationHistory": {
+      "description": "The review events for one rule, oldest first. There is deliberately no current/history split: moving a record between them would itself be a mutation, and would invite two schemas for one kind of thing. `current` is derived — the newest structurally valid event — never stored.",
+      "type": "object",
+      "required": ["reviews"],
+      "additionalProperties": false,
+      "properties": {
+        "reviews": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/reviewEvent" }
+        }
+      }
+    },
+
+    "reviewEvent": {
+      "description": "One immutable review. Once written, its disposition, reviewer, timestamp, evidence, reviewed paths, and digest are history: editing any of them rewrites what a human decided at a point in time. A later judgement is recorded by appending a new event.",
+      "type": "object",
+      "required": ["id", "status", "reviewedBy", "reviewedAt", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable identifier for this review event. Identity is explicit rather than positional, so reordering the file cannot silently change which review establishes the rule.",
+          "type": "string",
+          "minLength": 1
+        },
+        "supersedes": {
+          "description": "The id of the review this one succeeds. It means 'this is the successor record', never 'the previous judgement was false' — a rejected historical review remains a rejected historical review forever.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "Only `approved` establishes the requirement. `rejected` records that a human looked and found it unmet, which is a failure rather than silence.",
+          "type": "string",
+          "enum": ["approved", "rejected"]
+        },
+        "reviewedBy": { "type": "string", "minLength": 1 },
+        "reviewedAt": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "evidence": { "type": "string", "minLength": 1 },
+        "reference": { "type": "string", "minLength": 1 },
+        "expires": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "reviewedAgainst": { "$ref": "#/$defs/reviewedAgainst" }
       }
     },
 
