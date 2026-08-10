@@ -317,6 +317,23 @@ attestations:
           revision: "1fa3869"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "41774e3cb7d691b569cc15fcc4540120"
+      - id: "review-meta-standards-not-weakened-003"
+        supersedes: "review-meta-standards-not-weakened-002"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content at ed5f6e6, covering the removal of the evaluator's whole-file self-exemption and the two detector defects it was concealing. Nothing was weakened and the framework became stricter about itself: the authoritative result became more representative of its subject rather than easier to satisfy, and the passing count fell from 25 to 21 because four attestations correctly went stale rather than being carried across an edit. No rule, catalog entry, threshold, or verdict path was touched to recover the previous self-audit result; the only reason the two new findings disappeared is that both were demonstrated false, one by bisecting the real file to the line and one by locating the single raw match inside the detector's own comment. A first hypothesis for the second defect, differing line endings, was tested against an LF clone and refuted before anything was changed. The VIEW-declaration test in test/audit.test.mjs fired during this work when the rewritten detector doc-comment dropped its declaration, and the declaration was restored rather than the test relaxed. LIMITATION: the self-exemption stood for the whole of 2.0.0 and no mechanism would have surfaced it; the distribution-fidelity test now closes that specific hole, and nothing yet detects the general class of framework behaviour that varies with where the framework lives."
+        reference: "artifacts/adr/0013-the-reusable-check-distributes-the-verdict-and-nothing-else.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+          revision: "ed5f6e6"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "33aabb6b4b557b2b0be63cd522d32a17"
 
   testing.no-weakening-to-pass:
     reviews:
@@ -352,6 +369,23 @@ attestations:
           revision: "1fa3869"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "e0e9359556ebc19b774d0a007e219131"
+      - id: "review-testing-no-weakening-to-pass-003"
+        supersedes: "review-testing-no-weakening-to-pass-002"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content at ed5f6e6, from the test side of the same work. Only test/audit.test.mjs changed among the reviewed paths, and it gained assertions rather than losing any. The exact sentence that produced the false positive is pinned as a negative fixture, a file holding one justified and one swallowing catch establishes that justification does not excuse a neighbouring site, and a pattern table of regex literals pins the third position a mention can occupy after comments and strings. Three mutations were run and all three were caught: stripping a justification comment from a clean catch, repairing the swallowing catch in the mixed fixture, and disabling the tokenizer's regex-literal branch. The distribution-fidelity test compares verdict, counts, per-rule results and findings rather than exit codes, deliberately, because both arrangements of the defect exited 1 and an exit-code comparison would have established nothing. LIMITATION: the workflow invariants in test/workflow.test.mjs are text assertions over YAML, not proof that the workflow executes as intended, and they say so in their own comments."
+        reference: "artifacts/adr/0013-the-reusable-check-distributes-the-verdict-and-nothing-else.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+            - test/init.test.mjs
+          revision: "ed5f6e6"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "ed74f83779ea332626cfbfa776cdf044"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
@@ -424,6 +458,23 @@ attestations:
           revision: "1fa3869"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "611c2bc9901b5dab0b0b5b65a9f7762e"
+      - id: "review-architecture-no-duplicate-implementations-003"
+        supersedes: "review-architecture-no-duplicate-implementations-002"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content at ed5f6e6. Only test/audit.test.mjs changed among the reviewed paths; scripts/sections.mjs, scripts/inventory.mjs and scripts/fidelity.mjs are byte-identical, so the original section-heading single-owner basis is undisturbed and both holding tests still pass. The question this cycle raised was whether the new catch-site machinery introduced a second implementation: it did not, it replaced one. The count-conjunction reading was removed rather than left beside the site-matching one, so there is exactly one implementation of what an unjustified catch is, and blockEnd and carriesJustification each exist in one place. The expanded test surface adds cases against that single owner rather than a competing definition of it. LIMITATION unchanged: a search by concept vocabulary would not find a duplicate implemented in different words."
+        reference: "artifacts/adr/0013-the-reusable-check-distributes-the-verdict-and-nothing-else.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/sections.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/audit.test.mjs
+          revision: "ed5f6e6"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "b8a7a2bd66cb54df85b8c24323ada247"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
   # not an exception: the schema defines it as recording that a human looked and found the rule
