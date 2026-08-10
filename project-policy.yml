@@ -248,6 +248,21 @@ attestations:
           # returns to not-evaluated until a human looks again.
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "8c8103086465653b64676dca6077a754"
+      - id: "review-ai-destructive-approval-002"
+        supersedes: "review-ai-destructive-approval-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content. Neither reviewed path changed since 5b4b917, so this is a fresh review that re-confirms the prior basis under deterministic repository provenance, not a mechanical digest migration. The basis was re-examined rather than assumed: creating a missing artifact is ordinary execute, replacing an existing one is refused by default and reported as a conflict, overwriting requires naming the exact path, and approving one path does not approve another. The safety-contract tests in test/init.test.mjs still hold that shape and still pass. The digest changed only because the algorithm changed; an algorithm is evidence identity and is never itself a reason for approval. Limitation carried forward unchanged: the three ADR locations appear as adrDirs in scripts/standards.mjs and as satisfiedBy in scripts/init.mjs, nothing binds them, and that coupling can still drift undetected."
+        reference: "artifacts/adr/0004-audit-and-validate-are-separate-commands.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/init.mjs
+            - test/init.test.mjs
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "263d8ef6c918fb1918096c6f466f60e0"
 
   # Checkpoint items 1 and 2 of the must-never dogfood sweep, reviewed by the owner against the
   # 2.0.0 work itself. The commit range is recorded as `revision` — informational, never computed —
@@ -270,6 +285,23 @@ attestations:
           revision: "e3c4866..32c6735"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "cace15a22f970a74a5c02fffbb5dc6f6"
+      - id: "review-meta-standards-not-weakened-002"
+        supersedes: "review-meta-standards-not-weakened-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content, covering the version-identity guard, the repository-provenance fix, and the review-event model. Nothing was weakened to make this work pass, and the framework became more conservative: 24 passing rules fell to 17 because seven approvals stopped establishing anything, and the verdict was made stricter rather than easier. No standard, rule, catalog entry, or threshold was edited; summarise(), the verdict ordering, the Standard 45 R6 cap, and exception precedence are untouched, and the cap filter is now pinned by an explicit test asserting both status and disposition, because a result that stopped being either would escape the cap while looking correct. REQUIRED DISCLOSURE, accepted by the owner on review: three existing tests were rewritten rather than added to. Two staleness tests in test/compliance.test.mjs were rewired to the freshness axis and expanded from two to five, covering three states that had no coverage before. One of them had become VACUOUS under the new API, since an absent freshness map defaults to establishing, so the known-negative was passing while proving nothing; it was found during the rewrite and made to assert the state explicitly. Separately, implementing oneOf in scripts/jsonschema.mjs silently made the unimplemented-keyword test in test/policy.test.mjs vacuous, since oneOf was its example; the example was replaced with a keyword the evaluator genuinely lacks and a further assertion added for an unsupported keyword nested inside a oneOf branch. Both rewrites made the suite stricter. Two mutations on the new work were run and caught. Suite 169 to 194. LIMITATION: two tests were rendered vacuous by API changes within one cycle and both were caught by hand rather than by a mechanism, and nothing prevents a third."
+        reference: "artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "41774e3cb7d691b569cc15fcc4540120"
 
   testing.no-weakening-to-pass:
     reviews:
@@ -288,6 +320,23 @@ attestations:
           revision: "e3c4866..32c6735"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "1e902a77f58292e1124a9dc3d26e0362"
+      - id: "review-testing-no-weakening-to-pass-002"
+        supersedes: "review-testing-no-weakening-to-pass-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content, from the test side of the same work. Only test/compliance.test.mjs changed among the reviewed paths. No assertion was relaxed or removed without a stricter replacement, and the sequence was the correct one in both cases: the API changed, a test was shown to be vacuous, the test was strengthened, and mutation then confirmed it bites. Two mutations were run on the new work and both were caught, discarding review history failing three tests and selecting the oldest event as current failing two. The freshness tests pin the semantic consequence rather than the label, asserting that each non-establishing state keeps status skipped and disposition not-evaluated so the Standard 45 R6 cap still reaches it, and that the message names a human reviewer so the output can never read as an unexamined rule. The repository tests drive real Git rather than a mock, because the defect lived in the gap between what Git stores and what it materialises and a mock would have been written from the same misunderstanding. LIMITATIONS: the four ADR 0008 tests remain CHARACTERISATION tests asserting today's wrong answer, so green means the known defect still reproduces rather than the requirement passes; and the MAX_FILES traversal cap remains untested."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+            - test/init.test.mjs
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "e0e9359556ebc19b774d0a007e219131"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
@@ -326,6 +375,23 @@ attestations:
           revision: "e3c4866..32c6735"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "c0ad41f8f154c16d45caee90b61b920d"
+      - id: "review-architecture-no-duplicate-implementations-002"
+        supersedes: "review-architecture-no-duplicate-implementations-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content. No reviewed path changed since 5b4b917, so this review re-confirms the prior basis under deterministic provenance rather than restating a migration. Section-heading matching remains single-owner in scripts/sections.mjs, sectionText is still built on sectionRe rather than restating it, both consumers still import the definition, and both tests holding that shape still pass. The new question this cycle raised was whether three new modules introduced a second implementation of anything: scripts/repository.mjs is the only place Git is invoked, scripts/reviews.mjs the only place review sequences are interpreted, and scripts/attestations.mjs consumes both rather than restating either. Freshness classification exists in exactly one function. Limitation unchanged: a search by concept vocabulary would not find a duplicate implemented in different words."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/sections.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/audit.test.mjs
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "611c2bc9901b5dab0b0b5b65a9f7762e"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
   # not an exception: the schema defines it as recording that a human looked and found the rule
@@ -373,6 +439,21 @@ attestations:
           revision: "e3c4866..43fdad2"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "67e715137bb27786760d2ad52eb65d69"
+      - id: "review-testing-no-fabricated-results-002"
+        supersedes: "review-testing-no-fabricated-results-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content. Neither reviewed path changed since 5b4b917; this review re-confirms the prior basis under deterministic provenance. No result reported this cycle was produced by anything other than execution: the suite was run at every step, the two mutation exercises were performed by editing the implementation and observing real failures rather than predicted ones, and the cross-materialisation claims come from two actual clones with differing line-ending configuration rather than from reasoning about what Git would do. Limitation, unchanged and now sharper: the CI gate runs on one platform only, and the cross-materialisation verification that exposed the digest defect was performed by hand this cycle and is not part of the gate."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - .github/workflows/ci.yml
+            - standards/47-test-integrity.md
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "8ac740710c32442fe7e50234bb0c5932"
 
   # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
   # this rule's evidence is Git history, and the schema can only digest files. The digest below is
@@ -394,6 +475,20 @@ attestations:
           revision: "e3c4866..32c6735"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "29d3354ddae4596a0ebe6c5cdb4a02c5"
+      - id: "review-scm-no-shared-history-rewrite-002"
+        supersedes: "review-scm-no-shared-history-rewrite-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content. The reviewed standard text did not change since 5b4b917; this review re-confirms the prior basis under deterministic provenance. Four commits were added this cycle, all fast-forward, with no forced update, no rebase, and no reset in the local reflog. Limitation, unchanged and material: the digest covers the standard text, not the Git history that is the actual evidence for this rule. reviewedAgainst still cannot digest history, so this attestation records that the history was inspected while its digest establishes freshness only for the rule text. Recording repository provenance for file content does not close that gap."
+        reference: "standards/46-source-control-safety.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - standards/46-source-control-safety.md
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "7d4db40874f4ccb2c958e593333c6cae"
 
   # Checkpoint item 4, the second REJECTED entry. The finding is read from the code rather than
   # reproduced at runtime, and the owner review concluded that reproduction is unnecessary: the
@@ -436,6 +531,23 @@ attestations:
           revision: "e3c4866..32c6735"
           digestAlgorithm: "working-tree-bytes-sha256-v1"
           digest: "ede95d3d8407d5488c05d75a1c7f7469"
+      - id: "review-architecture-no-boundary-bypass-002"
+        supersedes: "review-architecture-no-boundary-bypass-001"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content. scripts/compliance.mjs and test/compliance.test.mjs changed; scripts/catalog.mjs and the standard text did not. The three-way separation holds and was checked rather than assumed. The catalog still owns rule identity and metadata, the policy still owns applicability, and the evaluator still produces evidence. compliance.mjs gained exactly one import, scripts/reviews.mjs, which interprets the shape of a review sequence and holds no catalog knowledge, no applicability knowledge, and no evidence. Freshness is computed outside the engine and passed in as an input, deliberately, so that the evaluator acquired neither a filesystem nor a Git dependency when repository provenance was introduced; scripts/repository.mjs is called only from the CLI layer. The new invalid-attestation result reports a malformed review history as a configuration failure rather than silently selecting the last element, which would have made file layout the chronology. LIMITATION unchanged: the for convenience qualifier in this rule is a claim about intent that the available evidence does not reach, so this attestation establishes the structural separation and not the motive behind any future breach of it."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - scripts/catalog.mjs
+            - test/compliance.test.mjs
+            - standards/51-architecture-integrity.md
+          revision: "1fa3869"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "577dc01c2ff161cfa2e7a12b6caa901b"
 
   # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
   # prohibited conduct occurred and reached shared history, and being caught does not unmake it.
