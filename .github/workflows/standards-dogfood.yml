@@ -28,6 +28,6 @@ on:
 
 jobs:
   validate-self:
-    uses: mikeycdavis/EngineeringStandards/.github/workflows/standards-validate.yml@2b8a97308457a6d504c4ecceb7ecdb70179be8c3
+    uses: mikeycdavis/EngineeringStandards/.github/workflows/standards-validate.yml@361390267662f9c76bd6490db68db5e22793328f
     with:
-      standards-ref: 2b8a97308457a6d504c4ecceb7ecdb70179be8c3
+      standards-ref: 361390267662f9c76bd6490db68db5e22793328f
