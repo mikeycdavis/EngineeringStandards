@@ -77,11 +77,34 @@ was insufficient.
 | --- | --- | --- |
 | `scm.no-committed-env-files` | filename only | `.env` and variants; example/template/sample/vault permitted |
 | `security.no-secrets-in-artifacts` | `sourceOf` for code, raw text for config, never Markdown | Private-key headers and provider token prefixes. Excludes `.env` — one defect, one finding |
-| `errors.no-swallowed-exceptions` | `structureOf` **and** raw | A catch empty under both readings: no handling code and no justification comment |
+| `errors.no-swallowed-exceptions` | `structureOf` **and** raw over the **same span** | Each catch site located structurally, its body then read in both views: no handling code and no justification comment |
 | `security.no-cert-bypass` | `structureOf` | `rejectUnauthorized: false` and its equivalents; a mention in a string or comment is not a bypass |
 | `security.no-sql-concat` | `sourceOf` | A full SQL statement interpolated into a template literal or f-string |
 
 ### Changed
+- **The evaluator no longer exempts its own source file from the audit.** `scripts/standards.mjs`
+  excluded itself from the content scan by absolute path, so the same commit evaluated differently
+  depending on whether the framework lived inside the repository being validated — 25 passed / 3
+  failed from inside, 23 / 4 from outside, for identical content. The stated reason (this file names
+  the packages it searches for) had already been superseded by `importPattern()`, and its scope had
+  never matched its justification: one detector's vocabulary problem had become a repository-wide
+  blind spot. Removed rather than narrowed; after removal no detector needs it. Found by rehearsing
+  the reusable CI workflow, and now pinned by `test/distribution-fidelity.test.mjs`, which compares
+  two clones of one commit on verdict, counts, per-rule results, and findings — not on exit code,
+  which agrees in both arrangements and would have missed it.
+- **`errors.no-swallowed-exceptions` decides by site rather than by counting.** It compared a count
+  of empty-catch matches in the structural view against a count in the raw view and took the smaller
+  — a conjunction with no subject identity. Two comment-justified catches and one raw match inside
+  the detector's own explanatory comment produced `min(2, 1) = 1` and a violating site that did not
+  exist. Each catch construct is now located structurally, its body found by brace matching, and that
+  same span read in both views.
+- **`splitSource` understands regex literals**, so a pattern table is no longer read as the code it
+  describes. `raise NotImplementedError` in the unfinished-work patterns was structural code,
+  and `quality.unfinished-work` reported the file that defines it. Regex contents are blanked in the
+  structural view exactly as string contents are, and the structural view is now offset-aligned with
+  the source, which is what made site matching possible above. An unrecognised regex is treated as
+  ordinary code — the conservative direction, since a tokenizer that swallowed real code would hide
+  violations rather than report ones that are not there.
 
 - **`security.no-secrets-in-artifacts` moved from review-required to evaluated.**
 - **Attestation freshness is computed from repository content, not checkout bytes** — a defect fix,

@@ -130,6 +130,11 @@ test("mentions inside a code file are not uses", () => {
     ["src/work.js"],
     'the string "TODO: this string mentions a marker" must not count; only the real comment marker does',
   );
+  // src/patterns.js holds every marker inside a regex literal — the shape of a detector's own
+  // pattern table. It is absent from the list above, and that absence is the assertion: a pattern
+  // describing unfinished work is not unfinished work. This is the third position a mention can
+  // occupy, after comments and strings, and the one that reported this repository's own evaluator
+  // as containing a stub because splitSource had no regex mode.
 });
 
 test("the same signals, genuinely used, are still detected", () => {
@@ -578,6 +583,26 @@ test("no must-never detector fires on the fixture that names every pattern witho
   for (const [id] of NEVER) {
     assert.ok(!found.has(id), `${id} fired on a fixture that only mentions the pattern`);
   }
+});
+
+test("the swallowed-exception detector decides by site, not by counting", () => {
+  // The defect this replaces: the detector counted empty-catch matches in the structural view,
+  // counted them in the raw view, and took the smaller number — a conjunction with no subject
+  // identity. src/catch-sites.js is the shape that broke it: two comment-justified catches supply
+  // two structural matches, and the comment explaining that a `catch {}` inside a comment is not a
+  // violation supplies exactly one raw match. min(2, 1) reported a violating site the file does not
+  // contain, which is how this repository's own evaluator came to be flagged by its own detector.
+  const clean = of(audit(fixture("never-clean")), "swallowed-exception");
+  assert.deepEqual(clean, [], "a justified catch beside a description of an empty one is not a violation");
+
+  // And the property the counting was trying to preserve still holds: one justified catch does not
+  // excuse an unjustified one beside it, because each site is decided on its own body.
+  const violating = of(audit(fixture("never-violations")), "swallowed-exception");
+  assert.equal(violating.length, 1);
+  assert.ok(
+    violating[0].evidence.some((e) => e.startsWith("src/mixed-catch.js")),
+    `a file holding one justified and one swallowing catch was not reported: ${JSON.stringify(violating[0].evidence)}`,
+  );
 });
 
 test("the secret detector leaves .env files to the rule that owns them", () => {

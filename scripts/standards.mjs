@@ -33,10 +33,27 @@ import {
 import { currentReview } from "./reviews.mjs";
 
 /**
- * This file lists the very package names it searches for, so scanning it would report every SDK it
- * knows about as a dependency of whatever repository it is auditing. It excludes itself from the
- * content scan for that reason. Any other file that merely *names* an SDK is handled by requiring an
- * import-shaped match rather than a bare mention — see importPattern().
+ * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
+ * source inventory. It is NOT excluded from the content scan, and the history of why is worth
+ * keeping.
+ *
+ * It used to be. The stated reason was that this file lists the very package names it searches for,
+ * so scanning it would report every SDK it knows about as a dependency of whatever repository it is
+ * auditing. That reason was superseded by importPattern(), which requires an import-shaped match
+ * rather than a bare mention and therefore already handles every other file that merely *names* an
+ * SDK. The exclusion outlived it, and its scope was never the same as its justification: one
+ * detector's vocabulary problem had become a whole-file blind spot across every detector.
+ *
+ * What that cost was measured, not estimated. A framework validating its own directory skipped this
+ * file; the same framework validating an identical checkout as an ordinary target did not — so the
+ * two paths evaluated different repository surfaces and reached different verdicts for identical
+ * content (25 passed / 3 failed against 23 / 4). A self-exemption that changes the verdict is the
+ * Standard 34 R3 failure this framework exists to refuse, and the two findings it was concealing
+ * were both real detector defects.
+ *
+ * The invariant that replaces it: **a framework validating itself and the same framework validating
+ * an identical checkout as a target must evaluate the same repository surface**, except where an
+ * individual detector owns and justifies an exclusion its own implementation creates.
  */
 const SELF = fileURLToPath(import.meta.url);
 
@@ -332,8 +349,25 @@ function splitSource(text, ext) {
   if (!syntax) return { code: text, structure: text, comments: "" };
 
   let code = "";
-  let structure = "";
   let comments = "";
+  // One entry per character of `text`, so an index into `structure` is an index into the source.
+  // That alignment is the whole point: a detector can find a construct in the structural view and
+  // then read the same span in the raw text, which is what makes site identity possible. Before it,
+  // the only thing a detector could do was count matches in one view and count them in another —
+  // and two counts never establish that they refer to the same site.
+  const structure = [];
+  const keep = (c) => structure.push(c);
+  const drop = (c) => structure.push(c === "\n" ? "\n" : " ");
+
+  // The last non-whitespace character already emitted as code. Used only to tell a regex literal
+  // from a division: `/` after a value divides, `/` after an operator or an opening bracket starts
+  // a pattern.
+  const lastCode = () => {
+    for (let j = code.length - 1; j >= 0; j -= 1) if (!/\s/.test(code[j])) return code[j];
+    return "";
+  };
+  const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
+
   let mode = "code";
   let i = 0;
   while (i < text.length) {
@@ -343,23 +377,42 @@ function splitSource(text, ext) {
     if (mode === "code") {
       if (rest2 === syntax.line || (syntax.line.length === 1 && c === syntax.line)) {
         mode = "line";
+        for (let k = 0; k < syntax.line.length; k += 1) drop(text[i + k]);
         i += syntax.line.length;
         continue;
       }
       if (syntax.block && rest2 === "/*") {
         mode = "block";
+        drop("/");
+        drop("*");
         i += 2;
         continue;
       }
       if (c === "'" || c === '"' || c === "`") {
         mode = c;
         code += c;
-        structure += c; // the quote survives; its contents do not
+        keep(c); // the quote survives; its contents do not
         i++;
         continue;
       }
+      // A regex literal is code, but its *contents* are a pattern rather than a construct. Leaving
+      // them in the structural view made this file report itself: `raise NotImplementedError`
+      // inside the unfinished-work pattern table is a description of a stub, not a stub, and the
+      // detector could not tell the difference. Contents stay in `code`, because sourceOf() exists
+      // for import matching and a specifier is never a regex.
+      if (syntax.block && c === "/" && REGEX_MAY_START_AFTER.has(lastCode())) {
+        const close = regexLiteralEnd(text, i);
+        if (close !== -1) {
+          code += text.slice(i, close + 1);
+          keep("/");
+          for (let k = i + 1; k < close; k += 1) drop(text[k]);
+          keep("/");
+          i = close + 1;
+          continue;
+        }
+      }
       code += c;
-      structure += c;
+      keep(c);
       i++;
       continue;
     }
@@ -369,10 +422,12 @@ function splitSource(text, ext) {
         mode = "code";
         code += "\n";
         comments += "\n";
+        drop("\n");
         i++;
         continue;
       }
       comments += c;
+      drop(c);
       i++;
       continue;
     }
@@ -381,10 +436,13 @@ function splitSource(text, ext) {
       if (rest2 === "*/") {
         mode = "code";
         comments += "\n";
+        drop("*");
+        drop("/");
         i += 2;
         continue;
       }
       comments += c;
+      drop(c);
       i++;
       continue;
     }
@@ -392,17 +450,46 @@ function splitSource(text, ext) {
     // Inside a string literal: preserved in the code half, escapes skipped.
     if (c === "\\") {
       code += text.substr(i, 2);
+      drop(c);
+      drop(text[i + 1] ?? " ");
       i += 2;
       continue;
     }
     if (c === mode) {
       mode = "code";
-      structure += c;
+      keep(c);
+    } else {
+      drop(c);
     }
     code += c;
     i++;
   }
-  return { code, structure, comments };
+  return { code, structure: structure.join(""), comments };
+}
+
+/**
+ * The closing `/` of a regex literal beginning at `open`, or -1 if there is not one on that line.
+ *
+ * Deliberately conservative, and the conservative direction is stated: an unrecognised regex is
+ * treated as ordinary code, which is exactly the behaviour that existed before this function. The
+ * failure mode is therefore the old false positive, never a construct silently disappearing from
+ * the structural view — a tokenizer that swallowed real code would hide violations, which is the
+ * direction that must not be possible.
+ */
+function regexLiteralEnd(text, open) {
+  let inClass = false;
+  for (let i = open + 1; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === "\n") return -1; // a regex literal does not span lines
+    if (c === "\\") {
+      i += 1;
+      continue;
+    }
+    if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) return i;
+  }
+  return -1;
 }
 
 /** Populated once per run, alongside `contents`, so the split cost is paid a single time. */
@@ -1117,7 +1204,19 @@ const UNFINISHED_COMMENTS = [
   [/\b(TODO|FIXME|HACK|XXX)\b\s*[:(]/, "TODO/FIXME markers"],
 ];
 
-/** Stubs and skipped tests are code constructs, so they are scanned against sourceOf(). */
+/**
+ * Stubs and skipped tests are code constructs, so they are scanned against structureOf() — not
+ * sourceOf(), which this comment claimed for several releases while the code did the right thing.
+ * The distinction matters: a stub name inside a string literal is a mention, and only the structural
+ * view blanks it.
+ *
+ * That view is also where this table used to find *itself*. Its own patterns are regex literals, and
+ * `splitSource` had no regex mode, so `raise NotImplementedError` on the line below was
+ * structural code like any other — the word preceded by a space, the word boundary satisfied, the
+ * detector reporting the file that defines it as a file containing an unimplemented stub. It went
+ * unseen only because this file was excluded from its own audit. `splitSource` now blanks regex
+ * contents in the structural view, which fixes it at the tokenizer rather than by exempting a file.
+ */
 const UNFINISHED_CODE = [
   [/\bNotImplemented(Error|Exception)?\b|\braise NotImplementedError\b|\bthrow new NotImplementedException\b/, "unimplemented stubs"],
   [/\b(it|test|describe)\.skip\(|\bxit\(|@pytest\.mark\.skip|\[Ignore\]|\bt\.Skip\(/, "skipped tests"],
@@ -1568,11 +1667,62 @@ function detectSecretsInArtifacts(files, contents) {
  * catch site as the documented contract, so a detector that could not see comments would report
  * every justified catch as a violation.
  */
-const EMPTY_CATCH_STRUCT = /\bcatch\s*(\([^)]*\))?\s*\{\s*\}/g;
-const EMPTY_CATCH_PY = /\bexcept\b[^\n:]*:\s*\n\s*pass\b/g;
+// Matched against the offset-aligned structural view, so a `catch {}` written inside a string or a
+// comment is not here to be found — those positions are blanked. The opening brace is where the
+// match ends: the body is then read by brace matching rather than by pattern, because a body
+// containing anything at all is exactly what the pattern cannot express.
+const CATCH_OPEN = /\bcatch\s*(\([^)]*\))?\s*\{/g;
+const EXCEPT_PASS = /\bexcept\b[^\n:]*:[ \t]*\n[ \t]*pass\b/g;
 
-const countOf = (text, re) => (text.match(re) ?? []).length;
+/** The index just past the `}` closing the block opened at `open`, or -1 if it is unbalanced. */
+function blockEnd(structure, open) {
+  let depth = 0;
+  for (let i = open; i < structure.length; i += 1) {
+    if (structure[i] === "{") depth += 1;
+    else if (structure[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
 
+/**
+ * A span carries a justification when the raw text holds something the structural view dropped.
+ *
+ * That is the whole test, and it is exact rather than heuristic: `structure` blanks comments and
+ * string contents in place, so any non-whitespace character present in the raw span and absent from
+ * the structural span *is* a comment or a string — which is precisely what a justification is made
+ * of ([Standard 48](../standards/48-error-handling-and-observability.md) R1 accepts a comment at the
+ * catch site as the documented contract).
+ */
+function carriesJustification(raw, structure, from, to) {
+  const strip = (s) => s.replace(/\s+/g, "");
+  return strip(raw.slice(from, to)) !== strip(structure.slice(from, to));
+}
+
+/**
+ * Empty catch blocks — by site, never by count.
+ *
+ * The previous implementation counted empty-catch matches in the structural view, counted them in
+ * the raw view, and took the smaller number. That is a conjunction without subject identity: two
+ * counts can both be non-zero while referring to different places in the file, and this repository
+ * is where that was demonstrated. `scripts/standards.mjs` holds two comment-justified catches, which
+ * the structural view sees as empty because the justification is a comment, and exactly one raw
+ * match — the sentence in this very comment block explaining that a `catch {}` inside a comment is
+ * not a violation. min(2, 1) reported one violating catch site. There was none. The file went
+ * unnoticed only because it was excluded from its own audit.
+ *
+ * Site matching removes the possibility rather than tuning the counts: each catch construct is
+ * located in the offset-aligned structural view, its body span is found by brace matching, and that
+ * same span is read in the raw text. One site, two readings of it.
+ *
+ * VIEW: structureOf() to find the construct, and the raw contents over the SAME span to decide
+ * whether it is justified. Both are required and neither would do alone — the structural view proves
+ * a real catch rather than one quoted in a string or described in a comment, and only the raw text
+ * still holds the justification comment, because that is the one thing the structural view removes.
+ * The span is what binds them: two readings of one site, not two searches of one file.
+ */
 function detectSwallowedExceptions(files, contents) {
   const hits = [];
   for (const f of files) {
@@ -1580,18 +1730,22 @@ function detectSwallowedExceptions(files, contents) {
     const structure = structureOf(f);
     if (!structure) continue;
     const raw = contents.get(f) ?? "";
+    if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
 
-    // Both views must agree, and the pairing is what makes each one necessary:
-    //
-    //   empty in `raw`       — the body holds no justification comment either, since comments
-    //                          survive only here. A justified catch is NOT empty in raw.
-    //   empty in `structure` — it is a real catch construct, not one quoted in a string.
-    //
-    // Counted rather than tested, so one justified catch does not excuse an unjustified one beside
-    // it: the smaller count is how many catch sites are empty under both readings.
-    const unjustified =
-      Math.min(countOf(structure, EMPTY_CATCH_STRUCT), countOf(raw, EMPTY_CATCH_STRUCT)) +
-      Math.min(countOf(structure, EMPTY_CATCH_PY), countOf(raw, EMPTY_CATCH_PY));
+    let unjustified = 0;
+    for (const m of structure.matchAll(CATCH_OPEN)) {
+      const open = m.index + m[0].length - 1;
+      const close = blockEnd(structure, open);
+      if (close === -1) continue;
+      const body = structure.slice(open + 1, close);
+      if (body.trim() !== "") continue; // real handling code
+      if (carriesJustification(raw, structure, open + 1, close)) continue; // a documented contract
+      unjustified += 1;
+    }
+    for (const m of structure.matchAll(EXCEPT_PASS)) {
+      if (carriesJustification(raw, structure, m.index, m.index + m[0].length)) continue;
+      unjustified += 1;
+    }
     if (unjustified > 0) hits.push(rel(f));
   }
   if (hits.length === 0) return;
@@ -1769,7 +1923,6 @@ const contents = new Map();
 const unreadableFiles = [];
 const truncatedFiles = [];
 for (const f of files) {
-  if (path.resolve(f) === SELF) continue; // see the SELF declaration above
   if (!TEXT_EXT.has(path.extname(f))) continue;
   const read = await readText(f);
   if (!read.ok) unreadableFiles.push(f);

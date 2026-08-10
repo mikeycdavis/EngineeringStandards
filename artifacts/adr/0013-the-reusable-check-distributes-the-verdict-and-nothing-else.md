@@ -85,6 +85,58 @@ deliberately small subset, well short of GitHub's schema. The tests can confirm 
 a prohibited one absent; they cannot confirm the workflow executes as intended. Only running it
 establishes that, which is what dogfooding is for and why the tests say so in their own comments.
 
+## What the first dogfood found, before it ever ran
+
+GitHub Actions could not execute (account billing), so the workflow's body was rehearsed locally
+against two fresh clones. It failed its own acceptance criterion immediately, and the reason was in
+the framework rather than in the transport.
+
+`scripts/standards.mjs` excluded its own source file from the content scan by absolute path. When the
+framework audited its own directory that file was skipped; when it audited a copy — which is what
+every consumer, and this workflow, actually does — the file was scanned like any other. Identical
+content, two answers:
+
+| Arrangement | Result |
+| --- | --- |
+| Framework validating its own directory | 25 passed, 3 failed, 0 warnings |
+| Same framework validating an identical checkout | 23 passed, 4 failed, 1 warning |
+
+The exclusion's stated reason was that this file lists the package names it searches for, so scanning
+it would report every SDK it knows about. That reason had already been superseded by
+`importPattern()`, which requires an import-shaped match; the exclusion outlived its justification and
+its scope had never matched it — one detector's vocabulary problem had become a whole-file blind spot
+across every detector. It is removed rather than narrowed, because after removal no detector needs it:
+the two findings it was hiding were both genuine defects in the detectors themselves.
+
+**`errors.no-swallowed-exceptions` was counting, not matching.** It counted empty-catch matches in the
+structural view, counted them in the raw view, and took the smaller number — a conjunction with no
+subject identity. This file holds two comment-justified catches (two structural matches, because a
+justification is a comment and the structural view drops comments) and exactly one raw match: the
+sentence in the detector's own comment explaining that a `catch {}` inside a comment is not a
+violation. `min(2, 1)` reported one violating site. There was none. It now locates each catch
+construct in the offset-aligned structural view, finds its body by brace matching, and reads that same
+span in the raw text — one site, two readings of it.
+
+**`quality.unfinished-work` was reading a pattern table as code.** `splitSource` had no regex-literal
+mode, so `raise NotImplementedError` inside the unfinished-work patterns was structural code like
+any other, and the word boundary held because a space preceded the token. The narrowest owner is the
+tokenizer, so regex contents are now blanked in the structural view exactly as string contents are.
+The causal path was established by bisecting the real file to the line rather than inferred from
+plausibility: a first hypothesis — that line endings differed between checkouts — was tested and
+refuted before this one was tested and confirmed.
+
+**A correction to the record.** The claim *"every existing catch in this repository carries code or a
+comment — self-audit stays clean, and that dual-match design is why"* appears in the 2.0.0
+implementation plan. Its first clause is true and its causal claim is false: the self-audit was clean
+because the file was never scanned. The established statement is narrower — every catch site currently
+inspected carries code or a justification, and the prior self-audit did not establish the
+swallowed-exception detector against `scripts/standards.mjs` at all.
+
+**The invariant this produces**, now asserted by `test/distribution-fidelity.test.mjs` over two clones
+of one commit: a framework validating itself and the same framework validating an identical checkout
+must produce the same verdict, the same counts, the same per-rule results, and the same findings.
+Comparing exit codes alone would not have caught this, since both arrangements exit 1.
+
 ## Deferred
 
 - **Any organization controller.** `GOVERNED` / `UNGOVERNED` / `INDETERMINATE`, adoption reporting,
