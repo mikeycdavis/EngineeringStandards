@@ -798,3 +798,65 @@ test("this repository's own evidence surface is complete", async () => {
   const { json } = audit(REPO);
   assert.equal(json.evidenceSurface.complete, true, JSON.stringify(json.evidenceSurface, null, 2));
 });
+
+// ---------------------------------------------------------------------------
+// The third false positive: HTTP routes read as filesystem paths
+// ---------------------------------------------------------------------------
+
+/** A throwaway repository whose README names both a real file and some HTTP routes. */
+async function readmeRepo(body) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-readme-"));
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await writeFile(path.join(dir, "src/index.ts"), "export const x = 1;\n", "utf8");
+  await writeFile(path.join(dir, "README.md"), body, "utf8");
+  return dir;
+}
+
+test("HTTP routes in a README are not missing files", async () => {
+  // The failure this guards: `/api/health` resolves against a running server, never against a
+  // checkout. Reporting it tells an author to correct a document that was already right, and the
+  // available repairs — deleting a true statement, or adding the caveat Standard 32 forbids — both
+  // leave the README worse than the detector found it.
+  const dir = await readmeRepo(
+    "# Service\n\nHealth lives at `/api/health`, and the group is mounted at `/api`.\n" +
+      "Items are fetched from `/users/:id` and `/orders/{orderId}`.\n" +
+      "Query it as `/search?q=term`.\n\nThe entry point is `src/index.ts`.\n",
+  );
+  try {
+    const res = audit(dir);
+    assert.deepEqual(
+      evidenceOf(res, "doc-code-discrepancies"),
+      [],
+      "routes, route parameters and query strings must not be reported as missing paths",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a README that names a file which does not exist is still reported", async () => {
+  // The assertion that matters: the fix above must not have silenced the detector wholesale. Both
+  // forms are checked — repository-relative, and the root-relative prose a leading slash still
+  // admits when it carries a file extension.
+  const dir = await readmeRepo(
+    "# Service\n\nSee `src/index.ts`, `src/missing.ts` and `/src/also-missing.ts`.\n",
+  );
+  try {
+    const res = audit(dir);
+    const evidence = evidenceOf(res, "doc-code-discrepancies");
+    assert.ok(
+      evidence.some((e) => e.endsWith("src/missing.ts")),
+      `a named file that does not exist must still be reported; got ${JSON.stringify(evidence)}`,
+    );
+    assert.ok(
+      evidence.some((e) => e.endsWith("/src/also-missing.ts")),
+      `a root-relative file that does not exist must still be reported; got ${JSON.stringify(evidence)}`,
+    );
+    assert.ok(
+      !evidence.some((e) => e.endsWith("src/index.ts")),
+      "a file that does exist must not be reported",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
