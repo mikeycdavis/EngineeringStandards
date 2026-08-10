@@ -71,6 +71,21 @@ was insufficient.
 ### Changed
 
 - **`security.no-secrets-in-artifacts` moved from review-required to evaluated.**
+- **Attestation freshness is computed from repository content, not checkout bytes** — a defect fix,
+  and the one with the widest blast radius if it had shipped. `attestationDigests()` hashed
+  working-tree bytes while Git's identity for a commit is normalised repository content, so three
+  clean materialisations of one commit produced three different freshness answers and three attested
+  `forbidden` rules evaluated as unestablished in CI. `scripts/repository.mjs` now digests each
+  reviewed path with its committed blob identity under `git-blob-set-sha256-v1`, with no fallback:
+  when Git cannot answer, the result is evidence unavailability rather than a second content
+  identity. **Freshness became a separate axis from what the human decided** — `fresh`, `stale`,
+  `legacy-unverifiable`, `evidence-unavailable` — because "the reviewed file changed" and "the
+  comparison could not be performed" are different statements, and both were being reported as
+  "nobody looked". The eleven existing digests are marked
+  `digestAlgorithm: working-tree-bytes-sha256-v1` and deliberately **not** recomputed: a migration
+  may classify existing provenance but may not upgrade its evidentiary strength without a new review.
+  `npm run attestations` reports the inventory. See
+  [ADR 0011](artifacts/adr/0011-attestation-freshness-is-repository-content-not-checkout-bytes.md).
 - **`validate` now enforces version identity, and this closes a live defect rather than adding a
   feature.** A verdict may not be reported for standards version X unless the framework executing the
   run identifies itself as X. When `project-policy.yml` declares a `standardVersion` that differs

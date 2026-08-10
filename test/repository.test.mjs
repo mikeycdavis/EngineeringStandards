@@ -25,6 +25,9 @@ import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 import {
   repositoryDigest,
   repositoryAvailable,
@@ -236,13 +239,62 @@ test("this repository's digests are identical in two divergent materialisations 
   // The integration case that started this: two worktrees of the same commit whose working-tree
   // bytes genuinely differ. Skipped rather than failed where the sibling worktree does not exist,
   // because its absence is a fact about this machine, not about the mechanism.
-  const a = path.resolve(process.cwd(), "..", "EngineeringStandards-review");
-  const b = path.resolve(process.cwd(), "..", "EngineeringStandards-reconcile");
+  const a = REPO_ROOT;
+  const b = path.resolve(REPO_ROOT, "..", "EngineeringStandards-reconcile");
   if (!repositoryAvailable(a).available || !repositoryAvailable(b).available) return;
+
+  // The property is "one commit, every checkout". Where the two worktrees have diverged the
+  // precondition does not hold, and the test states that rather than comparing unrelated commits
+  // and reporting a failure of the mechanism. The synthetic re-materialisation test above covers
+  // the mechanism deterministically; this one only adds real-world corroboration when it can.
+  const head = (dir) => git(dir, "rev-parse", "HEAD").trim();
+  if (head(a) !== head(b)) return;
 
   const paths = ["test/audit.test.mjs", "test/compliance.test.mjs"];
   const da = repositoryDigest(a, paths);
   const db = repositoryDigest(b, paths);
   if (!da.ok || !db.ok) return;
   assert.equal(da.digest, db.digest, "the same commit must digest identically in every checkout");
+});
+
+// --- The migration inventory ---------------------------------------------------------------------
+
+test("the inventory reports every attestation and refuses to auto-upgrade any of them", () => {
+  // "0 safely auto-upgradable" is a structural fact about a digest-algorithm migration, not a count
+  // that might one day be higher. Recomputing an old digest from the revision it names would prove
+  // the content at that revision, never the surface the reviewer examined, because the superseded
+  // mechanism hashed bytes the commit did not uniquely determine.
+  const r = spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${REPO_ROOT}`, "--json"],
+    { encoding: "utf8" },
+  );
+  const json = JSON.parse(r.stdout);
+
+  assert.equal(json.safelyAutoUpgradable, 0);
+  assert.ok(json.total > 0, "this repository has attestations to report on");
+  assert.deepEqual(json.violations, [], "the policy must satisfy its own post-migration invariants");
+  for (const a of json.attestations) {
+    assert.equal(a.autoUpgradable, false, `${a.rule} must never be marked auto-upgradable`);
+    assert.ok(a.disposition, `${a.rule} must report what the human decided`);
+    assert.ok(a.freshness, `${a.rule} must report whether that decision establishes current state`);
+  }
+});
+
+test("every recorded digest names the algorithm that produced it", () => {
+  // The post-migration invariant: a legacy digest without algorithm metadata is impossible, because
+  // an unlabelled digest is indistinguishable from a deterministic one and would be compared as if
+  // it were reproducible.
+  const r = spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${REPO_ROOT}`, "--json"],
+    { encoding: "utf8" },
+  );
+  for (const a of JSON.parse(r.stdout).attestations) {
+    if (a.paths.length === 0) continue;
+    assert.ok(
+      a.algorithm === "git-blob-set-sha256-v1" || a.algorithm === "working-tree-bytes-sha256-v1",
+      `${a.rule} records a digest under an unnamed algorithm: ${a.algorithm}`,
+    );
+  }
 });
