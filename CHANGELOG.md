@@ -47,6 +47,26 @@ added, removed, or re-levelled; some projects that failed will now pass, which i
   `VERSION` as it writes. A constant in a file releases do not touch is a maintenance obligation
   nobody signed up for.
 
+### Decided — detectors report instances of a subject, not discussion of it
+
+[ADR 0009](artifacts/adr/0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md).
+Four detector false positives have now shipped and they are one defect four times: each asked *does
+this text mention the thing?* and reported the answer to *is this an instance of the thing?* An SDK
+named in a comment, an HTTP route read as a path, a redaction test's seeded credential, a doc comment
+reading *"Deterministic, like a TODO:"*. The first acquired a regression test whose name states the
+principle and it generalised no further; three more followed.
+
+Recorded as guidance for detector authors rather than as a compliance rule — no adopter can act on a
+finding that says their code confused a detector, and deciding instance-versus-mention is the same
+judgement the detector was already failing to make. New detectors owe an answer up front: what
+distinguishes an instance from a mention here, and does the implementation test for it? Where nothing
+does, the honest outcomes are a narrower rule, a lower `assurance`, or `manual-review` — not a broader
+match, because a finding an adopter learns to ignore trains them to ignore the next one.
+
+Two instances stay open on purpose. `security.no-secrets-in-artifacts` and `quality.unfinished-work`
+both fire on fixtures, where the fixture is a genuine instance and only intent separates it from the
+defect. Disclosed in [INSTRUCTIONS.md](INSTRUCTIONS.md) rather than guessed at.
+
 ### Disclosed — two detectors assert repository state they never measured
 
 [ADR 0008](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).
