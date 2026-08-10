@@ -119,7 +119,8 @@ so as exit `2`.
 
 ## Implementation
 
-**Implemented.** `VERSION` declares `1.0.0` and `CHANGELOG.md` records what that version freezes.
+**Implemented.** `VERSION` declares the current framework version and `CHANGELOG.md` records what
+each release freezes.
 
 Three versions travel independently, which is R1 in practice rather than in principle:
 
@@ -141,6 +142,20 @@ semantics, the policy schema, canonical rule IDs, alias resolution, the catalog 
 JSON envelope, statuses, dispositions, exit codes, and score, assurance, and coverage semantics.
 Console wording, module layout, and detector internals are explicitly outside it.
 
-**R5 is not implemented.** Nothing yet resolves a project's declared `standardVersion` against a
-published set of framework versions, or rejects an unresolvable one — with a single published
-version there is nothing to resolve against, but the check has to exist before a second version does.
+**R5's rejection clause is implemented; resolution is not.** `validate` compares the policy's
+declared `standardVersion` against this framework's own `VERSION` and, when they disagree, refuses to
+produce a verdict and exits `2` (`scripts/standards.mjs`, the version-identity guard). That is what
+R5 actually requires: reject a version that cannot be resolved, and never fall back to another
+version and evaluate against it.
+
+Until that guard landed the evaluator did the thing R5 forbids. Every run evaluated against the
+catalog on disk whatever the project declared, so a policy pinned to `1.0.0` was judged by `2.0.0`'s
+rules and the envelope reported that verdict under `standardVersion: "1.0.0"`. With a single
+published version the two could not disagree, which is why it went unnoticed; the moment a project
+consumes a released framework rather than sharing a working tree with it, they can.
+
+What is still absent is **resolution** itself: nothing retrieves the rule set as it stood at a
+declared version, so the only version this framework can evaluate against is the one on disk. R5 does
+not require that capability — it requires refusing to guess — but without it a declared version is a
+precondition on the run rather than a selection of rules, and the gap is recorded in
+[ADR 0006](../artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md).

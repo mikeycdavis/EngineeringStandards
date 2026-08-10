@@ -23,7 +23,8 @@ means. Three things can newly fail an adopter's `validate` **with no change to t
 - The unestablished-prohibition verdict rule — an applicable `forbidden` rule nobody examined caps
   the verdict at `NOT_EVALUATED` and exits 1.
 
-**What did not change:** the policy schema (a 1.x policy file still validates), any rule id or alias,
+**What did not change:** the policy schema (a 1.x policy file still satisfies it unchanged, though
+its `standardVersion` value must be updated deliberately — see below), any rule id or alias,
 and every exit-code meaning except the new `NOT_EVALUATED` trigger. See
 [Upgrading from 1.x to 2.0](INSTRUCTIONS.md#upgrading-from-1x-to-20).
 
@@ -70,6 +71,25 @@ was insufficient.
 ### Changed
 
 - **`security.no-secrets-in-artifacts` moved from review-required to evaluated.**
+- **`validate` now enforces version identity, and this closes a live defect rather than adding a
+  feature.** A verdict may not be reported for standards version X unless the framework executing the
+  run identifies itself as X. When `project-policy.yml` declares a `standardVersion` that differs
+  from the framework's `VERSION`, `validate` produces **no verdict** and exits `2`; `--json` emits a
+  typed `VERSION_MISMATCH` object with both versions rather than an envelope, because an envelope
+  carries a `status` and that is the claim being refused.
+
+  [Standard 21](standards/21-versioning.md) R5 has always required this — *reject a declared version
+  you cannot resolve, never fall back to another and evaluate against it* — and the evaluator was
+  doing precisely what it forbids: every run evaluated against the catalog on disk regardless of what
+  the project declared, then labelled the result with the declared version. A policy pinned to
+  `1.0.0` was judged by `2.0.0`'s rules and reported as `1.0.0`. One working tree made the two
+  versions inseparable, so nothing could disagree; consuming a released framework separates them.
+
+  This is an honesty guard, not version resolution. Nothing retrieves the rule set as it stood at a
+  declared version, so a pin is enforced as a precondition on the run and not honoured as a selection
+  of rules. That half of R5 remains deferred. `audit` is deliberately unchanged — it reports evidence
+  and claims no standards version, so a version precondition there would gate a command whose
+  contract does not depend on one.
 - **The verdict.** `NOT_EVALUATED` has a new trigger and, from that trigger, exits 1. The engine
   change sits after the `NON_COMPLIANT` and `COMPLIANT_WITH_EXCEPTIONS` determinations so it cannot
   intercept the exception machinery, and both boundaries are tested.

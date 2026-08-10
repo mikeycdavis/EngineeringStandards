@@ -108,9 +108,18 @@ would be manufacturing the evidence its own work needs to pass — the failure
 ## Deferred
 
 - **[Standard 21](../../standards/21-versioning.md) R5 — version *resolution*.** A project pins
-  `standardVersion`, and nothing yet resolves the rule set as it stood at that version; every run
-  evaluates against the catalog on disk. This release is the first that makes the gap exercisable,
-  since 1.x and 2.0 now disagree about which rules exist. Recorded, not closed.
+  `standardVersion`, and nothing resolves the rule set as it stood at that version; the only rule set
+  this framework can evaluate against is the catalog on disk. This release is the first that makes
+  the gap exercisable, since 1.x and 2.0 now disagree about which rules exist.
+
+  **Amended after acceptance.** R5's *rejection* clause has since been implemented: `validate`
+  compares the declared version against the framework's own `VERSION` and, when they disagree,
+  produces no verdict and exits `2`. What this entry originally described as one deferred gap was in
+  fact two, and the smaller one was not a missing capability but a live violation — a run evaluated a
+  project against a rule set it had not declared and then labelled the verdict with the version it
+  had. Sharing a working tree hid it; distributing the framework would have reproduced it in every
+  consumer. Resolution itself remains unbuilt, so a declared version is now enforced as a
+  precondition on the run rather than honoured as a selection of rules.
 - **Git-history-based detection.** Test removal, coverage regression, and history rewriting are all
   detectable in principle and all require comparing against a previous state of the repository.
 - **A lifecycle for a rejected attestation, and — sharper — its exemption from freshness.**

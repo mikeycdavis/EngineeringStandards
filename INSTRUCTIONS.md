@@ -507,8 +507,17 @@ rule still means what its author intended
    looked for has established nothing. A `passing` prohibition means *no violation was found by the
    stated search*; a prohibition with no search behind it means nothing at all.
 
-**Resolve each one, in this order.** There are four honest paths and deleting the rule from your
-policy is not among them — an undeclared rule is reported as undeclared:
+**First, declare the version you are adopting.** Set `standardVersion: "2.0.0"` in your
+`project-policy.yml`. Until you do, `validate` produces no verdict at all: it compares your declared
+version against the framework's own `VERSION`, and on a disagreement reports `VERSION_MISMATCH` and
+exits `2` — a configuration error, not a compliance failure.
+[Standard 21](standards/21-versioning.md) R5 requires refusing to guess rather than falling back, and
+nothing resolves 1.x's rule set, so a policy still declaring `1.0.0` gets no verdict from a 2.0
+framework instead of a quietly wrong one labelled `1.0.0`. Changing that line is the deliberate act
+of adopting the new rules, which is why nothing changes it for you.
+
+**Then resolve each failure, in this order.** There are four honest paths and deleting the rule from
+your policy is not among them — an undeclared rule is reported as undeclared:
 
 | Path | When |
 | --- | --- |
@@ -524,7 +533,10 @@ section is a worked example of the third path.
 
 **What did not change**, so you do not have to look:
 
-- **The policy schema.** A 1.x `project-policy.yml` still validates unchanged.
+- **The policy schema.** A 1.x `project-policy.yml` still satisfies the schema unchanged — no field
+  was added, removed, or retyped. Its `standardVersion` value is the one thing you must edit, and
+  that is a CLI precondition rather than a schema change: the shape is accepted, the declared version
+  is what a 2.0 framework will not evaluate on your behalf.
 - **Rule IDs and aliases.** Nothing was renamed, deprecated, or removed.
 - **Exit-code meanings**, except that `NOT_EVALUATED` from the new trigger exits 1 rather than 0. A
   missing or unreadable policy is still exit 2.

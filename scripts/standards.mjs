@@ -1883,6 +1883,74 @@ if (!VALIDATING) {
 const policy = await loadProjectPolicy(root);
 
 /**
+ * The version-identity guard — a verdict may not be reported for version X unless the framework
+ * executing the run identifies itself as X.
+ *
+ * `standardVersion` declares which framework version governs a project, and nothing resolves that
+ * declaration: every run evaluates against the catalog on disk, whichever version that happens to
+ * be. While this repository was the framework's only consumer the two were the same working tree
+ * and could not disagree, so the gap was recorded and deferred (Standard 21 R5).
+ *
+ * Distribution ends that. Once a project pins a version and a workflow checks out a ref, the pin
+ * and the ref are independent sources of truth: a policy declaring 2.0.0 can be evaluated by 2.1.0,
+ * and the envelope would carry `standardVersion: "2.0.0"` beside a verdict the 2.0.0 rule set never
+ * produced. That is not a compliance failure — it is a provenance lie, and a verdict that misstates
+ * which rules produced it is the false green this tool exists to refuse.
+ *
+ * This is an honesty guard, NOT historical rule-set resolution. It detects the disagreement and
+ * stops; it cannot evaluate the declared version, and does not pretend to. Standard 21 R5 remains
+ * unimplemented and this narrows rather than closes it.
+ *
+ * Exit 2, beside the unreadable-policy case below: the policy and the framework disagree about what
+ * is being evaluated, which is a configuration error. Exit 1 would assert the project failed a
+ * rule, and no rule was reached. No envelope is emitted in either output mode — an envelope carries
+ * a `status`, and that status is precisely the claim that must not be made. The JSON branch emits a
+ * typed error instead of nothing, so a consumer parsing stdout gets a loud object rather than a
+ * parse failure it might mistake for an empty result.
+ *
+ * A missing or malformed `standardVersion` cannot reach here: the schema makes it required and pins
+ * it to a full semver triple, so loadProjectPolicy() has already returned `document: null` and the
+ * configuration path below owns that case. The guard is deliberately confined to `validate` —
+ * `audit` reports evidence and claims no standards version, so widening it there would attach a
+ * version precondition to a command whose contract does not depend on one.
+ */
+const FRAMEWORK_VERSION = (
+  await readFile(path.join(path.dirname(SELF), "..", "VERSION"), "utf8")
+).trim();
+const declaredVersion = policy.document?.standardVersion;
+
+if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
+  const message =
+    `project-policy.yml declares standardVersion ${declaredVersion}, but the framework executing ` +
+    `this run is ${FRAMEWORK_VERSION}. No verdict was produced: a compliance status reported under ` +
+    `a version that did not evaluate it would misstate its own provenance.`;
+  if (JSON_OUT) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          error: "VERSION_MISMATCH",
+          policyStandardVersion: declaredVersion,
+          frameworkVersion: FRAMEWORK_VERSION,
+          message,
+          historicalResolution: "not implemented (Standard 21 R5)",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+  } else {
+    process.stderr.write(
+      `VERSION_MISMATCH\n  ${message}\n\n` +
+        `  Resolving a historical rule set is not implemented (Standard 21 R5), so this run cannot\n` +
+        `  evaluate ${declaredVersion}. Either execute the framework at ${declaredVersion}, or update\n` +
+        `  project-policy.yml to ${FRAMEWORK_VERSION} deliberately and review the failures the newer\n` +
+        `  rule set reports. Upgrading the governing version is an engineering event, not a default.\n`,
+    );
+  }
+  process.exit(EXIT_INVOCATION);
+}
+
+/**
  * Digest the paths each attestation says it reviewed, so a material change to them makes the
  * attestation stale (ADR 0005 rule 4).
  *
