@@ -10,14 +10,25 @@
 says what discharges the prohibition: a decision record naming **what the state is**, **who owns
 it**, and **how it is reset**. Global is not the violation; unnamed and unownable is.
 
-Three scripts hold module-level bindings that carry state through a run.
+Four scripts hold module-level bindings that carry state through a run.
 
 **What this decision governs — the rule, not the list.** It covers every module-level *mutable
 accumulator, cache, counter, and derived run-state binding* in `scripts/standards.mjs`,
-`scripts/inventory.mjs`, and `scripts/fidelity.mjs` whose value is established or changed during
-execution. Frozen lookup tables and immutable configuration are excluded. **A derived binding
-assigned once from already-governed mutable state is still governed**, because it remains
-module-scoped for the lifetime of the process.
+`scripts/inventory.mjs`, `scripts/fidelity.mjs`, and `scripts/attestations.mjs` whose value is
+established or changed during execution.
+
+The governed set is defined by behaviour rather than by having been listed here: **a script that
+holds run state is governed by this decision the moment it exists**, whether or not this document
+has been updated to name it. `scripts/attestations.mjs` was added and was governed from its first
+line, and this record was stale until it said so. `scripts/repository.mjs` and `scripts/reviews.mjs`
+were added in the same cycle and are *not* in the set, not by omission but because they hold no
+module-level bindings at all beyond exported frozen identifiers — every function takes its inputs
+and returns its answer. That was a deliberate design constraint when repository provenance was
+introduced, precisely so that opening the Git seam did not enlarge the state this decision governs.
+
+Frozen lookup tables and immutable configuration are excluded. **A derived binding assigned once from
+already-governed mutable state is still governed**, because it remains module-scoped for the lifetime
+of the process.
 
 The rule is what applies to a binding added tomorrow. **The table below is an audit aid and a current
 inventory — it is not the source of applicability**, and a binding missing from it is governed
@@ -33,9 +44,17 @@ would be wrong the first time someone added one.
 | | `unreadableFiles` (`:1696`), `truncatedFiles` (`:1697`) | accumulators | Files the read loop could not read, and those it read only in part |
 | | `evidenceSurface` (`:1761`) | derived run state | The summary of the four above, carried into the report |
 | | `report` (`:1896`) | derived run state | The verdict envelope, built once from `findings`, the catalog, and the policy |
+| | `FRAMEWORK_VERSION` (`:1950`), `declaredVersion` (`:1953`) | derived run state | The framework version read from `VERSION` and the version the policy declares, compared once by the version-identity guard |
+| | `freshness`, `repo` (`:2008`) | derived run state | Per-attestation freshness states and repository availability, destructured from one call and read by `evaluate()` and the report |
 | `inventory.mjs` | `missing`, `unknown`, `duplicates`, `titleMismatches`, `brokenSections`, `duplicateSections` | accumulators | Per-source disagreement lists |
 | | `detectedCount` (`:89`), `countMismatch` (`:90`) | counters | Running totals across sources |
 | | `out` (`:201`) | accumulator | The output lines, appended through the reporting section and flushed at exit |
+| `attestations.mjs` | `document` (`:45`) | run state, and the only `let` in the governed set | The parsed policy. Declared uninitialised and assigned inside a `try`, because a read failure must exit 2 rather than proceed against a half-read document |
+| | `args`, `JSON_OUT`, `MIGRATE`, `dirArg`, `root` (`:39`–`:43`) | derived run state | Invocation shape, derived once from `process.argv` |
+| | `repo` (`:141`), `entries` (`:142`) | derived run state | Repository availability and the attestation map, read once |
+| | `rows` (`:148`) | derived run state | One row per review event, the report's subject |
+| | `violations` (`:190`) | accumulator | Post-migration invariant breaches, appended by two loops |
+| | `counts` (`:204`), `legacy` (`:205`) | derived run state | Summaries over `rows` |
 | `fidelity.mjs` | `failures` | accumulator | Unverified verbatim claims |
 | | `claims` | counter | Running count of claims checked |
 | | `wholeSource`, `sectionCache` | caches | So a source file is read and normalized once |
@@ -47,12 +66,22 @@ Frozen lookup tables — `SKIP_DIRS`, `TEXT_EXT`, `CODE_EXT`, `COMMENT_SYNTAX`, 
 initialization. They are configuration, not state, and this decision does not concern them.
 
 **How the enumeration is checked, and what that is worth.** The current list was assembled with the
-help of a declaration-pattern scan over the three files. **That scan is not authoritative**: a
+help of a declaration-pattern scan over the four files, re-run across the whole governed set on
+2026-08-10 after `scripts/attestations.mjs` was added. **That scan is not authoritative**: a
 binding mutated through an alias escapes it, as `surfaceLoss` does — it is written through the
 `loss` parameter of `collectFiles`, so a scan for `surfaceLoss.push` finds nothing. Completeness
 therefore remains a review obligation, not a mechanical guarantee, unless and until a sound detector
 exists. Recording that is the point: replacing one false proof of completeness with another would be
 no improvement.
+
+**This record was incomplete again at the 2026-08-10 review, and was remediated before that review
+rather than after it.** Four derived run-state bindings had been added to `standards.mjs` — the
+version-guard pair and the provenance pair — and `attestations.mjs` had been added as a whole
+governed script, including the only `let` in the set. None were recorded here. The rule text still
+governed them, so this was a stale record rather than a live violation; but the record is what an
+attestation approves, so `architecture.no-hidden-global-state` was deliberately **not** re-attested
+in that cycle while the other seven were. Approving a knowingly incomplete record would have repeated
+the exact failure below, immediately after mechanically demonstrating it.
 
 **This record has been incomplete at every review until this one, which is why the rule is
 categorical.** The first draft listed `findings` and `sources` and glossed the other two scripts as
@@ -90,7 +119,9 @@ inside a process that has already done one.
   `sectionCache`.
 - **Counters** — `claims`, `detectedCount`, `countMismatch`.
 - **Derived run state**, assigned once from the above and then read — `evidenceSurface`, `report`,
-  `extractionOf`, `entryFor`. These are listed rather than excused. A binding that is written once
+  `extractionOf`, `entryFor`, the version-guard pair `FRAMEWORK_VERSION` and `declaredVersion`, the
+  provenance pair `freshness` and `repo`, and `attestations.mjs`'s `repo`, `entries`, `rows`,
+  `counts`, and `legacy`. These are listed rather than excused. A binding that is written once
   instead of repeatedly is still module-scoped for the process lifetime, and carving it out would
   create precisely the fuzzy exception a later omission could hide behind.
 
@@ -98,6 +129,12 @@ inside a process that has already done one.
 content scan goes through `sourceOf`, `structureOf`, or `commentsOf` and those read from it.
 Threading these through fifteen detectors as parameters would add a parameter to every signature and
 change nothing about the lifetime.
+
+**One binding is a `let`, and it is the exception that states its own reason.** `attestations.mjs`
+declares `document` uninitialised and assigns it inside a `try`, because a policy that cannot be read
+must exit 2 rather than let the run proceed against a half-read document. Every other governed
+binding is a `const` assigned at its declaration. That asymmetry is deliberate and is recorded here
+so a later reader does not "tidy" it into a `const` that cannot express the failure path.
 
 **Who owns them.** The top-level run block at the bottom of each script — one owner per script, and
 no binding above is written from more than one place:
