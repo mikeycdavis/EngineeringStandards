@@ -109,12 +109,27 @@ the tool's own bug in the adopter's policy file.
 
 ## Consequences
 
-**Not yet implemented, and the gap is disclosed rather than left to be discovered.** Both rules
-still fire on working-tree evidence today. The limitation is recorded in
-[INSTRUCTIONS.md](../../INSTRUCTIONS.md)'s current-limitations table, which
-[Standard 22](../../standards/22-adoption-and-migration.md) R6 requires and a test enforces. Until
-the seam exists, an adopter whose ignored `.env` is flagged is looking at a tool defect, and the
-correct response is to say so — not to rotate a key and not to write an exception.
+**One of the six rules now uses the seam; five still fire on working-tree evidence.**
+`scm.no-committed-env-files` consults `trackedAmong()` in
+[`scripts/repository.mjs`](../../scripts/repository.mjs) — the module ADR 0011 built for
+attestation freshness, which is the seam this decision anticipated. A gitignored `.env` is no
+longer a finding, mixed state names only the tracked files, and where the index cannot be read the
+rule withdraws from the evaluated set and reports `not-evaluated`. There is deliberately **no
+working-tree fallback**: inferring tracked-ness from the filesystem would mint a second answer to
+the question this module exists to answer once, which is ADR 0011's constraint applied to a
+different question.
+
+The remaining five keep their rows in [INSTRUCTIONS.md](../../INSTRUCTIONS.md)'s
+current-limitations table, which [Standard 22](../../standards/22-adoption-and-migration.md) R6
+requires and a test enforces. `security.no-secrets-in-artifacts` is the remaining false-*failure*
+case. The four false-*pass* cases are held by a characterisation test that asserts the defect and
+instructs its own deletion when the behaviour is corrected — they are the more expensive direction,
+and wiring them is a separate tranche, because the existence of the seam does not by itself
+establish that every structural rule should consult it in the same way. Changing them can newly
+make a repository non-compliant, so each needs its own reproduction first.
+
+Until then, an adopter whose ignored planning directory *passes* is looking at a tool defect in the
+quiet direction, and the correct response is to check `git ls-files` rather than to trust the green.
 
 **The abstraction is the trigger for revisiting [ADR 0007](0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md).**
 A module that spawns a subprocess and caches its answer is state with a lifetime, and 0007's

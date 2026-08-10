@@ -27,6 +27,7 @@ import {
   classifyFreshness,
   repositoryAvailable,
   repositoryDigest,
+  trackedAmong,
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
@@ -1579,19 +1580,49 @@ const DESCRIPTIVE = [
 /**
  * scm.no-committed-env-files — Standard 46 R2.
  *
- * VIEW: filename only. No content is read, and none needs to be: an environment file is where a
- * project puts the values it must not publish, so the file's presence is the finding. Reading it
- * would also duplicate security.no-secrets-in-artifacts, which excludes these files for exactly
- * that reason — one defect, one finding.
+ * VIEW: filename to find the candidates, then the repository index to decide. No content is read,
+ * and none needs to be: the question is whether a file of that name is *tracked*, not what is in
+ * it. Reading it would also duplicate security.no-secrets-in-artifacts, which excludes these files
+ * for exactly that reason — one defect, one finding.
+ *
+ * The index is what makes the finding sayable. `present on disk` and `tracked` are different facts,
+ * and this rule is `forbidden` — satisfied by the absence of a violation — so asserting an unproven
+ * one is not a rounding error: the remediation is credential rotation, and the cost of being wrong
+ * lands on somebody who did nothing (ADR 0008).
  */
 const ENV_FILE_RE = /(^|\/)\.env(\.[\w.-]+)?$/;
 const ENV_PERMITTED = /\.(example|template|sample|vault)$/;
 
-function detectCommittedEnvFiles(files) {
+function detectCommittedEnvFiles(files, repoRoot, repo) {
   const hits = files
     .map((f) => rel(f))
     .filter((p) => ENV_FILE_RE.test(p) && !ENV_PERMITTED.test(p));
-  if (hits.length === 0) return;
+  if (hits.length === 0) return { evaluated: true };
+
+  // No fallback to working-tree inference (ADR 0011's no-second-identity constraint applied to this
+  // question): the rule leaves the evaluated set instead. The evidence-surface finding carries no
+  // rule, exactly as the other unavailability findings do, so it can never become a second
+  // compliance owner for a rule that is now reporting not-evaluated on its own.
+  const answer = repo.available ? trackedAmong(repoRoot, hits) : { ok: false, tracked: null };
+  if (!answer.ok) {
+    addFinding({
+      id: "repository-evidence-unavailable",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: hits.sort(),
+      message:
+        `Whether ${hits.length} environment file(s) are tracked could not be established: ` +
+        `${repo.reason ?? "the repository index could not be read"}. Presence on disk is not a ` +
+        `violation, so scm.no-committed-env-files reports not-evaluated. Check \`git ls-files\` ` +
+        `against these paths before rotating anything.`,
+      standardRef: R.search,
+    });
+    return { evaluated: false };
+  }
+
+  const tracked = hits.filter((p) => answer.tracked.has(p)).sort();
+  if (tracked.length === 0) return { evaluated: true };
 
   addFinding({
     id: "committed-env-file",
@@ -1599,10 +1630,11 @@ function detectCommittedEnvFiles(files) {
     category: "Standards violations",
     severity: "error",
     label: "OBSERVED",
-    evidence: hits.sort(),
-    message: `${hits.length} environment file(s) are tracked. Rotate anything they contained; an example variant is the supported alternative.`,
+    evidence: tracked,
+    message: `${tracked.length} environment file(s) are tracked. Rotate anything they contained; an example variant is the supported alternative.`,
     standardRef: N.envFiles,
   });
+  return { evaluated: true };
 }
 
 /**
@@ -2023,7 +2055,10 @@ await detectPlanDiscrepancies(files, contents);
 detectDocDiscrepancies(files, contents);
 detectStandardsViolations(files, contents);
 
-detectCommittedEnvFiles(files);
+// Availability is probed once and shared: the env detector and attestation freshness both need the
+// repository, and asking twice would spend a second subprocess to learn the same thing.
+const repoAvailability = repositoryAvailable(root);
+const envCheck = detectCommittedEnvFiles(files, root, repoAvailability);
 detectSecretsInArtifacts(files, contents);
 detectSwallowedExceptions(files, contents);
 detectCertBypass(files);
@@ -2155,8 +2190,7 @@ if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
  * commit would make the mechanism unusable, and it would be abandoned. Digesting what was actually
  * reviewed invalidates on material change, which is the real requirement.
  */
-function attestationFreshness(document, repoRoot) {
-  const repo = repositoryAvailable(repoRoot);
+function attestationFreshness(document, repoRoot, repo) {
   const out = new Map();
   for (const [ruleId, record] of Object.entries(document?.attestations ?? {})) {
     // Freshness describes what may establish the rule now, so it is computed for the newest review
@@ -2169,7 +2203,7 @@ function attestationFreshness(document, repoRoot) {
   return { states: out, repo };
 }
 
-const { states: freshness, repo } = attestationFreshness(policy.document, root);
+const { states: freshness, repo } = attestationFreshness(policy.document, root, repoAvailability);
 
 // Repository content is the source of truth for attestation freshness, and its absence is a fact
 // about the search mechanism rather than about the project (Standard 44 R12). It is reported as an
@@ -2190,11 +2224,20 @@ if (!repo.available && freshness.size > 0) {
     standardRef: R.search,
   });
 }
+// A rule whose evidence could not be obtained was not evaluated this run, whatever the static set
+// says. Withdrawing it here rather than letting it report a clean pass is what keeps `nobody could
+// look` distinct from `nobody found anything` — a distinction that matters most for a `forbidden`
+// rule, which is satisfied by absence and would otherwise pass precisely when it knows least
+// (Standard 45 R6).
+const evaluatedThisRun = EVALUATED_RULES.filter(
+  (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false),
+);
+
 const verdict = evaluate({
   catalog,
   policy: policy.document,
   findings,
-  evaluated: EVALUATED_RULES,
+  evaluated: evaluatedThisRun,
   today: new Date().toISOString().slice(0, 10),
   freshness,
 });

@@ -585,6 +585,149 @@ test("no must-never detector fires on the fixture that names every pattern witho
   }
 });
 
+// ---------------------------------------------------------------------------
+// scm.no-committed-env-files — tracked is a different question from present (ADR 0008).
+//
+// test/fixtures/never-violations/.env is itself tracked, so the must-never test above is already
+// the positive control. What cannot be a committed fixture is the case that produced the defect: an
+// ignored, untracked .env physically present. Those are built at runtime, because a file cannot be
+// both a checked-in fixture and untracked.
+// ---------------------------------------------------------------------------
+
+const git = (dir, ...args) => {
+  const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+};
+
+async function envRepo(name, { init = true } = {}) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), `standards-env-${name}-`));
+  if (init) {
+    git(dir, "init", "-q");
+    git(dir, "config", "user.email", "test@example.invalid");
+    git(dir, "config", "user.name", "Test");
+  }
+  return dir;
+}
+
+test("an ignored, untracked .env present on disk is not a violation", async () => {
+  // The exact shape that failed two real adopters: the file exists, .gitignore covers it, and
+  // git ls-files has never heard of it.
+  const dir = await envRepo("untracked");
+  try {
+    await writeFile(path.join(dir, ".gitignore"), ".env\n");
+    await writeFile(path.join(dir, ".env"), "API_KEY=whatever\n");
+    await writeFile(path.join(dir, "README.md"), "# t\n");
+    git(dir, "add", ".gitignore", "README.md");
+    git(dir, "commit", "-qm", "init");
+
+    assert.deepEqual(
+      of(audit(dir), "committed-env-file"),
+      [],
+      "an untracked, gitignored .env was reported as a committed environment file",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a genuinely tracked .env is still a violation", async () => {
+  // The control. Fixing the false failure must not cost the true one — catching the repository
+  // that really did commit its environment file is this rule's entire value.
+  const dir = await envRepo("tracked");
+  try {
+    await writeFile(path.join(dir, ".env"), "API_KEY=whatever\n");
+    git(dir, "add", "-f", ".env");
+    git(dir, "commit", "-qm", "init");
+
+    const found = of(audit(dir), "committed-env-file");
+    assert.equal(found.length, 1, "a tracked .env did not produce a finding");
+    assert.equal(found[0].severity, "error");
+    assert.deepEqual(found[0].evidence, [".env"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("only the tracked env files are named when both kinds are present", async () => {
+  // Mixed state is the realistic case: a committed .env beside a developer's ignored .env.local.
+  // Evidence must name the tracked one and nothing else.
+  const dir = await envRepo("mixed");
+  try {
+    await writeFile(path.join(dir, ".gitignore"), ".env.local\n");
+    await writeFile(path.join(dir, ".env"), "A=1\n");
+    await writeFile(path.join(dir, ".env.local"), "B=2\n");
+    git(dir, "add", "-f", ".env", ".gitignore");
+    git(dir, "commit", "-qm", "init");
+
+    const found = of(audit(dir), "committed-env-file");
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0].evidence, [".env"], "evidence named a file that is not tracked");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("unknown tracking state is neither a violation nor a pass", async () => {
+  // No repository, so the seam cannot answer. There is deliberately no working-tree fallback: the
+  // rule withdraws from evaluation, and the unavailability is reported as evidence-surface loss
+  // carrying no rule, so it cannot become a second compliance owner.
+  const dir = await envRepo("novcs", { init: false });
+  try {
+    await writeFile(path.join(dir, ".env"), "API_KEY=whatever\n");
+
+    const res = audit(dir);
+    assert.deepEqual(
+      of(res, "committed-env-file"),
+      [],
+      "a violation was asserted against a directory with no repository to ask",
+    );
+    const unavailable = of(res, "repository-evidence-unavailable");
+    assert.equal(unavailable.length, 1, "the unverifiable file was not surfaced");
+    assert.equal(unavailable[0].severity, "warning");
+    // Null rather than absent: the envelope emits the key. What matters is that no rule owns it,
+    // so the compliance consequence stays with the rule's own not-evaluated result.
+    assert.ok(!unavailable[0].rule, "evidence unavailability must carry no rule");
+    assert.ok(unavailable[0].evidence.includes(".env"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("rotation is advised in every tracked case and no untracked or unknown one", async () => {
+  // The durable contract, stated as behaviour over emitted findings rather than over the shape of
+  // the code: the rotation instruction is reachable if and only if the index named the file. It
+  // sweeps all three tracking states in one place, because the invariant that joins them is not
+  // expressible in any single-state test — each could pass while the relationship broke.
+  const ROTATE = "Rotate anything they contained";
+  const cases = [
+    { name: "sweep-tracked", ignore: null, add: ["-f", ".env"], expectRotate: true },
+    { name: "sweep-untracked", ignore: ".env\n", add: [], expectRotate: false },
+    { name: "sweep-unknown", init: false, ignore: null, add: null, expectRotate: false },
+  ];
+
+  for (const c of cases) {
+    const dir = await envRepo(c.name, { init: c.init !== false });
+    try {
+      if (c.ignore) await writeFile(path.join(dir, ".gitignore"), c.ignore);
+      await writeFile(path.join(dir, ".env"), "API_KEY=whatever\n");
+      if (c.add) {
+        git(dir, "add", ...c.add, ...(c.ignore ? [".gitignore"] : []));
+        git(dir, "commit", "-qm", "init");
+      }
+
+      assert.equal(
+        JSON.stringify(audit(dir).json.findings).includes(ROTATE),
+        c.expectRotate,
+        c.expectRotate
+          ? `${c.name}: a genuinely committed env file did not advise rotation`
+          : `${c.name}: rotation was advised without tracking having been established`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("the swallowed-exception detector decides by site, not by counting", () => {
   // The defect this replaces: the detector counted empty-catch matches in the structural view,
   // counted them in the raw view, and took the smaller number — a conjunction with no subject
@@ -1010,12 +1153,22 @@ test("the same artifacts, absent rather than ignored, are reported — the check
   }
 });
 
-test("scm.no-committed-env-files no longer claims assurance it cannot support", async () => {
-  // The catalog is the claim a consumer reads. A check that cannot tell `present on disk` from
-  // `committed` has not established the requirement, and saying `full` is the assurance
-  // overstatement Standard 31 R6 exists to prevent — here in the tool that supplies the number.
+test("scm.no-committed-env-files claims exactly the assurance it can support", async () => {
+  // The catalog is the claim a consumer reads. This rule now consults the repository index, so the
+  // remediation must no longer hedge — telling a reader to verify tracking themselves was the
+  // tool disclaiming its own finding, and that hedge only made sense while the finding was unsound.
+  //
+  // Still `partial`, for a different and narrower reason than before: the detector recognises
+  // dotenv-shaped names, so values kept in a file named nothing like an environment file are
+  // outside what it can see. Claiming `full` would be the assurance overstatement Standard 31 R6
+  // exists to prevent, in the tool that supplies the number.
   const { loadCatalog, resolve } = await import("../scripts/catalog.mjs");
   const rule = resolve(await loadCatalog(), "scm.no-committed-env-files");
   assert.equal(rule.assurance, "partial");
-  assert.match(rule.remediation, /git ls-files/, "the remediation must tell the reader to verify tracking first");
+  assert.doesNotMatch(
+    rule.remediation,
+    /cannot yet tell tracked from present|Confirm with `git ls-files`/,
+    "the remediation still disclaims a finding the detector now establishes",
+  );
+  assert.match(rule.remediation, /rotate anything it contained/i);
 });

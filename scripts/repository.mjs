@@ -88,6 +88,30 @@ export function repositoryAvailable(root) {
 }
 
 /**
+ * Which of these paths does the repository actually track?
+ *
+ * The question [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+ * named foremost, and the one a directory walk cannot answer. A structural detector that finds a
+ * path on disk knows the path is *present*; saying *tracked* or *committed* requires asking here.
+ *
+ * Scoped to the paths asked about rather than returning the whole index: a detector has already
+ * narrowed to its candidates, and the answer it needs is about those. This also keeps the cost
+ * proportional to the question instead of to the size of the repository.
+ *
+ * **No fallback, by the same reasoning as the digest.** Callers get `{ ok: false }` and must report
+ * evidence unavailability; inferring tracked-ness from the filesystem would mint a second answer to
+ * a question this module exists to answer once, and the quieter defect is the worse one. Failure to
+ * know is represented as failure to know, never converted into a fact about the project
+ * (Standard 44 R12).
+ */
+export function trackedAmong(root, paths) {
+  if (paths.length === 0) return { ok: true, tracked: new Set() };
+  const r = git(root, ["ls-files", "-z", "--cached", "--", ...paths]);
+  if (!r.ok) return { ok: false, tracked: null };
+  return { ok: true, tracked: new Set(r.out.split("\0").filter(Boolean)) };
+}
+
+/**
  * Blob identity for one path at HEAD, or null when the path has none.
  *
  * Null means *no committed identity exists* — an untracked path — which is not the same as a path

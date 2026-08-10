@@ -13,13 +13,13 @@
       "nonExemptible": false,
       "introducedIn": "2.0.0",
       "description": "No dotenv-style environment file is tracked. Example, template, sample, and vault variants are permitted, since they carry placeholders rather than values.",
-      "rationale": "An environment file is where a project puts the values it must not publish, so the file's presence is the finding and no content scan is needed to establish it.",
-      "remediation": "Confirm with `git ls-files` that the file is actually tracked before acting — the detector cannot yet tell tracked from present. If it is tracked: remove it from tracking, add it to .gitignore, rotate anything it contained, and commit an example variant in its place.",
+      "rationale": "An environment file is where a project puts the values it must not publish, so a tracked file of that name is the finding and no content scan is needed to establish it.",
+      "remediation": "Remove it from tracking with `git rm --cached`, add it to .gitignore, rotate anything it contained, and commit an example variant in its place.",
       "aliases": [],
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "Filename only — the detector never reads the contents. It also walks the filesystem rather than consulting version control, so it cannot distinguish a tracked file from a gitignored one, and reports both (ADR 0008). That gap, not the absent content scan, is why this is partial rather than full. security.no-secrets-in-artifacts excludes these files by design so that one defect produces one finding."
+      "$assuranceNote": "Filename to find the candidates, then the repository index to decide, through the ADR 0008 seam. The detector never reads the contents and does not need to: the question is whether a file of that name is tracked, not what is in it. A gitignored .env on a developer's machine is therefore not a finding, and where the index cannot be read the rule reports not-evaluated rather than passing or failing — there is no working-tree fallback, by ADR 0011's constraint against minting a second answer to a question this seam exists to answer once. Partial rather than full because it recognises dotenv-shaped names and their permitted example/template/sample/vault variants, so a project keeping its values in a file named nothing like an environment file is outside what this can see. security.no-secrets-in-artifacts excludes these files by design so that one defect produces one finding."
     },
     {
       "id": "scm.no-generated-artifacts",
