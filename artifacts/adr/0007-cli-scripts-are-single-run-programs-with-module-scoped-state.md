@@ -30,6 +30,23 @@ Frozen lookup tables and immutable configuration are excluded. **A derived bindi
 already-governed mutable state is still governed**, because it remains module-scoped for the lifetime
 of the process.
 
+**Module-level configuration may describe matching behaviour, but mutable matcher state is local to
+an invocation.** A `RegExp` carrying `g` is not configuration: `lastIndex` is state, and whether it
+escapes a call depends on the calling idiom — `matchAll` clones, `exec` in a loop does not. A
+module-level global regex therefore sits exactly on this record's boundary, and answering "is it
+governed?" would require an interpretive exception about `lastIndex` that a later reader would have
+to re-derive. The ambiguity is removed rather than adjudicated: the pattern lives at module level as
+a `String.raw` source, the matcher is constructed inside the function that uses it, and no judgement
+about `lastIndex` is required at all. `CATCH_OPEN_SOURCE` and `EXCEPT_PASS_SOURCE` in
+`standards.mjs` are the worked example.
+
+One instance predates this rule and does not yet follow it: `ITEM_RE` in `scripts/inventory.mjs` is a
+module-level `/gm` regex, consumed through `matchAll` and therefore safe under the same reasoning
+that made the two above safe — which is precisely why it is recorded here rather than left to be
+noticed. It is not fixed in this cycle because doing so would touch a reviewed path of an attestation
+approved minutes earlier, and provenance churn is not a reason to widen a change; it is named so the
+next reader inherits the finding rather than the silence.
+
 The rule is what applies to a binding added tomorrow. **The table below is an audit aid and a current
 inventory — it is not the source of applicability**, and a binding missing from it is governed
 anyway. That distinction is the whole design: a record that depended on having remembered every name

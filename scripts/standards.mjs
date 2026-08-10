@@ -1671,8 +1671,15 @@ function detectSecretsInArtifacts(files, contents) {
 // comment is not here to be found — those positions are blanked. The opening brace is where the
 // match ends: the body is then read by brace matching rather than by pattern, because a body
 // containing anything at all is exactly what the pattern cannot express.
-const CATCH_OPEN = /\bcatch\s*(\([^)]*\))?\s*\{/g;
-const EXCEPT_PASS = /\bexcept\b[^\n:]*:[ \t]*\n[ \t]*pass\b/g;
+// Sources rather than compiled matchers, and the distinction is the point. A `RegExp` carrying `g`
+// is a mutable object: `lastIndex` is state, and whether that state escapes an invocation depends on
+// the calling idiom rather than on anything visible at the declaration. `matchAll` happens to clone,
+// `exec` in a loop does not, and a module-level binding whose safety rests on which one a future
+// caller reaches for is exactly the ambiguity ADR 0007 exists to remove. A string cannot hold
+// `lastIndex`, so no judgement about it is required: module-level values describe matching
+// behaviour, and the matcher itself is constructed once per invocation.
+const CATCH_OPEN_SOURCE = String.raw`\bcatch\s*(\([^)]*\))?\s*\{`;
+const EXCEPT_PASS_SOURCE = String.raw`\bexcept\b[^\n:]*:[ \t]*\n[ \t]*pass\b`;
 
 /** The index just past the `}` closing the block opened at `open`, or -1 if it is unbalanced. */
 function blockEnd(structure, open) {
@@ -1732,8 +1739,12 @@ function detectSwallowedExceptions(files, contents) {
     const raw = contents.get(f) ?? "";
     if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
 
+    // Constructed here, so their `lastIndex` cannot outlive this file's turn through the loop.
+    const catchOpen = new RegExp(CATCH_OPEN_SOURCE, "g");
+    const exceptPass = new RegExp(EXCEPT_PASS_SOURCE, "g");
+
     let unjustified = 0;
-    for (const m of structure.matchAll(CATCH_OPEN)) {
+    for (const m of structure.matchAll(catchOpen)) {
       const open = m.index + m[0].length - 1;
       const close = blockEnd(structure, open);
       if (close === -1) continue;
@@ -1742,7 +1753,7 @@ function detectSwallowedExceptions(files, contents) {
       if (carriesJustification(raw, structure, open + 1, close)) continue; // a documented contract
       unjustified += 1;
     }
-    for (const m of structure.matchAll(EXCEPT_PASS)) {
+    for (const m of structure.matchAll(exceptPass)) {
       if (carriesJustification(raw, structure, m.index, m.index + m[0].length)) continue;
       unjustified += 1;
     }
