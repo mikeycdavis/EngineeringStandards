@@ -905,3 +905,92 @@ test("a project with no ADR directory anywhere is still reported", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// The source-of-truth gap: working tree vs repository (ADR 0008)
+// ---------------------------------------------------------------------------
+//
+// These pin a KNOWN DEFECT rather than a fixed one. Every structural rule below establishes its
+// requirement by finding a path on disk, and none of them asks version control whether that path is
+// tracked — so a gitignored artifact satisfies the rule and a fresh clone has none of it. That is the
+// passing direction of the defect, and it is the expensive one: a false failure gets investigated,
+// a false pass is silent.
+//
+// They are written as characterisation tests, asserting today's wrong answer, so that implementing
+// the repository-metadata seam BREAKS them loudly and forces this file to be updated deliberately.
+// The alternative — leaving the passing direction untested until the seam lands — is how it stayed
+// invisible in the first place.
+
+/** A repository whose planning and documentation artifacts are all present but all gitignored. */
+async function gitignoredArtifactsRepo() {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-ignored-"));
+  const long = (s) => `# ${s}\n\n${`Describing ${s} at length so the length check is not what fires. `.repeat(12)}\n`;
+  await mkdir(path.join(dir, "artifacts/project-plan-breakdown"), { recursive: true });
+  await mkdir(path.join(dir, "docs"), { recursive: true });
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await writeFile(path.join(dir, ".gitignore"), "artifacts/\ndocs/\nPROJECT.md\n");
+  await writeFile(path.join(dir, "README.md"), long("Service"));
+  await writeFile(path.join(dir, "src/a.js"), "export const a = 1;\n");
+  await writeFile(path.join(dir, "PROJECT.md"), long("Project"));
+  await writeFile(path.join(dir, "docs/architecture.md"), long("Architecture"));
+  for (const f of ["00-overview.md", "01-thing.md"]) {
+    await writeFile(
+      path.join(dir, "artifacts/project-plan-breakdown", f),
+      "# Item\n\n## Purpose\nx\n\n## Deliverables\ny\n\n## Acceptance Criteria\nz\n",
+    );
+  }
+  return dir;
+}
+
+test("KNOWN DEFECT (ADR 0008): gitignored artifacts satisfy rules that speak about repository state", async () => {
+  const dir = await gitignoredArtifactsRepo();
+  try {
+    const res = audit(dir);
+    const fired = new Set(res.json.findings.map((f) => f.rule).filter(Boolean));
+    for (const rule of [
+      "planning.breakdown-directory",
+      "planning.one-file-per-section",
+      "architecture.project-manifest",
+      "documentation.architecture",
+    ]) {
+      assert.ok(
+        !fired.has(rule),
+        `${rule} now reports on gitignored content. If the repository-metadata seam has landed, ` +
+          "this characterisation test has done its job — delete it and assert the correct behaviour.",
+      );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the same artifacts, absent rather than ignored, are reported — the check is real", async () => {
+  // The symmetric negative. Without it the test above proves only that the detectors are quiet,
+  // which they would also be if they did nothing at all.
+  const dir = await gitignoredArtifactsRepo();
+  try {
+    await rm(path.join(dir, "artifacts"), { recursive: true, force: true });
+    await rm(path.join(dir, "docs"), { recursive: true, force: true });
+    await rm(path.join(dir, "PROJECT.md"), { force: true });
+    const fired = new Set(audit(dir).json.findings.map((f) => f.rule).filter(Boolean));
+    for (const rule of [
+      "planning.breakdown-directory",
+      "architecture.project-manifest",
+      "documentation.architecture",
+    ]) {
+      assert.ok(fired.has(rule), `${rule} must fire when the artifact is genuinely missing`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("scm.no-committed-env-files no longer claims assurance it cannot support", async () => {
+  // The catalog is the claim a consumer reads. A check that cannot tell `present on disk` from
+  // `committed` has not established the requirement, and saying `full` is the assurance
+  // overstatement Standard 31 R6 exists to prevent — here in the tool that supplies the number.
+  const { loadCatalog, resolve } = await import("../scripts/catalog.mjs");
+  const rule = resolve(await loadCatalog(), "scm.no-committed-env-files");
+  assert.equal(rule.assurance, "partial");
+  assert.match(rule.remediation, /git ls-files/, "the remediation must tell the reader to verify tracking first");
+});

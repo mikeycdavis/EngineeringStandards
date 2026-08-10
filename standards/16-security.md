@@ -124,6 +124,12 @@ down.
 
 **No skill implements this standard.**
 
-`standards audit` does not perform secret scanning today; a dedicated scanner is better suited to it
-than a standards auditor, and the two should not be confused. What an audit *could* check — and does
-not yet — is that a project's policy declares the R1 topics at all.
+`standards audit` performs a narrow secret scan via `security.no-secrets-in-artifacts`, the rule
+[Standard 46](46-source-control-safety.md) R1 owns. It is not a substitute for a dedicated scanner
+and must not be read as one: it matches a short list of credential shapes, and it reads the working
+tree rather than version control, so it cannot tell a committed secret from a gitignored file or a
+deliberately seeded test fixture
+([ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)).
+
+What an audit *could* check — and does not yet — is that a project's policy declares the R1 topics at
+all.
