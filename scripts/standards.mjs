@@ -947,15 +947,27 @@ function detectArchitectureArtifacts() {
       standardRef: R.artifacts,
     });
   }
-  if (!has("artifacts/adr")) {
+  // Standard 11 R1 is a SHOULD, and it names one location out of several the industry settled on.
+  // `docs/adr/` and `doc/adr/` are what Nygard's original article and adr-tools established, and a
+  // project that followed the convention has recorded its decisions durably — which is the whole
+  // requirement. Failing it invites the one repair that helps nobody: moving files to satisfy a
+  // detector. The manifest check above already accepts two locations for exactly this reason.
+  //
+  // Deliberately not policy-declared. Detectors also serve `audit`, which takes no policy at all
+  // (ADR 0004), so a configurable path would make evidence discovery depend on configuration and
+  // give the two commands different answers about what the repository contains.
+  const adrDirs = ["artifacts/adr", "docs/adr", "doc/adr"];
+  if (!adrDirs.some((d) => has(d))) {
     addFinding({
       id: "missing-adr-directory",
       rule: "architecture.adr",
       category: "Missing planning artifacts",
       severity: "warning",
       label: "OBSERVED",
-      evidence: ["artifacts/"],
-      message: "No artifacts/adr/ directory exists; consequential decisions have nowhere durable to live.",
+      evidence: adrDirs,
+      message:
+        "No ADR directory exists (artifacts/adr/, docs/adr/ or doc/adr/); consequential decisions " +
+        "have nowhere durable to live.",
       standardRef: R.artifacts,
     });
   }

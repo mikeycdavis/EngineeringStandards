@@ -860,3 +860,48 @@ test("a README that names a file which does not exist is still reported", async 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// ADRs are found wherever the conventions put them (Standard 11 R1)
+// ---------------------------------------------------------------------------
+
+async function repoWithAdrIn(dirName) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-adr-"));
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await writeFile(path.join(dir, "src/x.js"), "export const x = 1;\n", "utf8");
+  if (dirName) {
+    await mkdir(path.join(dir, dirName), { recursive: true });
+    await writeFile(path.join(dir, dirName, "0001-a-decision.md"), "# 1. A decision\n", "utf8");
+  }
+  return dir;
+}
+
+test("ADRs are recognised in any conventional location", async () => {
+  // docs/adr/ is what Nygard's article and adr-tools established. Failing a project that followed
+  // the older convention invites the one repair that helps nobody: moving files to satisfy a
+  // detector, which is the behaviour this framework exists to argue against.
+  for (const location of ["artifacts/adr", "docs/adr", "doc/adr"]) {
+    const dir = await repoWithAdrIn(location);
+    try {
+      const res = audit(dir);
+      assert.ok(
+        !ids(res).has("missing-adr-directory"),
+        `${location} holds ADRs and must satisfy architecture.adr`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a project with no ADR directory anywhere is still reported", async () => {
+  const dir = await repoWithAdrIn(null);
+  try {
+    assert.ok(
+      ids(audit(dir)).has("missing-adr-directory"),
+      "accepting three locations must not mean accepting none",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
