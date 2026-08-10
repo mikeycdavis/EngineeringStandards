@@ -43,16 +43,24 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
   const examined = new Set(evaluated ?? []);
   const currentDigests = digests ?? new Map();
 
-  // The single owner of level resolution. The catalog defines a rule's level and the policy may
-  // restate it for this project; nothing downstream constructs one.
+  // The single owner of rule-metadata resolution. A result constructor never invents a field the
+  // catalog owns: `level` belongs to the catalog and the policy may restate it for this project,
+  // and severity belongs to the catalog outright — `ruleSetting` in the schema accepts `level` and
+  // `note` and nothing else, so there is no project override to consult.
   //
-  // This exists because four result constructors used to hardcode `level: "required"` — the two
-  // exception failure paths, and both outcomes of judgeAttestation. That is the evaluator restating
-  // catalog metadata, which the three-way separation forbids, and it was not cosmetic: summarise()
-  // scores on `level === "required"`, so every attested or excepted FORBIDDEN rule was silently
-  // counted into the required-rule score. A failure path that decides its own level cannot be
-  // reviewed against the catalog, because it is no longer reporting what the catalog says.
+  // This exists because the failure constructors hardcoded both. The level was not cosmetic:
+  // summarise() scores on `level === "required"`, so every attested or excepted FORBIDDEN rule was
+  // silently counted into the required-rule score. The hardcoded severity moves no number, which is
+  // exactly why it outlived the level fix by one review — an invented field that changes nothing
+  // visible is the one that survives. Neither is reviewable against the catalog, because neither is
+  // reporting what the catalog says.
+  //
+  // `validationType` and `assurance` are deliberately NOT resolved here. On a configuration failure
+  // they describe how THIS RESULT was obtained — a policy file was read and found
+  // self-contradictory — not how the rule is validated. They are result provenance rather than rule
+  // identity, and collapsing the two would have a rejected exception claim it was manual-reviewed.
   const levelOf = (rule) => declaredRules[rule.id]?.level ?? rule.level;
+  const metaOf = (rule) => ({ level: levelOf(rule), severity: rule.severity });
 
   const byRule = new Map();
   for (const finding of findings) {
@@ -75,11 +83,11 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
     // (Standard 20 R4). Order matters — this is checked before expiry, because a non-exemptible
     // waiver is invalid whether or not it has lapsed.
     if (rule.nonExemptible) {
-      rejectedExceptions.push({ ...entry, rule: rule.id, level: levelOf(rule) });
+      rejectedExceptions.push({ ...entry, rule: rule.id, ...metaOf(rule) });
       continue;
     }
     if (entry.expires && entry.expires < today)
-      expiredExceptions.push({ ...entry, rule: rule.id, level: levelOf(rule) });
+      expiredExceptions.push({ ...entry, rule: rule.id, ...metaOf(rule) });
     else activeExceptions.set(rule.id, entry);
   }
 
@@ -148,7 +156,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
     results.push({
       ruleId: entry.rule,
       status: RESULT.failed,
-      severity: "error",
+      severity: entry.severity,
       level: entry.level,
       validationType: "configuration",
       assurance: "full",
@@ -165,7 +173,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
     results.push({
       ruleId: entry.rule,
       status: RESULT.failed,
-      severity: "error",
+      severity: entry.severity,
       level: entry.level,
       validationType: "configuration",
       assurance: "full",
@@ -193,7 +201,7 @@ function judgeAttestation(rule, level, attestation, hits, today, digests) {
   const fail = (disposition, message, remediation) => ({
     ruleId: rule.id,
     status: RESULT.failed,
-    severity: "error",
+    severity: rule.severity,
     level,
     validationType: "configuration",
     assurance: "full",

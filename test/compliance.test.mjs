@@ -641,16 +641,25 @@ test("a required manual-review rule without an attestation still yields COMPLIAN
   assert.equal(verdict.status, STATUS.COMPLIANT);
 });
 
-// --- Level propagation (the catalog owns a rule's level, and so does every result) --------------
+// --- Metadata ownership (the catalog owns a rule's identity, and every result reports it) -------
 //
-// Four result constructors used to hardcode `level: "required"`: both exception failure paths and
-// both outcomes of judgeAttestation. That is the evaluator restating catalog metadata, which the
-// three-way separation forbids — and because summarise() scores on `level === "required"`, every
-// attested or excepted FORBIDDEN rule was silently counted into the required-rule score. These
-// tests pin the semantic consequence, not the label: a wrong level that changed no number would
-// still be wrong, but a wrong level that moves the score is how it stayed invisible.
+// Result constructors used to invent the fields the catalog owns: four hardcoded `level` and three
+// hardcoded `severity`. That is the evaluator restating catalog metadata, which the three-way
+// separation forbids. The level defect was measurable — summarise() scores on
+// `level === "required"`, so every attested or excepted FORBIDDEN rule was counted into the
+// required-rule score — and the severity defect was not, which is why it outlived the level fix by
+// one review. An invented field that moves no number is the one that survives, so the backstop
+// below is written over the FIELD SET rather than over the sites, and adding a field to
+// CATALOG_OWNED is what extends it.
+//
+// `validationType` and `assurance` are deliberately excluded: on a configuration failure they
+// describe how that result was obtained, not how the rule is validated. They are result provenance
+// rather than rule identity.
 
 const FORBIDDEN_APPROVED = "data.no-audit-corruption"; // forbidden, manual-review, attestable
+const WARNING_MANUAL = "scm.no-generated-artifacts";   // recommended, manual-review, WARNING severity
+const WARNING_APPROVED = "testing.no-tautological-tests"; // recommended, manual-review, WARNING severity
+const INFO_RULE = "quality.dead-code";                 // optional, code-analysis, INFO severity
 const REQUIRED_MANUAL = "ai.propose-execute";                 // required, manual-review, attestable
 const REQUIRED_LOCKED = "security.no-secrets-in-artifacts";   // required, nonExemptible
 
@@ -658,7 +667,15 @@ const levelIn = (verdict, ruleId) => verdict.results.find((r) => r.ruleId === ru
 const inDenominator = (verdict, ruleId) =>
   verdict.results.some((r) => r.ruleId === ruleId && r.status !== "skipped" && r.level === "required");
 
-test("no result anywhere carries a level the catalog and policy did not give it", () => {
+// Every catalog-owned field a result exposes, with how it resolves. `level` is the catalog's and
+// the policy may restate it; `severity` is the catalog's outright, since `ruleSetting` in the
+// schema accepts `level` and `note` and nothing else.
+const CATALOG_OWNED = {
+  level: (rule, p) => p.rules?.[rule.id]?.level ?? rule.level,
+  severity: (rule) => rule.severity,
+};
+
+test("no result anywhere carries catalog-owned metadata the catalog did not give it", () => {
   // The categorical one. It pins the architecture rather than four instances, so a fifth
   // constructor added later cannot reintroduce the defect quietly.
   // Every constructor must be reached, or the backstop backs nothing up: a rejected attestation
@@ -675,6 +692,11 @@ test("no result anywhere carries a level the catalog and policy did not give it"
       [FORBIDDEN_MANUAL]: attest({ status: "rejected" }),
       [FORBIDDEN_APPROVED]: attest(),
       [REQUIRED_MANUAL]: attest(),
+      // Non-error severity through BOTH attestation outcomes. Without these, a hardcoded
+      // `severity: "error"` on either is indistinguishable from the truth for every other rule
+      // here — which is how the pass path stayed untested through two rounds of this review.
+      [WARNING_MANUAL]: attest({ status: "rejected" }),
+      [WARNING_APPROVED]: attest(),
     },
     exceptions: [
       { rule: FORBIDDEN_LOCKED, reason: "waiving the unwaivable", approvedBy: "owner", approvedAt: TODAY },
@@ -682,6 +704,8 @@ test("no result anywhere carries a level the catalog and policy did not give it"
       // Expired on an exemptible FORBIDDEN rule specifically. Pointing it at a required rule would
       // make a mislabelled `required` indistinguishable from the truth, and the mutation would pass.
       { rule: FORBIDDEN, reason: "lapsed", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
+      // And on an optional/info rule, so both invented values are visibly wrong on this path too.
+      { rule: INFO_RULE, reason: "lapsed", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
     ],
   });
   delete p.applicability[FORBIDDEN_APPROVED];
@@ -691,9 +715,51 @@ test("no result anywhere carries a level the catalog and policy did not give it"
     assert.ok(verdict.results.some((r) => r.disposition === d), `no ${d} result — the test proves less than it claims`);
   }
   for (const r of verdict.results) {
-    const expected = p.rules[r.ruleId]?.level ?? resolve(catalog, r.ruleId).level;
-    assert.equal(r.level, expected, `${r.ruleId} (${r.disposition}) reports ${r.level}, catalog says ${expected}`);
+    const rule = resolve(catalog, r.ruleId);
+    for (const [field, resolveField] of Object.entries(CATALOG_OWNED)) {
+      const expected = resolveField(rule, p);
+      assert.equal(
+        r[field],
+        expected,
+        `${r.ruleId} (${r.disposition}) reports ${field}=${r[field]}, the catalog says ${expected}`,
+      );
+    }
   }
+});
+
+test("the metadata-ownership backstop covers a rule whose severity is not error", () => {
+  // The canary. Every rule reached by the fixture above happens to be error-severity, so a
+  // hardcoded `severity: "error"` would be invisible there — the exact way the defect survived the
+  // level fix. quality.dead-code is optional/info, so both invented values are visibly wrong.
+  const canary = INFO_RULE;
+  const rule = resolve(catalog, canary);
+  assert.equal(rule.severity, "info", `${canary} is no longer info-severity; pick another canary`);
+  assert.notEqual(rule.level, "required", `${canary} is no longer non-required; pick another canary`);
+  const verdict = run({
+    policy: bare({
+      exceptions: [
+        { rule: canary, reason: "lapsed", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
+      ],
+    }),
+  });
+  const expired = verdict.results.find((r) => r.disposition === "expired-exception");
+  assert.equal(expired.ruleId, canary);
+  assert.equal(expired.severity, "info", "the constructor invented a severity");
+  assert.equal(expired.level, "optional", "the constructor invented a level");
+});
+
+test("every non-exemptible rule is error-severity — the recorded limit of the backstop", () => {
+  // A rejected exception can only arise on a non-exemptible rule, and every one of those is
+  // error-severity today. So a hardcoded `severity: "error"` on THAT constructor is currently
+  // indistinguishable from the truth through the public surface, and no test here can catch it.
+  // This is the recorded blind spot rather than an unstated one, and it retires itself: the day a
+  // non-exemptible rule carries `warning` or `info`, this test fails and says to cover that path.
+  const offenders = [...catalog.rules.values()].filter((r) => r.nonExemptible && r.severity !== "error");
+  assert.deepEqual(
+    offenders.map((r) => r.id),
+    [],
+    "a non-exemptible rule is no longer error-severity, so the rejected-exception severity path is now observable and needs a case in the backstop above",
+  );
 });
 
 test("a rejected attestation on a forbidden rule fails as forbidden, outside the required score", () => {
@@ -734,6 +800,7 @@ test("a rejected exception on a forbidden non-exemptible rule stays forbidden", 
   const rejected = verdict.results.find((r) => r.disposition === "rejected-exception");
   assert.equal(rejected.ruleId, FORBIDDEN_LOCKED);
   assert.equal(rejected.level, "forbidden");
+  assert.equal(rejected.severity, resolve(catalog, FORBIDDEN_LOCKED).severity);
   assert.equal(verdict.status, STATUS.NON_COMPLIANT);
 });
 
@@ -749,6 +816,7 @@ test("an expired exception on a forbidden rule stays forbidden", () => {
   const expired = verdict.results.find((r) => r.disposition === "expired-exception");
   assert.equal(expired.ruleId, FORBIDDEN_MANUAL);
   assert.equal(expired.level, "forbidden");
+  assert.equal(expired.severity, resolve(catalog, FORBIDDEN_MANUAL).severity);
 });
 
 test("the required cases still report required — the fix did not invert the defect", () => {
