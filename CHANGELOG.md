@@ -138,12 +138,19 @@ the three rules was amended to accommodate its finding.
   that supplies the evidence.
 
 **One rule is neither attested nor rejected.** `architecture.no-boundary-bypass` was reviewed and the
-review reached no verdict: three failure constructors in `scripts/compliance.mjs` hardcode
-`level: "required"` rather than carrying the catalog's, which is a real breach of the three-way
-separation and measurably distorted the score — but the rule's qualifier is *for convenience*, and
-intent is not in the diff. Stretching a prohibition after the fact to capture a defect it does not
-name would be its own dishonesty. It stays unestablished until the defect is fixed and it can be
-reviewed again.
+review reached no verdict. The evidence in front of it was a real breach of the three-way separation
+— *four* result constructors in `scripts/compliance.mjs` hardcoded `level: "required"` instead of
+carrying the catalog's, and because `summarise()` scores on `level === "required"`, every attested or
+excepted **forbidden** rule was silently counted into the required-rule score. But the rule's
+qualifier is *for convenience*, and intent is not in the diff; stretching a prohibition after the
+fact to capture a defect it does not name would be its own dishonesty. **The defect is now fixed** —
+one `levelOf()` owns level resolution, with a categorical test that fails if any result carries a
+level the catalog and policy did not give it — and the rule stays unestablished pending re-review
+against the corrected implementation.
+
+The correction moved the required-rule score from `84% over 19` to `100% over 10`. Nothing about the
+project changed; the nine rules that left the denominator are the forbidden ones that were never
+required-level to begin with.
 
 **The verdict is `NON_COMPLIANT` and the exit code is 1**, so CI on `develop` is red. That is the
 correct representation of this repository's state, and preferable to withholding a known failure to

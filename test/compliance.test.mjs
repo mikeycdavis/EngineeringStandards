@@ -640,3 +640,162 @@ test("a required manual-review rule without an attestation still yields COMPLIAN
   assert.equal(result.disposition, "not-evaluated");
   assert.equal(verdict.status, STATUS.COMPLIANT);
 });
+
+// --- Level propagation (the catalog owns a rule's level, and so does every result) --------------
+//
+// Four result constructors used to hardcode `level: "required"`: both exception failure paths and
+// both outcomes of judgeAttestation. That is the evaluator restating catalog metadata, which the
+// three-way separation forbids — and because summarise() scores on `level === "required"`, every
+// attested or excepted FORBIDDEN rule was silently counted into the required-rule score. These
+// tests pin the semantic consequence, not the label: a wrong level that changed no number would
+// still be wrong, but a wrong level that moves the score is how it stayed invisible.
+
+const FORBIDDEN_APPROVED = "data.no-audit-corruption"; // forbidden, manual-review, attestable
+const REQUIRED_MANUAL = "ai.propose-execute";                 // required, manual-review, attestable
+const REQUIRED_LOCKED = "security.no-secrets-in-artifacts";   // required, nonExemptible
+
+const levelIn = (verdict, ruleId) => verdict.results.find((r) => r.ruleId === ruleId)?.level;
+const inDenominator = (verdict, ruleId) =>
+  verdict.results.some((r) => r.ruleId === ruleId && r.status !== "skipped" && r.level === "required");
+
+test("no result anywhere carries a level the catalog and policy did not give it", () => {
+  // The categorical one. It pins the architecture rather than four instances, so a fifth
+  // constructor added later cannot reintroduce the defect quietly.
+  // Every constructor must be reached, or the backstop backs nothing up: a rejected attestation
+  // and an APPROVED one on forbidden rules, a rejected exception, an expired exception, and the
+  // required-level equivalents beside them. An earlier version of this test omitted the approved
+  // case and did not catch a mutation of the pass path.
+  const p = unestablishing(FORBIDDEN_MANUAL, {
+    rules: {
+      [FORBIDDEN_MANUAL]: { level: "forbidden" },
+      [FORBIDDEN_LOCKED]: { level: "forbidden" },
+      [FORBIDDEN_APPROVED]: { level: "forbidden" },
+    },
+    attestations: {
+      [FORBIDDEN_MANUAL]: attest({ status: "rejected" }),
+      [FORBIDDEN_APPROVED]: attest(),
+      [REQUIRED_MANUAL]: attest(),
+    },
+    exceptions: [
+      { rule: FORBIDDEN_LOCKED, reason: "waiving the unwaivable", approvedBy: "owner", approvedAt: TODAY },
+      { rule: REQUIRED_LOCKED, reason: "also unwaivable", approvedBy: "owner", approvedAt: TODAY },
+      // Expired on an exemptible FORBIDDEN rule specifically. Pointing it at a required rule would
+      // make a mislabelled `required` indistinguishable from the truth, and the mutation would pass.
+      { rule: FORBIDDEN, reason: "lapsed", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
+    ],
+  });
+  delete p.applicability[FORBIDDEN_APPROVED];
+  const verdict = run({ policy: p });
+  assert.ok(verdict.results.length > 0);
+  for (const d of ["attested", "attested-rejected", "rejected-exception", "expired-exception"]) {
+    assert.ok(verdict.results.some((r) => r.disposition === d), `no ${d} result — the test proves less than it claims`);
+  }
+  for (const r of verdict.results) {
+    const expected = p.rules[r.ruleId]?.level ?? resolve(catalog, r.ruleId).level;
+    assert.equal(r.level, expected, `${r.ruleId} (${r.disposition}) reports ${r.level}, catalog says ${expected}`);
+  }
+});
+
+test("a rejected attestation on a forbidden rule fails as forbidden, outside the required score", () => {
+  const verdict = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, {
+      rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } },
+      attestations: { [FORBIDDEN_MANUAL]: attest({ status: "rejected" }) },
+    }),
+  });
+  const result = verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+  assert.equal(result.disposition, "attested-rejected");
+  assert.equal(result.status, "failed");
+  assert.equal(result.level, "forbidden");
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+  assert.equal(inDenominator(verdict, FORBIDDEN_MANUAL), false, "a forbidden failure entered the required score");
+  assert.deepEqual(verdict.unestablishedProhibitions, [], "a reviewed rule is not unestablished");
+});
+
+test("an approved attestation on a forbidden rule passes as forbidden, outside the required score", () => {
+  // The pass path had the same defect, and it inflated BOTH halves of the fraction.
+  const verdict = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, {
+      rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } },
+      attestations: { [FORBIDDEN_MANUAL]: attest() },
+    }),
+  });
+  assert.equal(levelIn(verdict, FORBIDDEN_MANUAL), "forbidden");
+  assert.equal(inDenominator(verdict, FORBIDDEN_MANUAL), false, "an attested forbidden rule entered the required score");
+});
+
+test("a rejected exception on a forbidden non-exemptible rule stays forbidden", () => {
+  const verdict = run({
+    policy: policy({
+      rules: { [FORBIDDEN_LOCKED]: { level: "forbidden" } },
+      exceptions: [{ rule: FORBIDDEN_LOCKED, reason: "x", approvedBy: "owner", approvedAt: TODAY }],
+    }),
+  });
+  const rejected = verdict.results.find((r) => r.disposition === "rejected-exception");
+  assert.equal(rejected.ruleId, FORBIDDEN_LOCKED);
+  assert.equal(rejected.level, "forbidden");
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+});
+
+test("an expired exception on a forbidden rule stays forbidden", () => {
+  const verdict = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, {
+      rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } },
+      exceptions: [
+        { rule: FORBIDDEN_MANUAL, reason: "x", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
+      ],
+    }),
+  });
+  const expired = verdict.results.find((r) => r.disposition === "expired-exception");
+  assert.equal(expired.ruleId, FORBIDDEN_MANUAL);
+  assert.equal(expired.level, "forbidden");
+});
+
+test("the required cases still report required — the fix did not invert the defect", () => {
+  // The negative control. Reading the level from the catalog has to keep saying "required" for the
+  // rules that are required, or the constructors have merely acquired a different wrong answer.
+  const rejectedAttestation = run({
+    policy: policy({ attestations: { [REQUIRED_MANUAL]: attest({ status: "rejected" }) } }),
+  });
+  const attested = rejectedAttestation.results.find((r) => r.ruleId === REQUIRED_MANUAL);
+  assert.equal(attested.level, "required");
+  assert.equal(inDenominator(rejectedAttestation, REQUIRED_MANUAL), true, "a required failure left the required score");
+
+  const rejectedException = run({
+    policy: policy({
+      exceptions: [{ rule: REQUIRED_LOCKED, reason: "x", approvedBy: "owner", approvedAt: TODAY }],
+    }),
+  });
+  assert.equal(rejectedException.results.find((r) => r.disposition === "rejected-exception").level, "required");
+
+  const expiredException = run({
+    policy: policy({
+      exceptions: [
+        { rule: "architecture.adr", reason: "x", approvedBy: "owner", approvedAt: "2020-01-01", expires: "2021-01-01" },
+      ],
+    }),
+  });
+  assert.equal(expiredException.results.find((r) => r.disposition === "expired-exception").level, "required");
+
+  const approved = run({ policy: policy({ attestations: { [REQUIRED_MANUAL]: attest() } }) });
+  assert.equal(levelIn(approved, REQUIRED_MANUAL), "required");
+  assert.equal(inDenominator(approved, REQUIRED_MANUAL), true);
+});
+
+test("a forbidden failure changes the verdict and leaves the required score untouched", () => {
+  // Status is computed from rules and never from the score (Standard 30 R2). The two runs differ
+  // only in whether a forbidden rule has been reviewed and rejected, so the fraction must not move.
+  const baseline = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, { rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } } }),
+  });
+  const withFailure = run({
+    policy: unestablishing(FORBIDDEN_MANUAL, {
+      rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } },
+      attestations: { [FORBIDDEN_MANUAL]: attest({ status: "rejected" }) },
+    }),
+  });
+  assert.equal(baseline.status, STATUS.NOT_EVALUATED);
+  assert.equal(withFailure.status, STATUS.NON_COMPLIANT, "the verdict must follow the failure");
+  assert.equal(withFailure.score, baseline.score, "a forbidden failure moved the required-rule score");
+  assert.equal(withFailure.denominator.scored, baseline.denominator.scored, "it moved the denominator");
+});

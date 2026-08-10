@@ -43,6 +43,17 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
   const examined = new Set(evaluated ?? []);
   const currentDigests = digests ?? new Map();
 
+  // The single owner of level resolution. The catalog defines a rule's level and the policy may
+  // restate it for this project; nothing downstream constructs one.
+  //
+  // This exists because four result constructors used to hardcode `level: "required"` — the two
+  // exception failure paths, and both outcomes of judgeAttestation. That is the evaluator restating
+  // catalog metadata, which the three-way separation forbids, and it was not cosmetic: summarise()
+  // scores on `level === "required"`, so every attested or excepted FORBIDDEN rule was silently
+  // counted into the required-rule score. A failure path that decides its own level cannot be
+  // reviewed against the catalog, because it is no longer reporting what the catalog says.
+  const levelOf = (rule) => declaredRules[rule.id]?.level ?? rule.level;
+
   const byRule = new Map();
   for (const finding of findings) {
     if (!finding.rule) continue;
@@ -64,17 +75,17 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
     // (Standard 20 R4). Order matters — this is checked before expiry, because a non-exemptible
     // waiver is invalid whether or not it has lapsed.
     if (rule.nonExemptible) {
-      rejectedExceptions.push({ ...entry, rule: rule.id });
+      rejectedExceptions.push({ ...entry, rule: rule.id, level: levelOf(rule) });
       continue;
     }
-    if (entry.expires && entry.expires < today) expiredExceptions.push({ ...entry, rule: rule.id });
+    if (entry.expires && entry.expires < today)
+      expiredExceptions.push({ ...entry, rule: rule.id, level: levelOf(rule) });
     else activeExceptions.set(rule.id, entry);
   }
 
   const results = [];
   for (const rule of catalog.rules.values()) {
-    const declared = declaredRules[rule.id];
-    const level = declared?.level ?? rule.level;
+    const level = levelOf(rule);
     const applies = applicability[rule.id];
 
     // Not applicable: the rule's subject does not exist here. Visible, never a silent exclusion.
@@ -89,7 +100,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
     const attestation = attestations[rule.id];
     if (attestation) {
       const hits = byRule.get(rule.id) ?? [];
-      const verdict = judgeAttestation(rule, attestation, hits, today, currentDigests);
+      const verdict = judgeAttestation(rule, level, attestation, hits, today, currentDigests);
       if (verdict) {
         results.push(verdict);
         continue;
@@ -138,7 +149,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
       ruleId: entry.rule,
       status: RESULT.failed,
       severity: "error",
-      level: "required",
+      level: entry.level,
       validationType: "configuration",
       assurance: "full",
       disposition: "rejected-exception",
@@ -155,7 +166,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
       ruleId: entry.rule,
       status: RESULT.failed,
       severity: "error",
-      level: "required",
+      level: entry.level,
       validationType: "configuration",
       assurance: "full",
       disposition: "expired-exception",
@@ -178,12 +189,12 @@ export function evaluate({ catalog, policy, findings, evaluated, today, digests 
  * outranks assertion (Standard 38 R4), and that is also why an attestation cannot bypass a
  * nonExemptible rule — not as a separate prohibition, but because the automated failure survives.
  */
-function judgeAttestation(rule, attestation, hits, today, digests) {
+function judgeAttestation(rule, level, attestation, hits, today, digests) {
   const fail = (disposition, message, remediation) => ({
     ruleId: rule.id,
     status: RESULT.failed,
     severity: "error",
-    level: "required",
+    level,
     validationType: "configuration",
     assurance: "full",
     disposition,
@@ -233,7 +244,7 @@ function judgeAttestation(rule, attestation, hits, today, digests) {
     ruleId: rule.id,
     status: RESULT.passed,
     severity: rule.severity,
-    level: "required",
+    level,
     validationType: "manual-review",
     // Human judgement establishes the requirement, and does so without a machine. `manualReview` in
     // the assurance breakdown is the honest home for it — never `automated`.
