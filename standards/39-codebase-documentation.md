@@ -124,6 +124,24 @@ responsible for and what it talks to*.
 A serviceable test: **if a reader could produce the document by running `ls`, it is not architecture
 documentation.**
 
+**Authoring guidance — derive structural claims from runtime composition, not from filesystem
+layout, wherever the two can differ.** Read the registration: the composition root, the DI container,
+the route table, the job registry, the constructor that actually takes the collaborators. A folder is
+where code was filed; the wiring is what runs.
+
+This is not a rule, and it is not automatically checkable. It is the guidance that would have caught
+the most recent real instance: an architecture document stated that a repository's snapshot builder
+ran "13 extractors", counted from the files in its `Extraction/` folder. Its constructor injects
+**nine**. The other four live in that folder and are called from elsewhere entirely, so the document
+was wrong about the pipeline in the direction that flatters it, and every automated check passed —
+the count was internally consistent, the paths all resolved, and nothing contradicted it.
+
+The failure is the same one R3's `ls` test is about, one level subtler. A directory listing is an
+attractive proxy for structure because it is easy, close to true, and occasionally exactly true. When
+it diverges, it diverges silently, and the reader has no way to notice from the document alone. The
+generalisation is worth stating plainly: **the representation chosen to measure something is itself a
+claim, and a proxy that is usually right is the hardest kind to catch when it is wrong.**
+
 ### R4 — Mermaid is canonical; SVG is a render artifact
 
 **Use Mermaid as the canonical source format for architecture and workflow diagrams whenever
