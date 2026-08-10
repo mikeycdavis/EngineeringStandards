@@ -206,6 +206,9 @@ const R = {
   questions: `${STD44}#r8--question-list`,
   resolution: `${STD44}#r9--question-resolution`,
   done: `${STD44}#r10--definition-of-done`,
+  // Standard 44 R12 is the invariant the evidence-surface findings exist to honour: a negative
+  // discovery result is evidence about the search mechanism before it is evidence about the project.
+  search: `${STD44}#r12--the-validated-search-invariant`,
 };
 
 /**
@@ -512,20 +515,35 @@ const root = dirFlag ? path.resolve(dirFlag) : findRoot(target);
 /** Repo-relative path with forward slashes, so output is stable across platforms. */
 const rel = (p) => path.relative(root, p).split(path.sep).join("/");
 
-async function collectFiles(dir, acc) {
-  if (acc.length >= MAX_FILES) return acc;
+/**
+ * Walk the tree, recording what could not be walked.
+ *
+ * `loss` is an out-parameter and it is the whole point. An unreadable directory used to return the
+ * accumulator unchanged, which is indistinguishable from an empty one: every detector then found
+ * nothing under it and the run exited 0 having said nothing about the gap. A negative result over a
+ * surface that was never opened is evidence about the walk, not about the project — Standard 44 R12.
+ */
+async function collectFiles(dir, acc, loss) {
+  if (acc.length >= MAX_FILES) {
+    loss.capped = true;
+    return acc;
+  }
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
-    return acc; // unreadable directory: skip rather than abort the audit
+    loss.dirs.push(dir); // Skipped rather than aborting the audit, but never skipped silently.
+    return acc;
   }
   for (const entry of entries) {
-    if (acc.length >= MAX_FILES) return acc;
+    if (acc.length >= MAX_FILES) {
+      loss.capped = true;
+      return acc;
+    }
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
-      await collectFiles(full, acc);
+      await collectFiles(full, acc, loss);
     } else if (entry.isFile()) {
       acc.push(full);
     }
@@ -533,13 +551,25 @@ async function collectFiles(dir, acc) {
   return acc;
 }
 
+/**
+ * Read a file, and say what was actually read.
+ *
+ * Returns `{ ok, text, truncated, bytes }` rather than a bare string. The old signature returned ""
+ * for an unreadable file, so a failed read and an empty file were the same value, and it truncated
+ * at MAX_READ_BYTES without telling anyone — a detector reported a clean prefix as a clean file.
+ *
+ * `text` is still usable in both degraded cases: "" for a failed read, and the readable prefix for
+ * a truncated one. Findings from a prefix are real findings and are kept. What changes is that the
+ * caller can no longer mistake a partial search for a complete one.
+ */
 async function readText(file) {
   try {
     const buf = await readFile(file);
-    if (buf.length > MAX_READ_BYTES) return buf.subarray(0, MAX_READ_BYTES).toString("utf8");
-    return buf.toString("utf8");
+    const truncated = buf.length > MAX_READ_BYTES;
+    const text = truncated ? buf.subarray(0, MAX_READ_BYTES).toString("utf8") : buf.toString("utf8");
+    return { ok: true, text, truncated, bytes: buf.length };
   } catch {
-    return "";
+    return { ok: false, text: "", truncated: false, bytes: 0 };
   }
 }
 
@@ -1222,7 +1252,7 @@ async function detectPlanDiscrepancies(files, contents) {
         dangling.push(`${item.file} :: ${item.title} -> ${id}`);
         continue;
       }
-      const backlogText = await readText(itemPath);
+      const backlogText = (await readText(itemPath)).text;
       status = canonicalStatus((backlogText.match(/^status:\s*(\S+)/im) ?? [, "unknown"])[1]);
     }
 
@@ -1592,10 +1622,21 @@ function detectSqlConcat(files) {
 
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
-function renderHuman(fileCount) {
+function renderHuman(fileCount, surface) {
   const lines = [];
   lines.push(`standards audit — ${path.basename(root)} (${root.split(path.sep).join("/")})`);
   lines.push(`${fileCount} file(s) scanned, ${findings.length} finding(s).`);
+  // The scanned count above is the sentence that would otherwise imply a complete search. When the
+  // surface has holes in it, say so on the same line rather than leaving it to be inferred from a
+  // warning further down.
+  if (!surface.complete) {
+    const parts = [];
+    if (surface.unreadableFiles.length) parts.push(`${surface.unreadableFiles.length} file(s) unreadable`);
+    if (surface.unreadableDirectories.length) parts.push(`${surface.unreadableDirectories.length} directory(ies) unlistable`);
+    if (surface.truncatedFiles.length) parts.push(`${surface.truncatedFiles.length} file(s) read in part`);
+    if (surface.fileCapReached) parts.push(`the ${MAX_FILES}-file cap was reached`);
+    lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
+  }
 
   lines.push("");
   lines.push("What the repository has");
@@ -1649,15 +1690,81 @@ function renderHuman(fileCount) {
 // Main
 // ---------------------------------------------------------------------------
 
-const files = await collectFiles(root, []);
+const surfaceLoss = { dirs: [], capped: false };
+const files = await collectFiles(root, [], surfaceLoss);
 const contents = new Map();
+const unreadableFiles = [];
+const truncatedFiles = [];
 for (const f of files) {
   if (path.resolve(f) === SELF) continue; // see the SELF declaration above
   if (!TEXT_EXT.has(path.extname(f))) continue;
-  const text = await readText(f);
-  contents.set(f, text);
-  if (isCode(f)) sources.set(f, splitSource(text, path.extname(f)));
+  const read = await readText(f);
+  if (!read.ok) unreadableFiles.push(f);
+  else if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+  contents.set(f, read.text);
+  if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
 }
+
+// Evidence-surface findings: what the audit could NOT search.
+//
+// These carry `rule: null` deliberately. Evidence loss is a property of the run, not a violation by
+// the project, and binding it to a rule would make one unreadable file fail every rule whose
+// detector would have read it — one defect producing dozens of findings, and a second compliance
+// owner for every detector in the file. Detector results stay scoped to what they actually saw;
+// this says how much that was.
+if (unreadableFiles.length) {
+  addFinding({
+    id: "evidence-unreadable-file",
+    category: "evidence-surface",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: uniq(unreadableFiles.map(rel)),
+    message: `${unreadableFiles.length} file(s) could not be read. Nothing was searched in them, so no clean result covers them.`,
+    standardRef: R.search,
+  });
+}
+if (surfaceLoss.dirs.length) {
+  addFinding({
+    id: "evidence-unreadable-dir",
+    category: "evidence-surface",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: uniq(surfaceLoss.dirs.map(rel)),
+    message: `${surfaceLoss.dirs.length} directory(ies) could not be listed. Anything beneath them is outside every result in this run.`,
+    standardRef: R.search,
+  });
+}
+if (truncatedFiles.length) {
+  addFinding({
+    id: "evidence-truncated-file",
+    category: "evidence-surface",
+    // Informational rather than a warning: the cap is a deliberate bound, not a fault, and findings
+    // from the prefix are kept. What it must never be is invisible.
+    severity: "info",
+    label: "OBSERVED",
+    evidence: uniq(truncatedFiles),
+    message: `${truncatedFiles.length} file(s) exceeded the ${MAX_READ_BYTES}-byte read cap and were searched in part.`,
+    standardRef: R.search,
+  });
+}
+if (surfaceLoss.capped) {
+  addFinding({
+    id: "evidence-file-cap",
+    category: "evidence-surface",
+    severity: "warning",
+    label: "OBSERVED",
+    evidence: [`${MAX_FILES} file limit`],
+    message: `The walk stopped at the ${MAX_FILES}-file cap. Files beyond it were never collected and are outside every result in this run.`,
+    standardRef: R.search,
+  });
+}
+const evidenceSurface = {
+  complete: !unreadableFiles.length && !surfaceLoss.dirs.length && !truncatedFiles.length && !surfaceLoss.capped,
+  unreadableFiles: uniq(unreadableFiles.map(rel)),
+  unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
+  truncatedFiles: uniq(truncatedFiles),
+  fileCapReached: surfaceLoss.capped,
+};
 
 // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
 detectArchitecture(files, contents);
@@ -1707,6 +1814,10 @@ if (!VALIDATING) {
           schemaVersion: SCHEMA_VERSION,
           repo: root.split(path.sep).join("/"),
           auditedAt: new Date().toISOString(),
+          // What the run could not search. Additive field: a consumer that ignores it reads the
+          // findings exactly as before, and one that reads it can tell a clean result from an
+          // unexamined one.
+          evidenceSurface,
           findings,
         },
         null,
@@ -1714,7 +1825,7 @@ if (!VALIDATING) {
       ) + "\n",
     );
   } else {
-    process.stdout.write(renderHuman(files.length) + "\n");
+    process.stdout.write(renderHuman(files.length, evidenceSurface) + "\n");
     process.stdout.write(
       "\nThis is evidence, not a verdict. Run `standards validate` for a compliance status.\n",
     );

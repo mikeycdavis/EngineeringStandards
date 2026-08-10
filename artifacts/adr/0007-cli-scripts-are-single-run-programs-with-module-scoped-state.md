@@ -13,13 +13,16 @@ it**, and **how it is reset**. Global is not the violation; unnamed and unownabl
 Three scripts hold module-level bindings that are mutated during a run. **The rule is categorical, so
 that this record cannot go stale by omission: every module-level accumulator, cache, and counter in
 `scripts/standards.mjs`, `scripts/inventory.mjs`, and `scripts/fidelity.mjs` is covered by this
-decision.** The complete enumeration as of 2.0.0:
+decision.** The complete enumeration, eighteen bindings as of 2.0.0:
 
 | Script | Bindings | What they hold |
 | --- | --- | --- |
 | `standards.mjs` | `findings` (`:550`) | Every finding produced by the run, appended by `addFinding` |
 | | `sources` (`:373`) | Per-file `{ code, structure, comments }` views, written once in the read loop |
 | | `contents` (`:1653`) | Per-file raw text, written in the same loop and read by the document detectors |
+| | `surfaceLoss` | Directories the walk could not list, and whether the file cap was reached |
+| | `unreadableFiles`, `truncatedFiles` | Files the read loop could not read, and those it read only in part |
+| | `evidenceSurface` | The derived summary of the four above, carried into the report |
 | `inventory.mjs` | `missing`, `unknown`, `duplicates`, `titleMismatches`, `brokenSections`, `duplicateSections` | Per-source disagreement accumulators |
 | | `detectedCount`, `countMismatch` | Running totals across sources |
 | `fidelity.mjs` | `failures` | Unverified verbatim claims |
@@ -30,6 +33,11 @@ decision.** The complete enumeration as of 2.0.0:
 Frozen lookup tables — `SKIP_DIRS`, `TEXT_EXT`, `CODE_EXT`, `COMMENT_SYNTAX`, `COMMANDS`,
 `CONFIG_EXT`, `SUPPORTED`, `ANNOTATIONS` — are module-level constants that are never written after
 initialization. They are configuration, not state, and this decision does not concern them.
+
+**The categorical rule has already earned its keep.** The evidence-surface work added four bindings
+to `standards.mjs`, and they were added to the table in the same change rather than discovered
+missing by a later review. A record that enumerated only the bindings that existed when it was
+written would have been wrong within a week.
 
 **Completeness is the point.** An earlier draft of this record listed `findings` and `sources` and
 glossed the other two scripts as holding "counters of the same kind". That was an incomplete

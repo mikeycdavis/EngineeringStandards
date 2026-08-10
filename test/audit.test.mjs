@@ -17,7 +17,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
+import { readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -655,4 +656,145 @@ test("the shared section definition behaves the same for both of its consumers",
   // Regex metacharacters in a section name are escaped rather than interpreted — the property the
   // two hand-written copies each had to get right separately.
   assert.equal(sectionText(source, "Meta.standard"), null, "the dot must be literal, not any-char");
+});
+
+// --- Evidence surface (Standard 44 R12) --------------------------------------------------------
+//
+// A negative detector result is valid only over the portion of the search surface that was
+// successfully examined. Before this, an unreadable file became "" and an unlistable directory
+// became an empty traversal, so "nothing found" and "nothing searched" were the same output and the
+// run still exited 0. These tests pin the honesty of the output, not just the absence of a crash.
+//
+// The permission manipulation below is real, not simulated, and it VERIFIES that it took effect
+// before asserting anything. A test that silently skips when it cannot restrict a path would be the
+// false green this whole section is about.
+
+const IS_WINDOWS = process.platform === "win32";
+
+async function denyAccess(target, isDir) {
+  if (IS_WINDOWS) {
+    const spec = isDir ? `${process.env.USERNAME}:(OI)(CI)(RD,RX)` : `${process.env.USERNAME}:R`;
+    spawnSync("icacls", [target, "/deny", spec], { encoding: "utf8" });
+  } else {
+    await chmod(target, 0o000);
+  }
+}
+
+async function restoreAccess(target) {
+  if (IS_WINDOWS) spawnSync("icacls", [target, "/remove:d", process.env.USERNAME], { encoding: "utf8" });
+  else await chmod(target, 0o755);
+}
+
+/** Prove the restriction actually bit. Returns true only if the read really fails. */
+function isUnreadable(target, isDir) {
+  try {
+    if (isDir) readdirSync(target);
+    else readFileSync(target);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+test("an unreadable file is reported, and no clean result silently covers it", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-unreadable-"));
+  const locked = path.join(dir, "locked.md");
+  try {
+    await writeFile(path.join(dir, "README.md"), "# Readable\n");
+    await writeFile(locked, "# Secret\n");
+    await denyAccess(locked, false);
+    assert.ok(
+      isUnreadable(locked, false),
+      "could not make the file unreadable, so this test would prove nothing — fix the harness rather than skipping",
+    );
+
+    const { json } = audit(dir);
+    assert.equal(json.evidenceSurface.complete, false, "the run claimed a complete evidence surface");
+    assert.deepEqual(json.evidenceSurface.unreadableFiles, ["locked.md"], "the affected path is not identified");
+    const finding = json.findings.find((f) => f.id === "evidence-unreadable-file");
+    assert.ok(finding, "no evidence-loss finding was produced");
+    assert.equal(finding.severity, "warning");
+    assert.equal(finding.rule, null, "evidence loss must not become a rule failure for every detector");
+    assert.ok(finding.evidence.includes("locked.md"));
+  } finally {
+    await restoreAccess(locked);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unlistable directory is reported rather than read as empty", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-unlistable-"));
+  const closed = path.join(dir, "closed");
+  try {
+    await writeFile(path.join(dir, "README.md"), "# Readable\n");
+    await mkdir(closed);
+    await writeFile(path.join(closed, "hidden.md"), "# Hidden\n");
+    await denyAccess(closed, true);
+    assert.ok(
+      isUnreadable(closed, true),
+      "could not make the directory unlistable, so this test would prove nothing — fix the harness rather than skipping",
+    );
+
+    const { json } = audit(dir);
+    assert.equal(json.evidenceSurface.complete, false, "an unlistable directory read as an empty one");
+    assert.deepEqual(json.evidenceSurface.unreadableDirectories, ["closed"]);
+    const finding = json.findings.find((f) => f.id === "evidence-unreadable-dir");
+    assert.ok(finding, "no evidence-loss finding was produced");
+    assert.equal(finding.rule, null);
+  } finally {
+    await restoreAccess(closed);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a file past the read cap is reported as partial, and its readable prefix still yields findings", async () => {
+  // Truncation is not an error — the cap is a deliberate bound. It must be visible, and findings
+  // from the prefix must survive, which is what separates "searched in part" from "not searched".
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-truncated-"));
+  try {
+    const marker = "// TODO: this sits in the readable prefix\n";
+    const filler = "// ".padEnd(80, "x") + "\n";
+    await writeFile(path.join(dir, "big.js"), marker + filler.repeat(9000));
+    const { json } = audit(dir);
+
+    assert.equal(json.evidenceSurface.complete, false, "silent truncation — the run implied a whole-file search");
+    assert.equal(json.evidenceSurface.truncatedFiles.length, 1);
+    assert.match(json.evidenceSurface.truncatedFiles[0], /^big\.js \(read \d+ of \d+ bytes\)$/);
+    const finding = json.findings.find((f) => f.id === "evidence-truncated-file");
+    assert.ok(finding, "no truncation finding was produced");
+    assert.equal(finding.severity, "info", "a deliberate cap is not an operational error");
+    assert.equal(finding.rule, null);
+
+    const unfinished = json.findings.find((f) => f.rule === "quality.unfinished-work");
+    assert.ok(unfinished, "the TODO in the readable prefix was discarded along with the tail");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a fully readable tree reports a complete evidence surface and no evidence-loss findings", async () => {
+  // The negative control. Every assertion above is worthless if the surface reports incomplete for
+  // an ordinary repository.
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-complete-"));
+  try {
+    await writeFile(path.join(dir, "README.md"), "# Fine\n");
+    await mkdir(path.join(dir, "src"));
+    await writeFile(path.join(dir, "src", "a.js"), "export const a = 1;\n");
+    const { json } = audit(dir);
+    assert.equal(json.evidenceSurface.complete, true);
+    assert.deepEqual(json.evidenceSurface.unreadableFiles, []);
+    assert.deepEqual(json.evidenceSurface.unreadableDirectories, []);
+    assert.deepEqual(json.evidenceSurface.truncatedFiles, []);
+    assert.equal(json.evidenceSurface.fileCapReached, false);
+    assert.equal(json.findings.filter((f) => f.category === "evidence-surface").length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("this repository's own evidence surface is complete", async () => {
+  // The self-audit asserts zero error findings elsewhere; that assertion is only worth something if
+  // the run actually read everything it claims to have read.
+  const { json } = audit(REPO);
+  assert.equal(json.evidenceSurface.complete, true, JSON.stringify(json.evidenceSurface, null, 2));
 });
