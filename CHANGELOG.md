@@ -137,20 +137,32 @@ the three rules was amended to accommodate its finding.
   R12 — a negative result is evidence about the search mechanism first — failing inside the tool
   that supplies the evidence.
 
-**One rule is neither attested nor rejected.** `architecture.no-boundary-bypass` was reviewed and the
-review reached no verdict. The evidence in front of it was a real breach of the three-way separation
-— *four* result constructors in `scripts/compliance.mjs` hardcoded `level: "required"` instead of
-carrying the catalog's, and because `summarise()` scores on `level === "required"`, every attested or
-excepted **forbidden** rule was silently counted into the required-rule score. But the rule's
-qualifier is *for convenience*, and intent is not in the diff; stretching a prohibition after the
-fact to capture a defect it does not name would be its own dishonesty. **The defect is now fixed** —
-one `levelOf()` owns level resolution, with a categorical test that fails if any result carries a
-level the catalog and policy did not give it — and the rule stays unestablished pending re-review
-against the corrected implementation.
+**One rule took two reviews, and the defect in front of it was fixed between them.**
+`architecture.no-boundary-bypass` was reviewed and the first review deliberately reached no verdict.
+The evidence was a real breach of the three-way separation: result constructors in
+`scripts/compliance.mjs` invented the metadata the catalog owns. Four hardcoded `level: "required"`,
+and because `summarise()` scores on `level === "required"`, every attested or excepted **forbidden**
+rule was silently counted into the required-rule score — the repository reported `84% over 19` where
+the truth was `100% over 10`. Three more hardcoded `severity: "error"`, reporting an `info`-severity
+rule as an error. But this rule's qualifier is *circumvented because going around it is easier*, and
+nothing established that intent; stretching a prohibition after the fact to capture a defect it does
+not name would be its own dishonesty. So the defect was fixed first and the rule reviewed after,
+rather than approving over a live breach or rejecting on a qualifier the evidence never reached.
 
-The correction moved the required-rule score from `84% over 19` to `100% over 10`. Nothing about the
-project changed; the nine rules that left the denominator are the forbidden ones that were never
-required-level to begin with.
+`metaOf()` now resolves both fields once — `level` from the policy where declared and the catalog
+otherwise, `severity` from the catalog outright — and no constructor invents either. `validationType`
+and `assurance` are deliberately excluded, as result provenance rather than rule identity, and the
+attestation records that as an explicit interpretation rather than a proven property.
+
+**The severity half is the interesting one.** It survived the level fix by a full review cycle for
+exactly one reason: `severity` enters no number. An invented field that moves nothing visible is the
+one that lasts, and the first two versions of the test written to catch it passed while it was
+present, because every rule their fixture reached happened to be error-severity. The test is now
+written over the *field set* rather than the sites — `CATALOG_OWNED` maps each field to how it
+resolves — and it reaches non-error severities deliberately. Of eight constructor mutations, seven
+are caught. The eighth is unobservable, because a rejected exception arises only on a non-exemptible
+rule and every one of those is error-severity today; it is recorded as a blind spot with a test that
+fails the day that catalog invariant stops holding and names the path to cover.
 
 **The verdict is `NON_COMPLIANT` and the exit code is 1**, so CI on `develop` is red. That is the
 correct representation of this repository's state, and preferable to withholding a known failure to
@@ -162,8 +174,10 @@ counts.
 here — a mechanism for retiring a violation, invented alongside the violation, could only soften it.
 A rejected attestation has no lifecycle. `reviewedAgainst` can only digest files, so a claim whose
 evidence is Git history cannot have its freshness established at all. And there is no state for
-*reviewed, inconclusive*, which is why `validate` currently files `architecture.no-boundary-bypass`
-under "nobody looked for these" when somebody did.
+*reviewed, inconclusive* — for one review cycle, `validate` filed `architecture.no-boundary-bypass`
+under "nobody looked for these" while somebody had. That one resolved itself when the underlying
+defect was fixed and the rule was attested, but only because the inconclusive state was temporary.
+A review that stays inconclusive still has nowhere to live.
 
 ### Also in this release
 

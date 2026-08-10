@@ -128,11 +128,14 @@ would be manufacturing the evidence its own work needs to pass — the failure
   guarantee it does not provide. Closing this means a second kind of `reviewedAgainst` — a recorded
   observation of history, compared against history — not a path list.
 - **There is no state for *reviewed, inconclusive*.** `architecture.no-boundary-bypass` was reviewed
-  and neither established nor rejected: the evidence showed a real breach of the three-way
-  separation, and the rule's *for convenience* qualifier is a claim about intent that the evidence
-  did not reach. The rule stays unestablished, which is the correct verdict, but `validate` then
-  files it under "nobody looked for these" — and somebody did. The classification is right and the
-  sentence is wrong.
+  and, for one cycle, neither established nor rejected: the evidence showed a real breach of the
+  three-way separation, and the rule's *for convenience* qualifier is a claim about intent that the
+  evidence did not reach. Unestablished was the correct classification, but `validate` files that
+  under "nobody looked for these" — and somebody had. The classification was right and the sentence
+  was wrong. This instance resolved by fixing the defect and reviewing again, which works only
+  because the inconclusiveness was temporary. A review that stays inconclusive — because the
+  qualifier is genuinely unknowable, not merely unexamined — still has nowhere to live, and would
+  sit in a bucket that misdescribes it indefinitely.
 - **Entropy-based secret scanning**, rejected as brittle; **dynamic-evaluation detection**, rejected
   because finding the call says nothing about the prohibition's qualifiers; **destructive-command
   detection**, rejected because `DROP TABLE` and `rm -rf` appear legitimately in migrations, test

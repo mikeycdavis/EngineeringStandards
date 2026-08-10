@@ -254,7 +254,7 @@ attestations:
     status: approved
     reviewedBy: "project-owner"
     reviewedAt: "2026-08-09"
-    evidence: "No standards, rule semantics, detector behavior, compliance assertions, or failure conditions were weakened to make Track A/B pass. The shared synthetic fixture was updated to state applicability explicitly after forbidden manual-review rules acquired verdict significance. Dedicated negative tests continue to prove that an unestablished forbidden rule caps the verdict at NOT_EVALUATED, including exception-precedence boundaries. Disclosure: the synthetic fixture declares meta.standards-not-weakened not-applicable because the fixture contains no standards or tests. That declaration would not be valid for a real governed project and is documented as fixture-only at establishedProhibitions() in test/compliance.test.mjs. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. That change weakened nothing: summarise(), the verdict ordering, the Standard 45 R6 cap, exception precedence, and every threshold are untouched; no standard, rule, schema, or detector was edited; no existing test was modified, relaxed, or removed, and the suite went from 145 to 152 by addition only. The required-rule score rose from 84 percent to 100 percent in the same change, which is the shape a weakening would take and is why it was examined rather than accepted: the denominator shrank from 19 to 10 because nine forbidden rules stopped being counted as required, which is the defect being corrected rather than a threshold being moved. The verdict did not improve -- NON_COMPLIANT before and after, from the same three rejected attestations -- and a dedicated test pins that a forbidden failure changes the verdict while leaving the required score untouched."
+    evidence: "No standards, rule semantics, detector behavior, compliance assertions, or failure conditions were weakened to make Track A/B pass. The shared synthetic fixture was updated to state applicability explicitly after forbidden manual-review rules acquired verdict significance. Dedicated negative tests continue to prove that an unestablished forbidden rule caps the verdict at NOT_EVALUATED, including exception-precedence boundaries. Disclosure: the synthetic fixture declares meta.standards-not-weakened not-applicable because the fixture contains no standards or tests. That declaration would not be valid for a real governed project and is documented as fixture-only at establishedProhibitions() in test/compliance.test.mjs. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. That change weakened nothing: summarise(), the verdict ordering, the Standard 45 R6 cap, exception precedence, and every threshold are untouched; no standard, rule, schema, or detector was edited; no existing test was modified, relaxed, or removed, and the suite went from 145 to 152 by addition only. The required-rule score rose from 84 percent to 100 percent in the same change, which is the shape a weakening would take and is why it was examined rather than accepted: the denominator shrank from 19 to 10 because nine forbidden rules stopped being counted as required, which is the defect being corrected rather than a threshold being moved. The verdict did not improve -- NON_COMPLIANT before and after, from the same three rejected attestations -- and a dedicated test pins that a forbidden failure changes the verdict while leaving the required score untouched. RE-REVIEWED AGAIN 2026-08-09 after the severity-propagation fix, which staled this attestation a second time. Same finding: propagation only, with summarise(), verdict ordering, the R6 cap, exception precedence, and every threshold untouched, no standard, rule, or schema edited, and the test file additive. The score did not move at all this round, because severity enters no number -- which is why that half of the defect outlived the first fix. One test was rewritten rather than added, twice, and both rewrites made it stricter after mutation testing proved it was passing over a live defect; demonstrated sensitivity went from four of eight constructor mutations to seven of eight. The eighth is documented as currently unobservable rather than waved away, with a self-retiring test that fails the moment the catalog invariant behind it stops holding."
     reference: "artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md"
     reviewedAgainst:
       paths:
@@ -262,14 +262,14 @@ attestations:
         - test/compliance.test.mjs
         - test/audit.test.mjs
         - test/instructions.test.mjs
-      revision: "e3c4866..62e9a5b"
-      digest: "12520981ff3e948f2ecba22a4f847d7f"
+      revision: "e3c4866..9e2862d"
+      digest: "9e15c48777b6b57191f09353eac39255"
 
   testing.no-weakening-to-pass:
     status: approved
     reviewedBy: "project-owner"
     reviewedAt: "2026-08-09"
-    evidence: "The test suite was not weakened merely to accommodate the new forbidden-rule verdict semantics. No relevant assertion was relaxed or removed without a stricter replacement. The shared policy() helper was changed to model the intended empty synthetic project explicitly, while bare() retains full-catalog unevaluated-rule coverage and dedicated R6 fixtures prove the new NOT_EVALUATED cap, exception precedence, attestation behavior, N/A behavior, automated pass/failure behavior, and the required-rule negative control. Notable review event: three previously-green tests became red after Standard 45 R6 was implemented and the fixture model was changed in response; this review specifically examined that change and concludes that behavioral coverage was relocated and strengthened rather than suppressed. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. The diff on the suite is 150 lines added, 7 tests added, 0 modified, 0 removed, and all 145 prior tests pass untouched. The direction is the opposite of weakening: before the change, reverting any of the four level constructors to a hardcoded required broke nothing, and all four are now mutation-detected. The only test altered during the work was one of the new ones, altered twice to make it stricter after mutation testing showed it passing while the defect was present -- the tautological-test failure caught in review rather than shipped. Limitation recorded by the reviewer: the categorical backstop covers constructors whose results flow through evaluate() into verdict.results, and is not a proof about a future result path built elsewhere."
+    evidence: "The test suite was not weakened merely to accommodate the new forbidden-rule verdict semantics. No relevant assertion was relaxed or removed without a stricter replacement. The shared policy() helper was changed to model the intended empty synthetic project explicitly, while bare() retains full-catalog unevaluated-rule coverage and dedicated R6 fixtures prove the new NOT_EVALUATED cap, exception precedence, attestation behavior, N/A behavior, automated pass/failure behavior, and the required-rule negative control. Notable review event: three previously-green tests became red after Standard 45 R6 was implemented and the fixture model was changed in response; this review specifically examined that change and concludes that behavioral coverage was relocated and strengthened rather than suppressed. RE-REVIEWED 2026-08-09 after the level-propagation fix staled this attestation. The diff on the suite is 150 lines added, 7 tests added, 0 modified, 0 removed, and all 145 prior tests pass untouched. The direction is the opposite of weakening: before the change, reverting any of the four level constructors to a hardcoded required broke nothing, and all four are now mutation-detected. The only test altered during the work was one of the new ones, altered twice to make it stricter after mutation testing showed it passing while the defect was present -- the tautological-test failure caught in review rather than shipped. Limitation recorded by the reviewer: the categorical backstop covers constructors whose results flow through evaluate() into verdict.results, and is not a proof about a future result path built elsewhere. RE-REVIEWED AGAIN 2026-08-09 after the severity-propagation fix. The sequence was mutation survives, test shown insufficient, test strengthened, mutation now caught -- not test fails, expectation relaxed, implementation passes. All 152 prior tests remain unchanged and passing, the file is additive at 88 lines, and the suite went to 154. Before this round, three of the eight constructor mutations broke nothing; seven now do. The one irreducible case, severity on the rejected-exception path, is unobservable because a rejected exception arises only on a nonExemptible rule and every one of those is error-severity today; it is guarded by a trigger test that fails and names the path to cover the day that stops being true."
     reference: "standards/47-test-integrity.md"
     reviewedAgainst:
       paths:
@@ -277,8 +277,8 @@ attestations:
         - test/audit.test.mjs
         - test/instructions.test.mjs
         - test/init.test.mjs
-      revision: "e3c4866..62e9a5b"
-      digest: "d18c6b2808fe92bee1432073a13e8a26"
+      revision: "e3c4866..9e2862d"
+      digest: "cafee72dc5af188074320766b44cd751"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
@@ -387,23 +387,25 @@ attestations:
       revision: "e3c4866..43fdad2"
       digest: "f784c84393fbae9ddd0d13ae4dcd23f3"
 
-  # Checkpoint item 8, architecture.no-boundary-bypass, is deliberately ABSENT from this block and
-  # from `applicability`. It was reviewed and the review did not establish it either way: the import
-  # graph of scripts/ is strictly layered and acyclic, but three failure constructors in
-  # scripts/compliance.mjs (:141, :158, :186) hardcode `level: "required"` instead of carrying the
-  # catalog's, which is the evaluator restating catalog metadata and which measurably distorted the
-  # score. The rule's qualifier is that a boundary was circumvented *for convenience*, and intent is
-  # not in the diff. Stretching the rule after the fact to convert a real defect into a violation of
-  # this particular prohibition would be its own dishonesty, so it is not done here.
-  #
-  # The rule therefore stays unestablished, and `validate` lists it under "nobody looked for these".
-  # That sentence is now inaccurate for this one rule: somebody looked and reached no verdict. There
-  # is no state for reviewed-and-inconclusive, which is a third attestation-model gap, recorded and
-  # not filled here for the same reason as the other two. Sequence: fix compliance.mjs so every
-  # failure constructor carries the catalog-derived level, add regression tests for the forbidden
-  # rejected and expired paths and for scoring, then re-review. That fix will stale the digests on
-  # meta.standards-not-weakened, testing.no-weakening-to-pass, and errors.no-false-success, and
-  # those re-reviews are the correct cost.
+  # Checkpoint item 8, resolved in a second review after the defect in front of it was fixed. The
+  # first review reached no verdict on purpose: a real breach of the three-way separation sat in the
+  # reviewed code, and the rule's qualifier is that a boundary was circumvented FOR CONVENIENCE,
+  # which the evidence did not reach. Rather than stretch the rule to capture a defect it does not
+  # name, or approve over a live breach, the defect was fixed first and the rule reviewed after.
+  architecture.no-boundary-bypass:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "Metadata ownership is restored on both axes that were demonstrably being restated. metaOf() in scripts/compliance.mjs resolves level from the policy where declared and the catalog otherwise, and severity from the catalog outright since ruleSetting in the schema accepts level and note and nothing else; every result constructor carries those values rather than inventing them, proven by a categorical test over the catalog-owned field set and by seven of eight constructor mutations being caught. The other separation boundaries hold: assertBindings throws on any finding bound to a rule id the catalog does not define, nothing outside scripts/catalog.mjs defines rule metadata, and applicability is read from the policy alone. The import graph of scripts/ is strictly layered and acyclic, and scripts/sections.mjs exists to restore a boundary rather than cross one. On the qualifier: nothing in the evidence establishes that any boundary was circumvented because following it was inconvenient. The two defects were real and are fixed; they read as constructors written in isolation that each duplicated a plausible default, and this rule is narrower than an architecture bug occurred. EXPLICIT INTERPRETATION, NOT A PROVEN PROPERTY: this review did not treat configuration-result validationType and assurance as catalog identity fields. They currently describe the provenance and strength of the configuration result itself rather than how the rule is validated. That reading is this reviewer's, is recorded in the code, and is not resolved by this approval."
+    reference: "standards/51-architecture-integrity.md"
+    reviewedAgainst:
+      paths:
+        - scripts/compliance.mjs
+        - scripts/catalog.mjs
+        - test/compliance.test.mjs
+        - standards/51-architecture-integrity.md
+      revision: "e3c4866..9e2862d"
+      digest: "e9a0720efa03d5d28e9bb2fea4c922f6"
 
   # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
   # prohibited conduct occurred and reached shared history, and being caught does not unmake it.
