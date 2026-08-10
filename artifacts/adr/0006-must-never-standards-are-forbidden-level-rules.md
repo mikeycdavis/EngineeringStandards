@@ -140,6 +140,14 @@ would be manufacturing the evidence its own work needs to pass — the failure
   invented alongside the violation, can only soften it — and the live instance is better evidence
   than any description of it, which is why `errors.no-false-success` is left exactly as it stands,
   rejected against code that no longer exists in that form.
+
+  **[ADR 0010](0010-human-review-may-always-contribute-negative-evidence.md) is where the design
+  question lives**, and it is not duplicated here. It was written independently against a different
+  symptom — a reviewer unable to record a rejection *at all* on a detector-owned rule — and its open
+  questions already asked *does a rejection expire?* before this checkpoint answered it by accident.
+  This entry is the empirical finding and the record of why the gap was left open at 2.0.0; 0010
+  carries the proposal and the unresolved questions. One is what happened, the other is what to do
+  about it.
 - **`reviewedAgainst` can only digest files.** `scm.no-shared-history-rewrite` was attested on Git
   history — 28 fast-forward updates to `origin/develop`, no forced update, no `reset` or `rebase` in
   the local reflog. None of that is file-shaped, and the schema requires at least one path, so the

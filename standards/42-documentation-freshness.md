@@ -164,6 +164,32 @@ The diagram check is worth noting as an instance of this standard's own R4 disci
 text rather than rendering anything, so it establishes that a derived copy matches its source and
 claims nothing about whether the diagram is *correct*. That is the honest scope of what it can see.
 
+**The largest unchecked surface is the standards' own `## Implementation` sections, and it is a
+candidate improvement.** One review pass found four of them describing behaviour that had changed
+underneath: [Standard 31](31-whatsnext-compatibility.md) said a contract could not be honoured that
+had shipped, [Standard 11](11-architecture-decision-records.md) said a check did not exist that did,
+[Standard 16](16-security.md) said no secret scanning happened while a rule was scanning, and
+[Standard 28](28-github-actions.md) offered a CI snippet using a flag the CLI does not accept. None
+was careless: each was accurate when written, and nothing re-reads it afterwards.
+
+That makes it systematic rather than incidental, and it is this standard's R2 failing in the one
+place hardest to notice — the drift is invisible from the document, which stays internally coherent
+while becoming false. It is also the most costly place to be wrong, because these sections are what
+an adopter reads to decide whether a rule is worth trusting.
+
+Full automation is out of reach: no checker can decide whether a paragraph of prose still describes a
+program. Two partial checks would have caught all four, and neither needs judgement:
+
+- **Command and flag claims.** Every CLI invocation in a fenced block is parsed against the flags the
+  script actually accepts. Catches Standard 28.
+- **Negative capability claims.** Sentences asserting a capability is absent — *does not check*,
+  *no skill implements*, *not implemented* — are checked against the rule catalog and the detector
+  list for a rule that contradicts them. Catches Standards 11, 16, and 31.
+
+Both are one-directional: they find claims that understate what ships. Prose that *overstates* the
+tooling remains a human review problem, which is the correct division —
+[Standard 32](32-documentation-quality.md) R3 already owns it and no detector can settle it.
+
 **R3's outstanding instance is closed.** `docs/architecture.md` had been generated when the
 repository held far fewer standards and none of the current tooling, making it materially stale by
 this standard's own definition. It was regenerated when the diagram strategy changed

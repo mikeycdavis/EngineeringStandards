@@ -162,8 +162,8 @@ at.
 Partially met, and the gaps are the ones R1 predicts.
 
 `README.md` answers *what this repository is* and *why it exists*, states the philosophy in its
-opening paragraph — a standard is the contract, its skill is the implementation — indexes all 44
-standards, and documents the layout and numbering convention, satisfying R5.
+opening paragraph — a standard is the contract, its skill is the implementation — indexes every
+standard, and documents the layout and numbering convention, satisfying R5.
 
 **R1 is now met.** The five previously-unanswered questions — adoption, validation, versioning,
 exceptions, and agent consumption — are each answered in a row of the README's *Adopting these

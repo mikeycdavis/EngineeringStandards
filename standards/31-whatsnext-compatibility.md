@@ -166,19 +166,48 @@ supply the join key. [Standard 27](27-rule-catalog.md) is what a consumer resolv
 
 ## Implementation
 
-**Not implemented, and correctly so** — R1 forbids building it. What matters is whether the contract
-R2 promises could be honoured today, and largely it could not.
+**The consumer is not implemented, and correctly so** — R1 forbids building it here. What this
+section tracks is the other half: whether the contract R2 promises can be honoured. As of 2.0.0 it
+can be, and a consumer may be built against it now.
 
-`scripts/standards.mjs --json` emits `{ schemaVersion, repo, auditedAt, findings }`. Of R2's twelve
-guarantees, three exist in some form: `schemaVersion` (numeric rather than a string), `repo` (which
-corresponds to `project`), and `evidence`. Missing entirely: `standardVersion`, `status`, `score`,
-`assurance`, `ruleId`, `remediation`, and any reporting of exceptions.
+`standards validate --json` emits the [Standard 25](25-validator-output.md) envelope assembled by
+`scripts/compliance.mjs`:
 
-The join key of R4 is the most consequential absence. Findings carry category ids such as
-`missing-planning-artifacts`, which are stable in practice but are finding *categories*, not rule
-IDs, and do not follow the canonical form. A consumer built against them today would have to be
-rewritten when the catalog lands — which is precisely the renegotiation this standard exists to
-prevent.
+```json
+{
+  "schemaVersion": "1.0",
+  "standardVersion": "2.0.0",
+  "project": "example",
+  "status": "COMPLIANT",
+  "score": 100,
+  "summary":  { "passed": 0, "failed": 0, "warnings": 0, "skipped": 0 },
+  "assurance": { "automated": 0, "manualReview": 0, "notEvaluated": 0 },
+  "denominator": { "total": 0, "applicable": 0, "scored": 0, "basis": "..." },
+  "frameworkCoverage": { "...": "framework maturity, never this project's compliance" },
+  "auditedAt": "…",
+  "results": [{
+    "ruleId": "architecture.adr", "status": "failed", "severity": "error", "level": "required",
+    "validationType": "structural", "assurance": "partial", "disposition": "evaluated",
+    "message": "…", "evidence": [], "files": [], "remediation": "…"
+  }]
+}
+```
 
-[Standard 28](28-github-actions.md) R3 is also unimplemented, so no report currently leaves a CI run
-in machine-readable form. The contract is coherent on paper and has no delivery mechanism.
+All twelve R2 guarantees are present. `ruleId` is canonical and appears on every result including
+passes and skips, so R4's join key holds and "which rules stopped failing" is computable from two
+reports. Exceptions and attestations are carried on the results they apply to, via `disposition`.
+
+Two cautions for a consumer, both about honesty rather than availability:
+
+- **`score` is meaningless when `status` is `NOT_EVALUATED`.** A project with no `project-policy.yml`
+  has declared no applicability, so its score is arithmetic over an undefined denominator. Read
+  `status` first and withhold the number, per R6's reasoning.
+- **`frameworkCoverage` is not compliance.** It reports how much of the framework has been turned
+  into rules. Surfacing it beside `score` in the same column would compare a project against the
+  tool's own maturity.
+
+**The delivery mechanism is still missing.** [Standard 28](28-github-actions.md) R3 asks CI to
+preserve the JSON as an artifact; this repository's own `.github/workflows/ci.yml` runs
+`npm run validate`, which emits the human report and keeps nothing. Until that is fixed, a consumer
+must invoke the validator itself rather than collect reports CI already produced — which works, but
+means every consumer needs a checkout.

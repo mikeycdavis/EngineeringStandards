@@ -72,7 +72,7 @@ it costs one step:
 
 ```yaml
 - name: Validate engineering standards
-  run: standards validate --format json > standards-report.json
+  run: standards validate --json > standards-report.json
   continue-on-error: true
 
 - uses: actions/upload-artifact@v4

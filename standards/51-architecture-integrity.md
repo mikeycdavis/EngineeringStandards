@@ -183,7 +183,7 @@ exception discipline.
 
 | Requirement | Rule | State |
 | --- | --- | --- |
-| R1 | `architecture.no-hidden-global-state` | `manual-review`. A module-level mutable binding is trivial to find and says nothing about whether the state is hidden or owned. **This repository has a real subject for it** — `findings` and `sources` in `scripts/standards.mjs` — and discharges R1 the way R1 asks, with [ADR 0007](../artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md) naming the state, its owner, and its reset boundary |
+| R1 | `architecture.no-hidden-global-state` | `manual-review`. A module-level mutable binding is trivial to find and says nothing about whether the state is hidden or owned. **This repository has a real subject for it** — twenty module-level bindings across `scripts/standards.mjs`, `scripts/inventory.mjs` and `scripts/fidelity.mjs` — and discharges R1 the way R1 asks, with [ADR 0007](../artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md) naming the state, its owner, and its reset boundary. That record governs by categorical rule rather than by its list, because two successive reviews found the list incomplete |
 | R2 | `architecture.no-boundary-bypass` | `manual-review`. Requires knowing where the boundaries are, which is a project-specific fact no scan has |
 | R3 | `architecture.no-duplicate-implementations` | `manual-review`. Similar code is not duplicated logic, and duplicated logic is often not similar code |
 | R4 | `architecture.dependency-evaluation` | `manual-review`, `required`/`warning`. A manifest shows which dependencies exist, never which were evaluated |
