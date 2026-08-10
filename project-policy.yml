@@ -338,3 +338,84 @@ attestations:
         - rules/ai.json
       revision: "e3c4866..485a7be"
       digest: "987478ac625ac5dd971817d0db13d728"
+
+  # Checkpoint item 3.
+  testing.no-fabricated-results:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "No test, build, or compilation result was reported for a run that did not happen. Every gate result reported during 2.0.0 is backed by an actual execution whose output is in the session record, including the failures -- inverted logic in the swallowed-exceptions detector, the SQL detector reporting its own repository, and ten compliance tests broken by the Standard 45 R6 verdict cap. A stale test count in the completion report was corrected against real output rather than restated. The structural defence is CI, which executes all seven gate commands itself with no install step. Disclosure, retained because the review did not hide adjacent misconduct even where it falls outside this rule: a throwaway scratchpad script printed a success line unconditionally while its replacement had silently no-matched on CRLF, during the recording of the digests for checkpoint items 1 and 2. That is false-success behaviour at the tooling boundary and it is errors.no-false-success's subject, which is rejected below. It was not a test, build, or compilation result and the script is not in this repository. Limitation accepted by the reviewer: nothing in a commit distinguishes a reported run from an invented one, which is why the rule is manual-review; the evidence here is the session record, not the tree."
+    reference: "standards/47-test-integrity.md"
+    reviewedAgainst:
+      paths:
+        - .github/workflows/ci.yml
+        - standards/47-test-integrity.md
+      revision: "e3c4866..43fdad2"
+      digest: "67e715137bb27786760d2ad52eb65d69"
+
+  # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
+  # this rule's evidence is Git history, and the schema can only digest files. The digest below is
+  # over the rule text this claim was judged against. It does NOT establish freshness of the history
+  # evidence, and no digest in this schema could. The controlling scope is the revision range and
+  # the reflog inspection named in the evidence. Recorded as a second attestation-model limitation
+  # alongside the missing violation lifecycle.
+  scm.no-shared-history-rewrite:
+    status: approved
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "No shared history was rewritten and no meaningful history was deleted during 2.0.0. Evidence: the reflog for origin/develop records 28 updates, every one an ordinary push and not one a forced update; a pairwise ancestry check confirms all 28 were fast-forwards; the local develop reflog holds 20 entries, all commits plus one cherry-pick, with no reset, rebase, or amend; the range e3c4866..43fdad2 contains no merges and is linear; and e3c4866 is still an ancestor of develop. This is the rare case where the rule's recorded blind spot closes, because the reflog is the previous observation of the same history that a single snapshot lacks. Scope and limitations: the reflog is local and expiring, so it evidences what this clone observed rather than what the remote did outside it; master was not examined and nothing in this work touched it; the branch standard-31-implementation-and-detector-fixes was deliberately left unexamined and its history is outside this range. The reviewedAgainst digest below covers the rule text only and does not establish freshness of any of the above."
+    reference: "standards/46-source-control-safety.md"
+    reviewedAgainst:
+      paths:
+        - standards/46-source-control-safety.md
+      revision: "e3c4866..43fdad2"
+      digest: "37311a785234e8e555ec40226fcd659f"
+
+  # Checkpoint item 4, the second REJECTED entry. The finding is read from the code rather than
+  # reproduced at runtime, and the owner review concluded that reproduction is unnecessary: the
+  # control flow itself shows a failed read becoming an indistinguishable clean result.
+  errors.no-false-success:
+    status: rejected
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "FINDING: the evaluator can report successful negative evidence after an underlying evidence-gathering failure. readText at scripts/standards.mjs:536 converts an unreadable file into the empty string, and collectFiles at :518 converts an unreadable directory into an empty traversal result. Downstream detectors then have no way to distinguish nothing was found from nothing could be searched: they contribute no finding, the audit exits 0, and no output states that a file could not be read. Separately, readText truncates silently at MAX_READ_BYTES of 400000 bytes at :379 and :539, so a file larger than that is scanned in part and reported on as though scanned whole; MAX_READ_BYTES appears nowhere else in the codebase and there is no disclosure path. This is the invariant this release itself wrote down -- Standard 44 R12, a negative discovery result is evidence about the search mechanism before it is evidence about the project -- failing in the tool that supplies the evidence. CORRECTIVE ACTION: unreadable files and directories, and truncated files, must become visible findings or must otherwise prevent the audit from claiming an undisclosed clean search. SCOPE: read from the control flow, not reproduced at runtime; no unreadable file or oversized file was constructed to demonstrate the effect, and no file in this repository currently exceeds the limit. The reviewer judged the control flow sufficient. This rejection is a historical record and is to remain recorded after the defect is fixed, rather than being rewritten into an approval."
+    reference: "standards/48-error-handling-and-observability.md"
+    reviewedAgainst:
+      paths:
+        - scripts/standards.mjs
+        - standards/48-error-handling-and-observability.md
+      revision: "e3c4866..43fdad2"
+      digest: "f784c84393fbae9ddd0d13ae4dcd23f3"
+
+  # Checkpoint item 8, architecture.no-boundary-bypass, is deliberately ABSENT from this block and
+  # from `applicability`. It was reviewed and the review did not establish it either way: the import
+  # graph of scripts/ is strictly layered and acyclic, but three failure constructors in
+  # scripts/compliance.mjs (:141, :158, :186) hardcode `level: "required"` instead of carrying the
+  # catalog's, which is the evaluator restating catalog metadata and which measurably distorted the
+  # score. The rule's qualifier is that a boundary was circumvented *for convenience*, and intent is
+  # not in the diff. Stretching the rule after the fact to convert a real defect into a violation of
+  # this particular prohibition would be its own dishonesty, so it is not done here.
+  #
+  # The rule therefore stays unestablished, and `validate` lists it under "nobody looked for these".
+  # That sentence is now inaccurate for this one rule: somebody looked and reached no verdict. There
+  # is no state for reviewed-and-inconclusive, which is a third attestation-model gap, recorded and
+  # not filled here for the same reason as the other two. Sequence: fix compliance.mjs so every
+  # failure constructor carries the catalog-derived level, add regression tests for the forbidden
+  # rejected and expired paths and for scoring, then re-review. That fix will stale the digests on
+  # meta.standards-not-weakened, testing.no-weakening-to-pass, and errors.no-false-success, and
+  # those re-reviews are the correct cost.
+
+  # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
+  # prohibited conduct occurred and reached shared history, and being caught does not unmake it.
+  ai.no-fabricated-capabilities:
+    status: rejected
+    reviewedBy: "project-owner"
+    reviewedAt: "2026-08-09"
+    evidence: "FINDING: repository facts were asserted without having been checked, and were false. ADR 0007 as committed at 75b6e8c stated that scripts/standards.mjs holds two module-level bindings mutated during a run, and that scripts/inventory.mjs and scripts/fidelity.mjs hold counters of the same kind naming three. Both claims are false: standards.mjs holds three, with contents at :1653 sitting in the same file, at the same level, and written in the same loop as sources, and the other two scripts hold eleven bindings rather than three. The document existed to be the evidence for a Standard 51 R1 discharge, and its central factual claim had not been verified. It was committed, cherry-picked to develop, and stood there until ab9ddbb. A second instance: the first disclosure of the sandbox behaviour described it as push-only, a session fact asserted without checking, corrected during the item 11 review and recorded there as an aggravating fact. MITIGATING: both were caught by the review they were written for; the ADR was corrected before any release and its corrected text now records the episode in its own words; and the standards and completion report state limits rather than capabilities throughout, including downgrading scm.no-committed-env-files from full assurance to partial when ADR 0008 established that the detector cannot tell tracked from present. Those facts mitigate and do not exonerate, by the standard set at item 11. SCOPE NOT REVIEWED: the prose of the nine new standards documents and the completion report was not re-verified claim by claim against the code. The fidelity check proves quoted blocks are verbatim and proves nothing about surrounding prose, which leaves a substantial unexamined surface for a rule about unchecked assertions."
+    reference: "standards/53-ai-engineering-honesty.md"
+    reviewedAgainst:
+      paths:
+        - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+        - standards/53-ai-engineering-honesty.md
+      revision: "e3c4866..43fdad2"
+      digest: "2fcfe3dbdf285c1b03b56c732bd7a0e6"

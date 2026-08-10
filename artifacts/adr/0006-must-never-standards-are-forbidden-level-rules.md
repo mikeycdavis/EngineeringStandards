@@ -120,6 +120,19 @@ would be manufacturing the evidence its own work needs to pass — the failure
   a finding that has been discharged. Naming that gap is deliberate; the semantics were **not**
   designed in the change that recorded the finding, because a mechanism for retiring a violation,
   invented alongside the violation, can only soften it.
+- **`reviewedAgainst` can only digest files.** `scm.no-shared-history-rewrite` was attested on Git
+  history — 28 fast-forward updates to `origin/develop`, no forced update, no `reset` or `rebase` in
+  the local reflog. None of that is file-shaped, and the schema requires at least one path, so the
+  recorded digest covers the rule text and establishes nothing about the freshness of the actual
+  evidence. The attestation says so in its own evidence line rather than letting the digest imply a
+  guarantee it does not provide. Closing this means a second kind of `reviewedAgainst` — a recorded
+  observation of history, compared against history — not a path list.
+- **There is no state for *reviewed, inconclusive*.** `architecture.no-boundary-bypass` was reviewed
+  and neither established nor rejected: the evidence showed a real breach of the three-way
+  separation, and the rule's *for convenience* qualifier is a claim about intent that the evidence
+  did not reach. The rule stays unestablished, which is the correct verdict, but `validate` then
+  files it under "nobody looked for these" — and somebody did. The classification is right and the
+  sentence is wrong.
 - **Entropy-based secret scanning**, rejected as brittle; **dynamic-evaluation detection**, rejected
   because finding the call says nothing about the prohibition's qualifiers; **destructive-command
   detection**, rejected because `DROP TABLE` and `rm -rf` appear legitimately in migrations, test

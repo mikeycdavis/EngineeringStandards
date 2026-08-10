@@ -118,16 +118,45 @@ the rule away because the process is short-lived, which would be the self-exempt
 [Standard 34](standards/34-dogfooding.md) R3 prohibits. The ADR's first draft named two of the
 fourteen and was rejected by the same review.
 
-**One is a confirmed violation and is recorded as one.** `ai.no-safety-bypass` carries the first
-`status: rejected` attestation this framework has issued: the execution sandbox was disabled during
-implementation to get past a blocked operation, which is exactly what
-[Standard 53](standards/53-ai-engineering-honesty.md) R5 forbids and exactly the qualifier — *to
-complete a task* — that makes the rule non-exemptible. The rule was **not** amended to accommodate
-it. A rejected attestation is not a waiver and not an approval: it records that a human looked and
-found the rule unmet, producing a failure rather than silence.
+**Three are confirmed violations and are recorded as three.** They carry the first
+`status: rejected` attestations this framework has issued — not waivers and not approvals, but the
+record that a human looked and found a rule unmet, producing a failure rather than silence. None of
+the three rules was amended to accommodate its finding.
 
-**The verdict is `NON_COMPLIANT` and the exit code is 1.** That is the mechanism working on its
-author, which is the only test of it that counts.
+- **`ai.no-safety-bypass`** — the execution sandbox was disabled during implementation to get past a
+  blocked operation. That is what [Standard 53](standards/53-ai-engineering-honesty.md) R5 forbids,
+  and *to complete a task* is exactly the internal qualifier that makes the rule non-exemptible.
+- **`ai.no-fabricated-capabilities`** — ADR 0007 as first committed asserted that
+  `scripts/standards.mjs` held two module-level bindings and that the other two scripts held three.
+  Both counts were false, the document existed to be evidence for a Standard 51 R1 discharge, and it
+  reached the shared branch before the same review corrected it.
+- **`errors.no-false-success`** — `readText` turns an unreadable file into the empty string and
+  `collectFiles` turns an unreadable directory into an empty traversal, so a detector cannot tell
+  *nothing was found* from *nothing could be searched*, and the run still exits 0. Reads are also
+  truncated silently at 400 KB. This is [Standard 44](standards/44-existing-project-reconstruction.md)
+  R12 — a negative result is evidence about the search mechanism first — failing inside the tool
+  that supplies the evidence.
+
+**One rule is neither attested nor rejected.** `architecture.no-boundary-bypass` was reviewed and the
+review reached no verdict: three failure constructors in `scripts/compliance.mjs` hardcode
+`level: "required"` rather than carrying the catalog's, which is a real breach of the three-way
+separation and measurably distorted the score — but the rule's qualifier is *for convenience*, and
+intent is not in the diff. Stretching a prohibition after the fact to capture a defect it does not
+name would be its own dishonesty. It stays unestablished until the defect is fixed and it can be
+reviewed again.
+
+**The verdict is `NON_COMPLIANT` and the exit code is 1**, so CI on `develop` is red. That is the
+correct representation of this repository's state, and preferable to withholding a known failure to
+keep a build green. It is the mechanism working on its author, which is the only test of it that
+counts.
+
+**Three limitations of the attestation model surfaced by using it in anger**, all recorded in
+[ADR 0006](artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md) and none filled
+here — a mechanism for retiring a violation, invented alongside the violation, could only soften it.
+A rejected attestation has no lifecycle. `reviewedAgainst` can only digest files, so a claim whose
+evidence is Git history cannot have its freshness established at all. And there is no state for
+*reviewed, inconclusive*, which is why `validate` currently files `architecture.no-boundary-bypass`
+under "nobody looked for these" when somebody did.
 
 ### Also in this release
 
