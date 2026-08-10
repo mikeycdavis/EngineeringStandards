@@ -263,6 +263,21 @@ attestations:
           revision: "1fa3869"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "263d8ef6c918fb1918096c6f466f60e0"
+      - id: "review-ai-destructive-approval-003"
+        supersedes: "review-ai-destructive-approval-002"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-10"
+        evidence: "RE-REVIEWED 2026-08-10 against committed repository content at e74bd38, after standards init began generating the agent operating rules into AGENTS.md. Only scripts/init.mjs changed among the reviewed paths; test/init.test.mjs is byte-identical. The reviewed safety basis did not change. renderTemplate() changes the bytes plan() and apply() reason about, not the decision boundary this rule is about: a missing artifact is created, an existing differing artifact is a conflict and a refusal, an overwrite requires explicit approval of that exact path, and approving one path does not authorize another. The generated AGENTS.md content therefore expands what may be written while still passing through the same guarded write path. The decisive new evidence is the test asserting that a hand-edited AGENTS.md is reported as a conflict with the file on disk left untouched, because it demonstrates that generation did not create a side door around overwrite approval. Suite 210, all passing, including the unchanged safety-contract tests. LIMITATION, recorded rather than denied: an explicitly approved overwrite can replace generated material. That is not a new authority path, it is the existing privileged overwrite path applied to another generated artifact. LIMITATION carried forward unchanged: the three ADR locations appear as adrDirs in scripts/standards.mjs and as satisfiedBy in scripts/init.mjs, nothing binds them, and that coupling can still drift undetected."
+        reference: "artifacts/adr/0012-agent-operating-rules-are-generated-not-authored.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/init.mjs
+            - test/init.test.mjs
+          revision: "e74bd38"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "7fb261ffc574c05ad70bea1cc049a0af"
 
   # Checkpoint items 1 and 2 of the must-never dogfood sweep, reviewed by the owner against the
   # 2.0.0 work itself. The commit range is recorded as `revision` — informational, never computed —
