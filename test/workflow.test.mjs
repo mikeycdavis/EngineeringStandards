@@ -1,0 +1,90 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const REUSABLE = path.join(ROOT, ".github/workflows/standards-validate.yml");
+const DOGFOOD = path.join(ROOT, ".github/workflows/standards-dogfood.yml");
+const read = (p) => readFile(p, "utf8");
+
+// These are text assertions over YAML rather than assertions over a parsed workflow, because
+// scripts/yaml.mjs supports a deliberately small subset and GitHub's schema is well outside it.
+// That is a real limitation and it is stated rather than hidden: these checks can confirm that a
+// line is present and that a prohibited one is absent, and they cannot confirm that the workflow
+// executes as intended. Only running it establishes that, which is what dogfooding is for.
+
+test("the reusable workflow is callable and requires an immutable revision", async () => {
+  const text = await read(REUSABLE);
+  assert.match(text, /^\s*workflow_call:/m, "the workflow is not reusable");
+  assert.match(text, /standards-ref:/, "it does not take a standards revision");
+  assert.match(text, /required: true/, "the revision is optional — a check may then run against anything");
+  // The refusal must be mechanical, not documentary. A branch name here is a mandatory check whose
+  // framework can change under it without anyone deciding to.
+  assert.match(text, /\[0-9a-f\]\{40\}/, "nothing enforces that the revision is a full commit SHA");
+});
+
+test("validate is the gate and audit cannot become one", async () => {
+  // ADR 0004: two commands with different exit-code contracts. A survey finding that can fail the
+  // job makes audit a second verdict, and the framework then has two authorities.
+  const text = await read(REUSABLE);
+  const auditStep = text.slice(text.indexOf("Audit ("), text.indexOf("Validate ("));
+  assert.match(auditStep, /continue-on-error: true/, "the audit step can fail the job");
+  assert.match(text, /standards\.mjs validate/, "the workflow never runs validate");
+  assert.match(text, /Propagate the validator's exit status/, "nothing propagates the verdict");
+});
+
+test("the three exit codes stay distinguishable", async () => {
+  // Turning 0, 1, and 2 into generic red destroys the distinction between "this project is
+  // non-compliant" and "no verdict was produced" — which is the distinction the version-identity
+  // guard and the unreadable-policy path both depend on.
+  const text = await read(REUSABLE);
+  const tail = text.slice(text.indexOf("Propagate the validator's exit status"));
+  for (const code of ["0)", "1)", "2)"]) {
+    assert.ok(tail.includes(code), `the exit-status step does not handle ${code}`);
+  }
+  assert.match(tail, /exit 1/, "non-compliance does not exit 1");
+  assert.match(tail, /exit 2/, "a configuration failure does not exit 2");
+});
+
+test("the workflow never repairs the project it validates", async () => {
+  // CI validates; it does not create policy, attestations, exceptions, or scaffolding, and it never
+  // self-attests. The prohibition is asserted here and proved at run time by the clean-tree check.
+  const text = await read(REUSABLE);
+  assert.doesNotMatch(text, /standards\.mjs init/, "the workflow runs init against the consumer");
+  assert.doesNotMatch(text, /--force-overwrite/);
+  assert.match(text, /git -C project status --porcelain/, "nothing proves the project was left unmodified");
+});
+
+test("the workflow does not override the consumer's declared version", async () => {
+  // The consumer's project-policy.yml is the only declaration of what governs it. A workflow that
+  // wrote or rewrote it would make the CI configuration the policy.
+  const text = await read(REUSABLE);
+  assert.doesNotMatch(text, /standardVersion:\s*["']?\d/, "the workflow states a standardVersion of its own");
+  assert.doesNotMatch(text, />\s*project\/.*project-policy\.yml/, "the workflow writes the consumer policy");
+});
+
+test("the dogfood caller pins a full commit SHA rather than a branch", async (t) => {
+  // There is no released tag, so the only immutable reference available is a commit SHA. Pinning to
+  // develop would mean the check could change what it enforces between two runs of the same commit.
+  // Skipped rather than passed while the caller does not exist. A guard that returns early reports
+  // green for a check it never made — the vacuous-test shape this repository has caught twice.
+  if (!existsSync(DOGFOOD)) {
+    t.skip("the dogfood caller does not exist yet; it is added once there is a revision to pin to");
+    return;
+  }
+  const text = await read(DOGFOOD);
+  const uses = text.match(/uses:\s*\S+standards-validate\.yml@(\S+)/);
+  assert.ok(uses, "the caller does not use the reusable workflow");
+  assert.match(uses[1], /^[0-9a-f]{40}$/, `the caller pins '${uses[1]}', which is not a commit SHA`);
+
+  const input = text.match(/standards-ref:\s*([0-9a-f]{40})/);
+  assert.ok(input, "the caller passes no standards-ref");
+  assert.equal(
+    input[1],
+    uses[1],
+    "the workflow file and the framework it executes are pinned to different revisions",
+  );
+});

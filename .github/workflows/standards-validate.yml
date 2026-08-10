@@ -1,0 +1,224 @@
+# The reusable standards check.
+#
+# One job, one contract: resolve an explicitly pinned framework revision, run the authoritative
+# `validate` against the consumer repository, propagate its exit status, and publish enough output
+# to diagnose the result. Nothing else. Everything a richer controller might do — deciding whether a
+# project is governed, resolving a version from a tag, repairing what it finds — is deliberately
+# absent, because distribution fidelity has to be established before anything is built on top of it.
+#
+# What this workflow must never do, and how each is prevented:
+#
+#   * Infer the standards version from its own checkout and override the consumer's policy. It never
+#     reads or writes `project-policy.yml`; the consumer's `standardVersion` is the only declaration,
+#     and the framework's version-identity guard exits 2 when the two disagree. A mismatch is a
+#     configuration failure, not a verdict.
+#   * Substitute `audit` for `validate`. `audit` runs for diagnostics only, cannot fail the job, and
+#     is labelled as evidence rather than a verdict (ADR 0004).
+#   * Flatten the exit codes. 0, 1, and 2 mean different things — compliant, non-compliant, and
+#     "no verdict was produced" — and a gate that turns all three into generic red destroys the
+#     distinction the framework exists to make.
+#   * Repair anything. CI validates; it does not create policy, attestations, exceptions, or
+#     reconstruction artifacts, and it never self-attests a rule requiring human review. That is
+#     asserted mechanically: the consumer working tree is checked for modifications after the run.
+#
+# Call it with:
+#
+#   jobs:
+#     standards:
+#       uses: mikeycdavis/EngineeringStandards/.github/workflows/standards-validate.yml@<40-char-sha>
+#       with:
+#         standards-ref: <the same 40-char sha>
+
+name: standards-validate
+
+on:
+  workflow_call:
+    inputs:
+      standards-ref:
+        description: >-
+          The EngineeringStandards revision to execute, as a full 40-character commit SHA. A branch
+          name is refused: a mandatory check whose framework can change under it is not a fixed
+          contract, and there is no released tag to resolve yet (Standard 21 R5's resolution half is
+          still unimplemented).
+        required: true
+        type: string
+      project-dir:
+        description: The directory within the consumer repository to validate.
+        required: false
+        default: "."
+        type: string
+      node-version:
+        description: Node version used to execute the framework. It declares engines >=18.
+        required: false
+        default: "20"
+        type: string
+    outputs:
+      status:
+        description: The verdict string from the report — COMPLIANT, COMPLIANT_WITH_EXCEPTIONS, NOT_EVALUATED, or NON_COMPLIANT.
+        value: ${{ jobs.validate.outputs.status }}
+      exit-code:
+        description: "The validator's own exit code: 0 compliant, 1 non-compliant, 2 no verdict produced."
+        value: ${{ jobs.validate.outputs.exit-code }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.validate.outputs.status }}
+      exit-code: ${{ steps.validate.outputs.exit-code }}
+    steps:
+      - name: Refuse a mutable standards revision
+        env:
+          STANDARDS_REF: ${{ inputs.standards-ref }}
+        run: |
+          if ! printf '%s' "$STANDARDS_REF" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::standards-ref must be a full 40-character commit SHA; got '$STANDARDS_REF'."
+            echo "A mandatory check pinned to a moving ref can change what it enforces without anyone deciding to."
+            exit 2
+          fi
+
+      - name: Check out the project under validation
+        uses: actions/checkout@v4
+        with:
+          path: project
+          # Full history, deliberately. Attestation freshness is computed from committed blob
+          # identity, and a shallow clone cannot distinguish a path that was deleted from one that
+          # was never tracked — the first is staleness, the second is evidence unavailability. A
+          # cheaper checkout would make the verdict depend on clone depth, which is the class of
+          # defect ADR 0011 exists to close.
+          fetch-depth: 0
+
+      - name: Check out the pinned standards framework
+        uses: actions/checkout@v4
+        with:
+          repository: mikeycdavis/EngineeringStandards
+          ref: ${{ inputs.standards-ref }}
+          path: standards
+
+      - name: Confirm the framework is the revision that was requested
+        env:
+          STANDARDS_REF: ${{ inputs.standards-ref }}
+        run: |
+          actual="$(git -C standards rev-parse HEAD)"
+          if [ "$actual" != "$STANDARDS_REF" ]; then
+            echo "::error::requested $STANDARDS_REF but checked out $actual."
+            exit 2
+          fi
+          echo "Framework revision: $actual"
+          echo "Framework version:  $(cat standards/VERSION)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      # No install step. The framework has no dependencies, by the decision recorded in
+      # design/standards-audit-cli.md; an `npm ci` appearing here would mean that changed.
+
+      # Evidence, not a verdict. `continue-on-error` is the mechanism, not a convenience: this step
+      # must be incapable of failing the job, or a survey finding would quietly become a gate and
+      # `validate` would stop being the single authority (ADR 0004).
+      - name: Audit (diagnostic evidence — never a verdict)
+        continue-on-error: true
+        run: node standards/scripts/standards.mjs audit "project/${{ inputs.project-dir }}"
+
+      - name: Validate (the gate)
+        id: validate
+        run: |
+          # Run twice on purpose: once for the readable output a human reads in the log, once for the
+          # machine report. Two runs invite the question of which one is authoritative, so the answer
+          # is asserted rather than assumed — if the exit codes disagree, the run is not reproducible
+          # and the job fails instead of quietly reporting the one it happens to have kept.
+          set +e
+          node standards/scripts/standards.mjs validate "project/${{ inputs.project-dir }}"
+          human=$?
+          node standards/scripts/standards.mjs validate "project/${{ inputs.project-dir }}" --json > report.json
+          code=$?
+          set -e
+          if [ "$human" != "$code" ]; then
+            echo "::error::two runs of validate disagreed ($human vs $code). The verdict is not reproducible on this checkout."
+            exit 2
+          fi
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          # Read the verdict from the report rather than restating it here. A second place deciding
+          # what the status is would be a second implementation of the verdict.
+          status="$(node -e 'try{process.stdout.write(JSON.parse(require("fs").readFileSync("report.json","utf8")).status??"")}catch{process.stdout.write("")}')"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Prove nothing was repaired
+        run: |
+          changed="$(git -C project status --porcelain)"
+          if [ -n "$changed" ]; then
+            echo "::error::the validation run modified the project working tree. CI validates; it does not repair."
+            printf '%s\n' "$changed"
+            exit 2
+          fi
+          echo "Project working tree unmodified — no policy, attestation, exception, or scaffold was written."
+
+      - name: Publish the result
+        if: always()
+        env:
+          CODE: ${{ steps.validate.outputs.exit-code }}
+          STATUS: ${{ steps.validate.outputs.status }}
+        run: |
+          {
+            echo "## Standards validation"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Verdict | \`${STATUS:-unknown}\` |"
+            echo "| Exit code | \`${CODE:-unknown}\` |"
+            case "${CODE:-}" in
+              0) meaning="compliant — the policy was read and every applicable rule was satisfied" ;;
+              1) meaning="non-compliant, or a prohibition nobody examined. A statement about the project" ;;
+              2) meaning="no verdict was produced — the policy could not be read, or the declared standards version is not the framework executing this run. A statement about the configuration" ;;
+              *) meaning="the validator did not report an exit code" ;;
+            esac
+            echo "| Meaning | $meaning |"
+            echo "| Framework revision | \`${{ inputs.standards-ref }}\` |"
+            echo
+            if [ -s report.json ]; then
+              node -e '
+                const r = JSON.parse(require("fs").readFileSync("report.json","utf8"));
+                console.log(`Declared \`standardVersion\`: \`${r.standardVersion}\``);
+                console.log("");
+                console.log(`${r.summary.passed} passed, ${r.summary.failed} failed, ${r.summary.warnings} warning(s), ${r.summary.skipped} skipped.`);
+                const failing = (r.results ?? []).filter((x) => x.status === "failed");
+                if (failing.length) {
+                  console.log("");
+                  console.log("### Failing rules");
+                  console.log("");
+                  for (const f of failing) console.log(`- \`${f.ruleId}\` [${f.level}] — ${f.message}`);
+                }
+                const unestablished = r.unestablishedProhibitions ?? [];
+                if (unestablished.length) {
+                  console.log("");
+                  console.log("### Prohibitions nobody established");
+                  console.log("");
+                  for (const u of unestablished) console.log(`- \`${u.ruleId ?? u}\``);
+                }
+              '
+            else
+              echo "No report was produced. The run failed before the validator emitted one."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: standards-report
+          path: report.json
+          if-no-files-found: warn
+
+      # Last, and on purpose. The diagnostics above are published before the job fails, because a
+      # gate that fails without saying what it found teaches people to bypass it.
+      - name: Propagate the validator's exit status
+        env:
+          CODE: ${{ steps.validate.outputs.exit-code }}
+        run: |
+          case "$CODE" in
+            0) echo "COMPLIANT." ;;
+            1) echo "::error::NON-COMPLIANT (exit 1) — a required or forbidden rule failed, or a prohibition went unexamined." ; exit 1 ;;
+            2) echo "::error::NO VERDICT (exit 2) — the policy could not be read, or the declared standards version is not the one executing." ; exit 2 ;;
+            *) echo "::error::the validator produced no exit code." ; exit 2 ;;
+          esac

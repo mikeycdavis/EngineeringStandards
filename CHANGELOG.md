@@ -29,6 +29,19 @@ and every exit-code meaning except the new `NOT_EVALUATED` trigger. See
 [Upgrading from 1.x to 2.0](INSTRUCTIONS.md#upgrading-from-1x-to-20).
 
 ### Added — the must-never layer
+- **A reusable `standards-validate` workflow**
+  ([ADR 0013](artifacts/adr/0013-the-reusable-check-distributes-the-verdict-and-nothing-else.md)) —
+  `.github/workflows/standards-validate.yml`, callable from any repository. It resolves an explicitly
+  pinned framework revision, runs the authoritative `validate`, propagates its exit status, and
+  publishes the verdict, the exit code's meaning, the counts, and the failing rule ids to the job
+  summary. It carries no controller logic: it never declares a `standardVersion` of its own, so the
+  consumer's policy remains the only declaration and the version-identity guard fires when the two
+  disagree; `audit` runs as diagnostics under `continue-on-error` and cannot become a second verdict;
+  exits 0, 1, and 2 stay distinguishable rather than collapsing into generic red; and the consumer
+  working tree is checked for modifications afterwards, because CI validates and does not repair.
+  A branch name for the revision is refused — there is no released tag yet, so a commit SHA is the
+  only immutable reference available.
+
 
 - **[Standard 45](standards/45-engineering-invariants.md)** — the umbrella. Defines what a
   prohibition *is* here: the semantics of `forbidden` (satisfied by absence of violating evidence,
