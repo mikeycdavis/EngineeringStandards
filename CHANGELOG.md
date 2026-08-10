@@ -205,6 +205,77 @@ at all. And there is no state for *reviewed, inconclusive* — for one review cy
 resolved when the underlying defect was fixed and the rule was attested, but only because the
 inconclusive state was temporary. A review that stays inconclusive still has nowhere to live.
 
+### Reconciled from the parallel detector-fix branch
+
+Work developed concurrently on `standard-31-implementation-and-detector-fixes`, mostly against the
+first outside adopter. It is folded in here rather than released separately: **`VERSION` stays
+`2.0.0`.** The branch had set it to `2.0.1`, but 2.0.0 was never published — it is an unreleased
+candidate that is deliberately `NON_COMPLIANT` — and a patch version after an unreleased minor
+describes nothing. The branch supplied the argument against its own choice: it set `VERSION` to
+`2.0.1` while `templates/project-policy.yml` still read `2.0.0`.
+
+It was reconciled by **porting change by change, not by merging.** A merge would have let Git decide
+which semantics survived, and the branch forked before the must-never layer, the verdict rules, and
+the evidence-surface work existed. Every defect below was first reproduced on current `develop`; a
+fix does not carry just because it fixed an older tree.
+
+**Ported unchanged in substance — the defect reproduced here.**
+
+- **An HTTP route in a README is not a missing file.** `/api/health` and `/users/:id` were reported
+  as paths that do not exist. `documentation.code-consistency` now discriminates on the leading
+  slash, admitting root-relative prose whose last segment carries a file extension.
+- **An ADR directory is a durable home, not a particular path.** `docs/adr/` and `doc/adr/` — what
+  Nygard's article and adr-tools established — now satisfy [Standard 11](standards/11-architecture-decision-records.md)
+  R1, in the detector, the catalog, and `standards init`, which had offered to create an empty fourth
+  directory beside a populated one.
+- **`init` stamps the framework version** from `VERSION` rather than from whatever the template says.
+- **[ADR 0008](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+  — a detector may not assert repository state it never measured**, with
+  `scm.no-committed-env-files` dropping from assurance `full` to `partial`. Both directions of the
+  gap reproduce: a gitignored `.env` reported as committed *with rotation advised*, and — the worse
+  direction, because nothing surfaces it — `planning.breakdown-directory`,
+  `planning.one-file-per-section`, `architecture.project-manifest` and `documentation.architecture`
+  all **passing** over gitignored content that no clone would contain.
+- **[ADR 0009](artifacts/adr/0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md)
+  — a detector reports an instance of its subject, never a discussion of it.**
+- **[ADR 0010](artifacts/adr/0010-human-review-may-always-contribute-negative-evidence.md)** as
+  `Proposed`: approval and rejection are not symmetric operations and should not share one
+  permission, because a rejection cannot manufacture a pass.
+- **Standards text that had drifted** — 28 (`--format json`, a flag the CLI rejects outright), 31
+  (the R2 contract can now be honoured, and all twelve guarantees were verified present), 32 ("all 44
+  standards", missed by the count sweep), 39, 42, 51.
+
+**Corrected during reconciliation — the branch's fix was right and its explanation or test was not.**
+These are recorded because they are evidence about how far the branch could be trusted, not only
+about what it contained.
+
+- **The `stampVersion` test proved nothing.** It asserted the written policy matches `VERSION`, which
+  passes whether or not stamping happens, because on `develop` the two agree. Mutation-confirmed:
+  replacing `stampVersion` with the identity function left it green. Replaced with a test against a
+  stale template — the mismatch that actually occurred — which does catch the mutation.
+- **A false claim about the runtime was rejected rather than imported.** The code was justified by
+  saying a trailing `$` under `/m` fails on a `core.autocrlf` checkout. ECMAScript's `LineTerminator`
+  set includes CR, so it does not. The code is unchanged and the rationale is corrected.
+- **ADR 0008's `documentation.architecture` false pass is live, not latent** as recorded. The first
+  reproduction attempt appeared to *refute* the ADR, because the fixture's README was under 400
+  characters and that half of the same check fired first and masked it.
+- **ADR 0009 gained the view model it was missing** — `structureOf` / `sourceOf` / `commentsOf` / raw
+  config / filename-only, and what each establishes. Also the honest count: **5 of 22 detectors
+  declare their view**, so the convention binds new detectors and is not yet universal.
+- **ADR 0010's refusal behaviour was misstated.** Writing the refused attestation does not leave the
+  rule `skipped`; it yields `invalid-attestation` / `failed` — a failure about a malformed policy
+  rather than an unmet requirement, which is worse than the silence.
+- **Standard 51 would have reintroduced a rejected claim.** Its R1 row named this repository's global
+  state as "`findings` and `sources`" — the two-binding enumeration this release rejected twice. It
+  reads as twenty bindings across three scripts, governed by categorical rule rather than by its list.
+
+**Design-only, and deferred on purpose.** ADR 0008 records that repository state will come from a
+narrow named seam that may shell out to `git`, with `unknown` as a first-class result — **no such
+seam is implemented**, here or on the branch, and the false-pass class is pinned by characterisation
+tests that assert today's wrong answer so that building it breaks them loudly. ADR 0010 is
+`Proposed` with its open questions unresolved, and the attestation-model gaps in
+[ADR 0006](artifacts/adr/0006-must-never-standards-are-forbidden-level-rules.md) stay open.
+
 ### Also in this release
 
 Work that landed before the must-never layer and is folded in here rather than cut separately.
