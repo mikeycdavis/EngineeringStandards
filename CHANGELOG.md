@@ -82,6 +82,16 @@ was insufficient.
 | `security.no-sql-concat` | `sourceOf` | A full SQL statement interpolated into a template literal or f-string |
 
 ### Changed
+- **`npm test` no longer depends on shell globbing or on a Node newer than `engines` declares.**
+  The command was `node --test "test/*.test.mjs"`, which works only where Node expands the pattern
+  itself — a capability added in Node 22. CI pins Node 20 and `package.json` declares `engines: >=18`,
+  so the gate had never been able to run its own suite; the first CI job that actually started, on
+  2026-08-11, died with *Could not find .../test/\*.test.mjs* before a single test executed. Thirty
+  runs going back to the repository's first day report failure, and every earlier one was the account
+  billing block, so nothing had ever exercised it. `scripts/test.mjs` now computes the file list
+  explicitly: the top level of `test/` only, because Node's directory discovery would otherwise run
+  `test/fixtures/compliant/tests/routes.test.js` — fixture data, excluded from the self-audit for the
+  same reason — and zero discovered files exits 2 rather than reporting an empty pass.
 - **The evaluator no longer exempts its own source file from the audit.** `scripts/standards.mjs`
   excluded itself from the content scan by absolute path, so the same commit evaluated differently
   depending on whether the framework lived inside the repository being validated — 25 passed / 3
