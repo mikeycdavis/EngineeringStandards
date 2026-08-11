@@ -132,3 +132,50 @@ test("the runner collects every suite file and no fixture", async () => {
     assert.ok(!top.includes(path.basename(f)), `a fixture would be run as a suite file: ${f}`);
   }
 });
+
+// --- The required job and the authoritative one are different jobs -----------------------------
+
+const CI = path.join(ROOT, ".github/workflows/ci.yml");
+
+/** The body of one top-level job in ci.yml, from its key to the next one or the end of the file. */
+function jobBody(text, name) {
+  const at = text.search(new RegExp(`^  ${name}:$`, "m"));
+  if (at === -1) return "";
+  const after = text.slice(at + 1).search(/^  [a-z][\w-]*:$/m);
+  return after === -1 ? text.slice(at) : text.slice(at, at + 1 + after);
+}
+
+test("the required job never invokes the validator", async () => {
+  // `test` is what branch protection requires, so it must be able to pass. While `npm run validate`
+  // lived in it the required check could never be green — the repository is intentionally
+  // NON_COMPLIANT — and with PR-only protection that left no legal path to change develop. The
+  // separation is the fix; the validator's behaviour is untouched.
+  const testJob = jobBody(await read(CI), "test");
+  assert.ok(testJob.length > 0, "the ci workflow no longer declares a test job");
+  assert.doesNotMatch(testJob, /npm run validate|standards\.mjs validate/, "the required job runs the validator");
+  // The checks that must stay merge-blocking.
+  for (const step of [
+    "npm run inventory",
+    "npm run fidelity",
+    "npm run policy",
+    "npm run diagrams",
+    "npm test",
+    "npm run audit",
+  ]) {
+    assert.ok(testJob.includes(step), `the required job no longer runs ${step}`);
+  }
+});
+
+test("the validate job runs the authoritative command and propagates its status", async () => {
+  // Visible and not required is a branch-protection setting. It must not become a workflow that
+  // reports something softer: the verdict still runs on every push and pull request, and a failure
+  // still turns the run red.
+  const validateJob = jobBody(await read(CI), "validate");
+  assert.ok(validateJob.length > 0, "the ci workflow declares no validate job");
+  assert.match(validateJob, /npm run validate/, "the validate job does not run the validator");
+  assert.doesNotMatch(validateJob, /continue-on-error/, "the validate job cannot report a failure");
+  assert.doesNotMatch(validateJob, /\|\| true|exit 0/, "the validate job suppresses its exit status");
+  // Independent on purpose: one pull request should be able to expose both classes of defect, and
+  // making the verdict conditional on green tests would suppress it exactly when something is wrong.
+  assert.doesNotMatch(validateJob, /needs:/, "compliance evaluation is suppressed when tests fail");
+});
