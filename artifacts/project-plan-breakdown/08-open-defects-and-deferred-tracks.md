@@ -92,11 +92,57 @@ that approval deliberately does not cover.
 
 ### Merge the plan repair through the protected path
 
-- **Status:** BLOCKED — **merge evidence unavailable.** This is neither a failure of the change nor
-  permission to bypass the gate, and it must not be recorded as either.
-- **Tracked by:** [PR #15](https://github.com/mikeycdavis/EngineeringStandards/pull/15), left open.
-- **Evidence:** two independent prerequisites are unavailable under the present account state, and
-  each was measured rather than inferred:
+- **Status:** COMPLETE as to the merge — **and the required check never executed.** Those are two
+  answers, and this item previously collapsed them into one `BLOCKED`:
+
+  | Question | Answer |
+  | --- | --- |
+  | Did the merge happen? | **Yes.** 2026-08-11T21:16:17Z into `develop`, merge commit `0a0e7d4`. |
+  | Did the required CI check execute? | **No.** Job `93929943347`: `steps: 0`, 21:13:38→21:13:42, billing block. |
+
+  The first means the item cannot stay `BLOCKED` — the obligation it held open has been discharged.
+  The second means nothing here may be read as *the gate passed*. **The merge establishes that the
+  plan repair landed. It establishes nothing whatever about CI.**
+- **Tracked by:** [PR #15](https://github.com/mikeycdavis/EngineeringStandards/pull/15), **merged**
+  2026-08-11. Rebased onto `develop` as `6025b5a`, `1093286`, `0a0e7d4`, so the branch is not an
+  ancestor of `develop`; `plan/repair-release-model` has finished its purpose and is not to be
+  pushed to again.
+- **Recorded deviation — the acceptance condition was superseded, not satisfied.**
+
+  ```text
+  Original acceptance condition
+      the required protected-path check executes successfully before merge
+
+  Observed outcome
+      PR #15 merged 2026-08-11T21:16:17Z while the required check was unavailable
+      job 93929943347 — conclusion: failure, steps: 0, duration 4s
+      annotation: "The job was not started because recent account payments have
+                   failed or your spending limit needs to be increased"
+
+  Resolution
+      merge action COMPLETE; CI-evidence condition NOT satisfied
+      the missing evidence is recorded here as a governance deviation,
+      and is not inferred from the merge having succeeded
+  ```
+
+  Recorded as a deviation on this item rather than as a policy exception. Standard 20's exception
+  machinery governs *rule* exemptions declared in `project-policy.yml`; this is a single historical
+  fact about one governance event, and minting an exception for it would turn a recorded incident
+  into a reusable mechanism.
+
+  **This deviates from the terminal semantics above,** which require acceptance criteria to be met
+  before `COMPLETE`. Stated rather than quietly excepted: the deliverable was the merge, the merge
+  happened, and what went unmet was a *resumption* condition — the circumstances under which to
+  proceed — which the merge proceeded without. Every other option is worse. `BLOCKED` is contradicted
+  by the commit graph; an unqualified `COMPLETE` would assert a passing gate that does not exist.
+
+  The final paragraph of this item asked that a merge under a persisting block be **"a governance
+  exception made explicitly and beforehand."** It was not made beforehand. This is the *afterwards*
+  version the item warned against — worse than the beforehand version, better than no record. That
+  gap is itself the finding, and it is left standing below in its original wording rather than
+  softened to match what happened.
+- **Evidence — the conditions as measured when the item was written, both of which still held at the
+  moment of the merge:**
   - **Actions cannot establish the required `test` result.** The jobs queued for the pull request
     completed in under five seconds having executed **zero steps**. The reason is in the check-run
     annotation, not the log: *"The job was not started because recent account payments have failed
@@ -110,18 +156,34 @@ that approval deliberately does not cover.
   the protected path. **`mergeStateStatus: UNSTABLE` is not permission** — it is the absence of an
   enforcement mechanism, and reading it as consent would be inferring authorisation from a broken
   gate.
-- **Deliverables:** the merge, once both prerequisites are restored.
-- **Acceptance Criteria:** the resumption condition, stated narrowly —
+- **Deliverables:** the merge, once both prerequisites are restored. **Delivered 2026-08-11 —
+  without either prerequisite being restored.**
+- **Acceptance Criteria:** **SUPERSEDED, not met.** Kept verbatim, because a criterion edited to
+  match what happened is not a criterion:
   > Resume when GitHub Actions starts a real `test` job and the intended protected-branch
   > enforcement is available again. Require `test` green before merge.
   - A `test` result counts only if the job has a non-empty `steps` array and a plausible duration.
   - The non-required `validate` and `validate-self` checks are **not** to be made green as part of
     this. They will correctly report `NON_COMPLIANT` from the four recorded rejections.
-- **Verification:**
+
+  Against the merge that occurred: the first criterion **failed** — `steps: 0` and a 4-second
+  duration are exactly what it was written to exclude. The second was **honoured**; `validate` and
+  `validate-self` were not made green, and both still report `NON_COMPLIANT` from the four recorded
+  rejections.
+- **Verification:** what was actually established, and what was not.
   ```bash
-  gh api repos/:owner/:repo/check-runs/<id>/annotations   # read before diagnosing any red
-  gh pr checks 15
+  gh pr view 15 --json state,mergedAt,mergeCommit
+  #   MERGED  2026-08-11T21:16:17Z  0a0e7d4          ← the merge happened
+
+  gh api repos/:owner/:repo/actions/jobs/93929943347 -q '.conclusion, (.steps|length)'
+  #   failure  0                                     ← the check did not run
+
+  gh api repos/:owner/:repo/check-runs/93929943347/annotations -q '.[].message'
+  #   "The job was not started because recent account payments have failed..."
   ```
+  The first command verifies the deliverable. The second and third verify the *absence* of the
+  evidence the acceptance criterion required, and are recorded here so that absence stays legible
+  rather than being rediscovered from the commit graph later.
 - **Dependencies:** account-side restoration of the plan capability that provides both Actions
   minutes and private-repository branch protection. This is **outside this repository and outside
   what any agent working in it can do** — nothing in the codebase can unblock it, and no amount of
@@ -136,6 +198,11 @@ that approval deliberately does not cover.
 - **If the block persists and the merge happens anyway**, that is a **governance exception to be
   made explicitly and beforehand**, naming the missing evidence surfaces. It is not to be inferred
   from the merge succeeding, and not to be discovered afterwards from the commit graph.
+
+  → **This is the case that occurred.** Left in its original future-conditional wording rather than
+  rewritten, because it is the clearest statement of what should have happened and editing it to
+  match what did would erase the standard it was setting. The exception was not made beforehand; see
+  the recorded deviation at the head of this item.
 
 ### ADR 0013's rejection count stays at three
 
