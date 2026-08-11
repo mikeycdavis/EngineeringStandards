@@ -107,12 +107,29 @@ someone to lie to make the build go green.
 
 ### Accept the reusable check on real CI infrastructure
 
-- **Status:** BLOCKED — not failed, and the distinction is the point of this item
-- **Evidence:** the workflow is implemented and has produced real verdicts — the run on `e06c59f`
-  executed both jobs and reported `24 passed, 4 failed, 22 skipped` from inside and the same counts
-  from outside, which is the placement invariant demonstrated on real infrastructure rather than in a
-  local two-checkout regression. Acceptance is blocked because GitHub Actions has intermittently been
-  unable to start a runner for this account.
+- **Status:** COMPLETE — 2026-08-11, accepted on executed runs after the account runner capability
+  was restored. Previously `BLOCKED`; that state is described below because *blocked* was the
+  correct answer for as long as it held, and this item's purpose was to keep it distinguishable from
+  *failed*.
+- **Evidence:** on the PR #18 branch, both jobs executed and both verdicts were read from their logs
+  rather than inferred from conclusions:
+
+  | Job | Steps | Verdict |
+  | --- | --- | --- |
+  | `validate` — framework inside the target | 7 | `NON_COMPLIANT` · 100% · 24 passed, 4 failed, 22 skipped · 21 automated, 7 manual-review, 9 not-evaluated |
+  | `validate-self / validate` — framework pinned externally | 16 | **identical on every field** |
+
+  The required `test` job ran alongside them: `success`, 12 steps. **The two verdicts agreeing field
+  for field is the evaluator placement invariant established on real CI**, which is a stronger claim
+  than this item's acceptance criteria asked for — they required only that a run carry real
+  information. A local two-checkout regression could never have established it, because the thing in
+  question is whether *placement* changes the answer.
+
+  **The prior blocked period, kept rather than deleted:** for six or more pushes across 2026-08-10
+  and 2026-08-11, every job terminated in under five seconds with `steps: 0` and the annotation
+  *"The job was not started because recent account payments have failed…"*. Those runs were never
+  recorded as failures of this item, which is what made today's acceptance meaningful — had they
+  been counted as reds, the restoration would have looked like a fix to code that was never broken.
 - **Purpose:** Establish that the distributed check works where it is meant to work. Local evidence
   is not the same claim.
 - **Deliverables:** a green-or-honestly-red run of `validate-self / validate` on the current tip,
@@ -126,11 +143,14 @@ someone to lie to make the build go green.
     accepted are three states.
 - **Verification:**
   ```bash
+  gh api repos/:owner/:repo/actions/runs/<id>/jobs \
+    --jq '.jobs[] | "\(.name) concl=\(.conclusion) steps=\(.steps|length)"'
   gh api repos/:owner/:repo/check-runs/<id>/annotations
   ```
-  Read the annotation before diagnosing any red on this item.
-- **Dependencies:** the reusable workflow above. Blocked on account infrastructure, not on any code
-  in this repository — nothing here can unblock it.
+  Read the annotation before diagnosing any red on this item — the step count is what separates a
+  verdict from an infrastructure block, and the log is empty in the latter case.
+- **Dependencies:** the reusable workflow above. Was blocked on account infrastructure, never on any
+  code in this repository; restored 2026-08-11.
 
 ### Arrange this repository's gate so honesty and green can coexist
 

@@ -8,12 +8,18 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Thirteen are open. Seven are claimed
-here — #1, #4, #5, #6, #7, #8, #17 — and the other six are claimed where their subject lives:
-[#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
+**Every open GitHub issue is claimed by exactly one plan item.** Fifteen are open. Nine are claimed
+here — #1, #4, #5, #6, #7, #8, #17, #19, #21 — and the other six are claimed where their subject
+lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
 out of release scope.
+
+**Ownership is asserted by an item's `Tracked by` field, not by an issue being mentioned.** Sections
+03 and 04 reference #4, #5 and #7 while section 08 owns them; a link-count would report those as
+claimed two and three times over. Anyone re-checking this invariant should test for the field, not
+for the link — the use/mention distinction ([ADR 0009](../adr/0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md))
+applies to the plan reading itself, not only to detectors.
 
 **Updated 2026-08-11**, after an adoption attempt against two repositories surfaced three defects.
 Two are new — [#16](07-distributed-validation-and-ci.md) (adoption eligibility resolved too late) and
@@ -141,16 +147,36 @@ that approval deliberately does not cover.
   version the item warned against — worse than the beforehand version, better than no record. That
   gap is itself the finding, and it is left standing below in its original wording rather than
   softened to match what happened.
-- **Evidence — the conditions as measured when the item was written, both of which still held at the
-  moment of the merge:**
+- **Evidence:** the conditions as measured when the item was written. One of the two was misread at
+  the time and is corrected below; both are left visible rather than rewritten.
   - **Actions cannot establish the required `test` result.** The jobs queued for the pull request
     completed in under five seconds having executed **zero steps**. The reason is in the check-run
     annotation, not the log: *"The job was not started because recent account payments have failed
     or your spending limit needs to be increased."* A job that never started carries no information
     about the code in either direction.
-  - **GitHub cannot currently enforce the protected path.** `GET /branches/develop/protection` and
-    `GET /rulesets` both return **403 — "Upgrade to GitHub Pro or make this repository public"**,
-    which is consistent with `mergeStateStatus` reading `UNSTABLE` rather than `BLOCKED`.
+  - **~~GitHub cannot currently enforce the protected path.~~ CORRECTED 2026-08-11 — this was
+    wrong.** What was measured: `GET /branches/develop/protection` and `GET /rulesets` both returned
+    **403 — "Upgrade to GitHub Pro or make this repository public"**. What was concluded: that
+    protection had lapsed. That conclusion did not follow. A 403 on a read establishes that **the
+    API could not be queried**, not that the thing being queried was absent — *visibility* was
+    unavailable, not enforcement.
+
+    Once the account capability was restored, the ruleset **"Protect main branches"** was found
+    `enforcement: active`, `created_at: 2026-08-08`, requiring `test`, pull requests, linear
+    history, and blocking deletion and force-push. It had almost certainly been enforcing
+    throughout. The 404 that now answers `/branches/develop/protection` means only that `develop`
+    was never governed by *classic* branch protection — the ruleset is a different mechanism at a
+    different endpoint, and reading one endpoint's silence as the other's absence was the error.
+
+    **This is Standard 44 R12 against the framework's own reasoning**: a negative result is evidence
+    about the search mechanism before it is evidence about the world. A 403 is not even a negative
+    result — it is the search failing to run. The invariant was written into this repository's
+    standards and then violated by it within two days.
+
+    **What does not change:** `mergeStateStatus: UNSTABLE` was still not permission, the required
+    check still genuinely could not execute, and the merge still occurred with its documented
+    prerequisites unmet. One of the two stated prerequisites was misdiagnosed; the other was real,
+    and it was sufficient on its own.
 - **Purpose:** Keep the distinction the whole framework rests on. Local verification is evidence
   about the change; it is not a substitute for a required CI check when the plan says merge through
   the protected path. **`mergeStateStatus: UNSTABLE` is not permission** — it is the absence of an
@@ -429,6 +455,81 @@ that approval deliberately does not cover.
   `5b4b917`. That commit is an ancestor of `origin/develop` — the reconciliation landed. The issue
   is nonetheless still open, and the R4 text above is what is actually there, so the reconciliation
   did not close it.
+
+### Decide how the plan-item field parser handles qualified headings
+
+- **Status:** READY
+- **Tracked by:** GitHub issue
+  [#19](https://github.com/mikeycdavis/EngineeringStandards/issues/19)
+- **Evidence:** open as of 2026-08-11. The parser in
+  [`scripts/standards.mjs`](../../scripts/standards.mjs) matches
+  `/^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/` and compares the captured name against a fixed
+  `PLAN_FIELDS` list. **Four occurrences**, all in this file, all authored as ordinary prose:
+  `Acceptance Criteria` twice, `Verification` once, `Evidence` once.
+- **Purpose:** Two distinct failure shapes, and the second is the reason this is a defect rather
+  than a syntax constraint:
+  - **Qualifier before the colon** — `- **Acceptance Criteria — the resumption condition:**` parses,
+    and the content is filed under a key nothing reads. The parser *has* the field and discards it.
+  - **Qualifier with no colon** — `- **Verification — what was established.**` does not match at all.
+
+  **The fourth occurrence widened the defect materially.** `Evidence` is not in `PLAN_FIELDS`, so
+  its loss produced **no symptom whatsoever** — R7 never reported it, the audit stayed at zero
+  findings, and it was found only by a one-off script written during the 2026-08-11 plan audit. So
+  the impact is not confined to required fields generating a misleading *"missing required field"*
+  message; for optional fields, a qualified heading disappears silently and permanently.
+- **Deliverables:** a decision on the owning layer and the fix, plus a regression. Deliberately not
+  chosen here — the parser could recognise a known field name as a prefix, or the plan format and
+  templates could make the exact token mechanically unavoidable. A third option is compatible with
+  either: report an unrecognised field key as its own finding, so a near-miss explains itself.
+- **Acceptance Criteria:**
+  - A qualified heading is either accepted or produces a finding that names the heading as the
+    cause. `(no Acceptance Criteria)` against an item that visibly has one is the outcome to remove.
+  - The fix covers fields outside `PLAN_FIELDS`, or the plan explicitly records that it does not and
+    why. Fixing only the required fields would leave the silent case exactly as it is.
+  - A prefix-matching fix must not misread `- **Verification of the digest:**` as the `Verification`
+    field. Whichever direction is taken needs a known-negative fixture, not only a known-positive.
+- **Verification:** `npm test` with the new fixtures; plant a qualified heading of each shape in a
+  fixture plan item and confirm the chosen behaviour, including for a non-required field.
+- **Dependencies:** none.
+- **Repairing the four instances is not fixing this.** The malformed `Evidence` heading in this file
+  was corrected in the same change that created this item. That removed one specimen; the parser
+  behaviour is unchanged and the next qualified heading will do the same thing.
+
+### Decide which layer detects unresolved merge-conflict metadata
+
+- **Status:** READY
+- **Tracked by:** GitHub issue
+  [#21](https://github.com/mikeycdavis/EngineeringStandards/issues/21)
+- **Evidence:** open as of 2026-08-11, and **reproduced on `develop` rather than hypothesised**.
+  Three cherry-pick conflict markers reached `develop` in this file, introduced by `8870a43` and
+  removed by `18857e9`. While they were present the repository passed `inventory`, `fidelity`,
+  `policy`, `diagrams`, 229 tests, and a self-audit reporting **0 errors and 0 warnings**.
+  `git diff --check` detects them in one command and names the lines.
+- **Purpose:** Unresolved merge metadata can sit in a tracked file — in the canonical release-gate
+  artifact, inside a plan item's `Verification` field — while every gate reports clean. The plan
+  parser reads `- **Field:**` lines and ignores all others, Markdown renders markers as ordinary
+  text, and the tests assert behaviour rather than file-content shape. The defect was found by
+  external review, not by this repository's own tooling.
+- **Deliverables:** a decision on the owning enforcement layer, and a check with fixtures. **The
+  layer is deliberately not chosen here**, because the incident does not settle it. The question
+  underneath: is unresolved merge metadata a *finding about the repository*, or a *hygiene
+  precondition* that should fail before the evaluator is asked anything? Candidates are a repository
+  hygiene command run by CI alongside the existing invariant checks, an `audit` finding category, or
+  an extension of an existing validation layer.
+- **Acceptance Criteria:**
+  - **Known positive:** a file containing genuine unresolved markers is detected.
+  - **Known negative:** documentation that *mentions* conflict-marker syntax is not flagged —
+    including issue #21 itself, this plan item, and any standard or design document explaining merge
+    conflicts. A naive content scan would flag the very documents describing the rule, which is the
+    use/mention defect ([ADR 0009](../adr/0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md))
+    that has already shipped five times here.
+  - The regression is a known-negative guard, not only a known-positive one.
+- **Verification:** `npm test` with both fixtures; `git diff --check` exits 0 on a clean tree.
+- **Dependencies:** none.
+- **One specimen removed is not one class prevented.** `18857e9` deleted the markers that reached
+  `develop` and the repository is currently clean. That establishes nothing about whether the next
+  ones would be caught, and this item stays open until a check with both fixtures exists. The two
+  claims are kept separate deliberately.
 
 ---
 

@@ -162,11 +162,14 @@ the one failure class this repository exists to prevent.
 - **Status:** READY — both defects are diagnosed and neither is blocked on anything
 - **Tracked by:** GitHub issues
   [#10](https://github.com/mikeycdavis/EngineeringStandards/issues/10) and
-  [#11](https://github.com/mikeycdavis/EngineeringStandards/issues/11). Note that `Tracked by` here
-  points at GitHub rather than at a backlog item — this repository has no
-  `artifacts/backlog/`, and the audit's reference resolver only understands backlog ids
-  (issue [#5](https://github.com/mikeycdavis/EngineeringStandards/issues/5)), so these pointers are
-  verified by hand until that coupling is fixed.
+  [#11](https://github.com/mikeycdavis/EngineeringStandards/issues/11)
+- **Why these pointers are hand-verified.** `Tracked by` here names GitHub rather than a backlog
+  item, because this repository has no `artifacts/backlog/` and the audit's reference resolver
+  understands only backlog ids — the coupling defect owned by section 08. Kept out of the
+  `Tracked by` field deliberately: an issue mentioned in passing inside that field is
+  indistinguishable, to any automated ownership check, from an issue the item claims. That is the
+  same use/mention problem the detectors have, one layer up, and it made the
+  claimed-exactly-once invariant unverifiable until this prose was moved.
 - **Evidence:** both issues are open as of 2026-08-11 and neither has a fix on `develop`. This is
   the only item in this section that is not complete.
 - **Purpose:** The policy template names an exception as one of the four ways to resolve a forbidden
