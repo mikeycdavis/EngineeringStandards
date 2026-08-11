@@ -70,11 +70,51 @@ mechanism working. Three things follow:
   them because the repository has since changed would destroy the only evidence that the finding was
   ever made.
 
-One further review is **awaiting owner disposition**, not rejected: `testing.no-fabricated-results`
-is `stale` after `d6136df` changed a reviewed path. Its re-review basis is stated in
-[`05`](05-attestations-and-provenance.md).
+`testing.no-fabricated-results` went `stale` after `d6136df` changed a reviewed path and was
+**re-reviewed and approved on 2026-08-11** as event `-005`. No rule is now stale or unrecorded; the
+four rejections are the whole of the outstanding compliance state. See
+[`05`](05-attestations-and-provenance.md) for the measurement the re-review rested on and for what
+that approval deliberately does not cover.
 
 ---
+
+### Merge the plan repair through the protected path
+
+- **Status:** BLOCKED — **merge evidence unavailable.** This is neither a failure of the change nor
+  permission to bypass the gate, and it must not be recorded as either.
+- **Tracked by:** [PR #15](https://github.com/mikeycdavis/EngineeringStandards/pull/15), left open.
+- **Evidence:** two independent prerequisites are unavailable under the present account state, and
+  each was measured rather than inferred:
+  - **Actions cannot establish the required `test` result.** The jobs queued for the pull request
+    completed in under five seconds having executed **zero steps**. The reason is in the check-run
+    annotation, not the log: *"The job was not started because recent account payments have failed
+    or your spending limit needs to be increased."* A job that never started carries no information
+    about the code in either direction.
+  - **GitHub cannot currently enforce the protected path.** `GET /branches/develop/protection` and
+    `GET /rulesets` both return **403 — "Upgrade to GitHub Pro or make this repository public"**,
+    which is consistent with `mergeStateStatus` reading `UNSTABLE` rather than `BLOCKED`.
+- **Purpose:** Keep the distinction the whole framework rests on. Local verification is evidence
+  about the change; it is not a substitute for a required CI check when the plan says merge through
+  the protected path. **`mergeStateStatus: UNSTABLE` is not permission** — it is the absence of an
+  enforcement mechanism, and reading it as consent would be inferring authorisation from a broken
+  gate.
+- **Deliverables:** the merge, once both prerequisites are restored.
+- **Acceptance Criteria:** the resumption condition, stated narrowly —
+  > Resume when GitHub Actions starts a real `test` job and the intended protected-branch
+  > enforcement is available again. Require `test` green before merge.
+  - A `test` result counts only if the job has a non-empty `steps` array and a plausible duration.
+  - The non-required `validate` and `validate-self` checks are **not** to be made green as part of
+    this. They will correctly report `NON_COMPLIANT` from the four recorded rejections.
+- **Verification:**
+  ```bash
+  gh api repos/:owner/:repo/check-runs/<id>/annotations   # read before diagnosing any red
+  gh pr checks 15
+  ```
+- **Dependencies:** account/billing restoration, which is outside this repository. Nothing in the
+  codebase can unblock it.
+- **If the block persists and the merge happens anyway**, that is a **governance exception to be
+  made explicitly and beforehand**, naming the missing evidence surfaces. It is not to be inferred
+  from the merge succeeding, and not to be discovered afterwards from the commit graph.
 
 ### ADR 0013's rejection count stays at three
 
