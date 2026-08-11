@@ -76,6 +76,27 @@ established failures the local run reports, with the same exit code.
 eventually be right, but distribution fidelity and organization enforcement are different questions,
 and conflating them would settle the second by accident while testing the first.
 
+*Recorded 2026-08-11.* That happened. `validate-self / validate` was added to the required-check set
+on `develop` while the repository was still intentionally `NON_COMPLIANT`, and combined with PR-only
+protection it produced a deadlock with no legal path to change the branch: every pull request needs a
+check that is designed to fail, and the failure is the correct answer. It was corrected by removing
+the check from the required set, **not** by changing what the check reports. Those are different
+things, and the difference is the whole point — the workflow still runs on every pull request, still
+reaches `NON_COMPLIANT`, and still exits 1 for the three recorded rejections. What changed is whether
+that red blocks a merge, which is a governance question this record had deliberately left open.
+
+`test` remains required, because a gate that cannot run its own suite is a defect rather than a
+policy position. `validate-self / validate` stays visible and unrequired until self-validation exits
+0 for the right reasons; promoting it back is an explicit decision that belongs in this record when
+it is taken, not a default that drifts back on. The alternative offered and refused was a wrapper
+check asserting that today's three failures are acceptable — that encodes present non-compliance as a
+passing condition, which is how a baseline exception becomes permanent architecture.
+
+One consequence worth stating: the ruleset covers `refs/heads/develop` and `refs/heads/master`
+together, so this change relaxed the required set on `master` too. No merge to `master` is permitted
+before zero-gap regardless, so nothing rests on it today, but a future `master` policy must be set
+deliberately rather than inherited from this correction.
+
 **Nothing binds the workflow file's revision to the framework revision it executes.** The caller pins
 both — `uses: …@<sha>` and the `standards-ref` input — and a test asserts they are equal in this
 repository's own caller. For an outside adopter that agreement is a convention, not a mechanism.
