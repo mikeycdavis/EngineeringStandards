@@ -4,6 +4,11 @@ on:
   push:
     branches: [develop, master]
   pull_request:
+  # Runnable on demand, on any ref. This gate went unexercised from the repository's first day to
+  # 2026-08-11 — the account could not start a runner, so thirty consecutive red runs said nothing
+  # about the code — and when it finally ran it failed before the first test. A required check that
+  # can only be observed by merging toward the branch it protects is a check nobody can test.
+  workflow_dispatch:
 
 jobs:
   test:
