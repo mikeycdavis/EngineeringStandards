@@ -569,6 +569,21 @@ attestations:
           revision: "05ac7dc"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "c2a1e73ce4018022a53e8ebaf8567ccb"
+      - id: "review-testing-no-fabricated-results-004"
+        supersedes: "review-testing-no-fabricated-results-003"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-11"
+        evidence: "RE-REVIEWED 2026-08-11 against committed repository content at 8129d81, after ci.yml was split into two jobs. standards/47-test-integrity.md is byte-identical; only the workflow changed, and only in job topology. The validator was not weakened, suppressed, or reinterpreted: the validate job runs the same npm run validate, with no continue-on-error, no swallowed exit code, and no needs: dependency that could stop it running when tests fail. What changed is which unit branch protection can require, so that the structural gate can be mandatory without requiring this repository to lie about its known NON_COMPLIANT state. Runner evidence rather than argument: job test succeeded with 222 of 222 tests passing and every structural check green, and job validate failed through the real command reporting the three historical rejections. Two guards were added and mutation-checked, so the separation is pinned mechanically: the required job must run inventory, fidelity, policy, diagrams, tests and audit and must never invoke the validator, and the validate job must run the authoritative command with its exit status intact. NEW LIMITATION, and it is the one that matters now that branch protection depends on reading two surfaces correctly: a green required test check establishes that the structural, test and audit gate passed. It does not establish repository compliance. Only the validate job speaks to that, and it is deliberately not required until this repository can satisfy it honestly. LIMITATION unchanged: the gate runs on one platform only, and the cross-materialisation verification that exposed the digest defect is still performed by hand rather than by the gate."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - .github/workflows/ci.yml
+            - standards/47-test-integrity.md
+          revision: "8129d81"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "e57dd21a150fc25c3c152146972fdae8"
 
   # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
   # this rule's evidence is Git history, and the schema can only digest files. The digest below is
