@@ -178,9 +178,26 @@ repository, which is what everything below is really about.
 - **Verification:** `node scripts/standards.mjs validate .` — no applicable forbidden rule appears as
   `unrecorded`. A stale one is a normal state awaiting owner action, not a defect.
 - **Dependencies:** everything above in this section.
-- **Currently awaiting owner disposition:** `testing.no-fabricated-results`. Its reviewed paths are
-  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
-  [`standards/47-test-integrity.md`](../../standards/47-test-integrity.md); it went stale when the
-  workflow comments were corrected at `d6136df`. The change was comment-only and was proven
-  behaviour-preserving by comparing the two files with comments and blank lines stripped, but that
-  proof is an argument for the owner to weigh, not a substitute for the review.
+- **Currently awaiting owner disposition:** `testing.no-fabricated-results`, last reviewed as event
+  `-004` against revision `8129d81`, paths [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
+  and [`standards/47-test-integrity.md`](../../standards/47-test-integrity.md).
+
+  **The cause of staleness is established rather than assumed**, which is what the re-review basis
+  has to rest on. Measured across `8129d81..origin/develop` for the reviewed paths only:
+
+  ```text
+  standards/47-test-integrity.md      byte-identical across the whole span
+  ci.yml, 8129d81 -> d6136df^         no content change
+  ci.yml, d6136df^ -> d6136df         2 insertions, 2 deletions — comments only
+  ```
+
+  So the **sole** reviewed-path change since the approval is `d6136df`'s correction of two comments
+  from "three rules" to "four rules". The two intervening commits that touch `ci.yml` on `develop`
+  (`56cbc11`, `012d525`) contribute no difference, because `8129d81` was the branch commit for that
+  same work and the review was already made against it.
+
+  The executable YAML is unchanged, verified by comparing both revisions with comments and blank
+  lines stripped rather than by asserting it. **That is an argument for the owner to weigh, not a
+  substitute for the review** — and the change under review was authored by an agent, so an agent
+  judging that it preserved the approval basis is the conflict this whole mechanism exists to
+  prevent. Recorded here; the disposition is the owner's.

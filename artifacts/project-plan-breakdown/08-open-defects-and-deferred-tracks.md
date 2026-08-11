@@ -16,6 +16,38 @@ out of release scope.
 
 ---
 
+## Terminal semantics — how an item in this section stops being open
+
+**Read this before using this section as a release gate.** A section whose items can only close by
+being fixed is a section that never closes, and its mere existence would block release forever. That
+would quietly convert the zero-gap condition into *zero known problems*, which is a far stronger
+release condition than was ever intended and one no repository that records its own defects honestly
+can satisfy.
+
+An item here reaches a terminal state by **one of three routes**, each using the canonical
+[Standard 8](../../standards/08-status-tracking.md) vocabulary rather than a local one:
+
+| Terminal status | Means | Requires |
+| --- | --- | --- |
+| `COMPLETE` | The defect was fixed and the fix is verified. | Acceptance criteria met; evidence names the commit and the check that establishes it. |
+| `DEFERRED` | Deliberately not being done now. | **A named trigger**: the specific observable condition under which it reopens. A deferral with no trigger is an open item wearing a closed label. |
+| `CANCELLED` | Intentionally abandoned; the work will not be done. | A recorded reason. Cancelling because something is hard is a Standard 53 R3 violation, not a decision. |
+
+**A recorded rejection is not a plan item and does not take a status.** It is a review event, and it
+is terminal when it has been *examined* — the item that owns the examination is `COMPLETE` when the
+examination happened, regardless of whether the rejection was upheld or resolved. An examined
+rejection that remains authoritative is a settled state, not an outstanding one. This is the
+distinction that keeps `NON_COMPLIANT` and *plan-complete* as separate claims: the validator reports
+compliance, the plan reports whether everything has an owner and an evidenced status. Both can be
+true at once, and at present both are.
+
+**The release condition, stated exactly.** Zero gaps means: *every release-relevant capability, known
+defect, recorded rejection, open issue, and intentionally dormant track has an explicit place in the
+plan, and every status is supported by evidence.* It does not mean every item is `COMPLETE`, and it
+does not mean `validate` reports `COMPLIANT`.
+
+---
+
 ## The four recorded rejections — findings, not defects to clear
 
 `ai.no-fabricated-capabilities`, `ai.no-safety-bypass`, `errors.no-false-success`, and
@@ -44,26 +76,43 @@ is `stale` after `d6136df` changed a reviewed path. Its re-review basis is state
 
 ---
 
-### Correct the stale rejection count in ADR 0013
+### ADR 0013's rejection count stays at three
 
-- **Status:** BLOCKED — awaiting an owner decision, not on any work
+- **Status:** CANCELLED — owner decision, 2026-08-11. The ADR is not to be changed.
 - **Evidence:** [`artifacts/adr/0013-the-reusable-check-distributes-the-verdict-and-nothing-else.md`](../adr/0013-the-reusable-check-distributes-the-verdict-and-nothing-else.md)
-  line 85 reads *"still exits 1 for the three recorded rejections"*. There are four. The same stale
-  count in `.github/workflows/ci.yml` and `.github/workflows/standards-dogfood.yml` was corrected at
-  `d6136df`; this occurrence was deliberately left alone.
-- **Purpose:** Decide whether the sentence is a stale claim to fix or a dated record to preserve. It
-  sits under a paragraph reading *"**Recorded 2026-08-11.** That happened"*, which is the strongest
-  possible signal that the ADR is describing a moment rather than the present — and this repository's
-  standing constraint is never to fabricate history, including by tidying it.
-- **Deliverables:** one of — leave it and add a dated note that a fourth rejection was recorded
-  later; or correct the number, on the grounds that the sentence is a present-tense claim about exit
-  behaviour rather than a record of the moment.
-- **Acceptance Criteria:** whichever is chosen, an ADR reader can determine both what was true when
-  it was written and what is true now. Silently changing a number inside a dated record is not an
-  option.
-- **Verification:** `grep -rn "three recorded rejections" artifacts/adr/` resolves to nothing, or to
-  a line accompanied by a dated correction.
-- **Dependencies:** none. This is a judgement call, not a task.
+  line 85 reads *"still exits 1 for the three recorded rejections"*, under a paragraph beginning
+  *"**Recorded 2026-08-11.** That happened."* The same count in
+  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
+  [`.github/workflows/standards-dogfood.yml`](../../.github/workflows/standards-dogfood.yml) **was**
+  corrected at `d6136df`, and the difference between the two cases is the whole reason for this item.
+- **Purpose:** Settle whether the sentence is a stale claim to correct or a dated record to preserve,
+  so the question is answered once rather than reopened by every reader who greps for the count.
+- **Deliverables:** none. The decision *is* the deliverable, and no file changes — which is why this
+  item is `CANCELLED` rather than `COMPLETE`: the work was considered and will not be done, as
+  distinct from having been done.
+- **Acceptance Criteria:**
+  - `artifacts/adr/0013-*.md` line 85 is unchanged and stays unchanged.
+  - The current count is recorded somewhere a reader of that ADR can reach — satisfied by the
+    *four recorded rejections* heading at the top of this section.
+  - No future reconciliation reports this as an unfixed defect. Satisfied by this item existing.
+- **Reason for cancelling:** because the sentence sits explicitly under *Recorded 2026-08-11*, "three
+  recorded rejections" is a **historical statement about that decision point**, not a claim about
+  current `HEAD`. Changing it to four would falsify the chronology — it would make the ADR assert
+  that four rejections existed when the decision was taken, which is not what happened. The workflow
+  comments were different in kind: they carry no date and describe present exit behaviour, so a stale
+  count there was simply a false statement about what CI does today.
+- **The general rule this establishes**, worth applying to the next case rather than re-deriving:
+  **a dated record and a present-tense claim go stale differently, and only the second is a defect.**
+  Correcting a number inside a dated record is not tidying, it is fabricating history — which the
+  standing constraint in [`00-overview.md`](00-overview.md) forbids in this repository's own
+  documents, not only in the artifacts its standards produce.
+- **Where the current state is recorded instead:** at the top of this section, which states that
+  there are four and names them. That is the right home — a reader who follows the ADR's dated
+  statement forward arrives here.
+- **Verification:** none required. This item closes by decision, not by a check. `grep -rn "three
+  recorded rejections" artifacts/adr/` returning one line is the **expected** result and must not be
+  treated as a finding.
+- **Dependencies:** none.
 
 ### Fix the audit's project-level exclusions
 
@@ -190,35 +239,50 @@ is `stale` after `d6136df` changed a reviewed path. Its re-review basis is state
 
 ## Deliberately dormant — recorded so they are not rediscovered as new
 
-These are **findings, not a roadmap**. Each was identified, considered, and left. Starting one is a
-decision to be taken deliberately; none of them is an unfinished task, and none blocks the zero-gap
-gate. Listing them here is what stops a future reconciliation from reporting them as newly
-discovered gaps.
+**Status for all of these: `DEFERRED`.** They are **findings, not a roadmap**. Each was identified,
+considered, and left; none is an unfinished task and none blocks the zero-gap gate. Listing them is
+what stops a future reconciliation reporting them as newly discovered gaps.
 
-- **Promoting `validate-self / validate` back to a required check.** Cannot happen while the four
-  rejections stand, and clearing the rejections to enable it would be backwards. See
+Per the terminal semantics above, each names the **trigger** that would reopen it. A trigger is an
+observable condition, not an intention — *when we have time* is not a trigger, and an entry that
+cannot name one does not belong on this list.
+
+- **Promoting `validate-self / validate` back to a required check.**
+  *Trigger:* this repository's `validate` exits 0 for the right reasons — that is, with no recorded
+  rejection outstanding and no unestablished prohibition. Clearing the rejections in order to
+  promote the check would be the reasoning backwards, and is not the trigger. See
   [`07`](07-distributed-validation-and-ci.md).
 - **A `--record` command** for writing review events from the CLI rather than by hand-editing
-  `project-policy.yml`. Attractive, and dangerous for the same reason: the easier it is for a process
-  to write an attestation, the easier it is for an agent to self-attest. Deferred until the guard
-  against that is designed first.
+  `project-policy.yml`.
+  *Trigger:* a designed guard against a process authoring its own attestation. The convenience and
+  the hazard are the same property — the easier it is for a process to write an attestation, the
+  easier it is for an agent to self-attest — so the guard is a precondition, not a follow-up.
 - **The rejected-event lifecycle** left open by
   [ADR 0010](../adr/0010-human-review-may-always-contribute-negative-evidence.md) — what a rejection
   should do over time when the underlying rule is neither satisfied nor re-reviewed.
+  *Trigger:* a rejection reaching an age at which its silence becomes ambiguous in practice, or a
+  second repository adopting the framework and inheriting the question.
 - **An organization-level adoption controller** — declaring policy once across many repositories
-  rather than per repository. Out of scope for 2.0.0; the reusable workflow in
-  [`07`](07-distributed-validation-and-ci.md) is the per-repository answer.
+  rather than per repository.
+  *Trigger:* a second repository adopting this framework. The reusable workflow in
+  [`07`](07-distributed-validation-and-ci.md) is the per-repository answer and is sufficient for one.
 - **Standard 21 R5 version resolution** — exercisable now, unimplemented by explicit decision
   recorded in [ADR 0006](../adr/0006-must-never-standards-are-forbidden-level-rules.md).
+  *Trigger:* a consumer needing to resolve a version range rather than pin a revision — which is the
+  same trigger as the adoption controller above, and probably arrives with it.
 - **`ITEM_RE` in [`scripts/inventory.mjs`](../../scripts/inventory.mjs)** — the numbered-item
-  extractor whose anchoring caused the item-8 error. It is correct for the source it reads and is
-  covered by the monotonic-ordering invariant; generalising it has no current motive.
+  extractor whose anchoring caused the item-8 error.
+  *Trigger:* a third source document, or a source whose item headings the current pattern cannot
+  read. It is correct for the two sources it reads and is covered by the monotonic-ordering
+  invariant, so generalising it now would be speculative.
 - **[ADR 0007](../adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md)'s binding
-  table.** The table enumerates the module-scoped state it governs, and enumeration is not a control
-  — nothing prevents new state being added without a row. The table has been found accurate at four
-  consecutive reviews. The structural fix stays dormant until a fifth review finds it accurate again,
-  at which point the right conclusion is that the enumeration is load-bearing and should be enforced
-  rather than checked by hand.
+  table.** The table enumerates the module-scoped state it governs, and **enumeration is not a
+  control** — nothing prevents new state being added without a row.
+  *Trigger:* a **fifth** consecutive review finding the table accurate. It has survived four. The
+  reasoning is deliberately inverted from the usual: repeated accuracy is not reassurance here, it is
+  evidence that the enumeration is load-bearing and therefore ought to be enforced mechanically
+  rather than checked by hand. A review that finds it *inaccurate* is a different and more urgent
+  trigger — that would mean the drift has already happened.
 
 ## Recorded blind spots — outside the framework's reach, with reasons
 
