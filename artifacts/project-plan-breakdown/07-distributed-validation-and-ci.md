@@ -185,3 +185,55 @@ someone to lie to make the build go green.
   - Neither fix changes `init`'s behaviour on a repository it already classifies correctly.
 - **Verification:** `npm test` with the new fixtures; `node scripts/standards.mjs --help | grep -- --mode`.
 - **Dependencies:** `standards init` above.
+
+### Establish adoption eligibility before any adoption write
+
+- **Status:** READY
+- **Tracked by:** GitHub issue [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
+- **Evidence:** open as of 2026-08-11. Reproduced against `StandardsOrchestrator`, whose `README.md`
+  opens with `⛔ FROZEN` and whose `FROZEN.md` states "Do not adopt this repository into a governed
+  project. Do not extend it." The documented adoption sequence ran and wrote five files into it
+  before anything consulted that status. The writes have since been reverted.
+- **Purpose:** The adoption path has no notion of whether a repository may be adopted at all. Every
+  item above assumes the answer is yes and asks only *how*. That assumption is wrong for frozen,
+  archived, superseded, and historical-evidence repositories, and the failure is not a wrong verdict
+  but an unauthorised mutation — the tool changing a repository it had no standing to touch.
+
+  This is distinct from #2 above. That is the entrypoint misreading *what kind* of eligible
+  repository it is looking at; this is the entrypoint never asking whether the repository is
+  eligible. A monorepo misclassified as greenfield still gets a defensible artifact; a frozen
+  repository gets an artifact that should not exist.
+
+  The mutation happened before `standards init`, so a guard inside `init` would not have prevented
+  it. The guard belongs at the earliest adoption boundary, ahead of the documentation and planning
+  procedures the adoption guide directs an agent to run first.
+- **Deliverables:** an adoption-scope resolution step, and its result as a first-class state
+  alongside — never merged into — compliance status:
+
+  ```text
+  IN_SCOPE  |  OUT_OF_SCOPE  |  INDETERMINATE
+  ```
+
+  `INDETERMINATE` carries the weight. "Whether this repository is frozen could not be determined"
+  must not become permission to mutate it, which is Standard 44 R12's validated-search invariant one
+  layer earlier than it currently applies.
+- **Acceptance Criteria:**
+  - A fixture repository with implementation files, an explicit frozen / do-not-adopt signal, and no
+    adoption artifacts resolves `OUT_OF_SCOPE` and the adoption entrypoint **writes nothing** —
+    asserted by comparing the fixture tree before and after, not by reading the return value.
+  - An `INDETERMINATE` fixture — signal present but unparseable, or unreadable — also writes nothing.
+    A repository that cannot be classified is not thereby eligible.
+  - The guard fires on the general signal, and **no repository is named in the implementation**. A
+    test that passes because the source contains `if (repo === "StandardsOrchestrator")` fixes one
+    repository and leaves every other frozen or archived one exposed.
+  - An eligible repository's behaviour is unchanged, and the greenfield, scaffold, and
+    reconstruction-required fixtures still classify as they do today. A guard that reaches
+    `OUT_OF_SCOPE` too readily would block adoption entirely, which is worse than the defect.
+- **Verification:** `npm test` with the three new fixtures; the before/after tree comparison is part
+  of the assertion, not a manual check.
+- **Dependencies:** `standards init` and the adoption guide above — both are downstream of the guard
+  and the guide's step order is part of what changes.
+- **Possible ADR:** whether the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model, and the decision
+  that EngineeringStandards owns adoption eligibility itself rather than delegating to an external
+  registry, is consequential enough to record. It likely is: the question arises before a project has
+  adopted anything, so answering it must not require a separate enforcement repository to be present.

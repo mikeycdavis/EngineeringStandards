@@ -8,11 +8,23 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Seven are claimed here; the other
-four are claimed where their subject lives — [#10 and #11](04-compliance-and-policy-system.md) by the
-exception machinery, [#3](06-must-never-standards.md) by the detectors, and
-[#2 and #9](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
+**Every open GitHub issue is claimed by exactly one plan item.** Thirteen are open. Seven are claimed
+here — #1, #4, #5, #6, #7, #8, #17 — and the other six are claimed where their subject lives:
+[#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
+[#3](06-must-never-standards.md) by the detectors, and
+[#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
 out of release scope.
+
+**Updated 2026-08-11**, after an adoption attempt against two repositories surfaced three defects.
+Two are new — [#16](07-distributed-validation-and-ci.md) (adoption eligibility resolved too late) and
+[#17](#settle-adr-0008s-canonical-identity) (ADR 0008 cited under two identities). The third was
+already open as #7, independently reproduced on a second repository; that item below carries the new
+evidence rather than a duplicate issue.
+
+The counts in this paragraph previously read "seven here, four elsewhere" against eleven open issues,
+while naming five elsewhere. Six were claimed here and five elsewhere. Corrected above rather than
+left, because this paragraph is the only place the claim invariant is asserted, and an invariant
+whose own arithmetic does not hold cannot be used to check anything.
 
 ---
 
@@ -110,8 +122,17 @@ that approval deliberately does not cover.
   gh api repos/:owner/:repo/check-runs/<id>/annotations   # read before diagnosing any red
   gh pr checks 15
   ```
-- **Dependencies:** account/billing restoration, which is outside this repository. Nothing in the
-  codebase can unblock it.
+- **Dependencies:** account-side restoration of the plan capability that provides both Actions
+  minutes and private-repository branch protection. This is **outside this repository and outside
+  what any agent working in it can do** — nothing in the codebase can unblock it, and no amount of
+  local verification substitutes for it.
+- **The 403 suggests a remedy that is not one.** GitHub's message reads *"Upgrade to GitHub Pro **or
+  make this repository public**"*, and the second half is not an option here. Repository visibility
+  is a far broader security and governance decision than recovering a blocked merge path, and
+  trading it for a gate would be paying in the wrong currency. **Restore the account capability;
+  do not make this repository public to recover branch protection.** Recorded because the remedy is
+  offered by the error message itself, and a future reader who has not seen this decision could
+  reasonably mistake it for the intended fix.
 - **If the block persists and the merge happens anyway**, that is a **governance exception to be
   made explicitly and beforehand**, naming the missing evidence surfaces. It is not to be inferred
   from the merge succeeding, and not to be discovered afterwards from the commit graph.
@@ -160,9 +181,20 @@ that approval deliberately does not cover.
 - **Tracked by:** GitHub issue [#7](https://github.com/mikeycdavis/EngineeringStandards/issues/7)
 - **Evidence:** open as of 2026-08-11; the exclusion list is the hardcoded `SKIP_DIRS` constant in
   [`scripts/standards.mjs`](../../scripts/standards.mjs), with no project-level configuration path.
+  **Reproduced twice, independently:** Moneyball (`test-env-3.13/`, in the issue) and Numerai
+  (`test-env-3.11/`, 5.5 GB, gitignored, plus a 98 MB `.mypy_cache/` — recorded in the issue's
+  second comment). Two differently-named virtualenvs in two repositories is why the fix is the
+  boundary and not another entry in the exclusion list.
 - **Purpose:** This is the most severe of the open audit defects, because its failure mode is not a
   wrong answer but no answer: an untracked virtualenv or vendor directory pollutes the findings and
   can exhaust memory, so the audit does not complete at all on repositories that have one.
+
+  The Numerai run establishes a third failure mode beyond inflation and exhaustion: on a large
+  enough tree the walk **spends its 20,000-file cap before reaching first-party code at all**. Of
+  ~133 evidence paths, 105 were the virtualenv and 12 the mypy cache; none were `scripts/`,
+  `phases/*.py`, or `tests/`. The audit then emits its own reduced-coverage finding under Standard 44
+  R12 — correctly, but caused entirely by material outside the repository. A quiet result on a large
+  repository may mean the audit never arrived.
 - **Deliverables:** a project-level exclusion mechanism, declared where a project already declares
   things — the policy — rather than as a new configuration surface.
 - **Acceptance Criteria:**
@@ -171,9 +203,65 @@ that approval deliberately does not cover.
     class as a silent cap.
   - The audit reports what it excluded, consistent with the existing rule that a cap is never silent.
   - The existing `SKIP_DIRS` defaults still apply when a project declares nothing.
+  - **Paired invariance, not exclusion.** Adding an arbitrary gitignored tree containing
+    detector-triggering content to a clean tracked repository leaves the verdict *exactly* unchanged;
+    and the same content becoming tracked *does* change it. The second half is what stops the fix
+    passing by excluding too much.
+  - **A case with no marker file.** `.mypy_cache/` is gitignored, is not a virtualenv, and has no
+    `pyvenv.cfg`, so the marker-file signal proposed in the issue does not cover it while gitignore
+    status does. It belongs in the fixtures precisely because it defeats the more elegant of the two
+    candidate signals.
+  - **Aggregate read budget is bounded**, not only per-file and per-count. `contents` and `sources`
+    in [`scripts/standards.mjs`](../../scripts/standards.mjs) retain every readable file's text
+    simultaneously; `MAX_FILES` (20,000) × `MAX_READ_BYTES` (400,000) permits roughly 8 GB before the
+    split copies. Without this, a repository with 20,000 large *tracked* source files reproduces the
+    OOM after this item is closed.
 - **Verification:** a fixture with a large excluded directory completes and reports the exclusion;
-  `npm test`.
+  the invariance pair above; `npm test`.
 - **Dependencies:** the policy mechanism in [`04`](04-compliance-and-policy-system.md).
+- **Consequence for the two adopters — read before closing this item.** Moneyball and Numerai each
+  have a recorded `NON_COMPLIANT` / 91% result taken with the contaminated apparatus. Those are
+  **diagnostic evidence of this defect, not either project's adoption baseline**, and both must be
+  re-run from the same commit once this closes. Holding a project at its recorded result rather than
+  editing the framework to make it pass is right and stays right; treating that result as its
+  starting gap set would convert this defect into permanent history for two repositories. Numerai's
+  adoption is paused here for that reason.
+
+### Settle ADR 0008's canonical identity
+
+- **Status:** READY
+- **Tracked by:** GitHub issue [#17](https://github.com/mikeycdavis/EngineeringStandards/issues/17)
+- **Evidence:** open as of 2026-08-11.
+  [`scripts/repository.mjs`](../../scripts/repository.mjs) cites ADR 0008 twice under two filenames —
+  `0008-the-source-of-truth-gap-working-tree-versus-repository.md` at line 26 and
+  `0008-detectors-do-not-assert-repository-state-they-have-not-measured.md` at line 98. Only the
+  second exists in `artifacts/adr/`.
+- **Purpose:** The smallest of the open defects and the one most likely to be closed by assumption.
+  The obvious reading is a rename that missed a reference, and the obvious fix is to correct line 26
+  — but the two titles name different things. One is a constraint on detector behaviour; the other is
+  the architectural distinction that constraint follows from, and it is the more general statement.
+  It is also the one the audit-exclusions item above needs, since *which content surface evaluation
+  operates on* is upstream of how any individual detector behaves.
+
+  So the question is which of three this is: a rename error; an intended second ADR, referenced
+  before it was written and never written; or two decisions collapsed into one during drafting. ADR
+  0011 applying the same working-tree-versus-repository principle to attestation freshness is weak
+  evidence for the latter two — a general decision existing conceptually while only its specific
+  applications are written down.
+- **Deliverables:** one intentional canonical identity for the decision, with every citation
+  resolving to it.
+- **Acceptance Criteria:**
+  - The investigation records which of the three it was, rather than leaving a corrected path with no
+    explanation. **Do not presuppose "fix the link"** — that is the cheapest answer and the one this
+    item exists to question.
+  - Every ADR path cited from `scripts/` resolves to a file that exists.
+  - A mechanical check establishes that, so the next rename is caught rather than found by reading.
+    Standard 42 (documentation freshness) is the likely owner.
+- **Verification:** `npm test`; the link check runs over `scripts/` and fails on a deliberately
+  broken reference.
+- **Dependencies:** none — **unless** the answer is the second or third possibility and the general
+  decision must be stated before evaluation scope can be built on it. In that case this sequences
+  *ahead of* the audit-exclusions item above rather than beside it. Deciding which is the first task.
 
 ### Decouple `Tracked by` resolution from one backlog implementation
 
