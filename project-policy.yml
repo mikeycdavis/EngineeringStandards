@@ -652,6 +652,21 @@ attestations:
           revision: "8129d81"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "e57dd21a150fc25c3c152146972fdae8"
+      - id: "review-testing-no-fabricated-results-005"
+        supersedes: "review-testing-no-fabricated-results-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-11"
+        evidence: "RE-REVIEWED 2026-08-11 against committed repository content, after the only change to a reviewed path since review -004. SCOPE OF THIS APPROVAL: it covers the correctness of the workflow artifact as committed. It does NOT rest on any CI execution performed for the plan-repair pull request, and no such execution is cited below. WHAT CHANGED, MEASURED RATHER THAN ASSERTED: across 8129d81..d6136df for the reviewed paths only, standards/47-test-integrity.md is byte-identical, and .github/workflows/ci.yml changed by two insertions and two deletions, both of them comment lines correcting 'three rules carry recorded human rejections' to 'four' after a fourth rejection was recorded. The two intervening commits that touch ci.yml on develop, 56cbc11 and 012d525, contribute no difference, because 8129d81 was the branch commit for that same work and review -004 was already made against it. WHY THE APPROVAL BASIS STILL HOLDS: everything review -004 judged is unchanged. The test and validation commands, the exit-status propagation, the workflow triggers, and the required-versus-visible job split are byte-identical; this was verified by comparing both revisions with comments and blank lines stripped, not by reading the diff alone. The validator was not weakened, suppressed, or reinterpreted, no continue-on-error or swallowed exit code was introduced, and no needs dependency was added that could stop validate running when tests fail. The change is documentation freshness on a reviewed workflow, which is the opposite of fabricated execution evidence: a comment that understated the number of recorded rejections was corrected upward. LIMITATION, AND IT IS THE MATERIAL ONE FOR THIS EVENT: at the time of this review GitHub Actions cannot start a runner for this account, so the jobs queued for the plan-repair pull request completed in under five seconds having executed zero steps. Those checks establish nothing about this workflow in either direction and are deliberately not offered as evidence here. The last real runner evidence for this workflow remains the run at e06c59f, which executed both jobs and reported the required job green and the validate job failing through the real command. LIMITATIONS CARRIED FORWARD from review -004: a green required check establishes that the structural, test and audit gate passed, and does not establish repository compliance, which only the validate job speaks to; the gate runs on one platform only; and the cross-materialisation verification is still performed by hand rather than by the gate."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - .github/workflows/ci.yml
+            - standards/47-test-integrity.md
+          revision: "d6136df"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "ab1c9fc6b77c54cdf4832195bec40742"
 
   # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
   # this rule's evidence is Git history, and the schema can only digest files. The digest below is

@@ -160,9 +160,9 @@ repository, which is what everything below is really about.
 ### Keep the framework's own attestations owner-established
 
 - **Status:** IN_PROGRESS — permanently, by design. This item does not close.
-- **Evidence:** the review-event history in [`project-policy.yml`](../../project-policy.yml): six
-  fresh approvals, four recorded rejections, and one stale approval
-  (`testing.no-fabricated-results`) awaiting owner disposition as of 2026-08-11.
+- **Evidence:** the review-event history in [`project-policy.yml`](../../project-policy.yml): as of
+  2026-08-11, **seven fresh approvals and four recorded rejections**, with no rule left stale and
+  none unrecorded. `validate` reports no *Unestablished prohibitions* block at all.
 - **Purpose:** Every other item in this section builds machinery. This one is the standing obligation
   that the machinery is fed by a person. It is listed as an item precisely so that its being open is
   visible rather than assumed.
@@ -178,12 +178,15 @@ repository, which is what everything below is really about.
 - **Verification:** `node scripts/standards.mjs validate .` — no applicable forbidden rule appears as
   `unrecorded`. A stale one is a normal state awaiting owner action, not a defect.
 - **Dependencies:** everything above in this section.
-- **Currently awaiting owner disposition:** `testing.no-fabricated-results`, last reviewed as event
-  `-004` against revision `8129d81`, paths [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
-  and [`standards/47-test-integrity.md`](../../standards/47-test-integrity.md).
+- **Resolved 2026-08-11 — `testing.no-fabricated-results` re-reviewed and approved.** Event `-005`
+  supersedes `-004`, against revision `d6136df`, paths
+  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
+  [`standards/47-test-integrity.md`](../../standards/47-test-integrity.md). It was **re-reviewed, not
+  restamped** — the distinction this section exists to hold — and the rule no longer appears under
+  *Unestablished prohibitions*.
 
-  **The cause of staleness is established rather than assumed**, which is what the re-review basis
-  has to rest on. Measured across `8129d81..origin/develop` for the reviewed paths only:
+  **The cause of staleness was established rather than assumed**, which is what the re-review basis
+  had to rest on. Measured across `8129d81..origin/develop` for the reviewed paths only:
 
   ```text
   standards/47-test-integrity.md      byte-identical across the whole span
@@ -197,7 +200,19 @@ repository, which is what everything below is really about.
   same work and the review was already made against it.
 
   The executable YAML is unchanged, verified by comparing both revisions with comments and blank
-  lines stripped rather than by asserting it. **That is an argument for the owner to weigh, not a
-  substitute for the review** — and the change under review was authored by an agent, so an agent
-  judging that it preserved the approval basis is the conflict this whole mechanism exists to
-  prevent. Recorded here; the disposition is the owner's.
+  lines stripped rather than by asserting it — so the change is **documentation freshness on a
+  reviewed workflow**, which is the opposite of fabricated execution evidence: a comment that
+  understated the number of recorded rejections was corrected upward.
+
+  That argument was recorded for the owner to weigh rather than acted on, because the change under
+  review was authored by an agent, and an agent judging that its own change preserved the approval
+  basis is the conflict this whole mechanism exists to prevent. The owner approved it on
+  2026-08-11.
+
+  **What event `-005` deliberately does not cite.** At the time of the review, Actions could not
+  start a runner, so the jobs queued for the plan-repair pull request completed in under five seconds
+  having executed zero steps. Those checks establish nothing in either direction and are named in the
+  evidence as excluded rather than quietly omitted. The approval covers the correctness of the
+  **committed workflow artifact**; the last real runner evidence for it remains the run at `e06c59f`.
+  Citing a blocked zero-step check as execution evidence would be the precise violation
+  `testing.no-fabricated-results` prohibits — in the attestation for that very rule.
