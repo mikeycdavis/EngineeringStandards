@@ -88,3 +88,47 @@ test("the dogfood caller pins a full commit SHA rather than a branch", async (t)
     "the workflow file and the framework it executes are pinned to different revisions",
   );
 });
+
+// --- The gate runs the whole suite, on the Node the runner actually has ------------------------
+
+test("the test command needs no shell globbing and no Node newer than engines declares", async () => {
+  // `node --test "test/*.test.mjs"` worked on the author's machine and nowhere else: Node did not
+  // expand a glob passed to --test until 22, CI pins 20, and package.json declares engines >=18. The
+  // first CI job that ever started died before running a single test. The unquoted form would have
+  // worked by accident — bash expands it on the runner, Node expands it on Windows — which is a
+  // command whose meaning depends on who invoked it.
+  const pkg = JSON.parse(await read(path.join(ROOT, "package.json")));
+  assert.doesNotMatch(pkg.scripts.test, /\*/, "the test command still relies on glob expansion");
+  assert.match(pkg.scripts.test, /scripts\/test\.mjs/);
+});
+
+test("the runner collects every suite file and no fixture", async () => {
+  // Node's own directory discovery matches test/fixtures/compliant/tests/routes.test.js — a fixture,
+  // deliberately not a test of this repository, excluded from the self-audit for the same reason.
+  // Running the repository's fixtures as its suite would be that category error one level up.
+  const { readdirSync } = await import("node:fs");
+  const top = readdirSync(path.join(ROOT, "test"), { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".test.mjs"))
+    .map((e) => e.name);
+
+  assert.ok(top.length >= 11, `only ${top.length} suite files found - has the layout moved?`);
+  assert.ok(
+    top.includes(path.basename(fileURLToPath(import.meta.url))),
+    "this file is not in the set the runner would run",
+  );
+
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)],
+    );
+  const fixtureTests = walk(path.join(ROOT, "test/fixtures")).filter((f) =>
+    /\.test\.[cm]?js$/.test(f),
+  );
+  assert.ok(
+    fixtureTests.length > 0,
+    "no fixture test file exists - this guard is now vacuous, delete it or repoint it",
+  );
+  for (const f of fixtureTests) {
+    assert.ok(!top.includes(path.basename(f)), `a fixture would be run as a suite file: ${f}`);
+  }
+});
