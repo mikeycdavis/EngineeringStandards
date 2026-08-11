@@ -27,7 +27,7 @@ import {
   classifyFreshness,
   repositoryAvailable,
   repositoryDigest,
-  trackedAmong,
+  trackedMatching,
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
@@ -1580,48 +1580,72 @@ const DESCRIPTIVE = [
 /**
  * scm.no-committed-env-files — Standard 46 R2.
  *
- * VIEW: filename to find the candidates, then the repository index to decide. No content is read,
- * and none needs to be: the question is whether a file of that name is *tracked*, not what is in
- * it. Reading it would also duplicate security.no-secrets-in-artifacts, which excludes these files
- * for exactly that reason — one defect, one finding.
+ * VIEW: the repository index, for both halves of the question. No content is read and none needs to
+ * be: the question is whether a file of that name is *tracked*, not what is in it. Reading it would
+ * also duplicate security.no-secrets-in-artifacts, which excludes these files for exactly that
+ * reason — one defect, one finding.
  *
- * The index is what makes the finding sayable. `present on disk` and `tracked` are different facts,
- * and this rule is `forbidden` — satisfied by the absence of a violation — so asserting an unproven
- * one is not a rounding error: the remediation is credential rotation, and the cost of being wrong
- * lands on somebody who did nothing (ADR 0008).
+ * The index both *enumerates* the candidates and *decides* them, and the first half is the one that
+ * is easy to get wrong. An earlier version of this detector took its candidates from the directory
+ * walk and asked Git only to confirm them, which sounds equivalent and is not: a file that is
+ * committed but absent from the working tree — deleted without staging the deletion, excluded by a
+ * sparse checkout — proposes no candidate, so nothing is asked about it and the rule returns a pass
+ * it never established. The reviewer who found that was right that confirming filesystem-proposed
+ * candidates is still the filesystem answering a question about the repository.
+ *
+ * `present on disk` and `tracked` are different facts, and this rule is `forbidden` — satisfied by
+ * the absence of a violation — so asserting an unproven one is not a rounding error: the remediation
+ * is credential rotation, and the cost of being wrong lands on somebody who did nothing (ADR 0008).
+ * The working-tree list survives only to describe what a reader can see when the index cannot be
+ * read, and absence from disk is never read as a pass.
  */
 const ENV_FILE_RE = /(^|\/)\.env(\.[\w.-]+)?$/;
 const ENV_PERMITTED = /\.(example|template|sample|vault)$/;
+// A prefilter for the index query, never the decision. `*` matches `/` in a pathspec, so this asks
+// Git for every tracked path containing `.env` anywhere and ENV_FILE_RE decides which of them are
+// environment files. One definition of what counts, in the detector that owns it.
+const ENV_PATHSPECS = ["*.env*"];
 
 function detectCommittedEnvFiles(files, repoRoot, repo) {
-  const hits = files
-    .map((f) => rel(f))
-    .filter((p) => ENV_FILE_RE.test(p) && !ENV_PERMITTED.test(p));
-  if (hits.length === 0) return { evaluated: true };
+  const isCandidate = (p) => ENV_FILE_RE.test(p) && !ENV_PERMITTED.test(p);
 
-  // No fallback to working-tree inference (ADR 0011's no-second-identity constraint applied to this
-  // question): the rule leaves the evaluated set instead. The evidence-surface finding carries no
-  // rule, exactly as the other unavailability findings do, so it can never become a second
-  // compliance owner for a rule that is now reporting not-evaluated on its own.
-  const answer = repo.available ? trackedAmong(repoRoot, hits) : { ok: false, tracked: null };
-  if (!answer.ok) {
+  // Present on disk, and used only to describe what a reader can see when the index cannot be read.
+  // It is deliberately NOT the candidate set: see the comment above the query below.
+  const onDisk = files.map((f) => rel(f)).filter(isCandidate).sort();
+
+  const listed = repo.available ? trackedMatching(repoRoot, ENV_PATHSPECS) : { ok: false, files: null };
+  if (!listed.ok) {
+    // Not evaluated either way — absence from an unreadable index establishes nothing. The finding
+    // is emitted only when there is something concrete to name, because a project that is simply
+    // not a Git repository would otherwise collect an evidence-surface warning on every run for a
+    // question it never asked. The disposition still says the rule was not evaluated; what is
+    // suppressed is noise, never the not-evaluated verdict.
+    if (onDisk.length === 0) return { evaluated: false };
     addFinding({
       id: "repository-evidence-unavailable",
       category: "evidence-surface",
       severity: "warning",
       label: "OBSERVED",
-      evidence: hits.sort(),
+      evidence: onDisk,
       message:
-        `Whether ${hits.length} environment file(s) are tracked could not be established: ` +
+        `Which environment files this repository tracks could not be established: ` +
         `${repo.reason ?? "the repository index could not be read"}. Presence on disk is not a ` +
-        `violation, so scm.no-committed-env-files reports not-evaluated. Check \`git ls-files\` ` +
-        `against these paths before rotating anything.`,
+        `violation and absence from disk is not a pass, so scm.no-committed-env-files reports ` +
+        `not-evaluated${onDisk.length ? `; ${onDisk.length} such file(s) are present here` : ""}. ` +
+        `Check \`git ls-files\` against them before rotating anything.`,
       standardRef: R.search,
     });
     return { evaluated: false };
   }
 
-  const tracked = hits.filter((p) => answer.tracked.has(p)).sort();
+  // The index does not know what the walk skips, and the walk's exclusions are not cosmetic: this
+  // repository's own `test/fixtures/never-violations/.env` is a tracked file that exists precisely
+  // so the detector has something to find, and reporting it as a violation of this repository would
+  // be the tool auditing its own test data (Standard 29, Standard 34 R4). Filtered through the same
+  // SKIP_DIRS the walk uses, so one exclusion rule governs both halves of the seam rather than two
+  // that drift.
+  const skipped = (p) => p.split("/").some((segment) => SKIP_DIRS.has(segment));
+  const tracked = listed.files.filter((p) => isCandidate(p) && !skipped(p)).sort();
   if (tracked.length === 0) return { evaluated: true };
 
   addFinding({

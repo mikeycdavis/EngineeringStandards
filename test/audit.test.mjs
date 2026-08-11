@@ -630,6 +630,41 @@ test("an ignored, untracked .env present on disk is not a violation", async () =
   }
 });
 
+test("a tracked .env absent from the working tree is still a violation", async () => {
+  // The defect a reviewer found in the first version of this fix. Deriving candidates from the
+  // directory walk and asking Git only to confirm them sounds equivalent to asking Git, and is not:
+  // a file that is committed but not materialised proposes no candidate, so nothing is asked about
+  // it and the rule returns a pass it never established. Verified against the old implementation
+  // before the change — it reported nothing here.
+  const dir = await envRepo("missing");
+  try {
+    await writeFile(path.join(dir, ".env"), "API_KEY=whatever\n");
+    await writeFile(path.join(dir, "README.md"), "# t\n");
+    git(dir, "add", "-f", ".env", "README.md");
+    git(dir, "commit", "-qm", "init");
+    await rm(path.join(dir, ".env")); // deleted from the tree, deletion not staged
+
+    const found = of(audit(dir), "committed-env-file");
+    assert.equal(found.length, 1, "a tracked but unmaterialised .env was not reported");
+    assert.deepEqual(found[0].evidence, [".env"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the index answer is filtered by the same exclusions as the walk", async () => {
+  // test/fixtures/never-violations/.env is tracked on purpose, so the detector has something to
+  // find. Enumerating from the index sees it where the walk does not, and reporting it would be the
+  // tool auditing its own test data (Standard 29, Standard 34 R4). One exclusion rule governs both
+  // halves of the seam; this is what fails if a second one is introduced.
+  const found = of(audit(REPO), "committed-env-file");
+  assert.deepEqual(
+    found.flatMap((f) => f.evidence),
+    [],
+    "the self-audit reported its own fixtures as committed environment files",
+  );
+});
+
 test("a genuinely tracked .env is still a violation", async () => {
   // The control. Fixing the false failure must not cost the true one — catching the repository
   // that really did commit its environment file is this rule's entire value.

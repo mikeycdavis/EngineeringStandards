@@ -144,17 +144,36 @@ discipline. [Standard 20](20-exceptions.md) is the machinery those exceptions us
 | Requirement | Rule | State |
 | --- | --- | --- |
 | R1 | `security.no-secrets-in-artifacts` | Evaluated, `code-analysis`/`partial`. High-confidence shapes only; `.env` files excluded by design. **Working tree, not repository** |
-| R2 | `scm.no-committed-env-files` | Evaluated, `structural`/`partial`. Filename only — no content is read. **Working tree, not repository** |
+| R2 | `scm.no-committed-env-files` | Evaluated, `structural`/`partial`. Filename only — no content is read. **Repository index, not working tree** |
 | R3 | `scm.no-generated-artifacts` | `manual-review`. Distinguishing accidental build output from a deliberate lockfile is a judgement about intent |
 | R4 | `scm.no-shared-history-rewrite` | `manual-review`. Requires history to compare against, which one snapshot does not have |
 
-**Known defect in R1 and R2, recorded in [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).**
-Both detectors walk the filesystem and report *tracked*. Nothing consults version control, so a
-gitignored `.env` is reported as a committed environment file, and the deliberately seeded fakes in a
-project's redaction tests are reported as committed credentials. Both then advise rotation.
+**R2 now asks the repository; R1 still does not.** [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+recorded both detectors walking the filesystem and reporting *tracked*, so a gitignored `.env` was
+reported as a committed environment file and advised rotation. R2 is fixed: `git ls-files` supplies
+the answer, and an untracked file present on disk is no longer a finding.
 
-R2's assurance was `full` and is now `partial`: a check that cannot tell *present on disk* from
-*committed* has not established the requirement, and claiming otherwise is the assurance overstatement
-[Standard 31](31-whatsnext-compatibility.md) R6 exists to prevent — here, in the tool that supplies
-the number. Until the repository-metadata seam lands, a finding from either rule is evidence to
-verify with `git ls-files`, not a conclusion.
+**What R2 can now establish, precisely.** The repository index is asked *which environment files it
+tracks* — it is not asked to confirm a list the directory walk proposed. That distinction is the fix
+rather than a detail of it: a file that is committed but absent from the working tree, deleted
+without staging the deletion or excluded by a sparse checkout, proposes no candidate to confirm, so a
+confirm-only design reports a pass it never established. That is the same source-of-truth defect one
+level down, and it is the shape a reviewer caught in the first version of this change.
+
+**What R2 still cannot establish.** Whether a tracked environment file ever held a live credential,
+and whether one was rotated. The finding is about tracking, and the remediation it advises is a
+judgement for a human. It also says nothing about history: a file committed and later removed is not
+tracked now, and this detector will not see it — `scm.no-shared-history-rewrite`'s row above records
+the same gap for the same reason, that one snapshot is not a history.
+
+**When the index cannot be read**, the rule reports **not evaluated** rather than passing. Absence
+from an unreadable index establishes nothing, and a `forbidden` rule is satisfied by the absence of a
+violation, so a pass asserted without the search having run is precisely the false green
+[Standard 45](45-engineering-invariants.md) R6 caps the verdict for. In a project that is not a Git
+repository at all, this rule is therefore never evaluated.
+
+**R1 remains a working-tree check**, so its findings remain evidence to verify with `git ls-files`
+rather than a conclusion, and its assurance stays `partial` for the reason R2's did: a check that
+cannot tell *present on disk* from *committed* has not established the requirement, and claiming
+otherwise is the assurance overstatement [Standard 31](31-whatsnext-compatibility.md) R6 exists to
+prevent — here, in the tool that supplies the number.
