@@ -15,6 +15,14 @@ that does not follow its own standards is not credible. Statuses use the canonic
 [Standard 8](../../standards/08-status-tracking.md), per
 [ADR 0001](../adr/0001-canonical-status-vocabulary.md).
 
+**Every executable item also carries an `Evidence` field** naming the commit, issue, ADR, test, or
+artifact that establishes its current status. Added 2026-08-11, for a reason the audit that prompted
+it demonstrated: without those links, reconciling the plan against history means inferring
+correspondence from prose, one item at a time, and the inference is not reproducible. A status with
+no evidence link is an assertion; a status with one is a claim someone else can check. Where an item
+is delegated to another tracking system, the pointer is a `Tracked by` field and is not a status —
+[ADR 0001](../adr/0001-canonical-status-vocabulary.md) again.
+
 ## What this project is
 
 A durable home for a numbered series of engineering standards. Each standard is a **normative
@@ -29,8 +37,9 @@ implementation.
 | --- | --- |
 | Branch | `develop` (also the default branch for pull requests) |
 | Remote | `https://github.com/mikeycdavis/EngineeringStandards.git` |
-| Standards written | 16 of 44 — see [the index](../../README.md) |
-| Tooling | `scripts/standards.mjs` (the audit), `scripts/inventory.mjs` (the series invariant), a `node:test` suite, and GitHub Actions CI. Zero third-party dependencies. |
+| Standards written | 53 of 53 — see [the index](../../README.md) |
+| Version | `2.0.0` on `develop` as a release *candidate* — no tag, no GitHub release, no `master` merge |
+| Tooling | `scripts/standards.mjs` (`audit`, `validate`, `init`), `scripts/compliance.mjs` (the verdict engine), `scripts/attestations.mjs` / `reviews.mjs` / `repository.mjs` (recorded human review and its provenance), `scripts/inventory.mjs` / `fidelity.mjs` / `policy.mjs` / `diagrams.mjs` (the invariant checks), `scripts/agent-instructions.mjs` (generated operating rules), a `node:test` suite, and GitHub Actions CI including a reusable `standards-validate.yml`. Zero third-party dependencies. |
 | Platform | Windows 11; PowerShell is the primary shell, with a POSIX `sh` also available |
 
 Standards documents live in `standards/`, forward-looking designs in `design/`, decision records in
@@ -41,9 +50,17 @@ enumeration of the series is `artifacts/standards-source-inventory.json`.
 
 | File | Covers | Status |
 | --- | --- | --- |
-| [`01-standard-44.md`](01-standard-44.md) | Standard 44 — Existing Project Reconstruction | complete |
-| [`02-standards-backfill.md`](02-standards-backfill.md) | Backfilling the remaining standards as documents | in progress — 16 of 44 written |
+| [`01-standard-44.md`](01-standard-44.md) | Standard 44 — Existing Project Reconstruction | complete, one criterion superseded |
+| [`02-standards-backfill.md`](02-standards-backfill.md) | Backfilling the remaining standards as documents | complete — 53 written |
 | [`03-standards-audit-cli.md`](03-standards-audit-cli.md) | Building the `standards audit` command | complete |
+| [`04-compliance-and-policy-system.md`](04-compliance-and-policy-system.md) | The rule catalog, the project policy, and the `validate` verdict engine | complete |
+| [`05-attestations-and-provenance.md`](05-attestations-and-provenance.md) | Recorded human review, its freshness, and its digests | complete |
+| [`06-must-never-standards.md`](06-must-never-standards.md) | Standards 45–53 and the forbidden-level rules they define | complete |
+| [`07-distributed-validation-and-ci.md`](07-distributed-validation-and-ci.md) | Shipping the verdict to other repositories, and this one's own gate | one item blocked |
+| [`08-open-defects-and-deferred-tracks.md`](08-open-defects-and-deferred-tracks.md) | Every open issue, recorded rejection, and deliberately dormant track | open by design |
+
+**Sections 04–08 were added on 2026-08-11**, after an audit found that 72 merged commits had built an
+entire compliance system the plan did not describe. See *Scope changes* at the bottom of this file.
 
 ## Decisions on record
 
@@ -72,13 +89,25 @@ CLI is designed to check *all* standards, so parking its design inside Standard 
 there when standards 1–43 land.
 
 **All work stays on `develop` until this plan is complete with zero gaps.** Do not merge to `master`,
-open a pull request, or cut a release while any item in any section is unfinished or blocked.
-Pushing `develop` to `origin` is fine and expected — that is a backup, not a release.
+tag, or cut a release while any item in any section is unfinished or blocked. Pushing `develop` to
+`origin` is fine and expected — that is a backup, not a release.
 
 *Why:* a standards repository is only credible if the series is whole. A `master` carrying Standard
-44 alone reads as though 44 is the standard, when it is one of forty-four. The gate is **zero gaps**,
-not "most items done": every section complete, and section 02's blocker resolved rather than deferred.
-As of the last update, `origin/master` sits at `cc1c373` and is deliberately behind.
+44 alone reads as though 44 is the standard, when it is one of many. The gate is **zero gaps**, not
+"most items done": every section complete, and every blocker resolved rather than deferred. As of the
+last update, `origin/master` sits at `cc1c373` and is deliberately behind.
+
+*Amended 2026-08-11 — pull requests are now required, not forbidden.* The original wording banned
+opening a pull request. That half is superseded: `develop` is a protected branch and every change
+reaches it through a reviewed PR. The `master`/tag/release half of the gate is unchanged and still
+binding. The two are not the same restriction — a PR into `develop` is how work is reviewed, and a
+merge to `master` is what publishes it.
+
+*Amended 2026-08-11 — the gate reads the repaired plan, not the historical one.* Zero gaps means zero
+gaps across **all** sections including 04–08, not across the original four. A plan that describes a
+smaller project than the one on `develop` cannot establish that the project has no gaps; completing
+01–03 while the compliance system went unrepresented would have produced a complete plan for the
+wrong project. Section 08 exists so the remaining obligations are visible rather than absent.
 
 ## Constraints that apply to all work here
 
@@ -111,4 +140,32 @@ As of the last update, `origin/master` sits at `cc1c373` and is deliberately beh
 
 ## Scope changes
 
-None recorded. Add dated entries here when scope materially changes.
+Add dated entries here when scope materially changes.
+
+**2026-08-09 — Standard 44 gains R11 and R12.** The standard shipped with R1–R10 reproducing the
+source specification. Two requirements were added: R11 (tool-generated scaffolding is never evidence
+of intent) and R12 (the validated-search invariant). Section 01's acceptance criterion *"exactly ten
+requirement headings"* is superseded by this change rather than satisfied by it — see the amendment
+recorded on that item. Commit `9061c0e`; disclosed in [CHANGELOG](../../CHANGELOG.md) under 2.0.0.
+
+**2026-08-09 — the must-never layer extends the series past 44.** Standards 45–53 were added from a
+second reviewed source, taking the series from 44 documents to 53 and requiring `inventory.mjs` and
+`fidelity.mjs` to become multi-source. Recorded in
+[ADR 0006](../adr/0006-must-never-standards-are-forbidden-level-rules.md); commits `8822ed2`,
+`d13431d`. Section 02's *"1–43"* framing predates this and describes the original range only.
+
+**2026-08-11 — the plan is repaired to describe the system actually on `develop`.** An audit of the
+four original sections against 72 merged commits found that the plan's scope, not merely its
+statuses, had fallen behind: the rule catalog, the project policy, the `validate` verdict engine, the
+attestation and provenance machinery, standards 45–53, the reusable CI check, and thirteen ADRs had
+no plan item of any kind, and eleven open GitHub issues existed as a parallel obligation system with
+no plan owner. Sections 04–08 were added to cover them, stale statuses in 00–03 were corrected, and
+every executable item gained an `Evidence` field. Nothing was declared out of scope — the work is
+release-relevant and changes the product surface, so classifying it out of scope after the fact would
+have converted an omission into a decision.
+
+**Not a scope change:** the counts in section 02's prose (*"there are 44 standards"*, *"1–43"*) and
+section 03's dated *"Done: 20 tests over four committed fixtures"* are historical records of what was
+true when written. They are left as written under the never-fabricate-history constraint below.
+Present-tense claims that have since become false were corrected; past-tense records of a moment were
+not.

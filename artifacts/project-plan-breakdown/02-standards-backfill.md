@@ -61,6 +61,10 @@ standard's content, not assumed from a skill's name.
 ### Obtain and commit the source specification for items 1–43
 
 - **Status:** COMPLETE — 2026-08-08, `artifacts/prompts/engineering-standards-spec.md`
+- **Evidence:** [`artifacts/prompts/engineering-standards-spec.md`](../prompts/engineering-standards-spec.md),
+  committed at `4393230` (which also corrected the item-8 scanning error). `npm run inventory`
+  verifies bidirectional agreement between the source's items and the files claiming them, and
+  `npm run fidelity` verifies every block a standard claims verbatim against it.
 - **Purpose:** Everything else in this section depends on it, and no substitute is acceptable.
 - **Deliverables:** the source text committed under `artifacts/prompts/`, following the existing
   naming — `original_prompt.md` holds item 44, so either extend that file or add a sibling whose name
@@ -73,12 +77,22 @@ standard's content, not assumed from a skill's name.
 
 ### Write standards 1–43 as normative documents
 
-- **Status:** IN_PROGRESS — 1–7 written; 36 remain (8–43)
+- **Status:** COMPLETE — 2026-08-11. All 43 written; the series runs `01`–`53` with no gaps, the
+  extra nine coming from the must-never layer covered in
+  [`06-must-never-standards.md`](06-must-never-standards.md).
+- **Evidence:** commits `72d93b6` (1–3), `4393230` (4–7), `11bc2c0` (8–11), `9f34acc` (12–15),
+  `b9c4f98` (16–19), `c6992f2` (20–23), `3f2d6b9` (24–27), `aef463d` (28–31), `71270b8` (32–35),
+  `b0a7964` (36–39), `1eef68c` (40–43). Mechanically re-checked 2026-08-11 against merged `develop`:
+  53 files in `standards/`, numerically contiguous, every one carrying an `## Implementation`
+  section. `npm run inventory` and `npm run fidelity` are the standing guards and both pass in CI.
 - **Purpose:** Give each standard the same normative contract Standard 44 has, so the series is
   citable, auditable, and enforceable rather than living only as skill behavior.
-- **Deliverables:** `standards/NN-<kebab-title>.md` for each item, zero-padded for single digits
-  (`01-` through `09-`), following the structure Standard 44 established: Scope, numbered
-  requirements, and an Implementation section naming the skill that carries it out.
+- **Deliverables:** one document per item in [`standards/`](../../standards), named for its number
+  and kebab-cased title, zero-padded for single digits so a directory listing sorts numerically, and
+  following the structure Standard 44 established: Scope, numbered requirements, and an
+  Implementation section naming the skill that carries it out. The canonical file-to-item mapping is
+  [`artifacts/standards-source-inventory.json`](../standards-source-inventory.json), which
+  `npm run inventory` checks in both directions.
 - **Acceptance Criteria:**
   - One file per item, numerically ordered by filename.
   - Every list drawn from the source is reproduced verbatim, and every deliberate departure from the
@@ -86,14 +100,48 @@ standard's content, not assumed from a skill's name.
   - Each document names its implementing skill, or states explicitly that none exists.
   - Where a document's requirements and its skill disagree, the disagreement is resolved in the same
     change rather than deferred.
-- **Verification:** `ls standards/` lists 44 files sorting numerically, `01-` through `44-`, with no
-  gaps. For each, confirm the Implementation section names a directory that exists under
-  `~/.claude/skills/`, or says none does.
+- **Verification:** `ls standards/` lists files sorting numerically with no gaps — `01-` through
+  `44-` from this section's source, `45-` through `53-` from the second. `npm run inventory` checks
+  this bidirectionally and fails on either a file no entry claims or an entry with no file. For each,
+  confirm the Implementation section names a directory that exists under `~/.claude/skills/`, or says
+  none does.
 - **Dependencies:** the source specification above.
+- **What this item's completion does and does not establish.** Three of its acceptance criteria are
+  not mechanically decidable from repository evidence, and marking the item COMPLETE does not claim
+  otherwise:
+  - *"every deliberate departure disclosed as an addition with its reason"* — `npm run fidelity`
+    verifies that each block claimed as verbatim **is** verbatim. It cannot verify that an
+    **undisclosed** departure was disclosed, because an absent disclosure and an absent departure
+    look identical to it. This is the same shape as R12's validated-search invariant: the check
+    establishes what it covers and nothing beyond.
+  - *"where a document's requirements and its skill disagree, the disagreement is resolved in the
+    same change"* — skills are outside version control by the standing decision in
+    [`00-overview.md`](00-overview.md), so there is no history to check this against on any machine
+    but the author's.
+  - *"each document names its implementing skill, or states explicitly that none exists"* — all 53
+    carry an `## Implementation` section, which is checkable. Whether each one correctly names a
+    skill that exists and does what it claims is a reading task, not a mechanical one.
+
+  These are recorded rather than solved. Closing them would need the skills under version control,
+  which the global-skill decision deliberately traded away.
+- **What closing this item revealed, 2026-08-11.** Flipping the status to COMPLETE immediately
+  produced an `error`-severity `plan-code-discrepancies` finding: the Deliverables line read
+  `standards/NN-<kebab-title>.md`, and `detectPlanDiscrepancies` resolved that placeholder as a
+  literal path, correctly reporting that no such file exists. The detector was right and the plan was
+  wrong — a naming *convention* had been written in the slot reserved for a deliverable *path*, and
+  nothing caught it for three days because an `IN_PROGRESS` item's deliverables are never resolved.
+  The line now names [`standards/`](../../standards) and the inventory artifact, both of which exist.
+  Two things worth keeping from this: a status change is not a bookkeeping act, it is what submits an
+  item to checks it was previously exempt from; and the fix was to correct the plan's wording, not to
+  loosen the detector — a placeholder that resolves to nothing is exactly what R7 exists to catch.
 
 ### Update the README index as standards land
 
-- **Status:** READY — unblocked, follows each standard as it lands
+- **Status:** COMPLETE — 2026-08-11
+- **Evidence:** [`README.md`](../../README.md) carries 53 index rows, one per file in `standards/`,
+  and `grep -c "backfill pending" README.md` returns 0. The placeholder row was replaced
+  incrementally as each batch landed, in the same commits listed on the item above; the final rows
+  for 45–53 arrived at `d13431d`.
 - **Purpose:** [`README.md`](../../README.md) currently collapses 1–43 into a single
   "backfill pending" row. That row is accurate today and becomes a lie the moment the first backfilled
   standard lands.
@@ -101,12 +149,16 @@ standard's content, not assumed from a skill's name.
 - **Acceptance Criteria:** no row claims a document that does not exist; no `standards/` file is
   missing from the table; the string "backfill pending" does not survive the last backfilled item.
 - **Verification:** `grep -c "backfill pending" README.md` returns 0 once the series is complete, and
-  the row count matches `ls standards/*.md | wc -l`.
+  the row count matches `ls standards/*.md | wc -l`. Both confirmed 2026-08-11: `0` and `53`/`53`.
 - **Dependencies:** the item above.
 
 ### Remove the stale `.skill` archives
 
 - **Status:** COMPLETE — 2026-08-08, confirmed by the owner before deletion
+- **Evidence:** none in this repository — the archives were outside it. `ls ~/.claude/skills/*.skill
+  | wc -l` returns `0` and the three live directories still hold their `SKILL.md`, re-checked
+  2026-08-11. The diff record of what each archive contained is preserved in prose at the end of this
+  item, which is the only surviving evidence that no unique content was lost.
 - **Purpose:** `plan-handoff.skill`, `plan-structure.skill`, and `pre-push.skill` in
   `C:\Users\Mike\.claude\skills\` are zip archives each containing a single `SKILL.md`, dated well
   before the live directories of the same names. They are a second copy of three skills, already
