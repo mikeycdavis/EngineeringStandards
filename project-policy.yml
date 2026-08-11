@@ -334,6 +334,23 @@ attestations:
           revision: "ed5f6e6"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "33aabb6b4b557b2b0be63cd522d32a17"
+      - id: "review-meta-standards-not-weakened-004"
+        supersedes: "review-meta-standards-not-weakened-003"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-11"
+        evidence: "RE-REVIEWED 2026-08-11 against committed repository content at a72f302, covering the change that made scm.no-committed-env-files ask the repository which files it tracks instead of proposing candidates from the working tree and asking Git to confirm them. Only test/audit.test.mjs changed among the reviewed paths; scripts/compliance.mjs, test/compliance.test.mjs and test/instructions.test.mjs are byte-identical, so the verdict engine and its own guards are undisturbed. Nothing was weakened and the detector became strictly harder to satisfy: it now reports a tracked env file that is absent from the working tree, a case the previous shape passed silently because a file the filesystem never proposed could never be confirmed. The two added tests are additive, none was relaxed or removed, and the review specifically checked that the self-audit was restored by filtering tracked paths through the same SKIP_DIRS the traversal uses rather than by loosening what counts as a violation. When the index cannot be read the rule reports not-evaluated rather than passing, which under Standard 45 R6 caps the verdict rather than clearing it. LIMITATION carried forward: R2 establishes index membership at the evaluated revision and says nothing about history, so a secret committed and later removed from the index remains outside what this rule can see, and standards/46 states that rather than implying coverage."
+        reference: "standards/46-source-control-safety.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+          revision: "a72f302"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "5845621ec613f5a84fb7edeb4765a434"
 
   testing.no-weakening-to-pass:
     reviews:
@@ -386,6 +403,23 @@ attestations:
           revision: "ed5f6e6"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "ed74f83779ea332626cfbfa776cdf044"
+      - id: "review-testing-no-weakening-to-pass-004"
+        supersedes: "review-testing-no-weakening-to-pass-003"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-11"
+        evidence: "RE-REVIEWED 2026-08-11 against committed repository content at a72f302, from the test side of the env-detector change. Only test/audit.test.mjs changed among the reviewed paths and it gained assertions rather than losing any; test/compliance.test.mjs, test/instructions.test.mjs and test/init.test.mjs are byte-identical. Both regressions are pinned by mutations that actually fail: restoring the filesystem-proposed-candidate shape breaks the tracked-but-missing test, because a file absent from the working tree can never be proposed and the finding disappears; and dropping the SKIP_DIRS filter over the tracked list breaks the self-audit test, because the repository's own never-violations fixture is then reported against the repository itself. The P1 was reproduced against the old code before the fix was written rather than asserted from reading it. LIMITATIONS unchanged and restated rather than retired: the four ADR 0008 CHARACTERISATION tests still assert today's wrong answer so green means the known defect still reproduces; the MAX_FILES traversal cap remains untested; and the workflow invariants in test/workflow.test.mjs remain text assertions over YAML rather than proof that the workflow executes as intended."
+        reference: "standards/46-source-control-safety.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+            - test/init.test.mjs
+          revision: "a72f302"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "2cbf12cb90de3093c9e2d4ff2a04855a"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
@@ -440,6 +474,23 @@ attestations:
           revision: "460992a"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "3de8bdc4f6cb956caf9a41d155770b98"
+      - id: "review-architecture-no-hidden-global-state-004"
+        supersedes: "review-architecture-no-hidden-global-state-003"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-11"
+        evidence: "RE-REVIEWED 2026-08-11 against committed repository content at a72f302. scripts/standards.mjs changed with the env-detector rewrite; scripts/inventory.mjs, scripts/fidelity.mjs and ADR 0007 are byte-identical. The original basis holds and was re-examined rather than assumed: the scripts remain single-run programs whose module scope is their run scope, single-writer ownership is unchanged, reset is still process exit, and nothing imports them. The declaration scan was re-run across the governed set and reports one new module-level binding since 460992a, ENV_PATHSPECS, a frozen array of pathspec strings. It is immutable configuration describing what to ask the index for, not run state, and it satisfies the invariant recorded in the prior cycle: module scope may hold immutable matcher descriptions, while mutable matcher instances stay invocation-local. No new /g regex was introduced at module level and no binding acquired a lifetime. The new call into scripts/repository.mjs adds no module-level state on either side, which was the deliberate constraint accepted when the Git seam was opened. LIMITATION unchanged and carried forward: the declaration scan is not authoritative, because a binding mutated through an alias escapes it as surfaceLoss does through the loss parameter of collectFiles, so completeness remains a review obligation rather than a mechanical guarantee. The dormant follow-on stands with its trigger intact: ITEM_RE in scripts/inventory.mjs is a module-level /gm regex predating this rule, revisited when inventory.mjs is next substantively modified or if a use is introduced that consumes it directly and can persist lastIndex. MATERIAL LIMITATION restated: this record was found incomplete at four consecutive reviews before the scope statement became behavioural, and this approval still does not assert that human enumeration is a sufficient control against hidden global state."
+        reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+          revision: "a72f302"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "ee570ebad022e7dddaca67420b0fae43"
 
   architecture.no-duplicate-implementations:
     reviews:
@@ -492,6 +543,23 @@ attestations:
           revision: "ed5f6e6"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "b8a7a2bd66cb54df85b8c24323ada247"
+      - id: "review-architecture-no-duplicate-implementations-004"
+        supersedes: "review-architecture-no-duplicate-implementations-003"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-11"
+        evidence: "RE-REVIEWED 2026-08-11 against committed repository content at a72f302. Only test/audit.test.mjs changed among the reviewed paths; scripts/sections.mjs, scripts/inventory.mjs and scripts/fidelity.mjs are byte-identical, so the section-heading single-owner basis is undisturbed and both tests holding that shape still pass. The question this cycle raised was whether the env-detector change left two ways to ask which env files the repository tracks. It did not: trackedAmong, whose only caller was the removed filesystem-proposes-candidates path, was deleted rather than left standing beside trackedMatching, so scripts/repository.mjs exposes exactly one query for index membership and the detector is its only consumer. Verified by search rather than by recollection: no other call site remained and no second git ls-files invocation exists in scripts/. The added tests exercise the single owner rather than introducing a competing definition of it. LIMITATION unchanged: a search by concept vocabulary would not find a duplicate implemented in different words."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/sections.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/audit.test.mjs
+          revision: "a72f302"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "5d46bae7662fdb18c23f695ff8643569"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
   # not an exception: the schema defines it as recording that a human looked and found the rule
