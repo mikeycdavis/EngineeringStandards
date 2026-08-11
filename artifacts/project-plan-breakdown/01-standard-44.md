@@ -17,14 +17,23 @@ satisfy them, and there is no automated check that enforces it.
 
 ### Write the normative standard document
 
-- **Status:** COMPLETE — commit `14177fa`, amended by `9b20743`
+- **Status:** COMPLETE — commit `14177fa`, amended by `9b20743`; one acceptance criterion superseded
+  2026-08-09, see below
+- **Evidence:** [`standards/44-existing-project-reconstruction.md`](../../standards/44-existing-project-reconstruction.md)
+  at `14177fa`/`9b20743`; the supersession at `9061c0e`, disclosed in
+  [CHANGELOG](../../CHANGELOG.md) under 2.0.0 and in [`00-overview.md`](00-overview.md) under *Scope
+  changes*. `npm run fidelity` verifies the verbatim blocks; `npm run inventory` verifies the file
+  exists and is claimed by exactly one series entry.
 - **Purpose:** State what a compliant reconstruction must look like, so that the procedure has a
   contract to satisfy and a later audit has requirements to cite.
 - **Deliverables:** [`standards/44-existing-project-reconstruction.md`](../../standards/44-existing-project-reconstruction.md)
   — Scope, requirements R1–R10, a forward-looking Tooling section, and an Implementation section
   naming the skill.
 - **Acceptance Criteria:**
-  - Exactly ten requirement headings, `### R1` through `### R10`.
+  - ~~Exactly ten requirement headings, `### R1` through `### R10`.~~ **SUPERSEDED 2026-08-09.** The
+    standard now has twelve, `### R1` through `### R12`, and `grep -c "^### R"` returns 13 because
+    R0 precedes them. See the amendment note at the end of this item before treating this as a
+    regression.
   - R10 reproduces the source specification's 14-point Definition of Done verbatim.
   - Every enumerated list drawn from the source is verbatim and complete: 18 evidence sources, 9
     owner-only question examples, 24 baseline sections, 19 prompt capture areas, 5 question fields, 8
@@ -35,17 +44,37 @@ satisfy them, and there is no automated check that enforces it.
     one-label-per-claim rule — are disclosed as additions with reasons.
 - **Verification:**
   ```bash
-  grep -c "^### R" standards/44-existing-project-reconstruction.md   # → 10
+  grep -c "^### R" standards/44-existing-project-reconstruction.md   # → 13 since 2026-08-09; was 10
   grep -n "Additions this standard makes beyond" standards/44-existing-project-reconstruction.md
   ```
   For the verbatim lists, diff each against the line ranges in
   `artifacts/prompts/original_prompt.md` given in section 02's guidance below.
 - **Dependencies:** none.
+- **Amendment — why the ten-requirement criterion is superseded rather than failed.** This section
+  says above that its acceptance criteria are the regression suite for the standard, so a criterion
+  the repository no longer satisfies has to be resolved deliberately, not quietly relabelled. Two
+  requirements were added on 2026-08-09 as a decided scope expansion, not as drift: **R11** — tool
+  generated scaffolding is never evidence of intent, the mirror of Standard 33 R7 from the consuming
+  side, prompted by a real defect in which `standards init` created an empty
+  `artifacts/project-plan-breakdown/` that a reconstruction would have read as a pre-existing plan;
+  and **R12** — the validated-search invariant, *a negative discovery result is evidence about the
+  search mechanism before it is evidence about the project*, which had until then existed only as a
+  constraint in [`00-overview.md`](00-overview.md) with no normative home. Both are disclosed in the
+  standard's *Additions this standard makes beyond the source* section per the house convention, and
+  in [CHANGELOG](../../CHANGELOG.md) under 2.0.0. The **regression intent of the criterion survives
+  intact**: the ten original requirements must all still be present and unweakened, and R11/R12 are
+  additive. What is superseded is only the exact count, and only in the upward direction — a future
+  change that *removes* a requirement still fails this item.
 
 ### Build the `project-reconstruction` skill
 
 - **Status:** COMPLETE — not committed anywhere; the skill is global by the decision recorded in
   [`00-overview.md`](00-overview.md)
+- **Evidence:** none in this repository, and that is the accepted consequence of the global-skill
+  decision rather than an oversight. The only reproducible check is the `diff` in *Verification*
+  below, which requires the skill to be present on the machine running it. Re-verified 2026-08-11:
+  the Definitions of Done are identical. This item is the clearest case for the cost that decision
+  accepted — there is no commit, no review, and no CI that can establish it.
 - **Purpose:** Provide the executable procedure the standard specifies, so a reconstruction can
   actually be run rather than merely required.
 - **Deliverables:** `C:\Users\Mike\.claude\skills\project-reconstruction\SKILL.md` plus four
@@ -72,6 +101,8 @@ satisfy them, and there is no automated check that enforces it.
 ### Integrate with the existing skills
 
 - **Status:** COMPLETE — global skill edits, uncommitted by the same decision
+- **Evidence:** none in this repository, same cause as the item above. The two `grep -c` commands in
+  *Verification* both returned `1` on re-check, 2026-08-11.
 - **Purpose:** Make the new skill compose with the ones already in use, rather than competing with
   them for the same territory.
 - **Deliverables:** three edited skills:
@@ -93,7 +124,13 @@ satisfy them, and there is no automated check that enforces it.
 
 ### Design the audit CLI without building it
 
-- **Status:** COMPLETE — commit `14177fa`
+- **Status:** COMPLETE — commit `14177fa`; the design has since been implemented and the document
+  reframed accordingly, see [`03-standards-audit-cli.md`](03-standards-audit-cli.md)
+- **Evidence:** [`design/standards-audit-cli.md`](../../design/standards-audit-cli.md) at `14177fa`.
+  Its *"nothing described here is implemented"* framing was corrected at `9061c0e` once the tool
+  existed; a stale claim that a shipped tool does not exist is itself a Standard 32 R3 defect. The
+  design's own acceptance criterion — no implementation code in any language — still holds, because
+  the implementation went to `scripts/standards.mjs` rather than into the design document.
 - **Purpose:** The source specification asks that a future `standards audit .` be designed but not
   implemented in v1. Designing it now is what lets the artifacts be shaped for machine reading before
   any tool exists; retrofitting a format is far more expensive than choosing one.

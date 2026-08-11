@@ -5,14 +5,26 @@ artifacts, undocumented capabilities, plan/code discrepancies, unresolved recons
 and outright standards violations — in both human-readable and JSON form.
 
 The design is complete and committed at
-[`design/standards-audit-cli.md`](../../design/standards-audit-cli.md). Nothing is implemented, by
-intent: the source specification for Standard 44 says the audit "does not need to be fully
-implemented in v1, but design for it." Designing first is what allowed the artifacts Standard 44
-mandates to be shaped for machine reading before any tool existed — the `**Status:** open` line in
+[`design/standards-audit-cli.md`](../../design/standards-audit-cli.md). It was written before any
+code existed, by intent: the source specification for Standard 44 says the audit "does not need to be
+fully implemented in v1, but design for it." Designing first is what allowed the artifacts Standard
+44 mandates to be shaped for machine reading before any tool existed — the `**Status:** open` line in
 the open-questions template exists solely so this audit can find unresolved questions with a grep.
 
-Read the design document before implementing. This section covers the work; it does not restate the
-finding categories, the JSON schema, or the detection sources, all of which live there.
+Read the design document before changing the audit. This section covers the work; it does not restate
+the finding categories, the JSON schema, or the detection sources, all of which live there.
+
+> **Status note (2026-08-11).** This section's preamble previously said *"Nothing is implemented, by
+> intent."* That was true when written and is now false — `scripts/standards.mjs` implements all
+> sixteen finding categories. The same stale claim in `design/standards-audit-cli.md` was corrected
+> at `9061c0e` as a Standard 32 R3 defect; this one was missed then and is corrected now. Two further
+> things have changed since this section was written, both covered elsewhere rather than here: the
+> command was split into `audit` (evidence) and `validate` (verdict) by
+> [ADR 0004](../adr/0004-audit-and-validate-are-separate-commands.md), and finding categories were
+> bound to canonical rule identities by
+> [ADR 0002](../adr/0002-canonical-rule-identity.md). The verdict engine those decisions produced is
+> covered in [`04-compliance-and-policy-system.md`](04-compliance-and-policy-system.md), not here —
+> this section remains the record of the evidence-gathering command only.
 
 > **Vocabulary note (2026-08-08).** This section was written before
 > [ADR 0001](../adr/0001-canonical-status-vocabulary.md) made Standard 8's vocabulary canonical.
@@ -42,6 +54,11 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 - **Status:** COMPLETE — 2026-08-08, recorded in
   [`design/standards-audit-cli.md`](../../design/standards-audit-cli.md) under *Implementation and
   distribution*
+- **Evidence:** [`design/standards-audit-cli.md`](../../design/standards-audit-cli.md) under
+  *Implementation and distribution*; the decision is realised in
+  [`package.json`](../../package.json)'s `bin` entry and in
+  [`scripts/standards.mjs`](../../scripts/standards.mjs). The zero-dependency half is enforced rather
+  than remembered: CI has no install step, so a third-party import fails the build.
 - **Purpose:** Every later item depends on it, and the decision was genuinely open — this repository
   has no runtime, no package manifest, and no build.
 - **Deliverables:** the decision recorded in `design/standards-audit-cli.md` under a new heading, with
@@ -71,6 +88,10 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 ### Implement the descriptive finding categories
 
 - **Status:** COMPLETE — 2026-08-08, `scripts/standards.mjs` and `package.json`
+- **Evidence:** the six detectors in [`scripts/standards.mjs`](../../scripts/standards.mjs), with
+  their negative-case fixtures under `test/fixtures/`. The two regressions that motivated them —
+  import-shape matching and the code-extensions-only scan — are locked in by named tests, and both
+  were mutation-tested rather than trusted (see the notes on the CI item below).
 - **Purpose:** The six `info` categories — observed architecture, and detected capabilities, APIs,
   jobs, integrations, and AI interfaces — report what a repository *has*. They are the foundation the
   judgemental categories build on, and they are useful alone as a repository survey.
@@ -109,6 +130,17 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 ### Implement the absence and discrepancy categories
 
 - **Status:** COMPLETE — 2026-08-08, `scripts/standards.mjs`
+- **Evidence:** [`scripts/standards.mjs`](../../scripts/standards.mjs); the `delegated` fixture,
+  whose `ST-999` reference is the standing guard for the delegated-liveness trap described at the end
+  of this item. Findings' `standardRef` anchors are checked against the referenced file by
+  `test/audit.test.mjs`, generalised at `d13431d` to resolve against any standard rather than only
+  Standard 44. **Open defects against this item:** issues
+  [#4](https://github.com/mikeycdavis/EngineeringStandards/issues/4),
+  [#5](https://github.com/mikeycdavis/EngineeringStandards/issues/5) and
+  [#7](https://github.com/mikeycdavis/EngineeringStandards/issues/7), owned by
+  [`08-open-defects-and-deferred-tracks.md`](08-open-defects-and-deferred-tracks.md). They do not
+  reopen this item — the categories are implemented and the fixtures hold — but the item is not a
+  claim that the implementation is defect-free.
 - **Purpose:** These are the categories with teeth — missing documentation, missing planning
   artifacts, missing audit infrastructure, unverified functionality, potential dead code, potential
   unfinished features, plan/code discrepancies, documentation/code discrepancies, open reconstruction
@@ -147,6 +179,12 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 ### Close the delegated-reference integrity gap
 
 - **Status:** COMPLETE — 2026-08-08, delivered as part of the discrepancy categories above
+- **Evidence:** the `ST-999` item in `test/fixtures/delegated/`, which produces exactly one
+  `plan-code-discrepancies` finding at severity `error`, labelled `OBSERVED`, whose `standardRef` is
+  `standards/44-existing-project-reconstruction.md#r7--reconstructed-plan-and-plan-items`. The check
+  resolves `Tracked by` through a hardcoded `artifacts/backlog/items/<ID>.md` path — issue
+  [#5](https://github.com/mikeycdavis/EngineeringStandards/issues/5) — which is a coupling defect,
+  not a hole in the integrity check itself.
 - **Purpose:** Standard 44 requires that every `tracked as <backlog-id>` reference resolve to an item
   that exists, because a dangling one presents untracked work as tracked. **No tool checks this
   today.** `backlog-validate` validates backlog items against each other and has no knowledge of plan
@@ -166,6 +204,15 @@ job; reconciling it against git stays `backlog-reconcile`'s.
 ### Give the audit a test suite and CI
 
 - **Status:** COMPLETE — 2026-08-08, `test/` and `.github/workflows/ci.yml`
+- **Evidence:** `test/` and [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). The suite
+  was 20 tests over four fixtures when this item closed; it is **229 tests** as of 2026-08-11, over
+  the fixtures `compliant`, `delegated`, `diagrams`, `markers`, `naming-only`, `never-clean`,
+  `never-violations`, and `policies`. The self-audit gate in `test/audit.test.mjs` still asserts zero
+  error-severity findings against this repository, and now passes with zero warnings as well. The CI
+  side of this item was superseded in scope by
+  [`07-distributed-validation-and-ci.md`](07-distributed-validation-and-ci.md), which covers the
+  required/advisory job split and the reusable check; the `npm test` gate this item created is
+  unchanged and still the required check.
 - **Purpose:** The audit was run against its own repository and reported *no test suite and no CI
   configuration*. That finding is correct. A tool whose output is "your repository is non-compliant"
   has no standing to report that while being unverified itself, and two false positives have already
@@ -201,6 +248,12 @@ job; reconciling it against git stays `backlog-reconcile`'s.
   advisory finding into a broken build, and the predictable outcome is that someone disables the
   step. The error-level gate is instead the assertion in `test/audit.test.mjs` that this repository
   has no error-severity findings, which runs as part of `npm test`.
-- **One warning is left open deliberately:** this repository has no `docs/architecture.md`. It is a
-  real finding, not a false positive. Writing it is `/codebase-docs`'s job and is left for the owner
-  to run rather than hand-written here.
+- **~~One warning is left open deliberately:~~ closed 2026-08-08.** This repository had no
+  `docs/architecture.md`. It was a real finding, not a false positive, and was left for the owner to
+  close with `/codebase-docs` rather than hand-written here. It was closed at `a30b870`, which also
+  established Mermaid as the canonical diagram source
+  ([ADR 0003](../adr/0003-mermaid-is-the-canonical-diagram-source.md)) and added `npm run diagrams`
+  so `docs/architecture.mmd` and the fences embedded in `docs/architecture.md` cannot drift apart.
+  The self-audit now reports **zero error findings and zero warning findings**, so the assertion in
+  `test/audit.test.mjs` is no longer the only thing holding the line — there is nothing left for it
+  to tolerate.
