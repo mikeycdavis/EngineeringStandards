@@ -1,10 +1,10 @@
 # Dogfooding the reusable check on the repository that defines it.
 #
 # **This job is expected to be red, and a green run is a defect report.** This repository is
-# intentionally `NON_COMPLIANT`: three rules carry recorded human rejections, so the authoritative
+# intentionally `NON_COMPLIANT`: four rules carry recorded human rejections, so the authoritative
 # local verdict is exit 1. The acceptance target for this workflow is not that GitHub turns green —
 # it is that the distributed check reproduces the local verdict faithfully. Success looks like the
-# job summary reporting the same counts and the same three failing rules a local
+# job summary reporting the same counts and the same four failing rules a local
 # `npm run validate` reports, and exiting 1 for the same reason.
 #
 # A green run would mean the verdict changed somewhere in transport, which is the failure this step

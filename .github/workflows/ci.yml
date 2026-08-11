@@ -65,7 +65,7 @@ jobs:
   # A SEPARATE JOB, and the separation is a governance decision rather than a layout preference.
   #
   # `validate` is the authoritative verdict (ADR 0004) and this repository is intentionally
-  # NON_COMPLIANT: three rules carry recorded human rejections, so the honest result is exit 1. While
+  # NON_COMPLIANT: four rules carry recorded human rejections, so the honest result is exit 1. While
   # this step lived inside `test`, the required check could never pass, and combined with PR-only
   # protection that left no legal path to change `develop` — every pull request needed a check
   # designed to fail, and its failure was the correct answer.
@@ -74,7 +74,7 @@ jobs:
   # on every push, pull request and dispatch, applies the same policy, and propagates the same exit
   # status; a failure here still turns the whole workflow red. `test` is required and can pass;
   # `validate` is visible and not required, and becomes required only when this repository can
-  # satisfy it honestly. A baseline exception declaring today's three failures acceptable would make
+  # satisfy it honestly. A baseline exception declaring today's four failures acceptable would make
   # that day arrive sooner by encoding non-compliance as a passing condition, and is refused.
   #
   # No `needs: test`. The two answer different questions and one pull request should be able to
