@@ -25,6 +25,7 @@ import { parseYaml } from "./yaml.mjs";
 import { validate } from "./jsonschema.mjs";
 import {
   classifyFreshness,
+  ignoredEntries,
   repositoryAvailable,
   repositoryDigest,
   trackedMatching,
@@ -275,7 +276,26 @@ const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "out", "bin", "obj", ".next", ".nuxt",
   ".venv", "venv", "__pycache__", "target", "vendor", "coverage", ".turbo",
   ".gradle", ".idea", ".vs", ".vscode", "packages-cache", ".pytest_cache", "fixtures",
+  ".mypy_cache",
 ]);
+
+/**
+ * Files that identify their own directory as a dependency tree rather than the project's code.
+ *
+ * A name list cannot do this job, and the defect that produced this constant is the proof: the
+ * virtualenv was called `test-env-3.13`, `SKIP_DIRS` knows `.venv` and `venv`, and the walk
+ * descended into 13,536 files that were not the project's. Adding one more name would have fixed
+ * one repository. The directory name is a user choice and the set of choices is unbounded.
+ *
+ * A marker file is not a choice. `pyvenv.cfg` is written by the `venv` module itself and is present
+ * in every virtualenv it creates, whatever the operator called the directory — so this identifies
+ * the *kind* of tree instead of guessing its name.
+ *
+ * Kept deliberately narrow. A marker earns a place here only if the tooling that owns it writes it
+ * unconditionally; a conventional-but-optional file would exclude directories on a guess, and
+ * silently excluding real code is worse than the noise this removes.
+ */
+const VENDOR_MARKERS = new Set(["pyvenv.cfg"]);
 
 /** Extensions whose contents are worth pattern-scanning at all. */
 const TEXT_EXT = new Set([
@@ -643,8 +663,14 @@ const rel = (p) => path.relative(root, p).split(path.sep).join("/");
  * accumulator unchanged, which is indistinguishable from an empty one: every detector then found
  * nothing under it and the run exited 0 having said nothing about the gap. A negative result over a
  * surface that was never opened is evidence about the walk, not about the project — Standard 44 R12.
+ *
+ * `excluded` is the same idea pointed the other way. Skipping is not free of consequence: a
+ * directory left out of the walk is a directory no detector can report on, so every exclusion is
+ * recorded in `loss.excluded` and surfaced in the report. The difference between an exclusion and a
+ * loss is that an exclusion is a *decision* about what is not the project's code, and a decision
+ * nobody can see is indistinguishable from a tool that quietly went blind.
  */
-async function collectFiles(dir, acc, loss) {
+async function collectFiles(dir, acc, loss, excluded) {
   if (acc.length >= MAX_FILES) {
     loss.capped = true;
     return acc;
@@ -656,6 +682,16 @@ async function collectFiles(dir, acc, loss) {
     loss.dirs.push(dir); // Skipped rather than aborting the audit, but never skipped silently.
     return acc;
   }
+
+  // A vendored tree identifies itself from the inside, so the marker is checked once the directory
+  // has been listed rather than guessed from its name. The root is exempt: a project that IS a
+  // virtualenv is a project someone deliberately pointed the audit at, and excluding everything
+  // would report a clean run over a repository nothing examined.
+  if (dir !== root && entries.some((e) => e.isFile() && VENDOR_MARKERS.has(e.name))) {
+    loss.excluded.push({ path: rel(dir), reason: "vendored dependency tree" });
+    return acc;
+  }
+
   for (const entry of entries) {
     if (acc.length >= MAX_FILES) {
       loss.capped = true;
@@ -664,8 +700,16 @@ async function collectFiles(dir, acc, loss) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
-      await collectFiles(full, acc, loss);
+      if (excluded.dirs.has(rel(full))) {
+        loss.excluded.push({ path: rel(full), reason: "ignored by the repository" });
+        continue;
+      }
+      await collectFiles(full, acc, loss, excluded);
     } else if (entry.isFile()) {
+      // Ignored FILES are dropped without a per-file record. A generated artifact sitting beside
+      // tracked code is not a surface anyone expected to be audited, and listing each one would
+      // bury the directory-level exclusions that actually change what the run covers.
+      if (excluded.files.has(rel(full))) continue;
       acc.push(full);
     }
   }
@@ -1931,6 +1975,18 @@ function renderHuman(fileCount, surface) {
     if (surface.fileCapReached) parts.push(`the ${MAX_FILES}-file cap was reached`);
     lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
   }
+  // Stated separately from incompleteness, and always — not only when something else went wrong.
+  // An exclusion is a decision about what is not the project's code, and a reader who cannot see
+  // which directories were left out cannot tell a focused audit from a blind one. The count is the
+  // part that matters at a glance; the paths are in `evidenceSurface.excludedDirectories`.
+  if (surface.excludedDirectories.length) {
+    const shown = surface.excludedDirectories.slice(0, 6).map((e) => e.path).join(", ");
+    const rest = surface.excludedDirectories.length - 6;
+    lines.push(
+      `${surface.excludedDirectories.length} directory(ies) excluded as not this project's own code: ` +
+        `${shown}${rest > 0 ? `, and ${rest} more` : ""}.`,
+    );
+  }
 
   lines.push("");
   lines.push("What the repository has");
@@ -1984,8 +2040,17 @@ function renderHuman(fileCount, surface) {
 // Main
 // ---------------------------------------------------------------------------
 
-const surfaceLoss = { dirs: [], capped: false };
-const files = await collectFiles(root, [], surfaceLoss);
+const surfaceLoss = { dirs: [], capped: false, excluded: [] };
+
+// What the repository already treats as not-its-own. Asked before the walk so the answer costs one
+// subprocess rather than one per candidate directory, and so an unavailable repository degrades to
+// "exclude nothing" in one place instead of at every decision point.
+const ignored = ignoredEntries(root);
+const exclusions = {
+  dirs: new Set(ignored.ok ? ignored.directories : []),
+  files: new Set(ignored.ok ? ignored.files : []),
+};
+const files = await collectFiles(root, [], surfaceLoss, exclusions);
 const contents = new Map();
 const unreadableFiles = [];
 const truncatedFiles = [];
@@ -2051,12 +2116,26 @@ if (surfaceLoss.capped) {
     standardRef: R.search,
   });
 }
+// Exclusions are reported through the envelope and the header, deliberately NOT as a finding.
+//
+// A finding carries `evidence`, and evidence is read as "paths this run has something to say
+// about". An excluded tree is the opposite: the run has nothing to say about it, by decision. Every
+// consumer that scans findings for paths — including this repository's own regression that a
+// vendored tree must not appear in the findings — would read the exclusion record as the very
+// pollution it exists to prevent, and could not tell the two apart.
+//
+// So it goes where the other properties-of-the-run live, beside `fileCapReached`, and the header
+// states it in the same breath as the scanned count.
 const evidenceSurface = {
   complete: !unreadableFiles.length && !surfaceLoss.dirs.length && !truncatedFiles.length && !surfaceLoss.capped,
   unreadableFiles: uniq(unreadableFiles.map(rel)),
   unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
   truncatedFiles: uniq(truncatedFiles),
   fileCapReached: surfaceLoss.capped,
+  excludedDirectories: surfaceLoss.excluded,
+  // Recorded because the exclusion set is only as good as the source that produced it. A run with
+  // no repository excluded nothing, and a reader comparing two runs needs to know which they have.
+  exclusionsFrom: ignored.ok ? "repository" : "unavailable",
 };
 
 // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.

@@ -114,6 +114,44 @@ export function trackedMatching(root, pathspecs) {
 }
 
 /**
+ * Which paths does this repository deliberately ignore?
+ *
+ * The *excluding* half of the repository seam, and the counterpart to `trackedMatching`. A walk of
+ * the working tree cannot answer it. `.gitignore` semantics are precedence-ordered, support
+ * negation, and compose across nested files and `.git/info/exclude`, so a reimplementation is a
+ * second definition of what a project excludes — and the two disagree exactly where it matters. The
+ * repository this was written for ignores `data/` and then re-includes a single file inside it; a
+ * hand-rolled matcher that dropped the negation would silence a file the project chose to keep.
+ *
+ * `--directory --no-empty-directory` collapses a wholly-ignored directory into one entry, so a
+ * vendored dependency tree costs one string rather than one per file. Git declines to collapse a
+ * directory that still contains tracked content, and that is the property that keeps first-party
+ * code in scope: this can only ever remove what the repository already considers disposable.
+ *
+ * **Unlike the rest of this module, a negative answer is not fatal to the caller.** Everywhere else
+ * a missing repository means a fact cannot be established and must be reported as unestablished.
+ * Here it means the caller excludes nothing and searches more than it needed to — louder, slower,
+ * never quieter. Absence of the repository costs coverage only of things that are not the project's
+ * own, so there is no direction in which this failure manufactures a pass.
+ */
+export function ignoredEntries(root) {
+  const r = git(root, [
+    "ls-files", "-z",
+    "--others", "--ignored", "--exclude-standard",
+    "--directory", "--no-empty-directory",
+  ]);
+  if (!r.ok) return { ok: false, directories: null, files: null };
+  const directories = [];
+  const files = [];
+  for (const p of r.out.split("\0").filter(Boolean)) {
+    // Git marks a collapsed directory with a trailing slash; everything else is a single file.
+    if (p.endsWith("/")) directories.push(p.slice(0, -1));
+    else files.push(p);
+  }
+  return { ok: true, directories, files };
+}
+
+/**
  * Blob identity for one path at HEAD, or null when the path has none.
  *
  * Null means *no committed identity exists* — an untracked path — which is not the same as a path
