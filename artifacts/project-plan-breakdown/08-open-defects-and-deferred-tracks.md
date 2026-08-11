@@ -181,12 +181,9 @@ that approval deliberately does not cover.
   gh api repos/:owner/:repo/check-runs/93929943347/annotations -q '.[].message'
   #   "The job was not started because recent account payments have failed..."
   ```
-<<<<<<< HEAD
   The first command verifies the deliverable. The second and third verify the *absence* of the
   evidence the acceptance criterion required, and are recorded here so that absence stays legible
   rather than being rediscovered from the commit graph later.
-=======
->>>>>>> 344d15a (An adoption attempt found three defects; two of them were new)
 - **Dependencies:** account-side restoration of the plan capability that provides both Actions
   minutes and private-repository branch protection. This is **outside this repository and outside
   what any agent working in it can do** — nothing in the codebase can unblock it, and no amount of
