@@ -88,27 +88,29 @@ export function repositoryAvailable(root) {
 }
 
 /**
- * Which of these paths does the repository actually track?
+ * Which paths does the repository track that match these pathspecs?
  *
- * The question [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
- * named foremost, and the one a directory walk cannot answer. A structural detector that finds a
- * path on disk knows the path is *present*; saying *tracked* or *committed* requires asking here.
+ * The *enumerating* half of the repository seam, and the half a filesystem walk cannot stand in for.
+ * A detector that asks "is this path I found on disk tracked?" can only ever be as complete as the
+ * checkout it walked: a file that is committed but absent from the working tree — deleted without
+ * staging the deletion, excluded by a sparse checkout, never materialised at all — proposes no
+ * candidate, so the question is never asked and the rule reports a pass it did not establish. That
+ * is [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)'s
+ * source-of-truth defect in its purest form, and it survives the naive fix of confirming
+ * filesystem-proposed candidates through Git.
  *
- * Scoped to the paths asked about rather than returning the whole index: a detector has already
- * narrowed to its candidates, and the answer it needs is about those. This also keeps the cost
- * proportional to the question instead of to the size of the repository.
+ * So repository membership is asked of the repository. The pathspecs narrow the question to keep the
+ * cost proportional — they are a prefilter, never the decision. The caller applies its own rule to
+ * the result, so exactly one definition of what counts exists, in the detector that owns it.
  *
- * **No fallback, by the same reasoning as the digest.** Callers get `{ ok: false }` and must report
- * evidence unavailability; inferring tracked-ness from the filesystem would mint a second answer to
- * a question this module exists to answer once, and the quieter defect is the worse one. Failure to
- * know is represented as failure to know, never converted into a fact about the project
- * (Standard 44 R12).
+ * **No fallback**, as everywhere else in this module: `{ ok: false }` means the repository could not
+ * answer, and a caller must report evidence unavailability rather than substitute a filesystem
+ * guess (Standard 44 R12).
  */
-export function trackedAmong(root, paths) {
-  if (paths.length === 0) return { ok: true, tracked: new Set() };
-  const r = git(root, ["ls-files", "-z", "--cached", "--", ...paths]);
-  if (!r.ok) return { ok: false, tracked: null };
-  return { ok: true, tracked: new Set(r.out.split("\0").filter(Boolean)) };
+export function trackedMatching(root, pathspecs) {
+  const r = git(root, ["ls-files", "-z", "--cached", "--", ...pathspecs]);
+  if (!r.ok) return { ok: false, files: null };
+  return { ok: true, files: r.out.split("\0").filter(Boolean) };
 }
 
 /**
