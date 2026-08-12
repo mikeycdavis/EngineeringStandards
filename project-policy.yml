@@ -491,6 +491,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "ee570ebad022e7dddaca67420b0fae43"
+      - id: "review-architecture-no-hidden-global-state-005"
+        supersedes: "review-architecture-no-hidden-global-state-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-12"
+        evidence: "RE-REVIEWED 2026-08-12 against committed repository content at 7b35ed3, after the audit-exclusions work changed scripts/standards.mjs. scripts/inventory.mjs, scripts/fidelity.mjs and ADR 0007 are byte-identical to a72f302, so the remaining reviewed paths are outside this change's surface. The change adds module-scope bindings but no new module-scoped mutable run state. VENDOR_MARKERS is module-scoped matching configuration initialized once, and the approval rests on the absence of mutation sites rather than on const: const binds the reference while the Set object stays mutable, and that distinction is the one this record has needed before. The scan finds exactly two references in scripts/ and test/, the declaration at scripts/standards.mjs:298 and a has read at scripts/standards.mjs:690, with no add, delete, clear, reassignment or index write anywhere. The new mutable exclusion state -- ignored, exclusions, and the excluded member added to surfaceLoss -- is run-owned within the existing single-run block, the same model this attestation already governs, and it is threaded through collectFiles as an explicit parameter rather than reached for as hidden state. That is directionally stronger for the rule than the status quo, because the exclusion dependency is now visible in the function signature. ignoredEntries is imported from scripts/repository.mjs and introduces no second state owner in scripts/standards.mjs, preserving the constraint accepted when the Git seam was opened. The declaration scan was re-run across the governed set and reports no new top-level let or var: the three that exist are the recorded detectedCount and countMismatch in inventory.mjs and claims in fidelity.mjs, and standards.mjs still has none. No new module-level regex instance was introduced. Process exit remains the sole reset boundary and the invalidation conditions are unchanged. LIMITATION unchanged and carried forward: the declaration scan is not authoritative, because a binding mutated through an alias escapes it as surfaceLoss does through the loss parameter of collectFiles, so completeness remains a review obligation rather than a mechanical guarantee, and this approval does not assert that human enumeration is a sufficient control against hidden global state. RECORDED AT TRANSCRIPTION, as a fact about the record rather than a finding of the reviewer: ADR 0007's inventory table does not list VENDOR_MARKERS, ignored or exclusions from this cycle, nor ENV_PATHSPECS, which entered at a72f302 and was named in the evidence of event 004 without reaching the table. The scope statement has been behavioural since event 002, so every one of these bindings is governed whether or not the table names it, and the table is an audit aid rather than the source of applicability. It is recorded here because the table has now lagged the code across consecutive cycles, which is the observable trigger the dormant structural follow-on was given."
+        reference: "artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+          revision: "7b35ed3"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "d0019fcdb1a6e348037478fac4be5a1b"
 
   architecture.no-duplicate-implementations:
     reviews:
