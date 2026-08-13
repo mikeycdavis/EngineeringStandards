@@ -280,19 +280,25 @@ that approval deliberately does not cover.
 
   **Established on `develop` 2026-08-12.** `f77c08d` replaces name-matching with two signals that
   identify a tree rather than guess at its name: `ignoredEntries()` asks Git what the repository
-  ignores, and `VENDOR_MARKERS` matches `pyvenv.cfg`. Exclusions are recorded in `loss.excluded` and
-  surfaced in the report, so an exclusion is as visible as a cap. `562d304` carries the owner
+  ignores, and `VENDOR_MARKERS` matches `pyvenv.cfg`. **Exclusions made by those two signals** are
+  recorded in `loss.excluded` and surfaced in the report; two older skip paths are not, and that is
+  the subject of a gap row below. `562d304` carries the owner
   re-attestation of `architecture.no-hidden-global-state` against the changed reviewed surface, which
   the code change had made stale. Both merged through the protected path on a real required-check
   execution — twelve steps, not the zero-step infrastructure block that preceded it. Post-merge
   validation on `develop`: `24 passed, 4 failed, 22 skipped`, `architecture.no-hidden-global-state`
   `passed / attested`, and `unestablishedProhibitions` empty.
 
-  **Not yet established — the four obligations that keep this item open.** Each is an acceptance
-  criterion below, not a new requirement:
+  **Not yet established — the six obligations that keep this item open.** Each is a Deliverable or an
+  acceptance criterion below, not a new requirement. The first two were missed in this record's first
+  draft, which claimed the visibility criterion outright and omitted the policy mechanism entirely;
+  they were found by external review, and the correction is the reason to state the whole set rather
+  than the memorable part of it:
 
   | Gap | State |
   |---|---|
+  | Policy-declared exclusion mechanism | **Not implemented.** The Deliverable asks for exclusions declared "where a project already declares things — the policy". `f77c08d` derives them from Git ignores and a marker file instead, and neither [`schemas/project-policy.schema.json`](../../schemas/project-policy.schema.json) nor [`scripts/policy.mjs`](../../scripts/policy.mjs) contains any exclusion key. A repository-derived boundary is a good default, but it is not a project-level declaration, and a project cannot currently exclude a tree the repository does not already ignore. |
+  | No-silent-exclusion, for the *older* skip paths | **Partially unmet.** The two new signals record; two older paths still do not. `SKIP_DIRS` directories are skipped with a bare `continue` at [`scripts/standards.mjs`](../../scripts/standards.mjs), and ignored individual **files** are dropped with no per-file record — the latter deliberately and with a stated rationale, the former simply inherited. The criterion says an exclusion that silently shrinks coverage is the same defect class as a silent cap, so inheriting the behaviour does not exempt it. Note also that `collectFiles`'s own doc comment says every exclusion is recorded, which the file contradicts a few lines later; the comment is wrong, not the criterion. |
   | Aggregate total-read budget over tracked content | Not implemented. `MAX_FILES` and `MAX_READ_BYTES` remain per-count and per-file; there is no total. The heap test sizes a *vendored* tree, which exclusion now handles, so the tracked-content path is untested as well as unbounded. |
   | Marker-less ignored-tree fixture | Absent. The one fixture virtualenv carries **both** signals, so nothing proves the repository-ignore signal works where no marker file exists — the `.mypy_cache/` case that defeats the marker signal. |
   | Paired transition test | Absent. `tracked first-party code stays in scope` asserts a different property. No test makes the same content tracked and shows the result changes, which is the half that stops the fix passing by excluding too much. |
