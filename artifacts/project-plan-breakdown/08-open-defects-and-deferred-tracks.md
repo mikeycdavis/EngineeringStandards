@@ -289,15 +289,15 @@ that approval deliberately does not cover.
   validation on `develop`: `24 passed, 4 failed, 22 skipped`, `architecture.no-hidden-global-state`
   `passed / attested`, and `unestablishedProhibitions` empty.
 
-  **Not yet established — the six obligations that keep this item open.** Each is a Deliverable or an
-  acceptance criterion below, not a new requirement. The first two were missed in this record's first
-  draft, which claimed the visibility criterion outright and omitted the policy mechanism entirely;
-  they were found by external review, and the correction is the reason to state the whole set rather
-  than the memorable part of it:
+  **Not yet established — the five obligations that keep this item open**, plus one superseded row
+  kept visible. Each is a Deliverable or an acceptance criterion below, not a new requirement. Two
+  were missed in this record's first draft, which claimed the visibility criterion outright and
+  omitted the policy mechanism entirely; they were found by external review, and the correction is the
+  reason to state the whole set rather than the memorable part of it:
 
   | Gap | State |
   |---|---|
-  | Policy-declared exclusion mechanism | **Not implemented.** The Deliverable asks for exclusions declared "where a project already declares things — the policy". `f77c08d` derives them from Git ignores and a marker file instead, and neither [`schemas/project-policy.schema.json`](../../schemas/project-policy.schema.json) nor [`scripts/policy.mjs`](../../scripts/policy.mjs) contains any exclusion key. A repository-derived boundary is a good default, but it is not a project-level declaration, and a project cannot currently exclude a tree the repository does not already ignore. |
+  | ~~Policy-declared exclusion mechanism~~ | **SUPERSEDED 2026-08-13, not satisfied and not implemented.** `f77c08d` did not meet this wording — no exclusion key exists in [`schemas/project-policy.schema.json`](../../schemas/project-policy.schema.json) or [`scripts/policy.mjs`](../../scripts/policy.mjs), and a repository-derived boundary is not a project-level declaration. The disposition is that the *mechanism* was the wrong requirement rather than an unmet one; see the Deliverables amendment. The behavioural property it was reaching for **is** established. Recorded this way because "not satisfied by `f77c08d`" and "superseded" are different claims, and collapsing them would either credit work that did not happen or erase a decision that did. |
   | No-silent-exclusion, for the *older* skip paths | **Partially unmet.** The two new signals record; two older paths still do not. `SKIP_DIRS` directories are skipped with a bare `continue` at [`scripts/standards.mjs`](../../scripts/standards.mjs), and ignored individual **files** are dropped with no per-file record — the latter deliberately and with a stated rationale, the former simply inherited. The criterion says an exclusion that silently shrinks coverage is the same defect class as a silent cap, so inheriting the behaviour does not exempt it. Note also that `collectFiles`'s own doc comment says every exclusion is recorded, which the file contradicts a few lines later; the comment is wrong, not the criterion. |
   | Aggregate total-read budget over tracked content | Not implemented. `MAX_FILES` and `MAX_READ_BYTES` remain per-count and per-file; there is no total. The heap test sizes a *vendored* tree, which exclusion now handles, so the tracked-content path is untested as well as unbounded. |
   | Marker-less ignored-tree fixture | Absent. The one fixture virtualenv carries **both** signals, so nothing proves the repository-ignore signal works where no marker file exists — the `.mypy_cache/` case that defeats the marker signal. |
@@ -317,8 +317,39 @@ that approval deliberately does not cover.
   `phases/*.py`, or `tests/`. The audit then emits its own reduced-coverage finding under Standard 44
   R12 — correctly, but caused entirely by material outside the repository. A quiet result on a large
   repository may mean the audit never arrived.
-- **Deliverables:** a project-level exclusion mechanism, declared where a project already declares
-  things — the policy — rather than as a new configuration surface.
+- **Deliverables:** ~~a project-level exclusion mechanism, declared where a project already declares
+  things — the policy — rather than as a new configuration surface.~~ **MECHANISM SUPERSEDED
+  2026-08-13; the obligation is not.** Exclusions are derived from authoritative repository metadata
+  — what the repository already declares it ignores — with narrow intrinsic dependency markers as a
+  second signal. The surviving property, which is what this Deliverable was reaching for:
+
+  > A project can exclude non-project trees from audit through an authoritative repository-level
+  > mechanism, without requiring directory-name hardcoding and without causing policy presence or
+  > absence to change the audit's evidence surface.
+
+  *Why the placement changed.* The original wording was written before the repository seam existed,
+  when the policy was the only place a project could declare anything. Four reasons displaced it, the
+  second decisive on its own:
+
+  1. The policy owns **project applicability** — which rules apply to this project — not the
+     evaluator's filesystem traversal semantics. They are different authorities.
+  2. **`audit` runs without a policy.** A policy-only exclusion mechanism would make the same
+     repository audit differently depending on whether a policy happened to be supplied, which is the
+     evaluator-placement invariant violated at a different layer.
+  3. [ADR 0008](../adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+     establishes that a claim about repository state must be **measured at the repository seam**,
+     not inferred from a directory walk — which is why `ignoredEntries()` exists at all. Ignore
+     status is a repository fact; a policy key restating it would be a second, unmeasured copy of
+     the thing that ADR forbids asserting without measuring.
+  4. `.gitignore` **is** the project's canonical declaration that some material is not its own
+     auditable source. Re-declaring those paths in policy would create a second definition of the
+     same fact, and two definitions of one fact drift.
+
+  **The old wording is struck rather than deleted so it cannot be re-satisfied by accident.** The
+  obvious future "cleanup" is to add an `exclusions:` key to the policy schema so this line reads as
+  met. That would be a regression wearing the costume of completion: a second traversal authority,
+  drifting against `.gitignore`, and an evidence surface that changes with policy presence. Satisfying
+  the struck wording is no longer a way to satisfy the obligation — the block quote above is.
 - **Acceptance Criteria:**
   - Exclusions cannot be used to hide a violation from a rule that would otherwise catch it without
     that being visible in the output. An exclusion that silently shrinks coverage is the same defect
