@@ -16,7 +16,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
@@ -513,26 +513,28 @@ function regexLiteralEnd(text, open) {
   return -1;
 }
 
-/** Populated once per run, alongside `contents`, so the split cost is paid a single time. */
-const sources = new Map();
-const sourceOf = (f) => sources.get(f)?.code ?? "";
-const structureOf = (f) => sources.get(f)?.structure ?? "";
-const commentsOf = (f) => sources.get(f)?.comments ?? "";
-
 const MAX_FILES = 20000;
 const MAX_READ_BYTES = 400_000;
 const MAX_EVIDENCE = 12;
 
 // ---------------------------------------------------------------------------
 // Argument parsing
+//
+// Derived from the arguments the invocation was given, never from `process.argv` — ADR 0014. Reading
+// the process here would make the invocation's own configuration a property of the process, which is
+// the lifetime this design removes.
 // ---------------------------------------------------------------------------
 
-const argv = process.argv.slice(2);
-const subcommand = argv[0];
-const JSON_OUT = argv.includes("--json");
-const STRICT = argv.includes("--strict");
-const dirFlag = argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length);
-const positional = argv.slice(1).find((a) => !a.startsWith("--"));
+function parseArgs(argv) {
+  return {
+    argv,
+    subcommand: argv[0],
+    json: argv.includes("--json"),
+    strict: argv.includes("--strict"),
+    dirFlag: argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length),
+    positional: argv.slice(1).find((a) => !a.startsWith("--")),
+  };
+}
 
 function usage(stream = process.stderr) {
   stream.write(
@@ -567,15 +569,26 @@ const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
 const EXIT_INVOCATION = 2;
 
-if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-  usage(process.stdout);
-  process.exit(subcommand ? EXIT_OK : EXIT_INVOCATION);
-}
 const COMMANDS = new Set(["audit", "validate", "init"]);
-if (!COMMANDS.has(subcommand)) {
-  process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
-  usage();
-  process.exit(EXIT_INVOCATION);
+
+/**
+ * Returns an exit code when the invocation cannot proceed, and `null` when it can.
+ *
+ * It returns rather than exits. Nothing below the CLI boundary may terminate the process (ADR 0014):
+ * a helper that calls `process.exit` cannot be tested, cannot be called twice, and takes a decision
+ * that belongs to the caller.
+ */
+function checkInvocation({ subcommand }) {
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    usage(process.stdout);
+    return subcommand ? EXIT_OK : EXIT_INVOCATION;
+  }
+  if (!COMMANDS.has(subcommand)) {
+    process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
+    usage();
+    return EXIT_INVOCATION;
+  }
+  return null;
 }
 
 /**
@@ -590,7 +603,6 @@ if (!COMMANDS.has(subcommand)) {
  * regardless of it. One command cannot hold both without a flag selecting which contract applies,
  * and a flag that changes the exit contract is a trap.
  */
-const VALIDATING = subcommand === "validate";
 
 // ---------------------------------------------------------------------------
 // init — bootstrap (Standard 33)
@@ -599,7 +611,7 @@ const VALIDATING = subcommand === "validate";
 // bootstrap command slower than the thing it bootstraps.
 // ---------------------------------------------------------------------------
 
-if (subcommand === "init") {
+async function runInit({ argv, dirFlag, positional, json }, emit) {
   const dryRun = argv.includes("--dry-run");
   const modeFlag = argv.find((a) => a.startsWith("--mode="))?.slice("--mode=".length) ?? null;
   const overwrite = argv
@@ -612,23 +624,23 @@ if (subcommand === "init") {
     report = await planInit(target, { mode: modeFlag, overwrite });
   } catch (error) {
     process.stderr.write(`standards init: ${error.message}\n`);
-    process.exit(EXIT_INVOCATION);
+    return EXIT_INVOCATION;
   }
 
   // The dry run and the real run share one computation, so the report cannot disagree with what
   // apply() then does (Standard 33 R5).
   if (!dryRun) await applyInit(target, report);
 
-  if (JSON_OUT) {
-    process.stdout.write(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
+  if (json) {
+    emit(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
   } else {
-    process.stdout.write(renderInit(report, { dryRun }) + "\n");
+    emit(renderInit(report, { dryRun }) + "\n");
   }
 
   // A conflict is unfinished work, not a failure of the command: nothing was changed and the
   // operator has to decide. Exit 1 so a script notices, distinct from 2 which means init could
   // not run at all.
-  process.exit(report.conflicts.length > 0 ? EXIT_FINDINGS : EXIT_OK);
+  return report.conflicts.length > 0 ? EXIT_FINDINGS : EXIT_OK;
 }
 
 // ---------------------------------------------------------------------------
@@ -646,15 +658,70 @@ function findRoot(start) {
   }
 }
 
-const target = dirFlag ?? positional ?? ".";
-if (!existsSync(target)) {
-  process.stderr.write(`standards: no such directory: ${target}\n`);
-  process.exit(EXIT_INVOCATION);
-}
-const root = dirFlag ? path.resolve(dirFlag) : findRoot(target);
+/**
+ * Everything one invocation owns, constructed once per run and passed explicitly — ADR 0014.
+ *
+ * **Construction, not reset.** Each object below is created here, per call. There is deliberately no
+ * `reset()` and no `clear()` at run start: clearing makes sequential runs look independent while
+ * leaving two concurrent runs sharing one object, and only an identity assertion can tell those two
+ * situations apart. Creating removes the possibility instead of policing it.
+ *
+ * **What is NOT here.** Frozen lookup tables, extension sets and matching configuration stay at
+ * module scope. Their values do not depend on which repository is being audited and they have no
+ * mutation sites; the invariant is that no *execution-specific* mutable state outlives its
+ * invocation, not that module scope is empty.
+ *
+ * `sources` is here because it is execution-specific: its values are the audited project's file
+ * contents, so the same key yields a different correct value for a different target.
+ */
+function createRun({ root, strict, json }) {
+  const findings = [];
+  const sources = new Map();
 
-/** Repo-relative path with forward slashes, so output is stable across platforms. */
-const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  return {
+    root,
+    strict,
+    json,
+    findings,
+    sources,
+
+    /** Repo-relative path with forward slashes, so output is stable across platforms. */
+    rel: (p) => path.relative(root, p).split(path.sep).join("/"),
+
+    has: (p) => existsSync(path.join(root, p)),
+
+    sourceOf: (f) => sources.get(f)?.code ?? "",
+    structureOf: (f) => sources.get(f)?.structure ?? "",
+    commentsOf: (f) => sources.get(f)?.comments ?? "",
+
+    /**
+     * `label` is the Standard 44 evidence label and is not decorative. A detection that rests on a
+     * file existing at a path with a defined meaning is OBSERVED. A detection that rests on matching
+     * a naming convention or a content pattern is INFERRED — reporting a heuristic as observed is the
+     * fabrication error R2 prohibits.
+     *
+     * This remains the only writer of `findings`, which is what keeps the accumulator auditable. The
+     * single-writer property ADR 0007 identified is preserved; what changed is the lifetime.
+     */
+    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule }) {
+      const shown = evidence.slice(0, MAX_EVIDENCE);
+      const omitted = evidence.length - shown.length;
+      findings.push({
+        id,
+        category,
+        severity,
+        label,
+        evidence: shown,
+        message: omitted > 0 ? `${message} (${evidence.length} total; ${omitted} not listed)` : message,
+        standardRef: standardRef ?? R.baseline,
+        // The canonical rule this finding is evidence for (Standard 26, ADR 0002). Descriptive
+        // "observed/detected" findings carry none: they report what the repository HAS, not whether
+        // it complies, and binding them to a rule would manufacture a verdict out of an observation.
+        rule: rule ?? null,
+      });
+    },
+  };
+}
 
 /**
  * Walk the tree, recording what could not be walked.
@@ -670,7 +737,8 @@ const rel = (p) => path.relative(root, p).split(path.sep).join("/");
  * loss is that an exclusion is a *decision* about what is not the project's code, and a decision
  * nobody can see is indistinguishable from a tool that quietly went blind.
  */
-async function collectFiles(dir, acc, loss, excluded) {
+async function collectFiles(dir, acc, loss, excluded, run) {
+  const { root, rel } = run;
   if (acc.length >= MAX_FILES) {
     loss.capped = true;
     return acc;
@@ -704,7 +772,7 @@ async function collectFiles(dir, acc, loss, excluded) {
         loss.excluded.push({ path: rel(full), reason: "ignored by the repository" });
         continue;
       }
-      await collectFiles(full, acc, loss, excluded);
+      await collectFiles(full, acc, loss, excluded, run);
     } else if (entry.isFile()) {
       // Ignored FILES are dropped without a per-file record. A generated artifact sitting beside
       // tracked code is not a surface anyone expected to be audited, and listing each one would
@@ -740,33 +808,11 @@ async function readText(file) {
 
 // ---------------------------------------------------------------------------
 // Finding construction
+//
+// `findings` and its single writer `addFinding` live on the run object (`createRun`), because the
+// accumulator belongs to the invocation that produced it. Detectors receive the run and destructure
+// what they need; none of them touches the array directly.
 // ---------------------------------------------------------------------------
-
-const findings = [];
-
-/**
- * `label` is the Standard 44 evidence label and is not decorative. A detection that rests on a file
- * existing at a path with a defined meaning is OBSERVED. A detection that rests on matching a naming
- * convention or a content pattern is INFERRED — reporting a heuristic as observed is the fabrication
- * error R2 prohibits.
- */
-function addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule }) {
-  const shown = evidence.slice(0, MAX_EVIDENCE);
-  const omitted = evidence.length - shown.length;
-  findings.push({
-    id,
-    category,
-    severity,
-    label,
-    evidence: shown,
-    message: omitted > 0 ? `${message} (${evidence.length} total; ${omitted} not listed)` : message,
-    standardRef: standardRef ?? R.baseline,
-    // The canonical rule this finding is evidence for (Standard 26, ADR 0002). Descriptive
-    // "observed/detected" findings carry none: they report what the repository HAS, not whether it
-    // complies, and binding them to a rule would manufacture a verdict out of an observation.
-    rule: rule ?? null,
-  });
-}
 
 const uniq = (xs) => [...new Set(xs)].sort();
 
@@ -779,7 +825,8 @@ const MANIFESTS = [
   "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile", "composer.json",
 ];
 
-function detectArchitecture(files, contents) {
+function detectArchitecture(files, contents, run) {
+  const { rel, addFinding } = run;
   const archDoc = files.find((f) => rel(f).toLowerCase() === "docs/architecture.md");
   if (archDoc) {
     addFinding({
@@ -813,7 +860,8 @@ function detectArchitecture(files, contents) {
   });
 }
 
-function detectCapabilities(files, contents) {
+function detectCapabilities(files, contents, run) {
+  const { rel, addFinding } = run;
   const evidence = [];
   const notes = [];
 
@@ -867,7 +915,8 @@ const API_CONTENT = [
   /func\s+\w*Handler\s*\(\s*w\s+http\.ResponseWriter/,
 ];
 
-function detectApis(files, contents) {
+function detectApis(files, contents, run) {
+  const { rel, addFinding, structureOf } = run;
   const specs = files.filter((f) =>
     /(^|\/)(openapi|swagger)\.(ya?ml|json)$/i.test(rel(f)),
   );
@@ -918,7 +967,8 @@ const JOB_CONTENT = [
  */
 const JOB_PACKAGES = "celery|sidekiq|bullmq|bull|agenda|node-cron|apscheduler|resque";
 
-function detectJobs(files, contents) {
+function detectJobs(files, contents, run) {
+  const { rel, addFinding, structureOf, sourceOf } = run;
   const workflowCron = files.filter((f) => {
     if (!/\.github\/workflows\/.*\.ya?ml$/.test(rel(f))) return false;
     const text = contents.get(f) ?? "";
@@ -973,7 +1023,8 @@ const INTEGRATION_SDK = [
   ["@slack/|slack_sdk", "Slack"], ["octokit|PyGithub", "GitHub"],
 ];
 
-function detectIntegrations(files, contents) {
+function detectIntegrations(files, contents, run) {
+  const { rel, addFinding, sourceOf } = run;
   const envTemplates = files.filter((f) =>
     /(^|\/)\.env\.(example|template|sample)$|(^|\/)appsettings\.(Example|Template)\.json$/i.test(rel(f)),
   );
@@ -1024,7 +1075,8 @@ const AI_SDK = [
   ["mistralai", "Mistral"],
 ];
 
-function detectAiInterfaces(files, contents) {
+function detectAiInterfaces(files, contents, run) {
+  const { rel, addFinding, sourceOf } = run;
   const skillFiles = files.filter((f) => /(^|\/)SKILL\.md$/.test(rel(f)));
   const promptFiles = files.filter((f) => /(^|\/)prompts?\//i.test(rel(f)) || /prompt.*\.md$/i.test(rel(f)));
   const declared = [...skillFiles, ...promptFiles];
@@ -1066,14 +1118,14 @@ function detectAiInterfaces(files, contents) {
 // Detectors — absence, unfinished work, and discrepancy
 // ---------------------------------------------------------------------------
 
-const has = (p) => existsSync(path.join(root, p));
 const TEST_RE = /(^|\/)(tests?|spec|__tests__)\/|\.(test|spec)\.[jt]sx?$|_test\.(go|py)$|Tests?\.cs$|test_.*\.py$/i;
 const CI_FILES = [
   ".github/workflows", "azure-pipelines.yml", ".gitlab-ci.yml", "Jenkinsfile",
   ".circleci/config.yml", ".travis.yml", "bitbucket-pipelines.yml",
 ];
 
-function detectMissingDocs(files, contents) {
+function detectMissingDocs(files, contents, run) {
+  const { rel, addFinding } = run;
   const missing = [];
   if (!files.some((f) => rel(f).toLowerCase() === "docs/architecture.md")) missing.push("docs/architecture.md");
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
@@ -1098,7 +1150,8 @@ function detectMissingDocs(files, contents) {
  * the file existing is not the same as the file being correct or current, and the catalog says so
  * rather than leaving a reader to infer it (Standard 24 R2).
  */
-function detectArchitectureArtifacts() {
+function detectArchitectureArtifacts(run) {
+  const { has, addFinding } = run;
   const manifest = ["PROJECT.md", "artifacts/project-manifest.md"];
   if (!manifest.some((f) => has(f))) {
     addFinding({
@@ -1151,7 +1204,8 @@ function detectArchitectureArtifacts() {
  * plan or an untouched template is a judgement no scan makes, and Standard 44's Implementation
  * section says so rather than implying this check covers it.
  */
-function detectMissingPlanningArtifacts(files, contents) {
+function detectMissingPlanningArtifacts(files, contents, run) {
+  const { has, addFinding, rel } = run;
   const dir = "artifacts/project-plan-breakdown";
   if (!has(dir)) {
     addFinding({
@@ -1198,7 +1252,8 @@ function detectMissingPlanningArtifacts(files, contents) {
   }
 }
 
-function detectMissingAuditInfrastructure(files) {
+function detectMissingAuditInfrastructure(files, run) {
+  const { rel, has, addFinding } = run;
   const tests = files.filter((f) => TEST_RE.test(rel(f)));
   const ci = CI_FILES.filter((c) => has(c));
   const missing = [];
@@ -1218,7 +1273,8 @@ function detectMissingAuditInfrastructure(files) {
   });
 }
 
-function detectUnverifiedFunctionality(files) {
+function detectUnverifiedFunctionality(files, run) {
+  const { rel, findings, addFinding } = run;
   const tests = files.filter((f) => TEST_RE.test(rel(f)));
   if (tests.length > 0) return; // per-capability coverage mapping is not attempted; see the report note
   const capabilities = findings.filter((f) =>
@@ -1267,7 +1323,8 @@ const UNFINISHED_CODE = [
   [/\b(it|test|describe)\.skip\(|\bxit\(|@pytest\.mark\.skip|\[Ignore\]|\bt\.Skip\(/, "skipped tests"],
 ];
 
-function detectUnfinished(files) {
+function detectUnfinished(files, run) {
+  const { rel, commentsOf, structureOf, addFinding } = run;
   const byKind = new Map();
   const record = (kind, f) => {
     if (!byKind.has(kind)) byKind.set(kind, []);
@@ -1296,7 +1353,8 @@ function detectUnfinished(files) {
 
 const ENTRYISH = /(^|\/)(index|main|app|Program|Startup|__init__|__main__|setup|conftest)\.[a-z]+$/i;
 
-function detectDeadCode(files, contents) {
+function detectDeadCode(files, contents, run) {
+  const { rel, addFinding } = run;
   const candidates = files.filter((f) => {
     const r = rel(f);
     if (!/\.(m?[jt]sx?|py|cs|go|rb)$/.test(r)) return false;
@@ -1330,7 +1388,8 @@ function detectDeadCode(files, contents) {
   });
 }
 
-function detectOpenQuestions(files, contents) {
+function detectOpenQuestions(files, contents, run) {
+  const { rel, addFinding } = run;
   const qFile = files.find((f) => rel(f) === "artifacts/project-baseline/open-questions.md");
   if (!qFile) return;
   const text = contents.get(qFile) ?? "";
@@ -1406,7 +1465,8 @@ const canonicalStatus = (raw) => {
   return STATUS_ALIASES[first.toLowerCase()] ?? upper;
 };
 
-async function detectPlanDiscrepancies(files, contents) {
+async function detectPlanDiscrepancies(files, contents, run) {
+  const { rel, root, addFinding } = run;
   const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
   if (planFiles.length === 0) return;
 
@@ -1527,7 +1587,8 @@ function looksLikeRepositoryPath(p) {
   return true;
 }
 
-function detectDocDiscrepancies(files, contents) {
+function detectDocDiscrepancies(files, contents, run) {
+  const { rel, root, addFinding } = run;
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
   if (!readme) return;
   const text = contents.get(readme) ?? "";
@@ -1566,7 +1627,8 @@ function detectDocDiscrepancies(files, contents) {
   });
 }
 
-function detectStandardsViolations(files, contents) {
+function detectStandardsViolations(files, contents, run) {
+  const { has, rel, addFinding } = run;
   const violations = [];
   if (has("artifacts/project-baseline")) {
     if (!has("artifacts/project-baseline/reconstructed-baseline.md")) {
@@ -1650,7 +1712,8 @@ const ENV_PERMITTED = /\.(example|template|sample|vault)$/;
 // environment files. One definition of what counts, in the detector that owns it.
 const ENV_PATHSPECS = ["*.env*"];
 
-function detectCommittedEnvFiles(files, repoRoot, repo) {
+function detectCommittedEnvFiles(files, repoRoot, repo, run) {
+  const { rel, addFinding } = run;
   const isCandidate = (p) => ENV_FILE_RE.test(p) && !ENV_PERMITTED.test(p);
 
   // Present on disk, and used only to describe what a reader can see when the index cannot be read.
@@ -1728,7 +1791,8 @@ const SECRET_PATTERNS = [
   [/\bsk_live_[A-Za-z0-9]{16,}/, "Stripe live secret key"],
 ];
 
-function detectSecretsInArtifacts(files, contents) {
+function detectSecretsInArtifacts(files, contents, run) {
+  const { rel, sourceOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     const p = rel(f);
@@ -1830,7 +1894,8 @@ function carriesJustification(raw, structure, from, to) {
  * still holds the justification comment, because that is the one thing the structural view removes.
  * The span is what binds them: two readings of one site, not two searches of one file.
  */
-function detectSwallowedExceptions(files, contents) {
+function detectSwallowedExceptions(files, contents, run) {
+  const { rel, structureOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
@@ -1891,7 +1956,8 @@ const CERT_BYPASS = [
   /ServerCertificateCustomValidationCallback\s*=\s*[^;]*=>\s*true/,
 ];
 
-function detectCertBypass(files) {
+function detectCertBypass(files, run) {
+  const { rel, structureOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
@@ -1936,7 +2002,8 @@ const SQL_STATEMENT = String.raw`(SELECT\b[\s\S]*?\bFROM|INSERT\s+INTO|UPDATE\b[
 const SQL_TEMPLATE = new RegExp("`[^`]*\\b" + SQL_STATEMENT + "\\b[^`]*\\$\\{[^}]+\\}[^`]*`", "i");
 const SQL_FSTRING = new RegExp('f["\'][^"\']*\\b' + SQL_STATEMENT + '\\b[^"\']*\\{[^}]+\\}[^"\']*["\']', "i");
 
-function detectSqlConcat(files) {
+function detectSqlConcat(files, run) {
+  const { rel, sourceOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
@@ -1960,7 +2027,8 @@ function detectSqlConcat(files) {
 
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
-function renderHuman(fileCount, surface) {
+function renderHuman(fileCount, surface, run) {
+  const { root, findings, strict } = run;
   const lines = [];
   lines.push(`standards audit — ${path.basename(root)} (${root.split(path.sep).join("/")})`);
   lines.push(`${fileCount} file(s) scanned, ${findings.length} finding(s).`);
@@ -2032,376 +2100,430 @@ function renderHuman(fileCount, surface) {
   lines.push("clean run means nothing matched the patterns — not that the repository is compliant.");
   lines.push("Per-capability test coverage, dead-code reachability, and most standards requirements");
   lines.push("are not mechanically checked. See design/standards-audit-cli.md.");
-  if (STRICT && failing > 0) lines.push(`--strict: exiting 1 because ${failing} finding(s) need attention.`);
+  if (strict && failing > 0) lines.push(`--strict: exiting 1 because ${failing} finding(s) need attention.`);
   return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Main — one invocation, start to finish
+//
+// Every mutable object below is created here and dies here (ADR 0014). `main` returns an exit code
+// rather than calling process.exit, so it can be called twice, called concurrently, and compared
+// against a fresh-process run. Only the CLI boundary at the foot of this file terminates anything.
 // ---------------------------------------------------------------------------
 
-const surfaceLoss = { dirs: [], capped: false, excluded: [] };
+export async function main(args) {
+  /**
+   * Returns `{ exitCode, stdout, run, surface }`, not a bare code.
+   *
+   * The extra fields exist so independence can be *falsified*. A concurrency test that compares
+   * against a globally patched `process.stdout.write` cannot distinguish two independent runs from
+   * two interleaved ones, so each invocation hands back the bytes it wrote and the objects it owned,
+   * and the test compares those. They are observation, not CLI surface: the rendered JSON envelope
+   * is unchanged, and no consumer reads these.
+   */
+  const written = [];
+  const emit = (s) => {
+    written.push(String(s));
+    return process.stdout.write(s);
+  };
+  let run = null;
+  let surface = null;
+  const done = (exitCode) => ({ exitCode, stdout: written.join(""), run, surface });
 
-// What the repository already treats as not-its-own. Asked before the walk so the answer costs one
-// subprocess rather than one per candidate directory, and so an unavailable repository degrades to
-// "exclude nothing" in one place instead of at every decision point.
-const ignored = ignoredEntries(root);
-const exclusions = {
-  dirs: new Set(ignored.ok ? ignored.directories : []),
-  files: new Set(ignored.ok ? ignored.files : []),
-};
-const files = await collectFiles(root, [], surfaceLoss, exclusions);
-const contents = new Map();
-const unreadableFiles = [];
-const truncatedFiles = [];
-for (const f of files) {
-  if (!TEXT_EXT.has(path.extname(f))) continue;
-  const read = await readText(f);
-  if (!read.ok) unreadableFiles.push(f);
-  else if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
-  contents.set(f, read.text);
-  if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
-}
+  const cli = parseArgs(args);
+  const invalid = checkInvocation(cli);
+  if (invalid !== null) return done(invalid);
 
-// Evidence-surface findings: what the audit could NOT search.
-//
-// These carry `rule: null` deliberately. Evidence loss is a property of the run, not a violation by
-// the project, and binding it to a rule would make one unreadable file fail every rule whose
-// detector would have read it — one defect producing dozens of findings, and a second compliance
-// owner for every detector in the file. Detector results stay scoped to what they actually saw;
-// this says how much that was.
-if (unreadableFiles.length) {
-  addFinding({
-    id: "evidence-unreadable-file",
-    category: "evidence-surface",
-    severity: "warning",
-    label: "OBSERVED",
-    evidence: uniq(unreadableFiles.map(rel)),
-    message: `${unreadableFiles.length} file(s) could not be read. Nothing was searched in them, so no clean result covers them.`,
-    standardRef: R.search,
-  });
-}
-if (surfaceLoss.dirs.length) {
-  addFinding({
-    id: "evidence-unreadable-dir",
-    category: "evidence-surface",
-    severity: "warning",
-    label: "OBSERVED",
-    evidence: uniq(surfaceLoss.dirs.map(rel)),
-    message: `${surfaceLoss.dirs.length} directory(ies) could not be listed. Anything beneath them is outside every result in this run.`,
-    standardRef: R.search,
-  });
-}
-if (truncatedFiles.length) {
-  addFinding({
-    id: "evidence-truncated-file",
-    category: "evidence-surface",
-    // Informational rather than a warning: the cap is a deliberate bound, not a fault, and findings
-    // from the prefix are kept. What it must never be is invisible.
-    severity: "info",
-    label: "OBSERVED",
-    evidence: uniq(truncatedFiles),
-    message: `${truncatedFiles.length} file(s) exceeded the ${MAX_READ_BYTES}-byte read cap and were searched in part.`,
-    standardRef: R.search,
-  });
-}
-if (surfaceLoss.capped) {
-  addFinding({
-    id: "evidence-file-cap",
-    category: "evidence-surface",
-    severity: "warning",
-    label: "OBSERVED",
-    evidence: [`${MAX_FILES} file limit`],
-    message: `The walk stopped at the ${MAX_FILES}-file cap. Files beyond it were never collected and are outside every result in this run.`,
-    standardRef: R.search,
-  });
-}
-// Exclusions are reported through the envelope and the header, deliberately NOT as a finding.
-//
-// A finding carries `evidence`, and evidence is read as "paths this run has something to say
-// about". An excluded tree is the opposite: the run has nothing to say about it, by decision. Every
-// consumer that scans findings for paths — including this repository's own regression that a
-// vendored tree must not appear in the findings — would read the exclusion record as the very
-// pollution it exists to prevent, and could not tell the two apart.
-//
-// So it goes where the other properties-of-the-run live, beside `fileCapReached`, and the header
-// states it in the same breath as the scanned count.
-const evidenceSurface = {
-  complete: !unreadableFiles.length && !surfaceLoss.dirs.length && !truncatedFiles.length && !surfaceLoss.capped,
-  unreadableFiles: uniq(unreadableFiles.map(rel)),
-  unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
-  truncatedFiles: uniq(truncatedFiles),
-  fileCapReached: surfaceLoss.capped,
-  excludedDirectories: surfaceLoss.excluded,
-  // Recorded because the exclusion set is only as good as the source that produced it. A run with
-  // no repository excluded nothing, and a reader comparing two runs needs to know which they have.
-  exclusionsFrom: ignored.ok ? "repository" : "unavailable",
-};
+  if (cli.subcommand === "init") return done(await runInit(cli, emit));
 
-// Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
-detectArchitecture(files, contents);
-detectCapabilities(files, contents);
-detectApis(files, contents);
-detectJobs(files, contents);
-detectIntegrations(files, contents);
-detectAiInterfaces(files, contents);
-
-detectMissingDocs(files, contents);
-detectArchitectureArtifacts();
-detectMissingPlanningArtifacts(files, contents);
-detectMissingAuditInfrastructure(files);
-detectUnverifiedFunctionality(files);
-detectUnfinished(files);
-detectDeadCode(files, contents);
-detectOpenQuestions(files, contents);
-await detectPlanDiscrepancies(files, contents);
-detectDocDiscrepancies(files, contents);
-detectStandardsViolations(files, contents);
-
-// Availability is probed once and shared: the env detector and attestation freshness both need the
-// repository, and asking twice would spend a second subprocess to learn the same thing.
-const repoAvailability = repositoryAvailable(root);
-const envCheck = detectCommittedEnvFiles(files, root, repoAvailability);
-detectSecretsInArtifacts(files, contents);
-detectSwallowedExceptions(files, contents);
-detectCertBypass(files);
-detectSqlConcat(files);
-
-// ---------------------------------------------------------------------------
-// Verdict — catalog + policy + findings (Standards 25, 27, 30)
-//
-// The three-way separation is deliberate and must not be violated here: the catalog defines rule
-// identity and metadata, project-policy.yml defines what applies to THIS project, and everything
-// above produces evidence. Nothing in this section redefines a rule or invents applicability.
-
-const catalog = await loadCatalog();
-assertBindings(
-  catalog,
-  findings.map((f) => f.rule).filter(Boolean),
-);
-
-if (!VALIDATING) {
-  // audit: evidence only. No status, no score, no policy required — ADR 0004.
-  if (JSON_OUT) {
-    process.stdout.write(
-      JSON.stringify(
-        {
-          schemaVersion: SCHEMA_VERSION,
-          repo: root.split(path.sep).join("/"),
-          auditedAt: new Date().toISOString(),
-          // What the run could not search. Additive field: a consumer that ignores it reads the
-          // findings exactly as before, and one that reads it can tell a clean result from an
-          // unexamined one.
-          evidenceSurface,
-          findings,
-        },
-        null,
-        2,
-      ) + "\n",
-    );
-  } else {
-    process.stdout.write(renderHuman(files.length, evidenceSurface) + "\n");
-    process.stdout.write(
-      "\nThis is evidence, not a verdict. Run `standards validate` for a compliance status.\n",
-    );
+  const target = cli.dirFlag ?? cli.positional ?? ".";
+  if (!existsSync(target)) {
+    process.stderr.write(`standards: no such directory: ${target}\n`);
+    return done(EXIT_INVOCATION);
   }
-  process.exit(STRICT && findings.some((f) => f.severity !== "info") ? EXIT_FINDINGS : EXIT_OK);
-}
+  const root = cli.dirFlag ? path.resolve(cli.dirFlag) : findRoot(target);
+  const validating = cli.subcommand === "validate";
 
-// ---------------------------------------------------------------------------
-// validate — the verdict (Standards 25, 27, 30)
-//
-// The three-way separation must not be violated here: the catalog defines rule identity and
-// metadata, project-policy.yml defines what applies to THIS project, and everything above produces
-// evidence. Nothing in this section redefines a rule or invents applicability.
+  run = createRun({ root, strict: cli.strict, json: cli.json });
+  const { rel, findings, sources, addFinding } = run;
 
-const policy = await loadProjectPolicy(root);
+  const surfaceLoss = { dirs: [], capped: false, excluded: [] };
 
-/**
- * The version-identity guard — a verdict may not be reported for version X unless the framework
- * executing the run identifies itself as X.
- *
- * `standardVersion` declares which framework version governs a project, and nothing resolves that
- * declaration: every run evaluates against the catalog on disk, whichever version that happens to
- * be. While this repository was the framework's only consumer the two were the same working tree
- * and could not disagree, so the gap was recorded and deferred (Standard 21 R5).
- *
- * Distribution ends that. Once a project pins a version and a workflow checks out a ref, the pin
- * and the ref are independent sources of truth: a policy declaring 2.0.0 can be evaluated by 2.1.0,
- * and the envelope would carry `standardVersion: "2.0.0"` beside a verdict the 2.0.0 rule set never
- * produced. That is not a compliance failure — it is a provenance lie, and a verdict that misstates
- * which rules produced it is the false green this tool exists to refuse.
- *
- * This is an honesty guard, NOT historical rule-set resolution. It detects the disagreement and
- * stops; it cannot evaluate the declared version, and does not pretend to. Standard 21 R5 remains
- * unimplemented and this narrows rather than closes it.
- *
- * Exit 2, beside the unreadable-policy case below: the policy and the framework disagree about what
- * is being evaluated, which is a configuration error. Exit 1 would assert the project failed a
- * rule, and no rule was reached. No envelope is emitted in either output mode — an envelope carries
- * a `status`, and that status is precisely the claim that must not be made. The JSON branch emits a
- * typed error instead of nothing, so a consumer parsing stdout gets a loud object rather than a
- * parse failure it might mistake for an empty result.
- *
- * A missing or malformed `standardVersion` cannot reach here: the schema makes it required and pins
- * it to a full semver triple, so loadProjectPolicy() has already returned `document: null` and the
- * configuration path below owns that case. The guard is deliberately confined to `validate` —
- * `audit` reports evidence and claims no standards version, so widening it there would attach a
- * version precondition to a command whose contract does not depend on one.
- */
-const FRAMEWORK_VERSION = (
-  await readFile(path.join(path.dirname(SELF), "..", "VERSION"), "utf8")
-).trim();
-const declaredVersion = policy.document?.standardVersion;
-
-if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
-  const message =
-    `project-policy.yml declares standardVersion ${declaredVersion}, but the framework executing ` +
-    `this run is ${FRAMEWORK_VERSION}. No verdict was produced: a compliance status reported under ` +
-    `a version that did not evaluate it would misstate its own provenance.`;
-  if (JSON_OUT) {
-    process.stdout.write(
-      JSON.stringify(
-        {
-          error: "VERSION_MISMATCH",
-          policyStandardVersion: declaredVersion,
-          frameworkVersion: FRAMEWORK_VERSION,
-          message,
-          historicalResolution: "not implemented (Standard 21 R5)",
-        },
-        null,
-        2,
-      ) + "\n",
-    );
-  } else {
-    process.stderr.write(
-      `VERSION_MISMATCH\n  ${message}\n\n` +
-        `  Resolving a historical rule set is not implemented (Standard 21 R5), so this run cannot\n` +
-        `  evaluate ${declaredVersion}. Either execute the framework at ${declaredVersion}, or update\n` +
-        `  project-policy.yml to ${FRAMEWORK_VERSION} deliberately and review the failures the newer\n` +
-        `  rule set reports. Upgrading the governing version is an engineering event, not a default.\n`,
-    );
+  // What the repository already treats as not-its-own. Asked before the walk so the answer costs one
+  // subprocess rather than one per candidate directory, and so an unavailable repository degrades to
+  // "exclude nothing" in one place instead of at every decision point.
+  const ignored = ignoredEntries(root);
+  const exclusions = {
+    dirs: new Set(ignored.ok ? ignored.directories : []),
+    files: new Set(ignored.ok ? ignored.files : []),
+  };
+  const files = await collectFiles(root, [], surfaceLoss, exclusions, run);
+  const contents = new Map();
+  // The repository surface this invocation measured. Named so two runs can be compared by identity.
+  surface = { files, contents, surfaceLoss };
+  const unreadableFiles = [];
+  const truncatedFiles = [];
+  for (const f of files) {
+    if (!TEXT_EXT.has(path.extname(f))) continue;
+    const read = await readText(f);
+    if (!read.ok) unreadableFiles.push(f);
+    else if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+    contents.set(f, read.text);
+    if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
   }
-  process.exit(EXIT_INVOCATION);
-}
 
-/**
- * Digest the paths each attestation says it reviewed, so a material change to them makes the
- * attestation stale (ADR 0005 rule 4).
- *
- * Content-based rather than revision-based on purpose: invalidating every attestation on every
- * commit would make the mechanism unusable, and it would be abandoned. Digesting what was actually
- * reviewed invalidates on material change, which is the real requirement.
- */
-function attestationFreshness(document, repoRoot, repo) {
-  const out = new Map();
-  for (const [ruleId, record] of Object.entries(document?.attestations ?? {})) {
-    // Freshness describes what may establish the rule now, so it is computed for the newest review
-    // event. Earlier events keep their own recorded provenance and are reported by
-    // `npm run attestations`; they are history, and history does not go stale.
-    const against = currentReview(ruleId, record)?.reviewedAgainst;
-    if (!against?.paths?.length) continue;
-    out.set(ruleId, classifyFreshness(repoRoot, against, repo));
+  // Evidence-surface findings: what the audit could NOT search.
+  //
+  // These carry `rule: null` deliberately. Evidence loss is a property of the run, not a violation by
+  // the project, and binding it to a rule would make one unreadable file fail every rule whose
+  // detector would have read it — one defect producing dozens of findings, and a second compliance
+  // owner for every detector in the file. Detector results stay scoped to what they actually saw;
+  // this says how much that was.
+  if (unreadableFiles.length) {
+    addFinding({
+      id: "evidence-unreadable-file",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: uniq(unreadableFiles.map(rel)),
+      message: `${unreadableFiles.length} file(s) could not be read. Nothing was searched in them, so no clean result covers them.`,
+      standardRef: R.search,
+    });
   }
-  return { states: out, repo };
-}
-
-const { states: freshness, repo } = attestationFreshness(policy.document, root, repoAvailability);
-
-// Repository content is the source of truth for attestation freshness, and its absence is a fact
-// about the search mechanism rather than about the project (Standard 44 R12). It is reported as an
-// infrastructure finding carrying no rule, exactly as evidence-surface loss is, so that it can never
-// become a second compliance owner — the affected attestations independently fail to establish their
-// rules, and that is where the compliance consequence lives. It does not exit 2: one unavailable
-// provenance source must not discard every other result the run established.
-if (!repo.available && freshness.size > 0) {
-  addFinding({
-    id: "repository-evidence-unavailable",
-    category: "evidence-surface",
-    severity: "warning",
-    label: "OBSERVED",
-    evidence: [...freshness.keys()],
-    message:
-      `Attestation freshness could not be established for ${freshness.size} rule(s): ${repo.reason}. ` +
-      `Repository content identifies what was reviewed; without it, no approval establishes a rule.`,
-    standardRef: R.search,
-  });
-}
-// A rule whose evidence could not be obtained was not evaluated this run, whatever the static set
-// says. Withdrawing it here rather than letting it report a clean pass is what keeps `nobody could
-// look` distinct from `nobody found anything` — a distinction that matters most for a `forbidden`
-// rule, which is satisfied by absence and would otherwise pass precisely when it knows least
-// (Standard 45 R6).
-const evaluatedThisRun = EVALUATED_RULES.filter(
-  (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false),
-);
-
-const verdict = evaluate({
-  catalog,
-  policy: policy.document,
-  findings,
-  evaluated: evaluatedThisRun,
-  today: new Date().toISOString().slice(0, 10),
-  freshness,
-});
-
-// Framework maturity, read from this framework's own inventory rather than the target repository.
-// It travels beside the verdict and never inside it: a coverage improvement must never be able to
-// look like a compliance improvement.
-const totalStandards = await (async () => {
-  try {
-    const inventoryPath = path.join(path.dirname(SELF), "..", "artifacts/standards-source-inventory.json");
-    const inv = JSON.parse(await readFile(inventoryPath, "utf8"));
-    return inv.expectedCount ?? inv.standards?.length ?? null;
-  } catch {
-    return null;
+  if (surfaceLoss.dirs.length) {
+    addFinding({
+      id: "evidence-unreadable-dir",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: uniq(surfaceLoss.dirs.map(rel)),
+      message: `${surfaceLoss.dirs.length} directory(ies) could not be listed. Anything beneath them is outside every result in this run.`,
+      standardRef: R.search,
+    });
   }
-})();
+  if (truncatedFiles.length) {
+    addFinding({
+      id: "evidence-truncated-file",
+      category: "evidence-surface",
+      // Informational rather than a warning: the cap is a deliberate bound, not a fault, and findings
+      // from the prefix are kept. What it must never be is invisible.
+      severity: "info",
+      label: "OBSERVED",
+      evidence: uniq(truncatedFiles),
+      message: `${truncatedFiles.length} file(s) exceeded the ${MAX_READ_BYTES}-byte read cap and were searched in part.`,
+      standardRef: R.search,
+    });
+  }
+  if (surfaceLoss.capped) {
+    addFinding({
+      id: "evidence-file-cap",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [`${MAX_FILES} file limit`],
+      message: `The walk stopped at the ${MAX_FILES}-file cap. Files beyond it were never collected and are outside every result in this run.`,
+      standardRef: R.search,
+    });
+  }
+  // Exclusions are reported through the envelope and the header, deliberately NOT as a finding.
+  //
+  // A finding carries `evidence`, and evidence is read as "paths this run has something to say
+  // about". An excluded tree is the opposite: the run has nothing to say about it, by decision. Every
+  // consumer that scans findings for paths — including this repository's own regression that a
+  // vendored tree must not appear in the findings — would read the exclusion record as the very
+  // pollution it exists to prevent, and could not tell the two apart.
+  //
+  // So it goes where the other properties-of-the-run live, beside `fileCapReached`, and the header
+  // states it in the same breath as the scanned count.
+  const evidenceSurface = {
+    complete: !unreadableFiles.length && !surfaceLoss.dirs.length && !truncatedFiles.length && !surfaceLoss.capped,
+    unreadableFiles: uniq(unreadableFiles.map(rel)),
+    unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
+    truncatedFiles: uniq(truncatedFiles),
+    fileCapReached: surfaceLoss.capped,
+    excludedDirectories: surfaceLoss.excluded,
+    // Recorded because the exclusion set is only as good as the source that produced it. A run with
+    // no repository excluded nothing, and a reader comparing two runs needs to know which they have.
+    exclusionsFrom: ignored.ok ? "repository" : "unavailable",
+  };
 
-const report = envelope({
-  verdict,
-  project: policy.document?.project,
-  standardVersion: policy.document?.standardVersion,
-  auditedAt: new Date().toISOString(),
-  repo: root.split(path.sep).join("/"),
-  frameworkCoverage: coverage(catalog, { evaluated: EVALUATED_RULES, totalStandards }),
-});
+  // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
+  detectArchitecture(files, contents, run);
+  detectCapabilities(files, contents, run);
+  detectApis(files, contents, run);
+  detectJobs(files, contents, run);
+  detectIntegrations(files, contents, run);
+  detectAiInterfaces(files, contents, run);
 
-if (JSON_OUT) {
-  // Standard 25's envelope. `findings` is additive detail beyond the contract Standard 31 R2
-  // guarantees — a consumer joins on results[].ruleId, never on a finding category.
-  process.stdout.write(JSON.stringify({ ...report, findings }, null, 2) + "\n");
-} else {
-  process.stdout.write(renderVerdict(report, policy) + "\n");
-  // Report the current digest for any attestation that lacks one, so it can be recorded rather
-  // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
-  // replacement for a record that already carries one would invite exactly the substitution this
-  // mechanism forbids — a legacy value swapped for a reproducible one without a new review.
-  for (const [ruleId, state] of freshness) {
-    if (state.state !== FRESHNESS.unrecorded) continue;
-    const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
-    const current = repositoryDigest(root, against?.paths ?? []);
-    if (!current.ok) {
-      process.stdout.write(
-        `\n  attestation ${ruleId}: no digest can be offered — ${current.missing.join(", ")} ` +
-          `has no committed identity.\n`,
+  detectMissingDocs(files, contents, run);
+  detectArchitectureArtifacts(run);
+  detectMissingPlanningArtifacts(files, contents, run);
+  detectMissingAuditInfrastructure(files, run);
+  detectUnverifiedFunctionality(files, run);
+  detectUnfinished(files, run);
+  detectDeadCode(files, contents, run);
+  detectOpenQuestions(files, contents, run);
+  await detectPlanDiscrepancies(files, contents, run);
+  detectDocDiscrepancies(files, contents, run);
+  detectStandardsViolations(files, contents, run);
+
+  // Availability is probed once and shared: the env detector and attestation freshness both need the
+  // repository, and asking twice would spend a second subprocess to learn the same thing.
+  const repoAvailability = repositoryAvailable(root);
+  const envCheck = detectCommittedEnvFiles(files, root, repoAvailability, run);
+  detectSecretsInArtifacts(files, contents, run);
+  detectSwallowedExceptions(files, contents, run);
+  detectCertBypass(files, run);
+  detectSqlConcat(files, run);
+
+  // ---------------------------------------------------------------------------
+  // Verdict — catalog + policy + findings (Standards 25, 27, 30)
+  //
+  // The three-way separation is deliberate and must not be violated here: the catalog defines rule
+  // identity and metadata, project-policy.yml defines what applies to THIS project, and everything
+  // above produces evidence. Nothing in this section redefines a rule or invents applicability.
+
+  const catalog = await loadCatalog();
+  assertBindings(
+    catalog,
+    findings.map((f) => f.rule).filter(Boolean),
+  );
+
+  if (!validating) {
+    // audit: evidence only. No status, no score, no policy required — ADR 0004.
+    if (cli.json) {
+      emit(
+        JSON.stringify(
+          {
+            schemaVersion: SCHEMA_VERSION,
+            repo: root.split(path.sep).join("/"),
+            auditedAt: new Date().toISOString(),
+            // What the run could not search. Additive field: a consumer that ignores it reads the
+            // findings exactly as before, and one that reads it can tell a clean result from an
+            // unexamined one.
+            evidenceSurface,
+            findings,
+          },
+          null,
+          2,
+        ) + "\n",
       );
-      continue;
+    } else {
+      emit(renderHuman(files.length, evidenceSurface, run) + "\n");
+      emit(
+        "\nThis is evidence, not a verdict. Run `standards validate` for a compliance status.\n",
+      );
     }
-    process.stdout.write(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
-    process.stdout.write(
-      `  Record it as reviewedAgainst.digest with digestAlgorithm: ${DIGEST_ALGORITHM}.\n`,
-    );
+    return done(cli.strict && findings.some((f) => f.severity !== "info") ? EXIT_FINDINGS : EXIT_OK);
   }
+
+  // ---------------------------------------------------------------------------
+  // validate — the verdict (Standards 25, 27, 30)
+  //
+  // The three-way separation must not be violated here: the catalog defines rule identity and
+  // metadata, project-policy.yml defines what applies to THIS project, and everything above produces
+  // evidence. Nothing in this section redefines a rule or invents applicability.
+
+  const policy = await loadProjectPolicy(root);
+
+  /**
+   * The version-identity guard — a verdict may not be reported for version X unless the framework
+   * executing the run identifies itself as X.
+   *
+   * `standardVersion` declares which framework version governs a project, and nothing resolves that
+   * declaration: every run evaluates against the catalog on disk, whichever version that happens to
+   * be. While this repository was the framework's only consumer the two were the same working tree
+   * and could not disagree, so the gap was recorded and deferred (Standard 21 R5).
+   *
+   * Distribution ends that. Once a project pins a version and a workflow checks out a ref, the pin
+   * and the ref are independent sources of truth: a policy declaring 2.0.0 can be evaluated by 2.1.0,
+   * and the envelope would carry `standardVersion: "2.0.0"` beside a verdict the 2.0.0 rule set never
+   * produced. That is not a compliance failure — it is a provenance lie, and a verdict that misstates
+   * which rules produced it is the false green this tool exists to refuse.
+   *
+   * This is an honesty guard, NOT historical rule-set resolution. It detects the disagreement and
+   * stops; it cannot evaluate the declared version, and does not pretend to. Standard 21 R5 remains
+   * unimplemented and this narrows rather than closes it.
+   *
+   * Exit 2, beside the unreadable-policy case below: the policy and the framework disagree about what
+   * is being evaluated, which is a configuration error. Exit 1 would assert the project failed a
+   * rule, and no rule was reached. No envelope is emitted in either output mode — an envelope carries
+   * a `status`, and that status is precisely the claim that must not be made. The JSON branch emits a
+   * typed error instead of nothing, so a consumer parsing stdout gets a loud object rather than a
+   * parse failure it might mistake for an empty result.
+   *
+   * A missing or malformed `standardVersion` cannot reach here: the schema makes it required and pins
+   * it to a full semver triple, so loadProjectPolicy() has already returned `document: null` and the
+   * configuration path below owns that case. The guard is deliberately confined to `validate` —
+   * `audit` reports evidence and claims no standards version, so widening it there would attach a
+   * version precondition to a command whose contract does not depend on one.
+   */
+  const FRAMEWORK_VERSION = (
+    await readFile(path.join(path.dirname(SELF), "..", "VERSION"), "utf8")
+  ).trim();
+  const declaredVersion = policy.document?.standardVersion;
+
+  if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
+    const message =
+      `project-policy.yml declares standardVersion ${declaredVersion}, but the framework executing ` +
+      `this run is ${FRAMEWORK_VERSION}. No verdict was produced: a compliance status reported under ` +
+      `a version that did not evaluate it would misstate its own provenance.`;
+    if (cli.json) {
+      emit(
+        JSON.stringify(
+          {
+            error: "VERSION_MISMATCH",
+            policyStandardVersion: declaredVersion,
+            frameworkVersion: FRAMEWORK_VERSION,
+            message,
+            historicalResolution: "not implemented (Standard 21 R5)",
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    } else {
+      process.stderr.write(
+        `VERSION_MISMATCH\n  ${message}\n\n` +
+          `  Resolving a historical rule set is not implemented (Standard 21 R5), so this run cannot\n` +
+          `  evaluate ${declaredVersion}. Either execute the framework at ${declaredVersion}, or update\n` +
+          `  project-policy.yml to ${FRAMEWORK_VERSION} deliberately and review the failures the newer\n` +
+          `  rule set reports. Upgrading the governing version is an engineering event, not a default.\n`,
+      );
+    }
+    return done(EXIT_INVOCATION);
+  }
+
+  /**
+   * Digest the paths each attestation says it reviewed, so a material change to them makes the
+   * attestation stale (ADR 0005 rule 4).
+   *
+   * Content-based rather than revision-based on purpose: invalidating every attestation on every
+   * commit would make the mechanism unusable, and it would be abandoned. Digesting what was actually
+   * reviewed invalidates on material change, which is the real requirement.
+   */
+  function attestationFreshness(document, repoRoot, repo) {
+    const out = new Map();
+    for (const [ruleId, record] of Object.entries(document?.attestations ?? {})) {
+      // Freshness describes what may establish the rule now, so it is computed for the newest review
+      // event. Earlier events keep their own recorded provenance and are reported by
+      // `npm run attestations`; they are history, and history does not go stale.
+      const against = currentReview(ruleId, record)?.reviewedAgainst;
+      if (!against?.paths?.length) continue;
+      out.set(ruleId, classifyFreshness(repoRoot, against, repo));
+    }
+    return { states: out, repo };
+  }
+
+  const { states: freshness, repo } = attestationFreshness(policy.document, root, repoAvailability);
+
+  // Repository content is the source of truth for attestation freshness, and its absence is a fact
+  // about the search mechanism rather than about the project (Standard 44 R12). It is reported as an
+  // infrastructure finding carrying no rule, exactly as evidence-surface loss is, so that it can never
+  // become a second compliance owner — the affected attestations independently fail to establish their
+  // rules, and that is where the compliance consequence lives. It does not exit 2: one unavailable
+  // provenance source must not discard every other result the run established.
+  if (!repo.available && freshness.size > 0) {
+    addFinding({
+      id: "repository-evidence-unavailable",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [...freshness.keys()],
+      message:
+        `Attestation freshness could not be established for ${freshness.size} rule(s): ${repo.reason}. ` +
+        `Repository content identifies what was reviewed; without it, no approval establishes a rule.`,
+      standardRef: R.search,
+    });
+  }
+  // A rule whose evidence could not be obtained was not evaluated this run, whatever the static set
+  // says. Withdrawing it here rather than letting it report a clean pass is what keeps `nobody could
+  // look` distinct from `nobody found anything` — a distinction that matters most for a `forbidden`
+  // rule, which is satisfied by absence and would otherwise pass precisely when it knows least
+  // (Standard 45 R6).
+  const evaluatedThisRun = EVALUATED_RULES.filter(
+    (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false),
+  );
+
+  const verdict = evaluate({
+    catalog,
+    policy: policy.document,
+    findings,
+    evaluated: evaluatedThisRun,
+    today: new Date().toISOString().slice(0, 10),
+    freshness,
+  });
+
+  // Framework maturity, read from this framework's own inventory rather than the target repository.
+  // It travels beside the verdict and never inside it: a coverage improvement must never be able to
+  // look like a compliance improvement.
+  const totalStandards = await (async () => {
+    try {
+      const inventoryPath = path.join(path.dirname(SELF), "..", "artifacts/standards-source-inventory.json");
+      const inv = JSON.parse(await readFile(inventoryPath, "utf8"));
+      return inv.expectedCount ?? inv.standards?.length ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const report = envelope({
+    verdict,
+    project: policy.document?.project,
+    standardVersion: policy.document?.standardVersion,
+    auditedAt: new Date().toISOString(),
+    repo: root.split(path.sep).join("/"),
+    frameworkCoverage: coverage(catalog, { evaluated: EVALUATED_RULES, totalStandards }),
+  });
+
+  if (cli.json) {
+    // Standard 25's envelope. `findings` is additive detail beyond the contract Standard 31 R2
+    // guarantees — a consumer joins on results[].ruleId, never on a finding category.
+    emit(JSON.stringify({ ...report, findings }, null, 2) + "\n");
+  } else {
+    emit(renderVerdict(report, policy) + "\n");
+    // Report the current digest for any attestation that lacks one, so it can be recorded rather
+    // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
+    // replacement for a record that already carries one would invite exactly the substitution this
+    // mechanism forbids — a legacy value swapped for a reproducible one without a new review.
+    for (const [ruleId, state] of freshness) {
+      if (state.state !== FRESHNESS.unrecorded) continue;
+      const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
+      const current = repositoryDigest(root, against?.paths ?? []);
+      if (!current.ok) {
+        emit(
+          `\n  attestation ${ruleId}: no digest can be offered — ${current.missing.join(", ")} ` +
+            `has no committed identity.\n`,
+        );
+        continue;
+      }
+      emit(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
+      emit(
+        `  Record it as reviewedAgainst.digest with digestAlgorithm: ${DIGEST_ALGORITHM}.\n`,
+      );
+    }
+  }
+
+  // A policy that could not be read, or none at all, is exit 2: a verdict was requested and there is
+  // nothing to evaluate against. That is a configuration problem, not a compliance failure
+  // (Standard 30 R1, ADR 0004). A required-level failure is exit 1 regardless of score.
+  if (policy.error || !policy.document) return done(EXIT_INVOCATION);
+  if (report.status === "NON_COMPLIANT") return done(EXIT_FINDINGS);
+  // Standard 45 R6: a must-never rule nobody examined must not gate-pass CI. This is exit 1 rather
+  // than exit 2 because it is a statement about the project, not about the configuration — the policy
+  // read fine, and what it says is that a prohibition went unexamined.
+  if (report.unestablishedProhibitions?.length) return done(EXIT_FINDINGS);
+  return done(EXIT_OK);
 }
 
-// A policy that could not be read, or none at all, is exit 2: a verdict was requested and there is
-// nothing to evaluate against. That is a configuration problem, not a compliance failure
-// (Standard 30 R1, ADR 0004). A required-level failure is exit 1 regardless of score.
-if (policy.error || !policy.document) process.exit(EXIT_INVOCATION);
-if (report.status === "NON_COMPLIANT") process.exit(EXIT_FINDINGS);
-// Standard 45 R6: a must-never rule nobody examined must not gate-pass CI. This is exit 1 rather
-// than exit 2 because it is a statement about the project, not about the configuration — the policy
-// read fine, and what it says is that a prohibition went unexamined.
-if (report.unestablishedProhibitions?.length) process.exit(EXIT_FINDINGS);
-process.exit(EXIT_OK);
+// ---------------------------------------------------------------------------
+// The CLI boundary — the only place in this file that terminates the process.
+//
+// Importing this module runs nothing: no walk, no output, no exit. That is what makes `main`
+// testable against a fresh-process oracle, and it is the property ADR 0014 turns into a test.
+// ---------------------------------------------------------------------------
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = (await main(process.argv.slice(2))).exitCode;
+}
