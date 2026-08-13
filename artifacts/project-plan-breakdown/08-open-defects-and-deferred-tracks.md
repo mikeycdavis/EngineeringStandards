@@ -272,12 +272,35 @@ that approval deliberately does not cover.
 
 - **Status:** READY
 - **Tracked by:** GitHub issue [#7](https://github.com/mikeycdavis/EngineeringStandards/issues/7)
-- **Evidence:** open as of 2026-08-11; the exclusion list is the hardcoded `SKIP_DIRS` constant in
-  [`scripts/standards.mjs`](../../scripts/standards.mjs), with no project-level configuration path.
-  **Reproduced twice, independently:** Moneyball (`test-env-3.13/`, in the issue) and Numerai
-  (`test-env-3.11/`, 5.5 GB, gitignored, plus a 98 MB `.mypy_cache/` — recorded in the issue's
-  second comment). Two differently-named virtualenvs in two repositories is why the fix is the
-  boundary and not another entry in the exclusion list.
+- **Evidence:** open as of 2026-08-12, with the exclusion boundary implemented and the item's
+  remaining criteria unmet. **Reproduced twice, independently:** Moneyball (`test-env-3.13/`, in the
+  issue) and Numerai (`test-env-3.11/`, 5.5 GB, gitignored, plus a 98 MB `.mypy_cache/` — recorded in
+  the issue's second comment). Two differently-named virtualenvs in two repositories is why the fix
+  is the boundary and not another entry in the exclusion list.
+
+  **Established on `develop` 2026-08-12.** `f77c08d` replaces name-matching with two signals that
+  identify a tree rather than guess at its name: `ignoredEntries()` asks Git what the repository
+  ignores, and `VENDOR_MARKERS` matches `pyvenv.cfg`. Exclusions are recorded in `loss.excluded` and
+  surfaced in the report, so an exclusion is as visible as a cap. `562d304` carries the owner
+  re-attestation of `architecture.no-hidden-global-state` against the changed reviewed surface, which
+  the code change had made stale. Both merged through the protected path on a real required-check
+  execution — twelve steps, not the zero-step infrastructure block that preceded it. Post-merge
+  validation on `develop`: `24 passed, 4 failed, 22 skipped`, `architecture.no-hidden-global-state`
+  `passed / attested`, and `unestablishedProhibitions` empty.
+
+  **Not yet established — the four obligations that keep this item open.** Each is an acceptance
+  criterion below, not a new requirement:
+
+  | Gap | State |
+  |---|---|
+  | Aggregate total-read budget over tracked content | Not implemented. `MAX_FILES` and `MAX_READ_BYTES` remain per-count and per-file; there is no total. The heap test sizes a *vendored* tree, which exclusion now handles, so the tracked-content path is untested as well as unbounded. |
+  | Marker-less ignored-tree fixture | Absent. The one fixture virtualenv carries **both** signals, so nothing proves the repository-ignore signal works where no marker file exists — the `.mypy_cache/` case that defeats the marker signal. |
+  | Paired transition test | Absent. `tracked first-party code stays in scope` asserts a different property. No test makes the same content tracked and shows the result changes, which is the half that stops the fix passing by excluding too much. |
+  | Adopter re-runs | Outstanding. Moneyball and Numerai still hold results taken with the contaminated apparatus, and the re-run precondition below is unsatisfied. |
+
+  The exclusion boundary landing does not narrow what this item requires. The aggregate-budget gap in
+  particular reproduces the original OOM on a large enough *tracked* tree, which is why it was written
+  into the closure contract rather than left as a follow-on.
 - **Purpose:** This is the most severe of the open audit defects, because its failure mode is not a
   wrong answer but no answer: an untracked virtualenv or vendor directory pollutes the findings and
   can exhaust memory, so the audit does not complete at all on repositories that have one.
