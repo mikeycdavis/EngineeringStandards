@@ -10,6 +10,12 @@ on:
   # can only be observed by merging toward the branch it protects is a check nobody can test.
   workflow_dispatch:
 
+# The step list below is not the definition of what CI covers. `scripts/pipeline.mjs` is, and the
+# same list is executed by `scripts/ci.ps1` / `scripts/ci.sh` inside a container before a branch is
+# ever pushed (docs/local-ci.md). The steps here stay spelled out one per line because each carries a
+# reason worth reading and because GitHub's UI reports them individually — but they run the same
+# `npm run …` commands, and `test/local-ci.test.mjs` fails if the two ever name different sets, in
+# either direction. Adding a check here without adding a stage there is a caught error, not a drift.
 jobs:
   test:
     runs-on: ubuntu-latest

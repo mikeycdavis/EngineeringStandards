@@ -154,8 +154,10 @@ templates/          What an adopting project copies.
 design/             Forward-looking designs, not yet implemented.
 schemas/            JSON Schemas for the structured contracts (Standard 19).
 project-policy.yml  This repository's own policy (Standard 18), the first dogfooded instance.
-scripts/            The audit CLI and the invariant checks CI runs.
+scripts/            The audit CLI, the invariant checks CI runs, and the local CI entry points.
 test/               Tests and fixture repositories, including known-negative policies.
+ci/Dockerfile       The containerized CI environment, pinned by image digest.
+compose.ci.yml      The ephemeral CI environment local runs are executed in.
 artifacts/
   prompts/          Source spec material the standards were written from.
   adr/              Accepted decision records.
@@ -164,6 +166,18 @@ artifacts/
 **Commands.** `npm test` · `npm run audit` (evidence) · `npm run validate` (verdict) ·
 `npm run policy` · `npm run diagrams` · `npm run inventory` · `npm run fidelity`. CI runs all seven.
 `standards init` bootstraps another project — see [INSTRUCTIONS.md](INSTRUCTIONS.md).
+
+**Contributing.** The complete pipeline runs locally in Docker, and a pull request may only be
+submitted for a commit that passed it:
+
+```text
+.\scripts\ci.ps1        run the full pipeline in an ephemeral container (proves nothing else)
+.\scripts\submit-pr.ps1 verify this exact commit, then push it and open the pull request
+```
+
+See [docs/local-ci.md](docs/local-ci.md) for prerequisites, the check list, the isolation model, how
+to debug a failed container, and how local CI relates to the GitHub workflows — which still exist
+and still run the same commands.
 
 **Version 1.1.0** — see [CHANGELOG.md](CHANGELOG.md). 1.0.0 froze the public surface; 1.1.0 adds
 attestations as the fourth policy mechanism.
