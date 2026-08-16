@@ -140,6 +140,19 @@ subject, the identity-versus-content substitution the submission gate already re
   branch, a branch by its own protection, and a bare commit by nothing that can be named — a commit
   may sit on any number of branches, so the question is reported as *unasked* rather than as an
   unreadable answer. A failing job is still actionable either way; only the wording changes.
+- **The commit's check runs are read completely, not one page of them.** Found in review of the
+  above, before it merged. The endpoint pages at 30 by default, so a commit with more checks than
+  that could carry a failed job on page two that never entered the evidence at all — and `--sha` and
+  `--branch` would return `EXPECTED` over a surface never seen. A false assurance produced silently
+  by the tool written to prevent it. The walk now continues while pages come back full; a page that
+  cannot be read is an error rather than a partial set, and non-terminating pagination is an error
+  rather than a loop.
+- **Duplicate check runs cannot manufacture agreement.** Walking a moving list can return the same
+  run twice, which now collapses by id. Two *different* runs under one name is contradictory rather
+  than redundant, and is reported unestablished instead of resolved by picking one. The cross-arm
+  comparison also selects by name rather than taking the first two usable entries, so two copies of
+  `validate` can never be compared against each other and report placement equivalence established
+  while the other placement never ran.
 - **An arm's outcome has two independent sources, and neither is required.** Only one workflow emits
   the `::error::` annotation, so a missing exit class is normal, not a failure to observe. When the
   printed verdict is *also* unreadable, the arm is now `INDETERMINATE`: previously the empty rule set

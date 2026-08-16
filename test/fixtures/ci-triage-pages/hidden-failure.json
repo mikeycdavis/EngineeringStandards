@@ -1,0 +1,38 @@
+{
+  "note": "A commit with more check runs than one page holds. Page one carries both validation arms, correctly red over the established set; page two carries a job that ran real steps and failed. Reading page one alone reports EXPECTED over evidence that was never seen.",
+  "establishedRejections": [
+    "ai.no-fabricated-capabilities",
+    "errors.no-false-success"
+  ],
+  "expectFirstPageOnly": "EXPECTED",
+  "expectCombined": "ACTIONABLE",
+  "pages": [
+    {
+      "total_count": 4,
+      "check_runs": [
+        { "id": 101, "name": "test", "conclusion": "success", "stepsExecuted": 12 },
+        {
+          "id": 102,
+          "name": "validate",
+          "conclusion": "failure",
+          "stepsExecuted": 6,
+          "status": "NON_COMPLIANT",
+          "reportedRules": ["ai.no-fabricated-capabilities", "errors.no-false-success"]
+        },
+        {
+          "id": 103,
+          "name": "validate-self / validate",
+          "conclusion": "failure",
+          "stepsExecuted": 15,
+          "status": "NON_COMPLIANT",
+          "reportedRules": ["ai.no-fabricated-capabilities", "errors.no-false-success"]
+        }
+      ]
+    },
+    {
+      "check_runs": [
+        { "id": 104, "name": "package", "conclusion": "failure", "stepsExecuted": 7 }
+      ]
+    }
+  ]
+}

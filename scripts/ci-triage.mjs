@@ -200,9 +200,28 @@ export function classify(observation) {
   const findings = [];
   const arms = [];
 
+  // Two check runs under one name is contradictory evidence about a single check, and a paginated
+  // snapshot does not say which is current. Picking one — the first seen, the newest-looking — would
+  // be a guess reported as an observation, so the name is reported unestablished instead.
+  const occurrences = new Map();
+  for (const job of jobs) occurrences.set(job?.name, (occurrences.get(job?.name) ?? 0) + 1);
+  const reportedDuplicate = new Set();
+
   for (const job of jobs) {
     const name = job?.name ?? "(unnamed)";
     const isArm = name in VALIDATION_ARMS;
+
+    if ((occurrences.get(job?.name) ?? 0) > 1) {
+      if (!reportedDuplicate.has(name)) {
+        reportedDuplicate.add(name);
+        findings.push({
+          check: name, class: INDETERMINATE,
+          why: `${occurrences.get(job?.name)} check runs report under this name, so which one describes the commit is unestablished`,
+        });
+      }
+      if (isArm) arms.push({ name, usable: false });
+      continue;
+    }
 
     // 1. Did it execute? A job that concluded without running a step is infrastructure, not code.
     //    Calling it a failure sends someone hunting a defect in something that never ran; calling it
@@ -304,8 +323,13 @@ export function classify(observation) {
 
   // 4. Do the placements agree? Disagreement means where the evaluator ran changed its verdict, which
   //    is the one result neither arm can report on its own.
-  const present = Object.keys(VALIDATION_ARMS).filter((n) => arms.some((a) => a.name === n));
-  const usable = arms.filter((a) => a.usable);
+  // Selected by name, never positionally. Two entries for one arm — a retried check run, a duplicate
+  // across page boundaries — would otherwise be compared against each other and agree, satisfying
+  // placement equivalence while the other placement never ran at all.
+  const byName = new Map();
+  for (const a of arms) if (!byName.has(a.name)) byName.set(a.name, a);
+  const present = Object.keys(VALIDATION_ARMS).filter((n) => byName.has(n));
+  const usable = present.map((n) => byName.get(n)).filter((a) => a.usable);
   if (present.length < 2) {
     findings.push({
       check: "inside vs outside", class: INDETERMINATE,
@@ -407,6 +431,65 @@ export function parseTarget(argv) {
   return targets[0];
 }
 
+export const CHECK_RUNS_PER_PAGE = 100;
+
+/**
+ * Combine paginated check-run responses into one set. Pure, so the page arithmetic is testable
+ * without GitHub.
+ *
+ * Deduplicated by check-run id, because a run created while the pages are being walked shifts the
+ * window and can show the same run twice. Two *different* runs sharing a name are left in place
+ * rather than reconciled here: which one is current is not something a paginated snapshot answers,
+ * and `classify` reports that as unestablished instead of picking.
+ */
+export function combineCheckRunPages(pages) {
+  const seen = new Map();
+  for (const page of pages) {
+    for (const run of page?.check_runs ?? []) {
+      if (run?.id === undefined || run?.id === null) continue;
+      if (!seen.has(run.id)) seen.set(run.id, run);
+    }
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Every check run on a commit, not the first page of them.
+ *
+ * The endpoint pages at 30 by default. Reading one page and classifying the result would let a
+ * failed job on page two be absent from the evidence entirely, and the verdict would be `EXPECTED`
+ * over a surface that was never seen — a false assurance produced by the tool built to prevent
+ * exactly that, and produced silently, which is worse than producing it loudly.
+ *
+ * A page that cannot be read, or pagination that does not terminate, is an error rather than a
+ * partial set. Classifying what happened to arrive is the same defect one layer down.
+ */
+export function collectCheckRunPages(fetchPage) {
+  const pages = [];
+  for (let page = 1; ; page += 1) {
+    if (page > 100) return { error: "check run pagination did not terminate after 100 pages" };
+    const r = fetchPage(page);
+    if (!r.ok) return { error: `page ${page} could not be read: ${r.out ?? ""}`.trim() };
+    pages.push(r.data);
+
+    const returned = (r.data?.check_runs ?? []).length;
+    if (returned < CHECK_RUNS_PER_PAGE) break;
+
+    // `total_count` is the server's own statement of the size of the set, so it ends the walk one
+    // request earlier than waiting for a short page. It is a stopping aid, never the authority on
+    // what was actually collected — that is the deduplicated set itself.
+    const total = Number(r.data?.total_count);
+    if (Number.isFinite(total) && combineCheckRunPages(pages).length >= total) break;
+  }
+  return { runs: combineCheckRunPages(pages) };
+}
+
+function allCheckRuns(repo, head) {
+  const result = collectCheckRunPages((page) =>
+    gh(["api", `repos/${repo}/commits/${head}/check-runs?per_page=${CHECK_RUNS_PER_PAGE}&page=${page}`], { json: true }));
+  return result.error ? { error: `could not read check runs for ${head}: ${result.error}` } : result;
+}
+
 /**
  * The commit whose checks are being read, the checks themselves, and which branch — if any — governs
  * required-ness.
@@ -447,8 +530,8 @@ function resolveSubject(target, repo) {
   const head = commit.data?.sha;
   if (!head) return { error: `${target.mode} ${target.value} resolved to no commit` };
 
-  const runs = gh(["api", `repos/${repo}/commits/${head}/check-runs`], { json: true });
-  if (!runs.ok) return { error: `could not read check runs for ${head}: ${runs.out}` };
+  const runs = allCheckRuns(repo, head);
+  if (runs.error) return runs;
 
   return {
     pr: null,
@@ -459,7 +542,7 @@ function resolveSubject(target, repo) {
     // For a GitHub Actions check run the check-run id is the job id, which is what `actions/jobs/<id>`
     // and its `/logs` want. `details_url` states the same id, so it is preferred where present and the
     // id is the fallback rather than the other way round.
-    checks: (runs.data?.check_runs ?? []).map((c) => ({
+    checks: runs.runs.map((c) => ({
       name: c.name,
       conclusion: c.conclusion,
       jobId: jobIdFrom(c.details_url) ?? (c.id === undefined || c.id === null ? null : String(c.id)),
