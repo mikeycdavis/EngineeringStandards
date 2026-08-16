@@ -16,6 +16,12 @@
     anything. The checks run against a Node baked into the image at a pinned digest, which is the
     point: a green run here says nothing about what the developer happens to have installed.
 
+    What gets verified is committed content at HEAD, not the working directory. The build context is
+    materialised by scripts/ci-context.ps1 as a temporary clone with pinned checkout attributes;
+    see that file for why, and for the measurement that made it necessary. The practical consequence
+    is that this script refuses to run on a dirty tree: an uncommitted edit would be absent from the
+    run, and a pass would then describe a tree the developer is not looking at.
+
 .PARAMETER KeepOnFailure
     Leave the container and network in place when the run fails, so it can be inspected. The script
     prints the exact commands to use. Without this, teardown happens on every path including failure.
@@ -66,6 +72,10 @@ $Image = "$RepoSlug-ci:$Project"
 
 $CiContainer = "$Project-ci"
 
+# Set once the context exists, and used by teardown to remove it. Declared here so the `finally`
+# block can test it on paths that failed before the context was built.
+$ContextRoot = $null
+
 $env:CI_IMAGE = $Image
 $env:LOCAL_CI_VERBOSE = if ($PSBoundParameters.ContainsKey('Verbose')) { '1' } else { '0' }
 
@@ -108,6 +118,16 @@ function Remove-CiEnvironment {
     # another run, because no other run shares the tag — that is the point of naming it per project.
     # The layers stay in the builder cache, so the next run is still fast.
     & docker image rm $Image 2>&1 | Out-Null
+    Remove-CiContext
+}
+
+# The materialised context, removed by the exact path this run created under the system temp
+# directory. Named per project, so this can no more reach another run's context than teardown can
+# reach another run's containers. Deliberately not a wildcard sweep of the temp directory.
+function Remove-CiContext {
+    if ($ContextRoot -and (Test-Path $ContextRoot)) {
+        Remove-Item $ContextRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $exitCode = 1
@@ -137,6 +157,15 @@ try {
     Write-Host "repository : $RepoRoot"
     Write-Host "image      : $Image"
     Write-Host "project    : $Project"
+
+    # The build context is committed content, not the working directory. Everything about why lives
+    # in scripts/ci-context.ps1; what matters here is that this line is the only thing that decides
+    # what Docker copies, and that it refuses a dirty tree rather than quietly verifying HEAD while
+    # the developer looks at something else.
+    Write-Stage "Materialising the CI context from committed HEAD"
+    $ContextRoot = & (Join-Path $PSScriptRoot 'ci-context.ps1') -RepoRoot $RepoRoot -Project $Project
+    $env:CI_CONTEXT = $ContextRoot
+    Write-Host "context    : $ContextRoot"
 
     Write-Stage "Building the CI image"
     if ((Invoke-Compose build) -ne 0) { throw "the CI image failed to build." }
@@ -187,6 +216,7 @@ finally {
     if ($KeepOnFailure -and $exitCode -ne 0) {
         Write-Host ""
         Write-Host "Containers kept for inspection (-KeepOnFailure)." -ForegroundColor Yellow
+        if ($ContextRoot) { Write-Host "  context: $ContextRoot" }
         Write-Host "  docker logs $CiContainer"
         Write-Host "  docker compose -p $Project -f compose.ci.yml run --rm --entrypoint bash ci"
         Write-Host "  docker rm -f $CiContainer; docker compose -p $Project -f compose.ci.yml down --volumes --remove-orphans"

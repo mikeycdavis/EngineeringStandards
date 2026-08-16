@@ -42,7 +42,22 @@
 services:
   ci:
     build:
-      context: .
+      # NOT the working directory. `scripts/ci-context.*` materialises the exact committed HEAD into
+      # a temporary clone with pinned checkout attributes, and passes that path here; the invoking
+      # script deletes it on every exit path.
+      #
+      # `context: .` was the defect: it made the run verify one platform's materialisation of the
+      # tree rather than the tree. Git stores normalised content and materialises it per platform, so
+      # the same commit is CRLF on a Windows checkout and LF on `ubuntu-latest`. Measured on a373d4c,
+      # the two disagreed — 273 pass / 1 fail against 274 pass / 0 fail, identical committed content.
+      # A gate that verifies host bytes can fail what the runner passes, and pass what it fails.
+      #
+      # The fallback below is the *legacy* behaviour, and exists for exactly one caller: the
+      # cross-materialisation falsifier in `scripts/verify-materialisation.ps1`, which sets this to
+      # the working directory to prove the equivalence check can still fail. No entry point leaves it
+      # unset — both export it before building.
+      context: ${CI_CONTEXT:-.}
+      # Relative to the context, so the Dockerfile that builds the image is the committed one too.
       dockerfile: ci/Dockerfile
     # Named per run by the invoking script — `<slug>-ci:<project>`, where the project is unique per
     # invocation — so a rebuild for one checkout cannot replace the image another run is about to

@@ -40,6 +40,31 @@ non-required job on GitHub, and for the same reason: this repository is intentio
 `NON_COMPLIANT` while recorded rejections stand. Its real exit code is recorded and printed, never
 suppressed. See [docs/local-ci.md](docs/local-ci.md).
 
+**The local gate now verifies committed content rather than the host checkout**
+([ADR 0015](artifacts/adr/0015-local-ci-verifies-committed-content-not-the-host-checkout.md)).
+`COPY . /work` built the image from the developer's working directory, so what it verified was one
+platform's materialisation of the tree. Measured on `a373d4c` with committed content held constant:
+a CRLF checkout produced 273 pass / 1 fail and an LF checkout 274 pass / 0 fail, while the GitHub
+runner passed. The gate produced a red the runner did not, and the mechanism is symmetric.
+
+- `scripts/ci-context.ps1`, `scripts/ci-context.sh` — the build context is a temporary clone at the
+  exact commit `HEAD` names, with `core.autocrlf=false` and `core.eol=lf` written into its own
+  config, its materialised commit confirmed against the requested one, removed by exact path on every
+  exit path. A clone rather than a `git archive` export, because the audit resolves tracked and
+  ignored paths through git and attestation freshness reads committed blob identity — an export plus
+  a synthesised repository would trade this defect for ADR 0008's.
+- `scripts/ci.ps1`, `scripts/ci.sh`, `scripts/submit-decide.ps1` all build from that context.
+  **Local CI now requires a clean tree**: uncommitted work is absent from the run, so a pass would
+  describe a tree the developer is not looking at.
+- `scripts/verify-materialisation.ps1` — the falsifier. Runs the complete pipeline from an LF and a
+  CRLF checkout of one commit, having first confirmed their bytes differ, and requires the verified
+  SHA, every stage outcome, the verdict, and the repository's own freshness and tracked/ignored
+  answers to be identical. `-Mutate` restores the defect and requires the comparison to fail.
+- Isolation is unchanged: no bind mount, no Docker socket, no host path reachable from the run.
+- The linked-worktree refusal is now conservative rather than necessary — `git clone` resolves a
+  linked worktree into a self-contained repository. The guard is left in place; lifting it is its own
+  decision.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict

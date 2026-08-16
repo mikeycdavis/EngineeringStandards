@@ -52,6 +52,70 @@ Exit `0` means every gating check passed. Anything else means it did not. Option
 
 Run it as often as you like — it submits nothing and pushes nothing.
 
+**It does require a clean tree.** CI verifies committed content at `HEAD`, so an uncommitted edit is
+simply not in the run; showing you a green for `HEAD` while you are looking at unsaved work would be
+a pass describing a tree you cannot see. The run refuses and names what is uncommitted. Ignored
+files are not dirt — the run's own `artifacts/local-ci/` never blocks a run.
+
+## What Docker is actually given
+
+Not this directory. The build context is materialised by
+[`scripts/ci-context.ps1`](../scripts/ci-context.ps1) (and its POSIX twin): a temporary clone of this
+repository at the exact commit `HEAD` names, with `core.autocrlf=false` and `core.eol=lf` written
+into its own config, deleted when the run ends.
+
+The invariant, stated once:
+
+> Local CI verifies a deterministic materialisation of the exact committed `HEAD`, never the host
+> checkout's byte representation.
+
+The reason is measured rather than theoretical. Git stores normalised content and materialises it per
+platform; `.gitattributes` here pins only the files a Linux shell executes, so on a Windows checkout
+everything else lands as CRLF while `ubuntu-latest` lands the same commit as LF. Building the image
+with `COPY .` over the working directory therefore verified *one platform's rendering of the tree*.
+On commit `a373d4c` the two renderings disagreed:
+
+| Checkout | Result |
+| --- | --- |
+| CRLF (Windows default) | 273 pass, 1 fail |
+| LF (`ubuntu-latest`, and what git stores) | 274 pass, 0 fail |
+| GitHub-hosted runner, same commit | pass |
+
+The failing test patches evaluator source anchored on `\n`. The local gate produced a red the runner
+did not — and the mechanism is symmetric, which is the part that matters: a gate verifying host bytes
+can also pass what the runner fails.
+
+**Why not just add `eol=lf` to every path.** That bends repository policy around the verifier, and it
+closes only the transform someone happened to think of. A checkout applies attributes, filters, and
+platform conventions; each is a way for `COPY .` to ship something the commit does not determine.
+Fixing the input is one decision that covers all of them.
+
+**Why a clone and not `git archive`.** An export gives committed file content and no repository.
+[`scripts/repository.mjs`](../scripts/repository.mjs) asks git — with no fallback, deliberately —
+which paths are tracked, which are ignored, what blob identity a reviewed path has at `HEAD`, and
+whether a reviewed path is dirty. An export plus a synthesised repository would answer those from
+something that is not the repository, trading this defect for
+[ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)'s.
+
+**Isolation is unchanged.** The context is built on the host, copied into the image, and deleted.
+There is still no bind mount, no Docker socket, and no host path reachable from inside the run. The
+fix moved where the bytes come from; it did not open a channel for the container to compensate
+afterwards.
+
+To prove the property rather than assert it:
+
+```bash
+.\scripts\verify-materialisation.ps1
+```
+
+It materialises `HEAD` into an LF checkout and a CRLF checkout, confirms their bytes genuinely
+differ, runs the complete pipeline from each, and requires the verified SHA, every stage outcome, the
+compliance verdict, and the repository's own freshness and tracked/ignored answers to be identical.
+`-Mutate` restores the host-context defect and requires that comparison to **fail** — a falsifier
+that cannot be made to fail establishes nothing. Windows-only, for the reason in
+[Supported submission entry point](#supported-submission-entry-point); it runs the pipeline twice, so
+it takes a few minutes.
+
 ## What CI performs
 
 The stage list lives in one place, [`scripts/pipeline.mjs`](../scripts/pipeline.mjs), and both
@@ -274,7 +338,7 @@ in either direction, so a step added to the workflow by hand is caught as readil
 | Branch protection and required-check status | A property of the GitHub repository, not of any pipeline. Note that `gh api …/branches/develop/protection` currently returns 404 — protection is not configured. |
 | `actions/upload-artifact`, job summaries | Runner-hosted presentation. The equivalent evidence is `artifacts/local-ci/latest.json` and the printed summary. |
 | Multi-OS or multi-Node matrices | Neither workflow declares one today. See the Node disposition below. |
-| A linked `git worktree` checkout | `.git` there is a file pointing at an absolute host path outside the build context, so the copied pointer resolves to nothing and every `git` call in the container fails. Both entry points detect this and refuse by name. Supporting it would mean copying an arbitrary host path into the image — the broad host reach this environment exists to avoid — to serve a checkout shape one `cd` steps out of. |
+| A linked `git worktree` checkout | Both entry points detect this and refuse by name. The original reason was mechanical: `.git` there is a file pointing at an absolute host path outside the build context, so a copied working tree carried a pointer that resolved to nothing and every `git` call in the container failed. **That reason no longer applies** — the context is now a clone, and `git clone` resolves a linked worktree into a self-contained repository (measured, not assumed). The refusal is therefore conservative rather than necessary as of this change. Lifting it is a deliberate decision with its own review, not a side effect of fixing the context; until someone takes it, the guard stays and one `cd` steps out of the shape. |
 
 Nothing from the existing pipeline was dropped. Every `run:` step in the required `test` job maps to
 a gating stage, and the `validate` job maps to the advisory stage — asserted by test, both ways.

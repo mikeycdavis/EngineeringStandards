@@ -43,12 +43,23 @@ WORKDIR /work
 # A bind mount would put the developer's working tree inside a container that runs the repository's
 # own test suite — and that suite writes files (test/invocation-ownership.test.mjs materialises a
 # patched copy of the evaluator to run its negative control). Copying means the container cannot
-# touch the host tree at all: there is nothing mounted to touch. It also means the run is repeatable
-# from the image alone, which is what makes "re-run CI from clean state" a real operation rather
-# than a re-read of whatever the host happens to hold now.
+# touch the host tree at all: there is nothing mounted to touch.
 #
-# `.git` is copied on purpose — see the git note above. `.dockerignore` keeps out only the
-# verification artifacts, so a previous run's report can never be mistaken for this run's.
+# **What is copied is not the working directory.** The context handed to Docker is built by
+# `scripts/ci-context.*`: a temporary clone of this repository at the exact commit HEAD names, with
+# `core.autocrlf=false` and `core.eol=lf` written into its own config so the files it materialises
+# are determined by the commit rather than by the host platform's checkout conventions. Building
+# from the working directory is what made the earlier claim on this line too strong — the image was
+# repeatable from itself, but what went into it was one platform's rendering of the tree, and the
+# CRLF/LF difference between a Windows checkout and `ubuntu-latest` was measurable as a different
+# test result for identical committed content.
+#
+# `.git` is copied on purpose — see the git note above, and note that this is why the context is a
+# clone rather than a `git archive` export. The audit resolves tracked and ignored paths through
+# git, and attestation freshness reads committed blob identity; an export plus a synthesised
+# repository would answer those questions from something that is not the repository, which is
+# ADR 0008's source-of-truth defect. `.dockerignore` keeps out only the verification artifacts, so a
+# previous run's report can never be mistaken for this run's.
 COPY --chown=node:node . /work
 
 # Non-root. CI executes whatever is in the branch under test, which is untrusted by construction:

@@ -11,9 +11,13 @@
     decides whether a pull request may be opened is evaluated in the same pinned environment that
     decided whether the code passes. There is no network: the decision reads nothing but its input.
 
-    The image is built on every invocation, from the current working tree, and removed afterwards.
+    The image is built on every invocation, from committed content at HEAD, and removed afterwards.
     Not an oversight, and not free: the build is layer-cached and costs seconds. What it buys is that
     the gate evaluating this submission is the gate belonging to the commit being submitted.
+
+    Committed content rather than the working tree, for the same reason ci.ps1 does it: a context
+    taken from the working directory is one platform's materialisation of the tree, and the rule
+    deciding whether a pull request may be opened must not depend on which platform rendered it.
 
     Reusing a predictable tag if one already existed would mean the rule that decides whether a pull
     request may be opened comes from whichever checkout last built that tag. When the gate's rules or
@@ -38,7 +42,10 @@ $RepoSlug = ((Split-Path -Leaf $RepoRoot) -replace '[^A-Za-z0-9]', '-').ToLowerI
 $Project = "$RepoSlug-ci-gate-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$PID"
 $Image = "${RepoSlug}-ci:$Project"
 
+$ContextRoot = $null
 try {
+    $ContextRoot = & (Join-Path $PSScriptRoot 'ci-context.ps1') -RepoRoot $RepoRoot -Project $Project
+    $env:CI_CONTEXT = $ContextRoot
     $env:CI_IMAGE = $Image
     & docker compose -p $Project -f (Join-Path $RepoRoot 'compose.ci.yml') build 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "could not build the CI image, so no decision can be made." }
@@ -64,4 +71,7 @@ finally {
     # Removed by the exact name this invocation created, on every path including a thrown decision.
     # No other invocation shares the tag, so this can remove nothing but its own.
     & docker image rm $Image 2>&1 | Out-Null
+    if ($ContextRoot -and (Test-Path $ContextRoot)) {
+        Remove-Item $ContextRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
