@@ -1,0 +1,52 @@
+{
+  "note": "No rejection set is established, so nothing can be compared. Never EXPECTED.",
+  "expect": "INDETERMINATE",
+  "establishedRejections": null,
+  "jobs": [
+    {
+      "name": "test",
+      "conclusion": "success",
+      "stepsExecuted": 9,
+      "required": true,
+      "logRead": false,
+      "status": null,
+      "reportedRules": [],
+      "validatorExit": null,
+      "annotations": []
+    },
+    {
+      "name": "validate",
+      "conclusion": "failure",
+      "stepsExecuted": 12,
+      "required": false,
+      "logRead": true,
+      "status": "NON_COMPLIANT",
+      "reportedRules": [
+        "ai.no-fabricated-capabilities",
+        "ai.no-safety-bypass",
+        "errors.no-false-success"
+      ],
+      "validatorExit": 1,
+      "annotations": [
+        "NON-COMPLIANT (exit 1) \u2014 a required or forbidden rule failed."
+      ]
+    },
+    {
+      "name": "validate-self / validate",
+      "conclusion": "failure",
+      "stepsExecuted": 12,
+      "required": false,
+      "logRead": true,
+      "status": "NON_COMPLIANT",
+      "reportedRules": [
+        "ai.no-fabricated-capabilities",
+        "ai.no-safety-bypass",
+        "errors.no-false-success"
+      ],
+      "validatorExit": 1,
+      "annotations": [
+        "NON-COMPLIANT (exit 1) \u2014 a required or forbidden rule failed."
+      ]
+    }
+  ]
+}

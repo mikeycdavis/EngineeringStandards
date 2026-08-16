@@ -82,6 +82,30 @@ Two defects found in review of the above, before it merged:
   refuse anything outside a plain Compose project name, before reading the repository at all. Driven
   by a test that destroys a sentinel directory if the guard is removed.
 
+**A red check is classified rather than counted** — `scripts/ci-triage.mjs`. This repository keeps two
+jobs permanently red on purpose, so a reader that treats `conclusion: failure` alike either alarms on
+correct governance evidence or learns to ignore it. Four things a red can mean, and three answers:
+
+| | |
+| --- | --- |
+| `EXPECTED` | the evidence establishes the expected state — exit 0 |
+| `ACTIONABLE` | the evidence establishes an unexpected state — exit 1 |
+| `INDETERMINATE` | the evidence cannot establish the state — exit 2 |
+
+`INDETERMINATE` is not a softer `ACTIONABLE`. A job that executed no step, an unreadable API, an
+unreadable policy — none are evidence that the repository is wrong, and saying so would be its own
+false claim. The same split `validate` already draws between `NON_COMPLIANT` and `NOT_EVALUATED`.
+
+- The established rejection set is **derived from `project-policy.yml`**, never listed in the tool: a
+  copied list would still call a cleared rejection expected. A test fails if any rejection id appears
+  in the source.
+- `classify()` is pure, so every terminal branch is reachable from a small structured fixture rather
+  than a fabricated runner log. Log parsing is separate, tested against tiny raw specimens.
+- Disagreement between the inside and outside evaluator placements is actionable and named as such —
+  the one result neither arm can report alone.
+- A reader, not a gate. It does not modify the policy, re-run checks, form its own compliance
+  opinion, or suppress the jobs it interprets, and tests assert each of those.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
