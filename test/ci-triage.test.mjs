@@ -37,6 +37,7 @@ import {
   logLines,
   establishedRejectionsFrom,
   jobIdFrom,
+  parseTarget,
   EXPECTED,
   ACTIONABLE,
   INDETERMINATE,
@@ -55,7 +56,7 @@ const fixture = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name), "ut
 
 test("every fixture classifies as the state it describes", () => {
   const files = readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).sort();
-  assert.ok(files.length >= 12, `only ${files.length} fixtures — the branch coverage was reduced`);
+  assert.ok(files.length >= 14, `only ${files.length} fixtures — the branch coverage was reduced`);
 
   for (const file of files) {
     const f = fixture(file);
@@ -147,6 +148,31 @@ test("actionable outranks indeterminate", () => {
   const result = classify(fixture("actionable-outranks-indeterminate.json"));
   assert.equal(result.verdict, ACTIONABLE);
   assert.ok(result.findings.some((r) => r.class === INDETERMINATE), "the indeterminate finding was dropped rather than outranked");
+});
+
+test("an arm whose verdict printed without an exit annotation is still established", () => {
+  // Only one of the two workflows emits `::error::`, so a missing exit class is the normal shape for
+  // the other arm. Treating it as a failure to observe would make every run of that workflow
+  // indeterminate and retire the tool on its second day.
+  const result = classify(fixture("verdict-without-annotation.json"));
+  assert.equal(result.verdict, EXPECTED);
+  const finding = result.findings.find((r) => r.check === "validate");
+  assert.equal(finding.class, EXPECTED, "a printed verdict with no annotation was discarded");
+  assert.match(finding.why, /NON_COMPLIANT/);
+});
+
+test("an arm whose log yielded neither verdict nor exit class is unestablished, not cleared", () => {
+  // The dangerous shape. With no reported rules parsed, a set comparison would read the empty result
+  // as every established rejection having been cleared and call the repository changed — a claim about
+  // the project derived from a defect in reading it. The exit class and the printed verdict are two
+  // independent ways to establish the outcome; the absence of both is the absence of evidence.
+  const result = classify(fixture("unreadable-verdict.json"));
+  assert.equal(result.verdict, INDETERMINATE);
+  const finding = result.findings.find((r) => r.check === "validate");
+  assert.equal(finding.class, INDETERMINATE);
+  assert.match(finding.why, /unestablished|neither/);
+  assert.doesNotMatch(finding.why, /no longer reported/, "unread evidence was reported as a cleared rejection");
+  for (const f of result.findings) assert.notEqual(f.class, ACTIONABLE, "unread evidence was reported as the repository being wrong");
 });
 
 test("an empty observation establishes nothing rather than passing", () => {
@@ -258,6 +284,50 @@ test("the exit codes match the epistemic split", () => {
   assert.equal(EXIT[EXPECTED], 0);
   assert.equal(EXIT[ACTIONABLE], 1);
   assert.equal(EXIT[INDETERMINATE], 2);
+});
+
+// -------------------------------------------------------------------------------------------
+// Addressing — which commit the verdict is about
+// -------------------------------------------------------------------------------------------
+
+test("each addressing mode names one subject", () => {
+  assert.deepEqual(parseTarget(["26"]), { mode: "pr", value: "26" });
+  assert.deepEqual(parseTarget(["--sha", "69de0c8"]), { mode: "sha", value: "69de0c8" });
+  assert.deepEqual(parseTarget(["--branch", "develop"]), { mode: "branch", value: "develop" });
+  assert.deepEqual(parseTarget(["--json", "--branch", "develop"]), { mode: "branch", value: "develop" });
+});
+
+test("two targets is an error, not a precedence rule", () => {
+  // The whole reason this mode exists is that a verdict can be true about the wrong commit. Silently
+  // preferring one of two subjects would reintroduce that at the argument list.
+  assert.match(parseTarget(["26", "--sha", "69de0c8"]).error, /more than one target/);
+  assert.match(parseTarget(["--branch", "develop", "--branch", "master"]).error, /more than one target/);
+  assert.match(parseTarget([]).error, /no target/);
+  assert.match(parseTarget(["--sha"]).error, /needs a value/);
+  assert.match(parseTarget(["--sha", "--json"]).error, /needs a value/);
+  assert.match(parseTarget(["--wat"]).error, /unrecognised/);
+});
+
+test("a run that cannot name its subject's gating branch says so, rather than reporting unreadable", () => {
+  // A commit can sit on any number of branches with different protection. "Not asked" and "asked and
+  // could not read" are different states, and collapsing them would let a guess read as a measurement.
+  const unasked = classify({
+    requiredChecksNote: "no branch was named, so which checks gate this commit was not asked",
+    establishedRejections: [],
+    jobs: [{ name: "build", conclusion: "failure", stepsExecuted: 4, required: null, logRead: false }],
+  });
+  const finding = unasked.findings.find((r) => r.check === "build");
+  assert.equal(finding.class, ACTIONABLE, "a real failure was downgraded because required-ness was unknown");
+  assert.match(finding.why, /was not asked/);
+  assert.doesNotMatch(finding.why, /could not be read/, "an unasked question was reported as an unreadable answer");
+
+  // With no note supplied the wording stays the original one, so a fixture that predates this field
+  // still describes itself correctly.
+  const noNote = classify({
+    establishedRejections: [],
+    jobs: [{ name: "build", conclusion: "failure", stepsExecuted: 4, required: null, logRead: false }],
+  });
+  assert.match(noNote.findings.find((r) => r.check === "build").why, /could not be read from branch protection/);
 });
 
 test("a job id is read from a details URL, and absence is not an id", () => {

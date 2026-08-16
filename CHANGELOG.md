@@ -106,6 +106,26 @@ false claim. The same split `validate` already draws between `NON_COMPLIANT` and
 - A reader, not a gate. It does not modify the policy, re-run checks, form its own compliance
   opinion, or suppress the jobs it interprets, and tests assert each of those.
 
+**A verdict now names the commit it is about, and can be pointed at one.** The classifier addressed
+its evidence only by pull request, and a pull request's checks describe its own head — which GitHub
+does not update when a rebase merge rewrites the commit onto the base branch. Run against #29 after
+that merge, it read `4d7088f` and its check runs while `develop` carried `69de0c8` and its own, and
+returned `EXPECTED` about a commit that was no longer anywhere: a true verdict about the wrong
+subject, the identity-versus-content substitution the submission gate already refuses.
+
+- `--sha <commit>` and `--branch <name>` read check runs for a commit directly. Two targets is an
+  error rather than a precedence rule — a reader asked about both has been asked two questions, and
+  answering whichever is checked first is how the verdict lands on the wrong subject again.
+- **Required-ness is answered per mode rather than defaulted.** A pull request is gated by its base
+  branch, a branch by its own protection, and a bare commit by nothing that can be named — a commit
+  may sit on any number of branches, so the question is reported as *unasked* rather than as an
+  unreadable answer. A failing job is still actionable either way; only the wording changes.
+- **An arm's outcome has two independent sources, and neither is required.** Only one workflow emits
+  the `::error::` annotation, so a missing exit class is normal, not a failure to observe. When the
+  printed verdict is *also* unreadable, the arm is now `INDETERMINATE`: previously the empty rule set
+  compared against the policy's four rejections and reported them as cleared — a claim about the
+  project derived from a defect in reading it.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict

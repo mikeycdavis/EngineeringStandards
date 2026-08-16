@@ -53,8 +53,23 @@
  * that list would be a second source of truth whose first act is to drift, still calling a cleared
  * rejection "expected".
  *
+ * ## Addressing
+ *
+ * Evidence is addressed three ways, and the difference matters after a rebase merge. A pull request's
+ * `statusCheckRollup` describes its own head, which GitHub does not update when it rewrites the commit
+ * onto the base branch: after #29 merged, `gh pr view 29` still reported `4d7088f` and that commit's
+ * check runs, while the merged `69de0c8` on `develop` carried its own. Classifying the pull request and
+ * calling the answer a statement about the merged branch is the identity-versus-content substitution
+ * this repository's submission gate already refuses — a true verdict about the wrong commit.
+ *
+ * So `--sha` and `--branch` read check runs for a commit directly. The observation always names the
+ * commit it describes, in every mode, because a verdict that does not name its subject cannot be
+ * checked against one.
+ *
  * Usage:
  *   node scripts/ci-triage.mjs <pr-number> [--json]
+ *   node scripts/ci-triage.mjs --sha <commit-sha> [--json]
+ *   node scripts/ci-triage.mjs --branch <branch-name> [--json]
  */
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -169,6 +184,7 @@ export function establishedRejectionsFrom(policy) {
  *
  *   {
  *     establishedRejections: string[] | null,   // null when the policy could not be read
+ *     requiredChecksNote: string,               // why required-ness is unknown, when it is
  *     jobs: [{
  *       name, conclusion, stepsExecuted, required,   // required: boolean | null (null = unreadable)
  *       logRead, status, reportedRules, validatorExit, annotations
@@ -218,8 +234,9 @@ export function classify(observation) {
     //    state whether or not it is required. Required-ness changes how loud it is, not whether it
     //    happened, so an unreadable protection setting is reported without downgrading the finding.
     if (!isArm) {
+      const unknown = observation?.requiredChecksNote ?? "whether it is required could not be read from branch protection";
       const note = job.required === null || job.required === undefined
-        ? " (whether it is required could not be read from branch protection)"
+        ? ` (${unknown})`
         : job.required ? " (required)" : " (not required)";
       findings.push({
         check: name, class: ACTIONABLE,
@@ -238,6 +255,21 @@ export function classify(observation) {
       findings.push({
         check: name, class: ACTIONABLE,
         why: "exit 2 — the validator produced no verdict. The policy could not be read, or the declared standards version is not the one executing",
+      });
+      arms.push({ name, usable: false });
+      continue;
+    }
+
+    // An arm's outcome can be established two independent ways: the emitted exit annotation, or the
+    // printed report. Only one workflow here emits the annotation, so a missing exit class is normal
+    // and must not be treated as a failure to observe. When *neither* is present the log was read and
+    // yielded nothing — and the rejection-set comparison below would then read an empty reported set
+    // as "every established rejection has been cleared" and call the repository changed, which is a
+    // claim about the project made from a defect in reading it.
+    if (job.validatorExit === null && (job.status === null || job.status === undefined)) {
+      findings.push({
+        check: name, class: INDETERMINATE,
+        why: "the log was read but yielded neither a verdict line nor an exit annotation, so the arm's outcome is unestablished",
       });
       arms.push({ name, usable: false });
       continue;
@@ -329,27 +361,126 @@ export function jobIdFrom(detailsUrl) {
 }
 
 /**
- * Which checks the base branch requires.
+ * Which checks a branch requires.
  *
  * Only GitHub knows, and it may be unreadable — no branch protection, or no permission. Reported as
  * null rather than as an empty set: assuming nothing is required would silently downgrade a real
  * gating failure.
  */
-function requiredChecks(repo, base) {
-  const r = gh(["api", `repos/${repo}/branches/${base}/protection/required_status_checks`], { json: true });
+function requiredChecks(repo, branch) {
+  if (!branch) return null;
+  const r = gh(["api", `repos/${repo}/branches/${branch}/protection/required_status_checks`], { json: true });
   if (!r.ok) return null;
   const contexts = r.data?.contexts ?? r.data?.checks?.map((c) => c.context) ?? [];
   return contexts;
 }
 
-/** Build the observation `classify` consumes. All I/O lives here. */
-export function extractEvidence(prNumber) {
-  const view = gh(["pr", "view", String(prNumber), "--json", "statusCheckRollup,baseRefName,headRefOid,number,url"], { json: true });
-  if (!view.ok) return { error: `could not read pull request ${prNumber}: ${view.out}` };
+/**
+ * Read the target out of the argument list. Pure, so the addressing rules are testable without gh.
+ *
+ * Two targets are an error rather than a precedence rule. A reader asked about both a pull request and
+ * a commit has been asked two different questions, and answering the one that happens to be checked
+ * first is how a verdict ends up attached to the wrong subject — the defect this mode exists to fix.
+ */
+export function parseTarget(argv) {
+  const args = argv.filter((a) => a !== "--json");
+  const targets = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === "--sha" || a === "--branch") {
+      const value = args[i + 1];
+      if (!value || value.startsWith("--")) return { error: `${a} needs a value` };
+      targets.push({ mode: a.slice(2), value });
+      i += 1;
+    } else if (/^\d+$/.test(a)) {
+      targets.push({ mode: "pr", value: a });
+    } else {
+      return { error: `unrecognised argument: ${a}` };
+    }
+  }
+
+  if (targets.length === 0) return { error: "no target given" };
+  if (targets.length > 1) {
+    return { error: `more than one target given (${targets.map((t) => `${t.mode} ${t.value}`).join(", ")}) — name one subject` };
+  }
+  return targets[0];
+}
+
+/**
+ * The commit whose checks are being read, the checks themselves, and which branch — if any — governs
+ * required-ness.
+ *
+ * Required-ness is deliberately different per mode rather than defaulting.
+ *
+ *   pr      the base branch the request would merge into. That is what would block the merge.
+ *   branch  that branch's own protection. A commit on `develop` is gated by `develop`'s rules.
+ *   sha     no branch is named, so the question is not asked. A commit can sit on any number of
+ *           branches with different protection, and picking one would be a guess reported as a fact.
+ *
+ * All three can also come back unreadable, which is a different thing from unasked, so they are
+ * distinguished in the note rather than collapsed into a single "unreadable".
+ */
+function resolveSubject(target, repo) {
+  if (target.mode === "pr") {
+    const view = gh(["pr", "view", target.value, "--json", "statusCheckRollup,baseRefName,headRefOid,number,url"], { json: true });
+    if (!view.ok) return { error: `could not read pull request ${target.value}: ${view.out}` };
+    return {
+      pr: view.data.number,
+      url: view.data.url,
+      head: view.data.headRefOid,
+      base: view.data.baseRefName,
+      protectedBranch: view.data.baseRefName,
+      checks: (view.data.statusCheckRollup ?? []).map((c) => ({
+        name: c.name,
+        conclusion: c.conclusion,
+        jobId: jobIdFrom(c.detailsUrl),
+      })),
+    };
+  }
+
+  // `commits/<ref>` accepts a branch name or a sha, and always answers with the resolved sha. Asking
+  // it even when a sha was given is what turns an abbreviated or stale sha into an explicit failure
+  // rather than an empty check list read as "nothing ran".
+  const commit = gh(["api", `repos/${repo}/commits/${target.value}`], { json: true });
+  if (!commit.ok) return { error: `could not resolve ${target.mode} ${target.value}: ${commit.out}` };
+  const head = commit.data?.sha;
+  if (!head) return { error: `${target.mode} ${target.value} resolved to no commit` };
+
+  const runs = gh(["api", `repos/${repo}/commits/${head}/check-runs`], { json: true });
+  if (!runs.ok) return { error: `could not read check runs for ${head}: ${runs.out}` };
+
+  return {
+    pr: null,
+    url: `https://github.com/${repo}/commit/${head}`,
+    head,
+    base: target.mode === "branch" ? target.value : null,
+    protectedBranch: target.mode === "branch" ? target.value : null,
+    // For a GitHub Actions check run the check-run id is the job id, which is what `actions/jobs/<id>`
+    // and its `/logs` want. `details_url` states the same id, so it is preferred where present and the
+    // id is the fallback rather than the other way round.
+    checks: (runs.data?.check_runs ?? []).map((c) => ({
+      name: c.name,
+      conclusion: c.conclusion,
+      jobId: jobIdFrom(c.details_url) ?? (c.id === undefined || c.id === null ? null : String(c.id)),
+    })),
+  };
+}
+
+/**
+ * Build the observation `classify` consumes. All I/O lives here.
+ *
+ * Accepts a target from `parseTarget`, or a bare pull request number for the original call shape.
+ */
+export function extractEvidence(target) {
+  const subjectTarget = typeof target === "object" && target !== null ? target : { mode: "pr", value: String(target) };
 
   const repoView = gh(["repo", "view", "--json", "nameWithOwner"], { json: true });
   if (!repoView.ok) return { error: "could not determine the repository" };
   const repo = repoView.data.nameWithOwner;
+
+  const subject = resolveSubject(subjectTarget, repo);
+  if (subject.error) return subject;
 
   let policy = null;
   try {
@@ -360,12 +491,18 @@ export function extractEvidence(prNumber) {
     policy = null;
   }
 
-  const required = requiredChecks(repo, view.data.baseRefName);
+  const required = requiredChecks(repo, subject.protectedBranch);
+  const requiredChecksNote = subject.protectedBranch === null
+    ? "no branch was named, so which checks gate this commit was not asked"
+    : required === null
+      ? `branch protection on ${subject.protectedBranch} could not be read`
+      : `required on ${subject.protectedBranch}`;
+
   const jobs = [];
 
-  for (const check of view.data.statusCheckRollup ?? []) {
+  for (const check of subject.checks) {
     const name = check.name;
-    const jobId = jobIdFrom(check.detailsUrl);
+    const jobId = check.jobId;
     const conclusion = String(check.conclusion ?? "").toLowerCase();
 
     let stepsExecuted;
@@ -399,12 +536,13 @@ export function extractEvidence(prNumber) {
   }
 
   return {
-    pr: view.data.number,
-    url: view.data.url,
-    head: view.data.headRefOid,
-    base: view.data.baseRefName,
+    pr: subject.pr,
+    url: subject.url,
+    head: subject.head,
+    base: subject.base,
     repo,
     requiredChecks: required,
+    requiredChecksNote,
     establishedRejections: establishedRejectionsFrom(policy),
     jobs,
   };
@@ -416,8 +554,11 @@ export function extractEvidence(prNumber) {
 
 function render(observation, result) {
   const out = [];
-  out.push(`PR #${observation.pr} — ${String(observation.head ?? "").slice(0, 7)}`);
-  out.push(`required checks        : ${observation.requiredChecks === null ? "unreadable" : observation.requiredChecks.join(", ") || "none"}`);
+  // The subject is named the same way in every mode. A verdict that does not say which commit it is
+  // about cannot be checked against one, and after a rebase merge that is exactly the mistake to make.
+  const sha = String(observation.head ?? "").slice(0, 7);
+  out.push(observation.pr ? `PR #${observation.pr} — ${sha}` : `commit ${sha}${observation.base ? ` on ${observation.base}` : ""}`);
+  out.push(`required checks        : ${observation.requiredChecks === null ? observation.requiredChecksNote ?? "unreadable" : observation.requiredChecks.join(", ") || "none"}`);
   out.push(`established rejections : ${observation.establishedRejections === null ? "unreadable" : observation.establishedRejections.join(", ") || "none"}`);
   out.push("");
   for (const f of result.findings) {
@@ -436,13 +577,14 @@ function render(observation, result) {
 
 export function main(argv) {
   const json = argv.includes("--json");
-  const pr = argv.find((a) => /^\d+$/.test(a));
-  if (!pr) {
-    process.stderr.write("usage: node scripts/ci-triage.mjs <pr-number> [--json]\n");
+  const target = parseTarget(argv);
+  if (target.error) {
+    process.stderr.write(`${target.error}\n`);
+    process.stderr.write("usage: node scripts/ci-triage.mjs <pr-number> | --sha <commit> | --branch <name> [--json]\n");
     return EXIT[INDETERMINATE];
   }
 
-  const observation = extractEvidence(pr);
+  const observation = extractEvidence(target);
   if (observation.error) {
     process.stderr.write(`${observation.error}\n`);
     return EXIT[INDETERMINATE];

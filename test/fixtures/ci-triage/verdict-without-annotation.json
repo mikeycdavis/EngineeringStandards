@@ -1,0 +1,54 @@
+{
+  "note": "The live shape on develop: one workflow emits no ::error:: annotation, so the arm has no exit class while its report is fully readable. The printed verdict establishes the outcome on its own.",
+  "expect": "EXPECTED",
+  "establishedRejections": [
+    "ai.no-fabricated-capabilities",
+    "ai.no-safety-bypass",
+    "errors.no-false-success"
+  ],
+  "jobs": [
+    {
+      "name": "test",
+      "conclusion": "success",
+      "stepsExecuted": 12,
+      "required": true,
+      "logRead": false,
+      "status": null,
+      "reportedRules": [],
+      "validatorExit": null,
+      "annotations": []
+    },
+    {
+      "name": "validate",
+      "conclusion": "failure",
+      "stepsExecuted": 6,
+      "required": false,
+      "logRead": true,
+      "status": "NON_COMPLIANT",
+      "reportedRules": [
+        "ai.no-fabricated-capabilities",
+        "ai.no-safety-bypass",
+        "errors.no-false-success"
+      ],
+      "validatorExit": null,
+      "annotations": []
+    },
+    {
+      "name": "validate-self / validate",
+      "conclusion": "failure",
+      "stepsExecuted": 15,
+      "required": false,
+      "logRead": true,
+      "status": "NON_COMPLIANT",
+      "reportedRules": [
+        "ai.no-fabricated-capabilities",
+        "ai.no-safety-bypass",
+        "errors.no-false-success"
+      ],
+      "validatorExit": 1,
+      "annotations": [
+        "NON-COMPLIANT (exit 1) — a required or forbidden rule failed."
+      ]
+    }
+  ]
+}
