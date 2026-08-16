@@ -57,6 +57,13 @@ fi
 context_root="${TMPDIR:-/tmp}/${project}-context"
 rm -rf "$context_root"
 
+# A half-built context must not survive. The caller only learns the path if this script prints it, so
+# a failure between the clone and the confirmation below would leave a directory nobody owns and
+# nobody deletes — and, worse, one holding a partial materialisation of a commit under a name that
+# says it is that commit. Removed by the exact path this invocation created, never by a sweep.
+cleanup_partial() { rm -rf "$context_root"; }
+trap cleanup_partial ERR
+
 # `--no-checkout` so nothing is materialised under the host's defaults; the working tree is created
 # by the explicit checkout below, under the config pinned here. `--no-hardlinks` makes the context
 # self-contained rather than sharing storage with a directory that can change underneath it. The two
@@ -88,7 +95,10 @@ fi
 materialised="$(git -C "$context_root" rev-parse HEAD)"
 if [ "$materialised" != "$sha" ]; then
   echo "the CI context materialised $materialised, not the requested $sha." >&2
+  # `exit` does not fire the ERR trap, so this path removes the partial context itself.
+  cleanup_partial
   exit 2
 fi
 
+trap - ERR
 printf '%s\n' "$context_root"

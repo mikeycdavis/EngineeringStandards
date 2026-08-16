@@ -130,6 +130,14 @@ $status
 $contextRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$Project-context"
 if (Test-Path $contextRoot) { Remove-Item $contextRoot -Recurse -Force }
 
+# Everything from here on is wrapped, because a half-built context must not survive.
+#
+# The caller only learns the path if this script returns it, so a failure between the clone and the
+# confirmation below would leave a directory nobody owns and nobody deletes — and, worse, a directory
+# holding a partial materialisation of a commit under a name that says it is that commit. It is
+# removed by the exact path this invocation created, never by a sweep of the temp directory.
+try {
+
 # `--no-checkout` first, so no file is materialised under whatever the host's defaults happen to be;
 # the working tree is then created by an explicit checkout under the config pinned below.
 #
@@ -171,6 +179,12 @@ else {
 $materialised = Invoke-Git @('-C', $contextRoot, 'rev-parse', 'HEAD') 'confirming the materialised commit'
 if ($materialised -ne $sha) {
     throw "the CI context materialised $materialised, not the requested $sha."
+}
+
+}
+catch {
+    if (Test-Path $contextRoot) { Remove-Item $contextRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    throw
 }
 
 return $contextRoot
