@@ -702,6 +702,21 @@ attestations:
           revision: "d6136df"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "ab1c9fc6b77c54cdf4832195bec40742"
+      - id: "review-testing-no-fabricated-results-006"
+        supersedes: "review-testing-no-fabricated-results-005"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-16"
+        evidence: "RE-REVIEWED 2026-08-16 against committed repository content at 84e1fbf, the develop head after PR #26 and PR #30 were integrated. WHAT CHANGED, MEASURED RATHER THAN ASSERTED: across d6136df..84e1fbf restricted to the reviewed paths, standards/47-test-integrity.md is byte-identical, and .github/workflows/ci.yml changed by six insertions and zero deletions in a single commit, ddb2f49, all six of them comment lines above the jobs key. Neither PR #26 nor PR #30 contributed a byte to either reviewed path, so the accumulated surface is that one commit and nothing else. THE CLAIM THE NEW TEXT MAKES, AND WHY IT WAS NOT ACCEPTED AS EVIDENCE OF ITSELF: the comments assert that scripts/pipeline.mjs defines the CI stage set rather than the workflow does, and that test/local-ci.test.mjs detects drift in either direction. That was checked against the implementation rather than read as self-certifying. pipeline.mjs declares six gating commands -- inventory, fidelity, policy, diagrams, test, audit -- and keeps validate explicitly advisory. local-ci.test.mjs carries two distinct parity assertions: every gating pipeline command must appear in the required GitHub test job, and every npm command in that job must exist in the pipeline stage set. That is genuinely bidirectional, so removing a stage from either side, or adding a workflow command to only one side, breaks one of the two. The comments therefore describe a guard that exists and has the shape claimed, rather than a guard that merely sounds plausible. WHY THE APPROVAL BASIS STILL HOLDS: nothing about test-result production, fabrication, suppression, or the execution contract changed in the reviewed surface. The workflow commands and the job topology are unchanged by these six lines. The new text documents an additional consistency control around what the required job runs; it does not substitute that control for actually executing the tests. NEW LIMITATION, and it is the one this event adds: the parity test establishes agreement of the declared npm run command sets as represented by the current workflow shape. It is not a general YAML or workflow semantic equivalence proof, and it does not establish that GitHub or Docker executed successfully on any particular run. That is accepted because the comments claim command-set drift detection, not executor equivalence. LIMITATIONS CARRIED FORWARD from review -005: a green required check establishes that the structural, test and audit gate passed and does not establish repository compliance, which only the validate job speaks to; the gate runs on one platform only; and the cross-materialisation verification is still performed by hand rather than by the gate."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - .github/workflows/ci.yml
+            - standards/47-test-integrity.md
+          revision: "84e1fbf"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "11c06d08cc96ac379b7f617cbc467ef7"
 
   # Checkpoint item 6. Note what reviewedAgainst can and cannot do here, because the gap is real:
   # this rule's evidence is Git history, and the schema can only digest files. The digest below is
