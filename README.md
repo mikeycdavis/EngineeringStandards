@@ -123,8 +123,9 @@ source extraction still agrees with it, and CI fails if it does not.
   — the must-never layer is built from the catalog's `forbidden` level, reuses existing rules rather
   than duplicating them, and caps the verdict where a prohibition went unexamined.
 - [artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md](artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md)
-  — the CLI scripts are commands, not libraries; module scope is run scope, and process exit is the
-  reset boundary. Standard 51 R1's required record for this repository's own global state.
+  — **superseded as a control by ADR 0014**, and kept unrepaired as the evidence for why: module
+  scope was run scope, and the enumeration of governed bindings was incomplete at five consecutive
+  reviews.
 - [artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md](artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
   — a detector may say what is present in the working tree; saying *committed* or *tracked* requires
   asking the repository, and until that seam exists both directions of the gap are disclosed.
@@ -134,6 +135,10 @@ source extraction still agrees with it, and CI fails if it does not.
 - [artifacts/adr/0010-human-review-may-always-contribute-negative-evidence.md](artifacts/adr/0010-human-review-may-always-contribute-negative-evidence.md)
   — **Proposed.** Approval and rejection are not symmetric operations and should not share one
   permission; a rejection cannot manufacture a pass, so it cannot violate monotonicity.
+- [artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md](artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md)
+  — execution-specific mutable state is owned by an invocation and cannot outlive it, and importing
+  the evaluator does not execute an audit. Replaces enumeration as Standard 51 R1's control, because
+  recognising every representation of state failed where constraining its lifetime does not.
 
 ## Design documents
 

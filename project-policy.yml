@@ -508,6 +508,24 @@ attestations:
           revision: "7b35ed3"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "d0019fcdb1a6e348037478fac4be5a1b"
+      - id: "review-architecture-no-hidden-global-state-006"
+        supersedes: "review-architecture-no-hidden-global-state-005"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-16"
+        evidence: "RE-REVIEWED 2026-08-16 against committed repository content at 9a92d12, and THE BASIS OF APPROVAL HAS CHANGED. Every prior event in this sequence approved ADR 0007's model: module-scoped run state, recognised by an enumeration table, reset by process exit. This event does not. It approves ADR 0014's model, in which lifetime rather than a binding table is the mechanism, and it explicitly does NOT approve ADR 0007's enumeration or its process-exit reset. The reason is recorded across events 001 to 005 and is the reason the control was replaced: the record was found incomplete at four consecutive reviews, the table lagged the code across consecutive cycles, and event 005 recorded four bindings the table never reached. Human enumeration was not a sufficient control against hidden global state, and event 002 said so; PR #26 replaces it rather than attempting a fifth correction. Standard 51 R1 now points to ADR 0014. VERIFIED IN THE IMPLEMENTATION rather than assumed from the decision: argument state is derived per main(args); the findings array and the source cache are constructed by createRun(); repository surface state is created inside the invocation; detectors receive the run explicitly as a parameter rather than reaching for it; and the sole process-lifetime boundary sits after main. VERIFIED IN THE TESTS, which exercise the properties independently rather than illustrating them: sequential runs, failed-run isolation, same-root and different-root concurrency, object-identity separation between runs, mutation of a completed result not reaching a later one, byte equivalence against a fresh-process oracle, and the no-process-exit-below-the-boundary invariant. The identity assertion is retained deliberately because the negative control demonstrates that output equality alone cannot detect a shared cache. THE INSTALLED-BIN FIX AT 9a92d12 DOES NOT UNDERMINE THIS BASIS, and was examined for exactly that: it canonicalises the two path representations only at the CLI boundary, and a dedicated regression asserts that importing either the real module or its symlink remains inert, so the import-inertness property this model rests on is now tested in both directions rather than assumed. ADR 0007 REMAINS DELIBERATELY INACCURATE HISTORICAL EVIDENCE. Its table is not repaired, and repairing it is neither required nor desirable for this review; it is preserved as the record of a control that failed in a documented way. It is therefore no longer a reviewed path of this attestation, because an approval must not be read as attesting to a document knowingly left inaccurate."
+        reference: "artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/invocation-ownership.test.mjs
+          revision: "9a92d12"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "9c8e7e0d8cc686945e088e5fcccc1168"
 
   architecture.no-duplicate-implementations:
     reviews:
@@ -792,6 +810,23 @@ attestations:
           revision: "1fa3869"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "577dc01c2ff161cfa2e7a12b6caa901b"
+      - id: "review-architecture-no-boundary-bypass-003"
+        supersedes: "review-architecture-no-boundary-bypass-002"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-16"
+        evidence: "RE-REVIEWED 2026-08-16 against committed repository content at 9a92d12. Of the four reviewed paths, PR #26 changes only standards/51-architecture-integrity.md; scripts/compliance.mjs, scripts/catalog.mjs and test/compliance.test.mjs are byte-identical to 1fa3869. The R2 row is substantively unchanged: the edits replace the R1 worked-example reference from ADR 0007 to ADR 0014, which is a change to what R1 cites and not to what R2 requires. THE SEPARATION HOLDS AND WAS CHECKED RATHER THAN ASSUMED against the three ways this rule can actually be broken: the invocation-ownership refactor does not move rule identity into the evaluator, does not move applicability into the catalog, and does not move evidence production into the policy. The new CLI boundary and the invocation-owned run state are changes to which object owns a lifetime INSIDE the evaluator, which is internal ownership rather than a shortcut around one of the three boundaries. THE SYMLINK REPAIR IS NOT A BYPASS, and was examined as a candidate for one: the previous string comparison accidentally refused the package's own legitimate installed entrypoint and silently did nothing, exiting 0 without running; resolving canonical file identity makes that entrypoint reach the same CLI boundary as any other invocation rather than routing around it, and import inertness is preserved. The Linux regression verifies both halves — that the symlinked entrypoint executes and produces byte-identical output to direct invocation, and that importing by either path still runs nothing. LIMITATION CARRIED FORWARD UNCHANGED: the for convenience qualifier in this rule is a claim about intent, which the available evidence does not reach. This approval establishes the structural boundaries and does not confer a general ability to infer motive."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - scripts/catalog.mjs
+            - test/compliance.test.mjs
+            - standards/51-architecture-integrity.md
+          revision: "9a92d12"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "17f517c0a61cf04f53535006fe1ab908"
 
   # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
   # prohibited conduct occurred and reached shared history, and being caught does not unmake it.

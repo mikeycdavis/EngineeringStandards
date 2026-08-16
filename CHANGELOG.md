@@ -106,6 +106,26 @@ false claim. The same split `validate` already draws between `NON_COMPLIANT` and
 - A reader, not a gate. It does not modify the policy, re-run checks, form its own compliance
   opinion, or suppress the jobs it interprets, and tests assert each of those.
 
+**Run state became invocation-owned** ([ADR 0014](artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md)).
+`scripts/standards.mjs` no longer performs its work at module load. Importing it now runs nothing;
+`main(args)` returns an exit code, and only the CLI boundary at the foot of the file terminates the
+process. The findings sink, the repository surface, and the source cache are constructed per
+invocation and cannot outlive it.
+
+Behaviour is unchanged, and that is asserted rather than claimed: `audit --json` and
+`validate --json` are byte-identical to a fresh process, and exit codes 0 / 1 / 2 are preserved.
+`test/invocation-ownership.test.mjs` carries the falsifiers, including a negative control that
+restores the old lifetime for one object and still passes every behavioural check — only the
+identity assertion catches it.
+
+[ADR 0007](artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md) is
+superseded as a control and kept unrepaired. Its binding table was incomplete at five consecutive
+reviews; that incompleteness is the evidence for retiring enumeration, so repairing it first would
+have destroyed the finding.
+
+`architecture.no-hidden-global-state` goes stale as a result, which is expected: its evidence
+changed, and it returns for owner review rather than being refreshed.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
