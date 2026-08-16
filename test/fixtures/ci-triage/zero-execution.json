@@ -1,0 +1,56 @@
+{
+  "note": "A job concluded without running a step. Infrastructure, not a failing code path.",
+  "expect": "INDETERMINATE",
+  "establishedRejections": [
+    "ai.no-fabricated-capabilities",
+    "ai.no-safety-bypass",
+    "errors.no-false-success"
+  ],
+  "jobs": [
+    {
+      "name": "test",
+      "conclusion": "failure",
+      "stepsExecuted": 0,
+      "required": true,
+      "logRead": false,
+      "status": null,
+      "reportedRules": [],
+      "validatorExit": null,
+      "annotations": []
+    },
+    {
+      "name": "validate",
+      "conclusion": "failure",
+      "stepsExecuted": 12,
+      "required": false,
+      "logRead": true,
+      "status": "NON_COMPLIANT",
+      "reportedRules": [
+        "ai.no-fabricated-capabilities",
+        "ai.no-safety-bypass",
+        "errors.no-false-success"
+      ],
+      "validatorExit": 1,
+      "annotations": [
+        "NON-COMPLIANT (exit 1) \u2014 a required or forbidden rule failed."
+      ]
+    },
+    {
+      "name": "validate-self / validate",
+      "conclusion": "failure",
+      "stepsExecuted": 12,
+      "required": false,
+      "logRead": true,
+      "status": "NON_COMPLIANT",
+      "reportedRules": [
+        "ai.no-fabricated-capabilities",
+        "ai.no-safety-bypass",
+        "errors.no-false-success"
+      ],
+      "validatorExit": 1,
+      "annotations": [
+        "NON-COMPLIANT (exit 1) \u2014 a required or forbidden rule failed."
+      ]
+    }
+  ]
+}
