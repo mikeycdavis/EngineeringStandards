@@ -135,7 +135,7 @@ lives elsewhere (attestations in `project-policy.yml`, reviews under `artifacts/
   "commit": "9cb5376f397ca2bab4631363d8718f8826f02ca1",
   "branch": "chore/local-docker-ci",
   "repository": "https://github.com/mikeycdavis/EngineeringStandards.git",
-  "environment": { "node": "v20.20.2", "image": "engineeringstandards-ci:local", "containerized": true },
+  "environment": { "node": "v20.20.2", "image": "engineeringstandards-ci:engineeringstandards-ci-1755300000000-4812", "containerized": true },
   "scope": "complete",
   "startedAt": "…",
   "completedAt": "…",
@@ -148,6 +148,28 @@ container, so a stale image announces itself rather than passing under the curre
 `scope` is `partial` when only some stages ran, and the gate refuses anything but `complete`.
 `containerized` is false for a host run, and the gate refuses those too — a pass on the developer's
 machine proves the developer's machine.
+
+### What the record is not
+
+It is not tamper-evident, and nothing here should be read as claiming otherwise. The file is plain
+JSON in the developer's own working tree; anyone who can run `submit-pr` can also write
+`latest.json` by hand, and no signature, digest, or sealed channel stands between the two. The three
+fields above defend against a record being *wrong* — stale, partial, produced outside the container
+— not against one being *forged*.
+
+That is a deliberate scope, not an unexamined gap. The threat model here is developer error and
+drift: the run that quietly verified a different commit, the record left over from an earlier
+branch, the pipeline that only got halfway. Against an author who has decided to fabricate a pass,
+a local file offers no defence and cannot be made to — they already hold the push credential and the
+working tree, and any secret the check could consult, they could read. Making the record
+cryptographically self-certifying would move the problem to where the key lives, not solve it.
+
+The control that survives a hostile author is not this file. It is that the pushed commit is public
+and re-verifiable by anyone: the pipeline is deterministic, the base image is digest-pinned, and a
+reviewer — or a runner that is not the author's machine — can run the same stages against the same
+SHA and compare. Local verification is a claim the author makes; reproducibility is what makes the
+claim checkable. Treat `latest.json` as the author's signed statement in the informal sense, and
+weigh it accordingly.
 
 ## What the pull request claims
 
@@ -251,10 +273,40 @@ in either direction, so a step added to the workflow by hand is caught as readil
 | `standards-dogfood.yml` | It exercises GitHub's `workflow_call` resolution — checking out the framework from GitHub at a pinned SHA and invoking a reusable workflow. That *is* the thing under test (ADR 0013, distribution fidelity); running it locally would test something else. Its local equivalent is the `validate` stage, which produces the verdict the distributed check must reproduce. |
 | Branch protection and required-check status | A property of the GitHub repository, not of any pipeline. Note that `gh api …/branches/develop/protection` currently returns 404 — protection is not configured. |
 | `actions/upload-artifact`, job summaries | Runner-hosted presentation. The equivalent evidence is `artifacts/local-ci/latest.json` and the printed summary. |
-| Multi-OS or multi-Node matrices | Neither workflow declares one today. The image pins Node 20 to match the runner; `package.json` declares `engines: >=18`, so an 18 floor check is an available follow-up rather than lost coverage. |
+| Multi-OS or multi-Node matrices | Neither workflow declares one today. See the Node disposition below. |
+| A linked `git worktree` checkout | `.git` there is a file pointing at an absolute host path outside the build context, so the copied pointer resolves to nothing and every `git` call in the container fails. Both entry points detect this and refuse by name. Supporting it would mean copying an arbitrary host path into the image — the broad host reach this environment exists to avoid — to serve a checkout shape one `cd` steps out of. |
 
 Nothing from the existing pipeline was dropped. Every `run:` step in the required `test` job maps to
 a gating stage, and the `validate` job maps to the advisory stage — asserted by test, both ways.
+
+### Which Node this pipeline speaks for
+
+The image pins Node 20 by digest, and Node 20 is the version this pipeline makes claims about. A
+green run says the checks pass on Node 20 — not that they pass on every Node the package permits.
+
+`package.json` declares `engines: ">=18"`, and that is a **package compatibility floor**, not a
+statement that CI verified 18. The two are deliberately different things and the difference is
+recorded rather than reconciled: nothing here has ever run on 18, so raising the floor to 20 would
+discard a compatibility claim that may well be true, while adding an 18 stage would double the
+runtime of every local run to defend a version no consumer has reported using. If a consumer ever
+does, the resolution is a matrix in `scripts/pipeline.mjs` — one entry, both executors inherit it —
+and not a change to how verification works.
+
+### Supported submission entry point
+
+Verification is cross-platform; **submission is Windows-first, and deliberately so.**
+
+`scripts/ci.sh` is a complete equivalent of `scripts/ci.ps1`: Linux and macOS developers can run the
+full pipeline and get the same record. There is no `submit-pr.sh`, so the `verified SHA → push → PR`
+workflow has one supported entry point, `scripts/submit-pr.ps1`, which needs PowerShell 7 (available
+on Linux and macOS, and how a POSIX developer would drive it today).
+
+The asymmetry is not an oversight and `ci.sh` should not be read as implying parity. The decision
+that matters — every refusal, in order — lives in `scripts/submit-gate.mjs`, a pure function tested
+directly and executed inside the container. A second shell implementation would not add a platform;
+it would add a second paraphrase of the invariant, and a paraphrase is exactly the thing that drifts
+from the rule it restates. If a native POSIX submitter is ever wanted, it should call the same gate
+module rather than re-derive its logic.
 
 ## Self-hosted runner, later
 
