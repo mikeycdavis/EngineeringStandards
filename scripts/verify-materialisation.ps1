@@ -142,34 +142,60 @@ function New-Checkout([string] $Name, [string] $Autocrlf, [string] $Eol, [string
 }
 
 <#
-    Run the complete pipeline from one checkout and return everything the comparison looks at.
+    The pre-fix implementation, reproduced: build the image with the checkout's own working directory
+    as the Docker context, run the pipeline, copy the record out.
 
-    Under `-Mutate` the context is forced to the checkout's own working directory before ci.ps1
-    runs, which is exactly the pre-fix `COPY .`. ci.ps1 overwrites `CI_CONTEXT` itself, so the
-    mutation cannot be performed by setting an environment variable — it patches the one line in the
-    copied script that decides what Docker is given. The patch is applied to the temporary
-    checkout's copy, never to the repository.
+    This is what `-Mutate` restores. It is written out here rather than produced by patching the
+    checkout's copy of ci.ps1, and the difference is not stylistic — an earlier version did patch the
+    script, which made both checkouts dirty in the same way, so both failed the byte-identity check
+    identically and the harness reported agreement. A mutation that perturbs both arms equally proves
+    nothing. Nothing is modified in either checkout now; only the context handed to Docker differs.
+
+    The commands mirror scripts/ci.ps1: same compose file, same per-run project and image name, same
+    named container so the record can be copied out of it, same teardown scoped to what this created.
+#>
+function Invoke-LegacyPipelineIn([string] $Dir, [string] $Label, [string] $Log) {
+    $project = "materialisation-$Stamp-$Label"
+    $image = "materialisation-ci:$project"
+    $container = "$project-ci"
+    $compose = Join-Path $Dir 'compose.ci.yml'
+    $env:CI_IMAGE = $image
+    # The defect, in one assignment: Docker is given the working directory.
+    $env:CI_CONTEXT = $Dir
+    try {
+        & docker compose -p $project -f $compose build *>&1 | Out-File -LiteralPath $Log -Encoding utf8
+        & docker compose -p $project -f $compose run --name $container ci *>&1 |
+            Out-File -LiteralPath $Log -Encoding utf8 -Append
+        $recordDir = Join-Path $Dir 'artifacts/local-ci'
+        New-Item -ItemType Directory -Force -Path $recordDir | Out-Null
+        & docker cp "${container}:/work/artifacts/local-ci/latest.json" (Join-Path $recordDir 'latest.json') 2>&1 |
+            Out-Null
+    }
+    finally {
+        & docker rm --force --volumes $container 2>&1 | Out-Null
+        & docker compose -p $project -f $compose down --volumes --remove-orphans --timeout 10 2>&1 | Out-Null
+        & docker image rm $image 2>&1 | Out-Null
+        $env:CI_CONTEXT = $null
+    }
+}
+
+<#
+    Run the complete pipeline from one checkout and return everything the comparison looks at.
 #>
 function Invoke-PipelineIn([string] $Dir, [string] $Label) {
-    if ($Mutate) {
-        $ciScript = Join-Path $Dir 'scripts/ci.ps1'
-        $text = Get-Content -Raw -LiteralPath $ciScript
-        $patched = $text -replace
-            '\$ContextRoot = & \(Join-Path \$PSScriptRoot ''ci-context\.ps1''\)[^\r\n]*',
-            '$ContextRoot = $null; $env:CI_CONTEXT = $RepoRoot'
-        if ($patched -eq $text) {
-            throw "the mutation found nothing to patch in ci.ps1; if that line moved, fix this falsifier rather than deleting it."
-        }
-        Set-Content -LiteralPath $ciScript -Value $patched -NoNewline
-    }
-
     $log = Join-Path $WorkRoot "$Label.log"
     Write-Host "    running the pipeline in $Label ..."
-    Push-Location $Dir
-    try {
-        & pwsh -NoProfile -File (Join-Path $Dir 'scripts/ci.ps1') *>&1 | Out-File -LiteralPath $log -Encoding utf8
+
+    if ($Mutate) {
+        Invoke-LegacyPipelineIn $Dir $Label $log
     }
-    finally { Pop-Location }
+    else {
+        Push-Location $Dir
+        try {
+            & pwsh -NoProfile -File (Join-Path $Dir 'scripts/ci.ps1') *>&1 | Out-File -LiteralPath $log -Encoding utf8
+        }
+        finally { Pop-Location }
+    }
 
     $recordPath = Join-Path $Dir 'artifacts/local-ci/latest.json'
     if (-not (Test-Path $recordPath)) {
