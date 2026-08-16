@@ -1,0 +1,15 @@
+# Line endings for files that are executed by a Linux shell.
+#
+# The developer platform here is Windows, so a fresh checkout converts to CRLF. That is harmless for
+# most of this repository and fatal for two kinds of file: a script whose first line becomes
+# `#!/usr/bin/env bash\r` is not executable, and a Dockerfile whose `RUN` lines carry carriage
+# returns passes them to `sh`. Both fail in the container, on someone else's machine, for a reason
+# that does not appear in the diff.
+#
+# git already stores LF for these — it is the checkout that would change them — so this only
+# constrains what lands on disk.
+*.sh text eol=lf
+ci/Dockerfile text eol=lf
+
+# PowerShell is only ever run on the host, where CRLF is native. Left alone deliberately rather than
+# normalised for symmetry.
