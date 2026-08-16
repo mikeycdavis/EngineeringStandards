@@ -15,7 +15,7 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
@@ -2524,6 +2524,36 @@ export async function main(args) {
 // testable against a fresh-process oracle, and it is the property ADR 0014 turns into a test.
 // ---------------------------------------------------------------------------
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compared on canonical paths, because the two sides describe the same file in different
+// representations and a string comparison silently answered "no".
+//
+// `import.meta.url` is where Node *resolved* this module: loading an ESM entry point follows
+// symlinks. `process.argv[1]` is the path the process was *invoked* with, symlink intact. When this
+// package is installed, npm links `node_modules/.bin/standards` to `scripts/standards.mjs`, so the
+// two name the same file by different spellings, the comparison is false, and the CLI does nothing while
+// exiting 0.
+//
+// That is a false success at the one place consumers are told to gate their build (ADR 0004):
+// `standards validate` reporting no findings because it never ran, which is indistinguishable from
+// a clean repository to every caller. Reproduced on Linux before this was changed — invoked directly
+// the command exits 1 with a 2914-byte verdict; invoked through the bin link it exited 0 with no
+// output at all.
+//
+// Canonicalising does not widen what counts as direct invocation. It makes two spellings of one path
+// comparable; an imported module's `argv[1]` is the *importing* entry point, a genuinely different
+// real file, so importing this module still runs nothing. Both properties are asserted in
+// test/invocation-ownership.test.mjs — the symlink form must execute, and the import form must not.
+function invokedDirectly(argv1) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(SELF);
+  } catch {
+    // An unresolvable argv[1] is not this file being run. Falling back to the original comparison
+    // keeps that case behaving as it always did rather than inventing a new answer for it.
+    return import.meta.url === pathToFileURL(argv1).href;
+  }
+}
+
+if (invokedDirectly(process.argv[1])) {
   process.exitCode = (await main(process.argv.slice(2))).exitCode;
 }

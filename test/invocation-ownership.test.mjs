@@ -19,7 +19,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -143,7 +144,7 @@ test("the three exit codes survive the refactor", () => {
 
 test("only the CLI boundary terminates the process", () => {
   const src = readFileSync(CLI, "utf8");
-  const marker = "if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {";
+  const marker = "if (invokedDirectly(process.argv[1])) {";
   const boundary = src.indexOf(marker);
   assert.ok(boundary > 0, "the CLI boundary must be recognisable for this check to mean anything");
 
@@ -157,6 +158,99 @@ test("only the CLI boundary terminates the process", () => {
     .join("\n");
   const hits = [...above.matchAll(/process\.(exit|exitCode)\b/g)];
   assert.deepEqual(hits.map((h) => h[0]), [], "no helper below the CLI boundary may terminate the process");
+});
+
+/**
+ * The installed shape of this package, which is the shape consumers actually gate their builds on.
+ *
+ * `package.json` declares `bin: { standards: "scripts/standards.mjs" }`, so `npm install` links
+ * `node_modules/.bin/standards` at this file. Node follows that symlink when it resolves the module,
+ * so `import.meta.url` names the real file while `process.argv[1]` still names the link — and the
+ * original guard compared those two strings. It answered "not invoked directly", the CLI ran nothing,
+ * and the process exited 0.
+ *
+ * The failure mode is the worst available one: silence that reads as success. `standards validate`
+ * is what ADR 0004 tells consuming projects to gate on, and a gate that exits 0 without looking is
+ * indistinguishable from a clean repository. Measured before the fix — direct invocation exited 1
+ * with a 2914-byte verdict, invocation through the link exited 0 with zero bytes.
+ *
+ * The assertion is equality with the direct invocation rather than "exit 0", because exit 0 is
+ * exactly what the defect produced.
+ */
+function withBinLink(fn) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "standards-bin-"));
+  try {
+    const bin = path.join(dir, "node_modules/.bin");
+    mkdirSync(bin, { recursive: true });
+    const link = path.join(bin, "standards");
+    try {
+      symlinkSync(CLI, link, "file");
+    } catch (error) {
+      // Windows refuses symlinks without Developer Mode or elevation. Reported rather than passed
+      // quietly: the gating pipeline runs this on Linux, where the branch below always executes, and
+      // a skip that looked like a pass is the same class of defect this test exists to catch.
+      if (["EPERM", "EACCES"].includes(error.code)) return { skipped: error.code };
+      throw error;
+    }
+    return { skipped: null, result: fn(link) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("invoking through the installed bin symlink runs the CLI, not a silent exit 0", (t) => {
+  const outcome = withBinLink((link) => {
+    const viaLink = (args) => {
+      const r = spawnSync(process.execPath, [link, ...args], { encoding: "utf8", maxBuffer: 1 << 28 });
+      return { stdout: r.stdout, exitCode: r.status };
+    };
+    return {
+      audit: viaLink(["audit", `--dir=${A}`, "--json"]),
+      bad: viaLink(["nonsense"]),
+    };
+  });
+
+  if (outcome.skipped) {
+    t.skip(`symlink creation refused (${outcome.skipped}); this runs on the Linux CI image`);
+    return;
+  }
+
+  const direct = freshProcess(["audit", `--dir=${A}`, "--json"]);
+  assert.notEqual(outcome.result.audit.stdout, "", "the symlinked CLI produced no output at all");
+  assert.equal(norm(outcome.result.audit.stdout), norm(direct.stdout), "the symlinked CLI reported something else");
+  assert.equal(outcome.result.audit.exitCode, direct.exitCode);
+  // A distinguishing exit code, so the check cannot be satisfied by a process that exits 0 blindly.
+  assert.equal(outcome.result.bad.exitCode, 2, "the symlinked CLI did not reach argument handling");
+});
+
+test("importing the module still runs nothing, by either of its two paths", (t) => {
+  // The other half of the fix. Canonicalising the guard makes two spellings of one path comparable;
+  // it must not widen what counts as invocation. An imported module's argv[1] is the *importing*
+  // entry point — a different real file — so both the real path and the bin link must stay inert.
+  // Asserted because the natural over-correction (comparing realpaths of the module against the
+  // module) would make every import execute the CLI, which is the property ADR 0014 rests on.
+  const outcome = withBinLink((link) => {
+    const dir = path.dirname(path.dirname(path.dirname(link)));
+    const entry = path.join(dir, "entry.mjs");
+    writeFileSync(
+      entry,
+      `import ${JSON.stringify(pathToFileURL(CLI).href)};\n` +
+        `import ${JSON.stringify(pathToFileURL(link).href)};\n` +
+        `process.stdout.write("IMPORTED-AND-NOTHING-ELSE");\n`,
+    );
+    const r = spawnSync(process.execPath, [entry, "validate"], { encoding: "utf8", maxBuffer: 1 << 28 });
+    return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status };
+  });
+
+  if (outcome.skipped) {
+    t.skip(`symlink creation refused (${outcome.skipped}); this runs on the Linux CI image`);
+    return;
+  }
+
+  // `validate` is passed as an argument on purpose: if importing were to execute, it would have a
+  // command to run and would print a verdict rather than failing on a missing one.
+  assert.equal(outcome.result.stdout, "IMPORTED-AND-NOTHING-ELSE", "importing the module executed the CLI");
+  assert.equal(outcome.result.exitCode, 0, "importing the module set an exit code");
 });
 
 /**
