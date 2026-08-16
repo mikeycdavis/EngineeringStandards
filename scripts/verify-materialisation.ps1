@@ -270,7 +270,7 @@ make this test vacuous rather than satisfied.
     # Both checkouts must nonetheless be clean, or the difference is a working-tree edit rather than
     # a materialisation difference, and the pipeline would refuse them for an unrelated reason.
     foreach ($d in @($lfDir, $crlfDir)) {
-        $dirty = Invoke-Git @('-C', $d, 'status', '--porcelain') 'checking the checkout is clean'
+        $dirty = Invoke-Git @('-C', $d, 'status', '--porcelain', '--untracked-files=normal') 'checking the checkout is clean'
         if ($dirty) { throw "the checkout at $d is not clean:`n$dirty" }
     }
     Write-Host "  the same commit is on disk as different bytes, and git considers both unmodified" -ForegroundColor Yellow

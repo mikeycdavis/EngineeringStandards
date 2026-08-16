@@ -69,6 +69,32 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# The project name is validated first, before this script does anything at all.
+#
+# `$Project` names the temporary directory, and this script later removes that directory with
+# `-Recurse -Force`. A name carrying path components therefore chooses where that deletion lands:
+# `-Project ../../work` resolves through the temp root to a sibling directory and takes the recursive
+# delete with it. `--project` is an advertised option on both entry points, so the value arrives from
+# outside this script. Docker Compose would reject such a name as well — but it would reject it once
+# the context stage has already run, which is to say after the delete.
+#
+# The alphabet is Compose's own, and every name this repository derives already satisfies it
+# (`ci.ps1` and `ci.sh` both reduce the directory basename to `[a-z0-9-]` before appending). It is
+# also what makes the constructed path safe rather than merely conventional: a string matching this
+# pattern contains no separator and no dot, so no value of `$Project` can move the target out of the
+# temporary directory. Checked here rather than at the entry points, so it holds for every caller —
+# `submit-decide.ps1` included — and checked before the repository is read, so a hostile name is
+# refused on a dirty tree too.
+if ($Project -notmatch '^[a-z0-9][a-z0-9_-]*$') {
+    throw @"
+'$Project' is not a usable project name.
+
+It names a temporary directory that this script deletes recursively, so it is restricted to a plain
+Compose project name: a lowercase letter or digit, then lowercase letters, digits, hyphens, or
+underscores. A name containing path separators would choose what gets deleted.
+"@
+}
+
 function Invoke-Git {
     param([string[]] $GitArgs, [string] $What)
     $output = & git @GitArgs 2>&1
@@ -116,7 +142,13 @@ if ($LASTEXITCODE -ne 0) { $origin = $null }
 #
 # Ignored files are not dirt: `--porcelain` excludes them, so the run's own artifacts directory does
 # not block a run.
-$status = Invoke-Git @('-C', $RepoRoot, 'status', '--porcelain') 'reading working-tree status'
+#
+# `--untracked-files=normal` is passed explicitly rather than relying on the default, because the
+# default is not a default — it is `status.showUntrackedFiles`, which a developer may have set to
+# `no`. Under that config a brand-new source file reports nothing here, the clone omits it because it
+# is not committed, and the run reports a pass over a tree missing the very file being worked on.
+# That is the false success this check exists to prevent, arriving through the check itself.
+$status = Invoke-Git @('-C', $RepoRoot, 'status', '--porcelain', '--untracked-files=normal') 'reading working-tree status'
 if ($status) {
     throw @"
 the working tree has uncommitted changes, and local CI verifies committed content at HEAD.

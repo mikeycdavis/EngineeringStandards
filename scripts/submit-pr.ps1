@@ -82,7 +82,10 @@ try {
     # --- Facts, gathered before anything expensive runs -------------------------------------------
     $isRepo = $null -ne (Git-Out rev-parse --git-dir)
     $branch = if ($isRepo) { Git-Out rev-parse --abbrev-ref HEAD } else { $null }
-    $dirty = if ($isRepo) { @(& git status --porcelain) | Where-Object { $_ } } else { @() }
+    # `--untracked-files=normal` explicitly, not by default: the default is `status.showUntrackedFiles`,
+    # which a developer may have set to `no`. A submission gate that consults a configurable definition
+    # of "clean" refuses exactly what that config lets through.
+    $dirty = if ($isRepo) { @(& git status --porcelain --untracked-files=normal) | Where-Object { $_ } } else { @() }
     $shaBefore = if ($isRepo) { Git-Out rev-parse HEAD } else { $null }
 
     # The pre-CI decision. Every refusal that does not depend on CI's result is made here, so a
@@ -120,7 +123,7 @@ try {
         isRepository = $isRepo
         branch       = $branch
         base         = $Base
-        dirty        = @(@(& git status --porcelain) | Where-Object { $_ })
+        dirty        = @(@(& git status --porcelain --untracked-files=normal) | Where-Object { $_ })
         shaBefore    = $shaBefore
         shaAfter     = $shaAfter
         ciExitCode   = $ciExit
