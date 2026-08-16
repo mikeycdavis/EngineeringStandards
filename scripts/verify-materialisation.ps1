@@ -127,13 +127,16 @@ function Get-StageOutput([string] $LogPath, [string] $StageId) {
 #>
 function New-Checkout([string] $Name, [string] $Autocrlf, [string] $Eol, [string] $Sha, [string] $Origin) {
     $dir = Join-Path $WorkRoot $Name
+    # `| Out-Null` on every call made for its effect. In PowerShell an un-consumed return value is
+    # output, so a bare call here would prepend blank lines to this function's return value and the
+    # caller would receive a path with leading whitespace. That trap cost a run of this very change.
     Invoke-Git @(
         'clone', '--quiet', '--no-checkout', '--no-hardlinks',
         '-c', "core.autocrlf=$Autocrlf",
         '-c', "core.eol=$Eol",
         $RepoRoot, $dir
-    ) "cloning the $Name checkout"
-    Invoke-Git @('-C', $dir, 'checkout', '--quiet', '--detach', $Sha) "checking out $Sha in the $Name checkout"
+    ) "cloning the $Name checkout" | Out-Null
+    Invoke-Git @('-C', $dir, 'checkout', '--quiet', '--detach', $Sha) "checking out $Sha in the $Name checkout" | Out-Null
     if ($Origin) { Invoke-Git @('-C', $dir, 'remote', 'set-url', 'origin', $Origin) 'setting the origin URL' | Out-Null }
     return $dir
 }

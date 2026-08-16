@@ -106,6 +106,14 @@ request; a documented caveat on a gate is a caveat nobody reads at the moment it
   tracked/ignored answers to be identical. Its `-Mutate` mode restores the host-context behaviour and
   requires the comparison to fail; agreement under the mutation is reported as the check being
   incapable, not as a pass.
+- One check asserts the invariant from *inside* the run rather than from the shape of the scripts
+  that set it up: every regular file on disk is compared, by raw byte identity, against its committed
+  blob at `HEAD`. It runs only when the run makes a verification claim — inside the container, or on
+  a GitHub runner — and skips with a stated reason otherwise, because on a Windows host the working
+  tree legitimately is not the committed bytes and failing there would report a checkout convention
+  as a defect. This is also what keeps the harness above from being vacuous: two checkouts agree
+  trivially when nothing in the suite can tell them apart, and this can. Under the restored defect a
+  CRLF checkout fails it and an LF checkout does not.
 - `test/local-ci.test.mjs` covers the structural half — that the context is parameterised, cloned
   rather than exported, pinned rather than inherited, confirmed against the requested commit, removed
   by exact path, and that no Docker capability was added to compensate. Those are text assertions and
