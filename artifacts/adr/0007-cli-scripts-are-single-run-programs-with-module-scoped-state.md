@@ -1,8 +1,39 @@
 # 0007 — The CLI scripts are single-run programs, and their module scope is their run scope
 
-- **Status:** Accepted
+- **Status:** Superseded as a control by
+  [ADR 0014](0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md) (2026-08-13).
+  Retained in full as historical evidence.
 - **Date:** 2026-08-09
 - **Deciders:** Project owner
+
+## This record is evidence now, not a control
+
+**Nothing below has been corrected, and the binding table has deliberately not been repaired.** Eight
+written bindings absent from it and one stale row were known at the time this status changed. They
+were left exactly as they were, because they are the evidence that justified retiring enumeration:
+repairing them first would have destroyed the finding and produced a table that looked authoritative
+for exactly as long as it took someone to add another binding.
+
+Three lessons are the reason this document is kept rather than deleted.
+
+1. **The categorical rule was stronger than its table, and the rule was right.** "A script that holds
+   run state is governed the moment it exists" never failed. What failed was every attempt to write
+   down which bindings that was.
+2. **The table lagged on ordinary bindings, not exotic ones.** The misses were plain accumulators and
+   derived run state declared at module level in the usual way — not clever constructs. A control that
+   cannot see the ordinary case is not a control.
+3. **Mechanical analysis did not rescue it.** This record already said the declaration scan could not
+   see the alias-mediated write to `surfaceLoss`. A later, genuinely capable AST analysis went further
+   and was worse: it produced confident, plausible, materially wrong measurements — twice — because its
+   semantic model was incomplete, and it never failed while doing so.
+
+ADR 0014 removes the need to solve that recognition problem, by constraining lifetime instead of
+attempting to enumerate representations. The governing invariant is now **execution-specific mutable
+state is owned by an invocation**, established behaviourally against fresh-process oracles, with one
+retained static invariant — **only the CLI boundary may terminate the process** — kept precisely
+because it is closed and checkable in a way that "find every shape of mutable state" is not.
+
+Read the rest of this document as the record of what was tried, what it cost, and why it changed.
 
 ## Context
 
@@ -213,3 +244,16 @@ is the part that would break silently.
 its reset boundary is named, and the conditions that would invalidate the decision are named. It
 remains a `manual-review` rule — this record is the evidence a reviewer reads, not a substitute for
 reading it.
+
+## Postscript — the invalidating condition was met
+
+The section above named the conditions under which this decision would no longer hold, and said the
+refactor at that point was known: *move the run block into an exported entry point that constructs
+every binding per call and passes them through.* That is what
+[ADR 0014](0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md) does.
+
+The trigger was not a second caller. It was the control itself: the enumeration this record depended
+on could not be made reliable, and two attempts to mechanise it — a declaration scan and a full AST
+analysis — each reported clean on state they could not see. This decision anticipated its own
+replacement and named the refactor correctly. It did not anticipate that the reason would be the
+table rather than a new consumer.
