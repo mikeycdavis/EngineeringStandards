@@ -37,6 +37,10 @@ import {
   logLines,
   establishedRejectionsFrom,
   jobIdFrom,
+  parseTarget,
+  combineCheckRunPages,
+  collectCheckRunPages,
+  CHECK_RUNS_PER_PAGE,
   EXPECTED,
   ACTIONABLE,
   INDETERMINATE,
@@ -55,7 +59,7 @@ const fixture = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name), "ut
 
 test("every fixture classifies as the state it describes", () => {
   const files = readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).sort();
-  assert.ok(files.length >= 12, `only ${files.length} fixtures — the branch coverage was reduced`);
+  assert.ok(files.length >= 14, `only ${files.length} fixtures — the branch coverage was reduced`);
 
   for (const file of files) {
     const f = fixture(file);
@@ -147,6 +151,31 @@ test("actionable outranks indeterminate", () => {
   const result = classify(fixture("actionable-outranks-indeterminate.json"));
   assert.equal(result.verdict, ACTIONABLE);
   assert.ok(result.findings.some((r) => r.class === INDETERMINATE), "the indeterminate finding was dropped rather than outranked");
+});
+
+test("an arm whose verdict printed without an exit annotation is still established", () => {
+  // Only one of the two workflows emits `::error::`, so a missing exit class is the normal shape for
+  // the other arm. Treating it as a failure to observe would make every run of that workflow
+  // indeterminate and retire the tool on its second day.
+  const result = classify(fixture("verdict-without-annotation.json"));
+  assert.equal(result.verdict, EXPECTED);
+  const finding = result.findings.find((r) => r.check === "validate");
+  assert.equal(finding.class, EXPECTED, "a printed verdict with no annotation was discarded");
+  assert.match(finding.why, /NON_COMPLIANT/);
+});
+
+test("an arm whose log yielded neither verdict nor exit class is unestablished, not cleared", () => {
+  // The dangerous shape. With no reported rules parsed, a set comparison would read the empty result
+  // as every established rejection having been cleared and call the repository changed — a claim about
+  // the project derived from a defect in reading it. The exit class and the printed verdict are two
+  // independent ways to establish the outcome; the absence of both is the absence of evidence.
+  const result = classify(fixture("unreadable-verdict.json"));
+  assert.equal(result.verdict, INDETERMINATE);
+  const finding = result.findings.find((r) => r.check === "validate");
+  assert.equal(finding.class, INDETERMINATE);
+  assert.match(finding.why, /unestablished|neither/);
+  assert.doesNotMatch(finding.why, /no longer reported/, "unread evidence was reported as a cleared rejection");
+  for (const f of result.findings) assert.notEqual(f.class, ACTIONABLE, "unread evidence was reported as the repository being wrong");
 });
 
 test("an empty observation establishes nothing rather than passing", () => {
@@ -258,6 +287,181 @@ test("the exit codes match the epistemic split", () => {
   assert.equal(EXIT[EXPECTED], 0);
   assert.equal(EXIT[ACTIONABLE], 1);
   assert.equal(EXIT[INDETERMINATE], 2);
+});
+
+// -------------------------------------------------------------------------------------------
+// Addressing — which commit the verdict is about
+// -------------------------------------------------------------------------------------------
+
+test("each addressing mode names one subject", () => {
+  assert.deepEqual(parseTarget(["26"]), { mode: "pr", value: "26" });
+  assert.deepEqual(parseTarget(["--sha", "69de0c8"]), { mode: "sha", value: "69de0c8" });
+  assert.deepEqual(parseTarget(["--branch", "develop"]), { mode: "branch", value: "develop" });
+  assert.deepEqual(parseTarget(["--json", "--branch", "develop"]), { mode: "branch", value: "develop" });
+});
+
+test("two targets is an error, not a precedence rule", () => {
+  // The whole reason this mode exists is that a verdict can be true about the wrong commit. Silently
+  // preferring one of two subjects would reintroduce that at the argument list.
+  assert.match(parseTarget(["26", "--sha", "69de0c8"]).error, /more than one target/);
+  assert.match(parseTarget(["--branch", "develop", "--branch", "master"]).error, /more than one target/);
+  assert.match(parseTarget([]).error, /no target/);
+  assert.match(parseTarget(["--sha"]).error, /needs a value/);
+  assert.match(parseTarget(["--sha", "--json"]).error, /needs a value/);
+  assert.match(parseTarget(["--wat"]).error, /unrecognised/);
+});
+
+test("a run that cannot name its subject's gating branch says so, rather than reporting unreadable", () => {
+  // A commit can sit on any number of branches with different protection. "Not asked" and "asked and
+  // could not read" are different states, and collapsing them would let a guess read as a measurement.
+  const unasked = classify({
+    requiredChecksNote: "no branch was named, so which checks gate this commit was not asked",
+    establishedRejections: [],
+    jobs: [{ name: "build", conclusion: "failure", stepsExecuted: 4, required: null, logRead: false }],
+  });
+  const finding = unasked.findings.find((r) => r.check === "build");
+  assert.equal(finding.class, ACTIONABLE, "a real failure was downgraded because required-ness was unknown");
+  assert.match(finding.why, /was not asked/);
+  assert.doesNotMatch(finding.why, /could not be read/, "an unasked question was reported as an unreadable answer");
+
+  // With no note supplied the wording stays the original one, so a fixture that predates this field
+  // still describes itself correctly.
+  const noNote = classify({
+    establishedRejections: [],
+    jobs: [{ name: "build", conclusion: "failure", stepsExecuted: 4, required: null, logRead: false }],
+  });
+  assert.match(noNote.findings.find((r) => r.check === "build").why, /could not be read from branch protection/);
+});
+
+// -------------------------------------------------------------------------------------------
+// Pagination — the evidence surface has to be complete before it can be classified
+// -------------------------------------------------------------------------------------------
+
+const PAGES = path.join(ROOT, "test", "fixtures", "ci-triage-pages");
+const pageFixture = (name) => JSON.parse(readFileSync(path.join(PAGES, name), "utf8"));
+
+/**
+ * The check-run-to-job mapping, standing in for the one inside `extractEvidence`. The fixtures carry
+ * the parsed log fields directly, because what is under test here is which runs reach the classifier
+ * — not how a log is read, which has its own specimens above.
+ */
+const asJobs = (runs, established) => runs.map((r) => ({
+  name: r.name,
+  conclusion: r.conclusion,
+  stepsExecuted: r.stepsExecuted,
+  required: r.name === "test",
+  logRead: r.name in { "validate": 1, "validate-self / validate": 1 },
+  status: r.status ?? null,
+  reportedRules: r.reportedRules ?? [],
+  validatorExit: r.status === undefined ? null : 1,
+  annotations: [],
+  established,
+}));
+
+test("a failed job on a later page is not invisible", () => {
+  // The endpoint pages at 30 by default. One page read as the whole set means a real failure can be
+  // absent from the evidence entirely, and the verdict is EXPECTED over a surface never seen — the
+  // false assurance this tool exists to prevent, produced by the tool itself and produced silently.
+  const f = pageFixture("hidden-failure.json");
+  const observe = (runs) => ({ establishedRejections: f.establishedRejections, jobs: asJobs(runs, f.establishedRejections) });
+
+  const firstPageOnly = combineCheckRunPages(f.pages.slice(0, 1));
+  assert.equal(classify(observe(firstPageOnly)).verdict, f.expectFirstPageOnly, "the fixture no longer demonstrates the defect");
+
+  const combined = combineCheckRunPages(f.pages);
+  assert.equal(combined.length, 4, "the pages were not combined");
+  const result = classify(observe(combined));
+  assert.equal(result.verdict, f.expectCombined);
+  const finding = result.findings.find((r) => r.check === "package");
+  assert.equal(finding.class, ACTIONABLE, "the job hidden on page two was not classified");
+});
+
+test("a run seen twice across pages is one run; two runs under one name are unestablished", () => {
+  // Both hazards of walking a moving list. An identical id on two pages is the same run, and
+  // collapsing it is enough. A second, different run under a name that already appeared is not
+  // redundant but contradictory, and picking one would be a guess reported as an observation.
+  const f = pageFixture("retried-duplicates.json");
+  const combined = combineCheckRunPages(f.pages);
+  assert.equal(combined.length, f.expectDistinctRuns, "the repeated id was not collapsed");
+
+  const result = classify({ establishedRejections: f.establishedRejections, jobs: asJobs(combined, f.establishedRejections) });
+  assert.equal(result.verdict, f.expectCombined);
+  const finding = result.findings.find((r) => r.check === "validate");
+  assert.equal(finding.class, INDETERMINATE);
+  assert.match(finding.why, /which one describes the commit is unestablished/);
+});
+
+test("duplicate arms do not establish placement equivalence between themselves", () => {
+  // Everything in this fixture agrees, so a classifier that simply ignored the duplication would
+  // report EXPECTED — the comparison would be `validate` against its own copy, which agrees by
+  // construction and says nothing about where the evaluator ran.
+  //
+  // Two guards produce this result and only the first is exercised here: duplicated names are marked
+  // unusable, and the cross-arm comparison selects by name rather than taking the first two usable
+  // entries. The second is defence in depth for the day the first is relaxed, and this test cannot
+  // distinguish them — with duplicates unusable, three usable arms can no longer arise.
+  const f = pageFixture("retried-duplicates.json");
+  const combined = combineCheckRunPages(f.pages);
+  const result = classify({ establishedRejections: f.establishedRejections, jobs: asJobs(combined, f.establishedRejections) });
+
+  assert.notEqual(result.verdict, EXPECTED, "duplicate copies of one arm satisfied placement equivalence");
+  const equivalence = result.findings.find((r) => r.check === "inside vs outside");
+  assert.ok(equivalence, "placement equivalence was silently treated as established");
+  assert.equal(equivalence.class, INDETERMINATE);
+});
+
+test("the walk keeps asking while pages come back full, and stops when one does not", () => {
+  // The loop itself, not its inputs. The tests above classify pages that were already assembled, so
+  // they stay green against an extractor that quietly stopped after page one — which is the defect
+  // this fix exists for. A fake fetcher is what makes the walk observable.
+  const run = (id) => ({ id, name: `check-${id}`, conclusion: "success" });
+  const full = { total_count: CHECK_RUNS_PER_PAGE + 2, check_runs: Array.from({ length: CHECK_RUNS_PER_PAGE }, (_, i) => run(i + 1)) };
+  const tail = { total_count: CHECK_RUNS_PER_PAGE + 2, check_runs: [run(CHECK_RUNS_PER_PAGE + 1), run(CHECK_RUNS_PER_PAGE + 2)] };
+
+  const asked = [];
+  const result = collectCheckRunPages((page) => {
+    asked.push(page);
+    return { ok: true, data: page === 1 ? full : tail };
+  });
+
+  assert.deepEqual(asked, [1, 2], "the walk did not continue past the first full page");
+  assert.equal(result.runs.length, CHECK_RUNS_PER_PAGE + 2);
+
+  // A single short page is the whole set, and must not cost a second request.
+  const once = [];
+  collectCheckRunPages((page) => { once.push(page); return { ok: true, data: { total_count: 2, check_runs: [run(1), run(2)] } }; });
+  assert.deepEqual(once, [1]);
+});
+
+test("a page that cannot be read is an error, never a partial set", () => {
+  // Classifying whatever happened to arrive is the same false-assurance defect one layer down: the
+  // verdict would describe a surface that was cut short by a failed request nobody was told about.
+  const result = collectCheckRunPages((page) => (page === 1
+    ? { ok: true, data: { total_count: 500, check_runs: Array.from({ length: CHECK_RUNS_PER_PAGE }, (_, i) => ({ id: i + 1, name: `c${i}` })) } }
+    : { ok: false, out: "502 Bad Gateway" }));
+
+  assert.ok(result.error, "a failed page was reported as a complete set");
+  assert.match(result.error, /page 2/);
+  assert.equal(result.runs, undefined, "a partial set was returned alongside the error");
+});
+
+test("a walk that never terminates is an error rather than an infinite loop", () => {
+  const result = collectCheckRunPages(() => ({
+    ok: true,
+    data: { check_runs: Array.from({ length: CHECK_RUNS_PER_PAGE }, (_, i) => ({ id: `${Math.random()}-${i}`, name: "c" })) },
+  }));
+  assert.match(result.error, /did not terminate/);
+});
+
+test("the commit check-runs request is paginated at the call site", () => {
+  // The classifier-side tests above run on assembled pages, so they cannot see an extractor that
+  // stopped asking for page two. This one reads the request itself.
+  const source = readFileSync(path.join(ROOT, "scripts", "ci-triage.mjs"), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const request = /commits\/\$\{[^}]+\}\/check-runs([^`]*)`/.exec(code);
+  assert.ok(request, "the commit check-runs request could not be found");
+  assert.match(request[1], /per_page=/, "the request does not set a page size");
+  assert.match(request[1], /page=\$\{/, "the request asks for one fixed page");
 });
 
 test("a job id is read from a details URL, and absence is not an id", () => {

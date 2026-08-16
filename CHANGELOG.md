@@ -126,6 +126,39 @@ have destroyed the finding.
 `architecture.no-hidden-global-state` goes stale as a result, which is expected: its evidence
 changed, and it returns for owner review rather than being refreshed.
 
+**A verdict now names the commit it is about, and can be pointed at one.** The classifier addressed
+its evidence only by pull request, and a pull request's checks describe its own head — which GitHub
+does not update when a rebase merge rewrites the commit onto the base branch. Run against #29 after
+that merge, it read `4d7088f` and its check runs while `develop` carried `69de0c8` and its own, and
+returned `EXPECTED` about a commit that was no longer anywhere: a true verdict about the wrong
+subject, the identity-versus-content substitution the submission gate already refuses.
+
+- `--sha <commit>` and `--branch <name>` read check runs for a commit directly. Two targets is an
+  error rather than a precedence rule — a reader asked about both has been asked two questions, and
+  answering whichever is checked first is how the verdict lands on the wrong subject again.
+- **Required-ness is answered per mode rather than defaulted.** A pull request is gated by its base
+  branch, a branch by its own protection, and a bare commit by nothing that can be named — a commit
+  may sit on any number of branches, so the question is reported as *unasked* rather than as an
+  unreadable answer. A failing job is still actionable either way; only the wording changes.
+- **The commit's check runs are read completely, not one page of them.** Found in review of the
+  above, before it merged. The endpoint pages at 30 by default, so a commit with more checks than
+  that could carry a failed job on page two that never entered the evidence at all — and `--sha` and
+  `--branch` would return `EXPECTED` over a surface never seen. A false assurance produced silently
+  by the tool written to prevent it. The walk now continues while pages come back full; a page that
+  cannot be read is an error rather than a partial set, and non-terminating pagination is an error
+  rather than a loop.
+- **Duplicate check runs cannot manufacture agreement.** Walking a moving list can return the same
+  run twice, which now collapses by id. Two *different* runs under one name is contradictory rather
+  than redundant, and is reported unestablished instead of resolved by picking one. The cross-arm
+  comparison also selects by name rather than taking the first two usable entries, so two copies of
+  `validate` can never be compared against each other and report placement equivalence established
+  while the other placement never ran.
+- **An arm's outcome has two independent sources, and neither is required.** Only one workflow emits
+  the `::error::` annotation, so a missing exit class is normal, not a failure to observe. When the
+  printed verdict is *also* unreadable, the arm is now `INDETERMINATE`: previously the empty rule set
+  compared against the policy's four rejections and reported them as cleared — a claim about the
+  project derived from a defect in reading it.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict

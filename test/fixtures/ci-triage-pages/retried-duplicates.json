@@ -1,0 +1,70 @@
+{
+  "note": "Two shapes of duplication. Check run 202 appears on both pages — the same run seen twice because a new run shifted the window mid-walk, and it must collapse to one. Check run 205 is a different run reporting under a name that already appeared, which is contradictory rather than redundant: a snapshot does not say which describes the commit. Everything else here agrees, so duplication is the only thing the verdict can be coming from.",
+  "establishedRejections": [
+    "ai.no-fabricated-capabilities",
+    "errors.no-false-success"
+  ],
+  "expectDistinctRuns": 4,
+  "expectCombined": "INDETERMINATE",
+  "pages": [
+    {
+      "total_count": 4,
+      "check_runs": [
+        {
+          "id": 201,
+          "name": "test",
+          "conclusion": "success",
+          "stepsExecuted": 12
+        },
+        {
+          "id": 202,
+          "name": "validate",
+          "conclusion": "failure",
+          "stepsExecuted": 6,
+          "status": "NON_COMPLIANT",
+          "reportedRules": [
+            "ai.no-fabricated-capabilities",
+            "errors.no-false-success"
+          ]
+        }
+      ]
+    },
+    {
+      "check_runs": [
+        {
+          "id": 202,
+          "name": "validate",
+          "conclusion": "failure",
+          "stepsExecuted": 6,
+          "status": "NON_COMPLIANT",
+          "reportedRules": [
+            "ai.no-fabricated-capabilities",
+            "errors.no-false-success"
+          ]
+        },
+        {
+          "id": 205,
+          "name": "validate",
+          "conclusion": "failure",
+          "stepsExecuted": 6,
+          "status": "NON_COMPLIANT",
+          "reportedRules": [
+            "ai.no-fabricated-capabilities",
+            "errors.no-false-success"
+          ]
+        },
+        {
+          "id": 206,
+          "name": "validate-self / validate",
+          "conclusion": "failure",
+          "stepsExecuted": 15,
+          "status": "NON_COMPLIANT",
+          "reportedRules": [
+            "ai.no-fabricated-capabilities",
+            "errors.no-false-success"
+          ]
+        }
+      ]
+    }
+  ]
+}
