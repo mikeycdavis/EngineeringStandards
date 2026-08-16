@@ -13,6 +13,33 @@ All notable changes to this framework. Versioning follows
 | Output schema | The validator's JSON envelope | `schemaVersion` in every report |
 | Package | The npm package | `package.json` |
 
+## Unreleased
+
+**No change to the framework, the rule catalog, the policy schema, or any published contract.** This
+is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+
+Added the complete CI pipeline as a containerized local run, and made pull request submission depend
+on it:
+
+- `scripts/pipeline.mjs` — the stage list, now stated once. `.github/workflows/ci.yml` and the local
+  container both execute it, and `test/local-ci.test.mjs` fails while the two name different sets,
+  in either direction. The workflows are unchanged in what they run and were not deleted.
+- `ci/Dockerfile` + `compose.ci.yml` — Node 20 pinned by image digest, matching the runner. No
+  network, no bind mounts, no Docker socket, non-root. The repository is copied into the image
+  rather than mounted, so the suite — which does write files — cannot reach the working tree.
+- `scripts/ci.ps1`, `scripts/ci.sh` — the authoritative CI command. Unique compose project per run;
+  teardown on every exit path and scoped to what the run created.
+- `scripts/submit-pr.ps1` + `scripts/submit-gate.mjs` — submission refuses a dirty tree, a protected
+  branch, a failed run, a HEAD that moved during verification, and a verification record naming a
+  different commit, a partial run, or a run outside the container. The push names the verified SHA
+  explicitly rather than the branch.
+- `artifacts/local-ci/latest.json` — the machine-readable record, git-ignored as transient evidence.
+
+`validate` remains advisory rather than gating in the local pipeline, exactly as it is a separate,
+non-required job on GitHub, and for the same reason: this repository is intentionally
+`NON_COMPLIANT` while recorded rejections stand. Its real exit code is recorded and printed, never
+suppressed. See [docs/local-ci.md](docs/local-ci.md).
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict

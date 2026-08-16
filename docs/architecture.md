@@ -136,7 +136,8 @@ recorded in [`design/standards-audit-cli.md`](../design/standards-audit-cli.md),
 | `artifacts/adr/` | Accepted decision records |
 | `artifacts/standards-source-inventory.json` | The canonical, human-reviewed enumeration of the 53 standards |
 | `artifacts/project-plan-breakdown/` | The plan, one file per section |
-| `docs/` | This document and its diagram source |
+| `docs/` | This document, its diagram source, and the local CI guide |
+| `ci/Dockerfile`, `compose.ci.yml` | The containerized CI environment. The image is pinned by digest, has no network, and holds a copy of the repository rather than a mount of it — see [local-ci.md](local-ci.md) |
 
 ## Commands
 
@@ -277,6 +278,8 @@ error-severity findings, which is the gate CI relies on — the audit step itsel
 | Add a policy rule check | `complianceFindings` in `scripts/policy.mjs`, plus a fixture in `test/fixtures/policies/` |
 | Change the diagram | `docs/architecture.mmd`, then re-embed it here. Never edit a render |
 | Record a decision | `artifacts/adr/000N-<slug>.md`, and link it from the README |
+| Add or change a CI check | `STAGES` in `scripts/pipeline.mjs`, then the matching step in `.github/workflows/ci.yml`. `test/local-ci.test.mjs` fails while the two disagree, in either direction |
+| Submit a pull request | `.\scripts\submit-pr.ps1` — verifies this exact commit in Docker, then pushes that SHA and opens the PR |
 
 ## Known Gaps
 
