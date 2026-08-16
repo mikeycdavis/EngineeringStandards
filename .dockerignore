@@ -1,0 +1,11 @@
+# Keep the previous run's evidence out of the next run's image.
+#
+# If artifacts/local-ci were copied in, a container could find a `latest.json` it did not write and
+# a reader could not tell which run produced it. The report this run produces is extracted from the
+# container afterwards, never mounted in.
+artifacts/local-ci/
+
+# Nothing else is excluded, and the omissions are deliberate:
+#   * `.git` is required — the audit asks the repository which paths it ignores, and attestation
+#     freshness is computed from committed blob identity.
+#   * there is no node_modules to exclude; this repository has no dependencies.
