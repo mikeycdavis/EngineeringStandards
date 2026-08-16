@@ -177,9 +177,17 @@ function hasHistory(root, rel) {
   return r.ok && r.out.trim() !== "";
 }
 
-/** Paths whose working-tree content differs from the index or HEAD, among those asked about. */
+/**
+ * Paths whose working-tree content differs from the index or HEAD, among those asked about.
+ *
+ * `--untracked-files=normal` is stated rather than left to the default, because the default is
+ * `status.showUntrackedFiles` — a repository-local setting. The `??` case this function's callers
+ * reason about disappears entirely under `status.showUntrackedFiles=no`, so without the flag the
+ * answer would depend on the reader's config rather than on the repository. Under the usual config
+ * this changes nothing.
+ */
 function dirtyAmong(root, paths) {
-  const r = git(root, ["status", "--porcelain", "--", ...paths]);
+  const r = git(root, ["status", "--porcelain", "--untracked-files=normal", "--", ...paths]);
   if (!r.ok) return null;
   const dirty = new Set();
   for (const line of r.out.split(/\r?\n/)) {

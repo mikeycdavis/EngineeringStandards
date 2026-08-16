@@ -65,6 +65,23 @@ runner passed. The gate produced a red the runner did not, and the mechanism is 
   linked worktree into a self-contained repository. The guard is left in place; lifting it is its own
   decision.
 
+Two defects found in review of the above, before it merged:
+
+- **What counts as a clean tree no longer depends on the reader's git config.** `git status
+  --porcelain` honours `status.showUntrackedFiles`, so under `no` a brand-new source file reported
+  nothing, the context clone omitted it because it was not committed, and the run would have passed
+  over a tree missing the file being worked on — the false success the clean-tree requirement exists
+  to prevent, arriving through the check itself. Every cleanliness question in the repository now
+  states `--untracked-files=normal` rather than inheriting an answer: both context builders,
+  `scripts/submit-pr.ps1`, `scripts/verify-materialisation.ps1`, and `scripts/repository.mjs`. Under
+  the usual configuration nothing changes.
+- **A project name can no longer choose what the context builder deletes.** `--project` is an
+  advertised option on both entry points, and its value named a temporary directory that the builder
+  removed recursively; a name carrying path components aimed that delete outside the temporary root.
+  Compose would have rejected such a name, but only after the context stage had run. Both twins now
+  refuse anything outside a plain Compose project name, before reading the repository at all. Driven
+  by a test that destroys a sentinel directory if the guard is removed.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict

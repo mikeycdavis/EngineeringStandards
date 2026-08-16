@@ -58,6 +58,13 @@ absent from the run. Showing a developer a green for `HEAD` while they are looki
 a false success in the sense `errors.no-false-success` names, so the run refuses and names what is
 uncommitted. Submission already required this; the requirement moves to where it first matters.
 
+What counts as clean is stated rather than inherited. `git status --porcelain` honours
+`status.showUntrackedFiles`, a repository-local setting: under `no`, a new and uncommitted file
+reports nothing, the context omits it because it is not committed, and the run passes over a tree
+missing the file being worked on. A gate whose definition of "clean" is configurable exempts exactly
+what the configuration hides, so every cleanliness question in the repository states
+`--untracked-files=normal`. Found in review of this change rather than designed in.
+
 **The context is a clone, not an export.** `git archive HEAD` would have been simpler and would have
 produced committed file content. It would also have left the evaluator answering repository questions
 from something that is not a repository. `scripts/repository.mjs` asks git — with no fallback, by
@@ -95,6 +102,14 @@ request; a documented caveat on a gate is a caveat nobody reads at the moment it
   determined by the commit.
 - Running local CI on uncommitted work is no longer possible. This is a real workflow cost, accepted
   deliberately: the alternative is a verdict whose subject is ambiguous.
+- The context builders own a recursive delete, so they validate the name that chooses its target.
+  `--project` is an advertised option on both entry points and named the temporary directory being
+  removed; a value carrying path components aimed that delete outside the temporary root. Compose
+  would have rejected such a name, but only once the context stage had already run. Both twins now
+  refuse anything outside a plain Compose project name — every name the entry points derive already
+  satisfies it — and refuse it before reading the repository, so the check does not depend on the
+  tree being clean. The guard is what makes the constructed path safe rather than merely
+  conventional: a matching string contains no separator and no dot.
 - The linked-worktree refusal in both entry points is now **conservative rather than necessary** —
   `git clone` resolves a linked worktree into a self-contained repository, which was measured while
   making this change. The guard is left in place; lifting it is a separate decision with its own

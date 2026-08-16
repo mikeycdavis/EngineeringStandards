@@ -27,6 +27,32 @@ set -euo pipefail
 repo_root="${1:?usage: ci-context.sh <repo-root> <project>}"
 project="${2:?usage: ci-context.sh <repo-root> <project>}"
 
+# The project name is validated first, before this script does anything at all.
+#
+# `$project` names the temporary directory, and this script later removes that directory with
+# `rm -rf`. A name carrying path components therefore chooses where that deletion lands —
+# `--project ../../work` resolves through the temp root to a sibling directory. `--project` is an
+# advertised option on both entry points, so the value arrives from outside this script; Compose
+# would reject it as well, but only once the context stage has run, which is after the delete.
+#
+# The alphabet is Compose's own, and every name this repository derives already satisfies it. It is
+# also what makes the constructed path safe rather than merely conventional: a string matching this
+# pattern contains no separator and no dot, so no value can move the target out of the temporary
+# directory. Checked here rather than at the entry points, so it holds for every caller, and checked
+# before the repository is even read, so a hostile name is refused on a dirty tree too.
+case "$project" in
+  "" | [!a-z0-9]* | *[!a-z0-9_-]*)
+    cat >&2 <<EOF
+'$project' is not a usable project name.
+
+It names a temporary directory that this script deletes recursively, so it is restricted to a plain
+Compose project name: a lowercase letter or digit, then lowercase letters, digits, hyphens, or
+underscores. A name containing path separators would choose what gets deleted.
+EOF
+    exit 2
+    ;;
+esac
+
 command -v git >/dev/null 2>&1 || {
   echo "git was not found on PATH. It is required to materialise the CI context." >&2
   exit 2
@@ -42,7 +68,12 @@ origin="$(git -C "$repo_root" config --get remote.origin.url 2>/dev/null || true
 # uncommitted edit is invisible to the run, so a pass would describe a tree the developer is not
 # looking at — a false success in the sense `errors.no-false-success` names. `--porcelain` excludes
 # ignored files, so the run's own artifacts directory does not block a run.
-status="$(git -C "$repo_root" status --porcelain)"
+#
+# `--untracked-files=normal` is explicit because the default is `status.showUntrackedFiles`, which a
+# developer may have set to `no`. Under that config a new source file reports nothing here, the clone
+# omits it because it is not committed, and the run passes over a tree missing the file being worked
+# on — the false success this check exists to prevent, arriving through the check itself.
+status="$(git -C "$repo_root" status --porcelain --untracked-files=normal)"
 if [ -n "$status" ]; then
   cat >&2 <<EOF
 the working tree has uncommitted changes, and local CI verifies committed content at HEAD.

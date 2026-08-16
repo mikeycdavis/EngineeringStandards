@@ -23,7 +23,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -270,6 +271,81 @@ test("a dirty tree is refused before anything is verified", () => {
     assert.match(text, /status['", ]+--porcelain/, `${file} does not check for uncommitted changes`);
     assert.match(text, /uncommitted changes/, `${file} does not name the cause`);
   }
+});
+
+test("what counts as clean is not left to the reader's git config", () => {
+  // `git status --porcelain` honours `status.showUntrackedFiles`. Where that is set to `no`, a new
+  // and uncommitted source file reports nothing, the context clone omits it because it is not
+  // committed, and the run reports a pass over a tree missing the file being worked on. A gate whose
+  // definition of "clean" is configurable exempts precisely what the configuration hides, so every
+  // cleanliness question in this repository states the flag rather than inheriting an answer.
+  const gates = [
+    "scripts/ci-context.ps1",
+    "scripts/ci-context.sh",
+    "scripts/submit-pr.ps1",
+    "scripts/verify-materialisation.ps1",
+    "scripts/repository.mjs",
+  ];
+  for (const file of gates) {
+    const text = withoutComments(read(file));
+    for (const line of text.split(/\r?\n/)) {
+      if (!/status['", ]+--porcelain/.test(line)) continue;
+      assert.match(
+        line,
+        /--untracked-files=/,
+        `${file} asks git whether the tree is clean without saying what clean means:\n${line.trim()}`,
+      );
+    }
+  }
+});
+
+test("a project name cannot choose what the context builder deletes", (t) => {
+  // `--project` is an advertised option on both entry points, and its value names the temporary
+  // directory that the context builder removes recursively. A name carrying path components
+  // therefore aimed that delete: `--project ../../work` resolved through the temp root to a sibling
+  // directory. Compose would have rejected the name eventually, but the context stage — and its
+  // delete — runs first.
+  //
+  // Driven for real rather than asserted as text, because the failure being guarded is a deletion.
+  // A sandbox is built with a sentinel directory sitting exactly where the traversal would land; if
+  // the guard is removed, this test destroys it and fails on its absence.
+  const bash = spawnSync("bash", ["-c", "exit 0"], { encoding: "utf8" });
+  if (bash.error || bash.status !== 0) {
+    t.skip("bash is unavailable, so the POSIX twin cannot be driven here");
+    return;
+  }
+
+  const sandbox = mkdtempSync(path.join(tmpdir(), "ci-context-guard-"));
+  try {
+    const temp = path.join(sandbox, "temp");
+    mkdirSync(temp);
+    // `<sandbox>/temp/../sentinel-context` — what `--project ../sentinel` resolves to, since the
+    // builder appends `-context` to the name it is given.
+    const sentinel = path.join(sandbox, "sentinel-context");
+    mkdirSync(sentinel);
+    writeFileSync(path.join(sentinel, "keep.txt"), "not the context builder's to delete\n");
+
+    const run = spawnSync("bash", [path.join(ROOT, "scripts/ci-context.sh"), ROOT, "../sentinel"], {
+      encoding: "utf8",
+      env: { ...process.env, TMPDIR: temp },
+    });
+
+    assert.ok(
+      existsSync(path.join(sentinel, "keep.txt")),
+      "the context builder deleted a directory outside the temp root it was given",
+    );
+    assert.notEqual(run.status, 0, "a project name carrying path components was accepted");
+    assert.match(`${run.stderr}`, /not a usable project name/, "the refusal does not say what is wrong");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+
+  // The PowerShell twin cannot be driven from here — pwsh is not in the image that runs this suite —
+  // so it is checked as text, with the limitation this file already records for every environment
+  // assertion. The two guards are written to refuse the same alphabet.
+  const ps = withoutComments(read("scripts/ci-context.ps1"));
+  assert.match(ps, /\$Project -notmatch '\^\[a-z0-9\]\[a-z0-9_-\]\*\$'/, "the PowerShell twin has no such guard");
+  assert.match(ps, /not a usable project name/, "the PowerShell twin does not name the refusal");
 });
 
 test("the context is removed by exact path and never by a sweep of the temp directory", () => {
