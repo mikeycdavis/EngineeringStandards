@@ -194,6 +194,127 @@ test("a linked worktree is refused by name rather than failing inside the contai
   }
 });
 
+// --- The build context is the commit, not the checkout ------------------------------------------
+
+test("Docker is given a materialised context, never the working directory", () => {
+  // The defect this replaced: `context: .` made the run verify one platform's materialisation of
+  // the tree rather than the tree. Measured on a373d4c — 273 pass / 1 fail from a CRLF checkout,
+  // 274 pass / 0 fail from an LF one, identical committed content — so the gate produced a red the
+  // runner did not, and the same mechanism runs the other way.
+  const compose = withoutComments(read("compose.ci.yml"));
+  assert.match(compose, /context:\s*\$\{CI_CONTEXT:-\.\}/, "the compose build context is not parameterised");
+
+  const ps = withoutComments(read("scripts/ci.ps1"));
+  const sh = withoutComments(read("scripts/ci.sh"));
+  assert.match(ps, /ci-context\.ps1/, "ci.ps1 does not materialise a context");
+  assert.match(ps, /\$env:CI_CONTEXT\s*=\s*\$ContextRoot/, "ci.ps1 does not hand the context to compose");
+  assert.match(sh, /ci-context\.sh/, "ci.sh does not materialise a context");
+  assert.match(sh, /export CI_CONTEXT="\$context_root"/, "ci.sh does not hand the context to compose");
+});
+
+test("the gate that decides submission is built from committed content too", () => {
+  // The gate deciding whether a pull request may be opened must not depend on which platform
+  // rendered the tree, for the same reason the pipeline must not.
+  const text = withoutComments(read("scripts/submit-decide.ps1"));
+  assert.match(text, /ci-context\.ps1/, "submit-decide builds from the working directory");
+  assert.match(text, /\$env:CI_CONTEXT\s*=\s*\$ContextRoot/, "submit-decide does not hand the context to compose");
+  assert.match(text, /finally\s*\{[\s\S]*Remove-Item \$ContextRoot/, "submit-decide leaves its context behind");
+});
+
+test("the context is a real repository, not an export", () => {
+  // `git archive HEAD` would give committed file content and no repository. scripts/repository.mjs
+  // asks git which paths are tracked and ignored, what blob identity a reviewed path has at HEAD,
+  // and whether a reviewed path is dirty — with no fallback, deliberately. An export plus a
+  // synthesised repository would answer those from something that is not the repository, trading
+  // this defect for ADR 0008's.
+  for (const file of ["scripts/ci-context.ps1", "scripts/ci-context.sh"]) {
+    const text = withoutComments(read(file));
+    // Spelled two ways — `git clone …` in the shell twin, `@('clone', …)` in the PowerShell one —
+    // so the assertion is on the subcommand rather than on one file's calling convention.
+    assert.match(text, /(?:^|\W)clone(?:\W|$)/, `${file} does not clone the repository`);
+    assert.match(text, /--no-checkout/, `${file} materialises files before pinning how they materialise`);
+    assert.doesNotMatch(text, /\barchive\b/, `${file} exports a tree instead of cloning a repository`);
+    assert.match(text, /--no-hardlinks/, `${file} shares object storage with a directory that can change`);
+  }
+});
+
+test("the context's checkout attributes are pinned rather than inherited from the host", () => {
+  // The whole point. A context materialised under the host's `core.autocrlf` would reproduce the
+  // defect inside the fix.
+  for (const file of ["scripts/ci-context.ps1", "scripts/ci-context.sh"]) {
+    const text = withoutComments(read(file));
+    assert.match(text, /core\.autocrlf=false/, `${file} inherits the host's line-ending conversion`);
+    assert.match(text, /core\.eol=lf/, `${file} does not pin the materialised line ending`);
+  }
+});
+
+test("the context is confirmed to be the commit that was asked for", () => {
+  // A context that silently landed on another revision would produce a record naming a commit
+  // nobody asked to verify, and the submission SHA comparison would compare two wrong things that
+  // agree with each other.
+  for (const file of ["scripts/ci-context.ps1", "scripts/ci-context.sh"]) {
+    const text = withoutComments(read(file));
+    assert.match(text, /rev-parse['", ]+HEAD/, `${file} never reads the commit it materialised`);
+    assert.match(text, /materialised/i, `${file} does not confirm what it materialised`);
+  }
+});
+
+test("a dirty tree is refused before anything is verified", () => {
+  // Once the context is committed content, an uncommitted edit is invisible to the run — a pass
+  // would describe a tree the developer is not looking at, which is the false-success class
+  // `errors.no-false-success` names. Submission already refused a dirty tree; this moves the same
+  // requirement to the point where it first has consequences.
+  for (const file of ["scripts/ci-context.ps1", "scripts/ci-context.sh"]) {
+    const text = withoutComments(read(file));
+    assert.match(text, /status['", ]+--porcelain/, `${file} does not check for uncommitted changes`);
+    assert.match(text, /uncommitted changes/, `${file} does not name the cause`);
+  }
+});
+
+test("the context is removed by exact path and never by a sweep of the temp directory", () => {
+  // The same rule as container teardown: this can remove what this run created and nothing else.
+  for (const file of ["scripts/ci.ps1", "scripts/ci.sh", "scripts/verify-materialisation.ps1"]) {
+    const text = withoutComments(read(file));
+    assert.doesNotMatch(text, /Remove-Item[^\n]*\*/, `${file} removes temp paths by wildcard`);
+    assert.doesNotMatch(text, /rm -rf[^\n]*\*/, `${file} removes temp paths by wildcard`);
+  }
+  assert.match(withoutComments(read("scripts/ci.ps1")), /Remove-CiContext/, "ci.ps1 leaves its context behind");
+  assert.match(withoutComments(read("scripts/ci.sh")), /rm -rf "\$context_root"/, "ci.sh leaves its context behind");
+});
+
+test("moving the context out of the working tree did not open a hole in the container", () => {
+  // The fix had to make the input deterministic without weakening what #27 established. The context
+  // is built on the host and copied in; nothing was mounted to compensate afterwards.
+  const compose = withoutComments(read("compose.ci.yml"));
+  assert.doesNotMatch(compose, /^\s*volumes:/m, "a volume appeared alongside the context change");
+  assert.doesNotMatch(compose, /docker\.sock/, "the Docker socket is exposed");
+  assert.match(compose, /network_mode:\s*none/, "the CI container gained network access");
+  for (const file of ["scripts/ci-context.ps1", "scripts/ci-context.sh"]) {
+    const text = withoutComments(read(file));
+    // The context builder is a git operation and nothing else. If it ever needs to talk to Docker —
+    // to mount, to bind, to reach back at the host — the isolation argument has changed and should
+    // be re-argued rather than absorbed.
+    assert.doesNotMatch(text, /\bdocker\b/i, `${file} touches Docker at all`);
+  }
+});
+
+test("the cross-materialisation falsifier can fail, and says so in both directions", () => {
+  // The acceptance test is only worth its runtime if it can fail. `-Mutate` restores the
+  // host-context defect and inverts the verdict: agreement under the defect is reported as the
+  // check being incapable, not as a pass. This asserts the harness keeps both halves — a falsifier
+  // quietly reduced to a one-way check is the failure mode.
+  const text = read("scripts/verify-materialisation.ps1");
+  const active = withoutComments(text);
+  assert.match(active, /\[switch\]\s*\$Mutate/, "the falsifier has no mutation mode");
+  assert.match(active, /FALSIFIER FAILED/, "agreement under the defect is not reported as a failure");
+  assert.match(active, /the two checkouts materialised identical bytes/, "the harness does not verify the inputs differ");
+  // The comparison must cover more than the exit code: a run can agree on pass/fail while
+  // disagreeing about what it verified.
+  for (const field of ["verified commit", "stage outcomes", "validate", "audit"]) {
+    assert.ok(active.includes(field), `the falsifier does not compare ${field}`);
+  }
+});
+
 // --- The submission gate -----------------------------------------------------------------------
 
 const SHA_A = "a".repeat(40);

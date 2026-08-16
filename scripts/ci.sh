@@ -9,6 +9,11 @@
 # Host requirements: Docker and git. No Node, no npm, no globally installed anything — the checks
 # run against a Node baked into the image at a pinned digest.
 #
+# What gets verified is committed content at HEAD, not the working directory. The build context is
+# materialised by scripts/ci-context.sh as a temporary clone with pinned checkout attributes. The
+# practical consequence is that this script refuses to run on a dirty tree: an uncommitted edit would
+# be absent from the run, so a pass would describe a tree the developer is not looking at.
+#
 # Usage:
 #   ./scripts/ci.sh [--keep-on-failure] [--verbose] [--project NAME]
 set -euo pipefail
@@ -45,6 +50,8 @@ repo_slug="$(basename "$repo_root" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9'
 # rebuild is a cache hit.
 image="${repo_slug}-ci:${project}"
 ci_container="${project}-ci"
+# Set once the context exists; teardown tests it, so paths that fail earlier tear down cleanly.
+context_root=""
 export CI_IMAGE="$image"
 export LOCAL_CI_VERBOSE="$verbose"
 
@@ -63,12 +70,18 @@ teardown() {
   compose down --volumes --remove-orphans --timeout 10 || true
   # This run's own image tag, removed by that exact name. No other run shares it.
   docker image rm "$image" >/dev/null 2>&1 || true
+  # The materialised context, removed by the exact path this run created. Named per project, so this
+  # can no more reach another run's context than the lines above can reach another run's containers.
+  # Deliberately not a wildcard sweep of the temp directory.
+  [ -n "$context_root" ] && rm -rf "$context_root"
+  return 0
 }
 
 exit_code=1
 finish() {
   if [ "$keep_on_failure" -eq 1 ] && [ "$exit_code" -ne 0 ]; then
     printf '\nContainers kept for inspection (--keep-on-failure).\n'
+    [ -n "$context_root" ] && printf '  context: %s\n' "$context_root"
     printf '  docker logs %s\n' "$ci_container"
     printf '  docker compose -p %s -f compose.ci.yml run --rm --entrypoint bash ci\n' "$project"
     printf '  docker rm -f %s && docker compose -p %s -f compose.ci.yml down --volumes --remove-orphans\n' "$ci_container" "$project"
@@ -104,6 +117,17 @@ fi
 echo "repository : $repo_root"
 echo "image      : $image"
 echo "project    : $project"
+
+# The build context is committed content, not the working directory — see scripts/ci-context.sh.
+# This is the only thing that decides what Docker copies, and it refuses a dirty tree rather than
+# quietly verifying HEAD while the developer looks at something else.
+stage "Materialising the CI context from committed HEAD"
+# Invoked through `bash` rather than as an executable, so this does not depend on the mode bit
+# surviving whatever checkout produced it — which is the same class of host-dependence this change
+# exists to remove.
+context_root="$(bash "$(dirname "${BASH_SOURCE[0]}")/ci-context.sh" "$repo_root" "$project")"
+export CI_CONTEXT="$context_root"
+echo "context    : $context_root"
 
 stage "Building the CI image"
 compose build
