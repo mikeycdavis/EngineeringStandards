@@ -152,6 +152,48 @@ test("both entry points derive their names from the repository rather than hardc
   assert.match(read("scripts/ci.sh"), /repo_slug/, "ci.sh hardcodes its resource names");
 });
 
+test("the image a run executes is the image that run built", () => {
+  // A tag derived from the directory basename is shared by every clone with that name. If one run's
+  // build lands between another run's build and its `compose run`, the second container executes the
+  // first checkout's code and reports a result for a tree nobody asked about. Submission would still
+  // refuse it — the record names the wrong commit — but `ci.*` alone would have printed a pass.
+  // The tag therefore carries the per-run project, and no `:local` tag is used by either entry point.
+  const ps = withoutComments(read("scripts/ci.ps1"));
+  const sh = withoutComments(read("scripts/ci.sh"));
+  assert.match(ps, /\$Image\s*=\s*"\$RepoSlug-ci:\$Project"/, "ci.ps1 does not tag the image per run");
+  assert.match(sh, /image="\$\{repo_slug\}-ci:\$\{project\}"/, "ci.sh does not tag the image per run");
+  for (const [file, text] of [["scripts/ci.ps1", ps], ["scripts/ci.sh", sh]]) {
+    assert.doesNotMatch(text, /-ci:local/, `${file} still uses a tag shared across checkouts`);
+    // Removed by that exact name — never by a filter, a dangling sweep, or a prune.
+    assert.match(text, /docker image rm/, `${file} leaves its run tag behind`);
+  }
+});
+
+test("the gate is built from the tree being submitted, never inherited from an earlier one", () => {
+  // The gate decides whether a pull request may be opened. Executing a previously built image means
+  // that decision comes from whichever checkout last built the tag: a rule deleted in this commit
+  // still refuses, and a refusal added in this commit does not fire. Both are silent.
+  const text = withoutComments(read("scripts/submit-decide.ps1"));
+  assert.doesNotMatch(text, /docker image inspect/, "submit-decide reuses an existing image if it finds one");
+  assert.match(text, /compose -p \$Project[^\n]*build/, "submit-decide does not build the current context");
+  assert.match(text, /\$Image\s*=\s*"\$\{RepoSlug\}-ci:\$Project"/, "the gate image tag is not per invocation");
+  assert.match(text, /finally\s*\{[\s\S]*docker image rm \$Image/, "the gate image is not removed on every path");
+});
+
+test("a linked worktree is refused by name rather than failing inside the container", () => {
+  // `.git` in a linked worktree is a file holding `gitdir: <absolute host path>`. The build context
+  // copies the pointer, not its target, so every `git` call in the container fails and the pipeline
+  // aborts in preflight with an exit code that explains nothing about the cause.
+  for (const [file, pattern] of [
+    ["scripts/ci.ps1", /Test-Path \(Join-Path \$RepoRoot '\.git'\) -PathType Leaf/],
+    ["scripts/ci.sh", /if \[ -f "\$repo_root\/\.git" \]/],
+  ]) {
+    const text = withoutComments(read(file));
+    assert.match(text, pattern, `${file} does not detect a linked worktree`);
+    assert.match(text, /linked git worktree/, `${file} does not name the cause`);
+  }
+});
+
 // --- The submission gate -----------------------------------------------------------------------
 
 const SHA_A = "a".repeat(40);

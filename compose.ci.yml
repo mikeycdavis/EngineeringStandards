@@ -44,8 +44,10 @@ services:
     build:
       context: .
       dockerfile: ci/Dockerfile
-    # Named per run by the invoking script, so a rebuild for one project cannot replace the image
-    # another run is still using.
+    # Named per run by the invoking script — `<slug>-ci:<project>`, where the project is unique per
+    # invocation — so a rebuild for one checkout cannot replace the image another run is about to
+    # execute. The literal below is only the fallback for a hand-run debug session, where a single
+    # operator is watching one container and collision is not a risk.
     image: ${CI_IMAGE:-engineeringstandards-ci:local}
 
     # No network. The pipeline resolves nothing, downloads nothing, and installs nothing — that is

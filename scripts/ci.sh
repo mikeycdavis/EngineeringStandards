@@ -34,11 +34,16 @@ report_dir="$repo_root/artifacts/local-ci"
 report_path="$report_dir/latest.json"
 
 # Derived from the directory rather than hardcoded, so this file can be copied into another
-# repository unchanged. Stable image name for the layer cache; unique project name per run, so two
-# concurrent runs cannot share a container, a network, or a teardown.
+# repository unchanged. Unique project name per run, so two concurrent runs cannot share a container,
+# a network, or a teardown.
 repo_slug="$(basename "$repo_root" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
-image="${repo_slug}-ci:local"
 [ -n "$project" ] || project="${repo_slug}-ci-$(date -u +%s)-$$"
+
+# Unique per run, for the reason spelled out in scripts/ci.ps1: a tag derived from the directory
+# basename is shared by every clone with that name, so one run's build can replace the image another
+# run is about to execute, and the result would describe the wrong tree. Layers are shared; the
+# rebuild is a cache hit.
+image="${repo_slug}-ci:${project}"
 ci_container="${project}-ci"
 export CI_IMAGE="$image"
 export LOCAL_CI_VERBOSE="$verbose"
@@ -56,6 +61,8 @@ teardown() {
   # project's network and any volumes it created. Both are scoped to this run's project.
   docker rm --force --volumes "$ci_container" >/dev/null 2>&1 || true
   compose down --volumes --remove-orphans --timeout 10 || true
+  # This run's own image tag, removed by that exact name. No other run shares it.
+  docker image rm "$image" >/dev/null 2>&1 || true
 }
 
 exit_code=1
@@ -83,6 +90,16 @@ docker info --format '{{.ServerVersion}}' >/dev/null 2>&1 || {
   echo "the Docker daemon is not reachable. Start Docker and retry." >&2
   exit_code=2; exit 2
 }
+
+# A linked worktree's `.git` is a file holding `gitdir: <absolute host path>`. The build context
+# copies the pointer and not its target, so every `git` call in the container fails and the pipeline
+# aborts in preflight. Named here rather than left to surface as an unexplained exit 2. Deliberately
+# not worked around: the fix means copying an absolute path from outside the build context into the
+# image, which is the broad host reach this environment exists to avoid.
+if [ -f "$repo_root/.git" ]; then
+  echo "this is a linked git worktree, whose .git points outside the build context. Run CI from the main working tree." >&2
+  exit_code=2; exit 2
+fi
 
 echo "repository : $repo_root"
 echo "image      : $image"
