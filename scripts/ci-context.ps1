@@ -78,6 +78,21 @@ function Invoke-Git {
     return ($output | Out-String).Trim()
 }
 
+<#
+    A git call run for its effect, whose output is discarded.
+
+    Not decoration. This script's contract is that stdout is the context path and nothing else, and
+    in PowerShell an un-consumed return value is stdout. Calling `Invoke-Git` bare for `clone` and
+    `checkout` emitted their empty results into the output stream, so the caller received an array
+    whose string form was the path with leading blanks — and handed Docker a build context that
+    could not exist. Effects go through here; only the values this script actually reads are
+    returned.
+#>
+function Invoke-GitEffect {
+    param([string[]] $GitArgs, [string] $What)
+    Invoke-Git -GitArgs $GitArgs -What $What | Out-Null
+}
+
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "git was not found on PATH. It is required to materialise the CI context."
 }
@@ -126,7 +141,7 @@ if (Test-Path $contextRoot) { Remove-Item $contextRoot -Recurse -Force }
 # repository's own config. That matters twice: it decides what this checkout materialises, and it
 # travels into the container, so `git status` in there compares against the same rule rather than
 # re-deriving one from the container's defaults.
-Invoke-Git @(
+Invoke-GitEffect @(
     'clone', '--quiet', '--no-checkout', '--no-hardlinks',
     '-c', 'core.autocrlf=false',
     '-c', 'core.eol=lf',
@@ -137,14 +152,14 @@ Invoke-Git @(
 # record reading `branch: HEAD` names nothing a reader can act on. A genuinely detached HEAD on the
 # host stays detached here — the context reports the host's state, it does not improve it.
 if ($branch -eq 'HEAD') {
-    Invoke-Git @('-C', $contextRoot, 'checkout', '--quiet', '--detach', $sha) 'checking out the verified commit'
+    Invoke-GitEffect @('-C', $contextRoot, 'checkout', '--quiet', '--detach', $sha) 'checking out the verified commit'
 }
 else {
-    Invoke-Git @('-C', $contextRoot, 'checkout', '--quiet', '-B', $branch, $sha) 'checking out the verified commit'
+    Invoke-GitEffect @('-C', $contextRoot, 'checkout', '--quiet', '-B', $branch, $sha) 'checking out the verified commit'
 }
 
 if ($origin) {
-    Invoke-Git @('-C', $contextRoot, 'remote', 'set-url', 'origin', $origin) 'restoring the origin URL'
+    Invoke-GitEffect @('-C', $contextRoot, 'remote', 'set-url', 'origin', $origin) 'restoring the origin URL'
 }
 else {
     & git -C $contextRoot remote remove origin 2>&1 | Out-Null
