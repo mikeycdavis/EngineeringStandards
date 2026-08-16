@@ -46,14 +46,23 @@ $ReportDir = Join-Path $RepoRoot 'artifacts/local-ci'
 $ReportPath = Join-Path $ReportDir 'latest.json'
 
 # Names derived from the directory rather than hardcoded, so this file can be copied into another
-# repository unchanged. The image is stable per repository (layer cache); the project is unique per
-# run, so two concurrent runs — of this repository or of any other — cannot share a container, a
-# network, or a teardown.
+# repository unchanged. The project is unique per run, so two concurrent runs — of this repository or
+# of any other — cannot share a container, a network, or a teardown.
 $RepoSlug = ((Split-Path -Leaf $RepoRoot) -replace '[^A-Za-z0-9]', '-').ToLowerInvariant()
-$Image = "$RepoSlug-ci:local"
 if (-not $Project) {
     $Project = "$RepoSlug-ci-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$PID"
 }
+
+# The image tag is unique per run, not stable per repository, and the difference is a correctness
+# one rather than a tidiness one. A stable `<slug>-ci:local` is derived from the directory *basename*,
+# so two clones of this repository — a worktree, a second checkout, a colleague's copy under the same
+# folder name — resolve to the same tag. If one run's build finishes while the other is between its
+# own build and its `compose run`, the second container executes the first checkout's code, and the
+# run reports a result for a tree nobody asked about. Submission still refuses that result, because
+# the record names a commit that is not HEAD, but `ci.ps1` on its own would have printed a green pass
+# for the wrong source. Tagging per run removes the window instead of relying on the later check to
+# catch it. Layers are shared, so the rebuild is a cache hit and costs no meaningful time.
+$Image = "$RepoSlug-ci:$Project"
 
 $CiContainer = "$Project-ci"
 
@@ -95,6 +104,10 @@ function Remove-CiEnvironment {
     & docker rm --force --volumes $CiContainer 2>&1 | Out-Null
     & docker compose -p $Project -f $ComposeFile down --volumes --remove-orphans --timeout 10 2>&1 |
         Write-Host
+    # The run's own image tag, removed by that exact name. Untagging this run's build cannot affect
+    # another run, because no other run shares the tag — that is the point of naming it per project.
+    # The layers stay in the builder cache, so the next run is still fast.
+    & docker image rm $Image 2>&1 | Out-Null
 }
 
 $exitCode = 1
@@ -107,6 +120,19 @@ try {
         throw "the Docker daemon is not reachable. Start Docker Desktop (or dockerd) and retry."
     }
     if (-not (Test-Path $ComposeFile)) { throw "compose file not found: $ComposeFile" }
+
+    # A linked worktree's `.git` is a *file* holding `gitdir: <absolute host path>` pointing into the
+    # main checkout's .git/worktrees/. The build context copies that pointer faithfully and its target
+    # does not exist in the image, so every `git` call inside the container fails and the pipeline
+    # aborts in preflight with exit 2. Refused here, by name, rather than left to surface as an
+    # unexplained failure several minutes into a run.
+    #
+    # Not worked around: the fix would mean copying an absolute path from outside the build context
+    # into the image, which is exactly the broad host reach this environment is built to avoid, to
+    # support a checkout shape the developer can step out of with one `cd`.
+    if (Test-Path (Join-Path $RepoRoot '.git') -PathType Leaf) {
+        throw "this is a linked git worktree, whose .git points outside the build context. Run CI from the main working tree."
+    }
 
     Write-Host "repository : $RepoRoot"
     Write-Host "image      : $Image"

@@ -11,8 +11,16 @@
     decides whether a pull request may be opened is evaluated in the same pinned environment that
     decided whether the code passes. There is no network: the decision reads nothing but its input.
 
-    The image is built if it is not already present, because the first decision happens before the
-    CI run that would otherwise have built it. The build is layer-cached and costs seconds.
+    The image is built on every invocation, from the current working tree, and removed afterwards.
+    Not an oversight, and not free: the build is layer-cached and costs seconds. What it buys is that
+    the gate evaluating this submission is the gate belonging to the commit being submitted.
+
+    Reusing a predictable tag if one already existed would mean the rule that decides whether a pull
+    request may be opened comes from whichever checkout last built that tag. When the gate's rules or
+    its input shape have changed since, the failures are quiet and asymmetric: a valid submission can
+    be refused by a rule that no longer exists, and a refusal added in this very commit is skipped
+    until the CI run rebuilds. Neither announces itself. The image is therefore identified per
+    invocation and never inherited.
 #>
 [CmdletBinding()]
 param(
@@ -24,30 +32,36 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# Derived exactly as scripts/ci.ps1 derives it, so both refer to the same image.
+# Unique per invocation. A predictable tag would be shared with every other checkout of a directory
+# by this name, which is how a stale gate gets executed against a current submission.
 $RepoSlug = ((Split-Path -Leaf $RepoRoot) -replace '[^A-Za-z0-9]', '-').ToLowerInvariant()
-$Image = "$RepoSlug-ci:local"
+$Project = "$RepoSlug-ci-gate-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$PID"
+$Image = "${RepoSlug}-ci:$Project"
 
-& docker image inspect $Image > $null 2>&1
-if ($LASTEXITCODE -ne 0) {
+try {
     $env:CI_IMAGE = $Image
-    & docker compose -p "$RepoSlug-ci-gate" -f (Join-Path $RepoRoot 'compose.ci.yml') build 2>&1 | Out-Null
+    & docker compose -p $Project -f (Join-Path $RepoRoot 'compose.ci.yml') build 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "could not build the CI image, so no decision can be made." }
+
+    $mode = if ($PrBody) { 'pr-body' } else { 'decide' }
+    $json = $Facts | ConvertTo-Json -Depth 12 -Compress
+
+    # stdin carries the facts; stdout carries the answer. Nothing is written anywhere.
+    $output = $json | & docker run --rm --interactive --network none $Image node scripts/submit-gate.mjs $mode
+    $code = $LASTEXITCODE
+
+    if ($PrBody) {
+        if ($code -ne 0) { throw "the gate could not render the verification block (exit $code)." }
+        return ($output | Out-String)
+    }
+
+    # Exit 2 means the question was malformed, which is not the same as a refusal and must not be
+    # reported as one.
+    if ($code -eq 2) { throw "the gate could not evaluate the submission (exit 2): $($output | Out-String)" }
+    return ($output | Out-String | ConvertFrom-Json)
 }
-
-$mode = if ($PrBody) { 'pr-body' } else { 'decide' }
-$json = $Facts | ConvertTo-Json -Depth 12 -Compress
-
-# stdin carries the facts; stdout carries the answer. Nothing is written anywhere.
-$output = $json | & docker run --rm --interactive --network none $Image node scripts/submit-gate.mjs $mode
-$code = $LASTEXITCODE
-
-if ($PrBody) {
-    if ($code -ne 0) { throw "the gate could not render the verification block (exit $code)." }
-    return ($output | Out-String)
+finally {
+    # Removed by the exact name this invocation created, on every path including a thrown decision.
+    # No other invocation shares the tag, so this can remove nothing but its own.
+    & docker image rm $Image 2>&1 | Out-Null
 }
-
-# Exit 2 means the question was malformed, which is not the same as a refusal and must not be
-# reported as one.
-if ($code -eq 2) { throw "the gate could not evaluate the submission (exit 2): $($output | Out-String)" }
-return ($output | Out-String | ConvertFrom-Json)
