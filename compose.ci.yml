@@ -1,0 +1,84 @@
+# The containerized CI environment.
+#
+# Invoked only through `scripts/ci.ps1` / `scripts/ci.sh`, which supply a unique `-p <project>` per
+# run so that two repositories — or two runs of this one — cannot collide on container, network, or
+# volume names, and so teardown can remove exactly what this run created and nothing else.
+#
+# Run it by hand only when debugging:
+#   docker compose -p engstd-ci-debug -f compose.ci.yml up --build --abort-on-container-exit
+#
+# ## Services
+#
+# There is one, and the absence of the others is a fact about this repository rather than an
+# omission. It has no database, no cache, no message broker, and no external service of any kind:
+# the checks read files, run `git`, and compare text. The user's standing preference — T-SQL on
+# localhost — is a preference for *if* a database is needed, and one is not; adding a SQL Server
+# container to satisfy a template would be a service nothing connects to.
+#
+# **Adding a dependency later.** Declare it as a sibling service with a real `healthcheck`, and
+# depend on it by condition:
+#
+#   services:
+#     db:
+#       image: <pinned by digest>
+#       healthcheck:
+#         test: ["CMD", "<a command that fails until the service can actually serve>"]
+#         interval: 2s
+#         timeout: 5s
+#         retries: 30
+#         start_period: 10s
+#     ci:
+#       depends_on:
+#         db:
+#           condition: service_healthy
+#
+# `scripts/ci.*` already brings up every non-`ci` service with `docker compose up --wait`, which
+# blocks on those healthchecks and fails the run if one never becomes healthy. No sleep is involved
+# now and none would be then. The database would be a container created and destroyed with the run's
+# unique project name, so a developer's own SQL Server is never the thing the tests write to, and
+# credentials would arrive as environment variables from the invoking script rather than from a
+# committed file.
+
+services:
+  ci:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile
+    # Named per run by the invoking script, so a rebuild for one project cannot replace the image
+    # another run is still using.
+    image: ${CI_IMAGE:-engineeringstandards-ci:local}
+
+    # No network. The pipeline resolves nothing, downloads nothing, and installs nothing — that is
+    # what zero third-party dependencies buys — so the strongest available setting is also the
+    # correct one. It is a check as much as a hardening: if a step ever starts needing the network,
+    # this run fails rather than quietly depending on the developer's connectivity.
+    network_mode: none
+
+    # PID 1 that reaps children and forwards signals, so a cancelled run does not leave a container
+    # holding a defunct `npm` process.
+    init: true
+
+    # No volumes and no bind mounts, deliberately. The repository is baked into the image; the
+    # verification record is copied out of the stopped container by the invoking script. Nothing on
+    # the host is reachable from inside this container, so no test can modify the developer's tree,
+    # and no `latest.json` from an earlier run can be read as this one's.
+    #
+    # The Docker socket is not mounted either. Nothing in this pipeline starts a container.
+
+    # Read-only root would be the next hardening step and is not enabled: `npm` writes to a cache
+    # directory and the suite materialises a file under scripts/ for its negative control. Both write
+    # inside the container's own layer, which is discarded with the container.
+
+    # Two facts the run records about itself. `submit-pr` refuses a verification record that was not
+    # produced in here, so this is what separates "the pipeline passed" from "it passed on the
+    # developer's machine" — the distinction containerising CI exists to make.
+    environment:
+      LOCAL_CI_CONTAINER: "1"
+      CI_IMAGE: ${CI_IMAGE:-engineeringstandards-ci:local}
+
+    working_dir: /work
+    command:
+      - node
+      - scripts/pipeline.mjs
+      - run
+      - --report=/work/artifacts/local-ci/latest.json

@@ -1,0 +1,15 @@
+# Local CI verification records.
+#
+# `artifacts/local-ci/latest.json` is evidence about one run on one machine: it names a commit, a
+# result, and the container that produced it. Committing it would make one developer's run part of
+# the repository's history, where a reader could not tell it from a reviewed artifact — and it would
+# be stale the moment the next commit landed.
+#
+# This repository does retain evidence on purpose elsewhere (attestations in project-policy.yml,
+# reviews under artifacts/), and the difference is that those are reviewed and owned. A transient
+# verification record is neither, so it stays out.
+#
+# The audit reads this file to decide what the repository treats as not-its-own, so an entry here
+# also removes the path from the evidence surface — which is correct: nothing in it is the project's
+# code.
+artifacts/local-ci/
