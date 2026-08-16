@@ -40,6 +40,48 @@ non-required job on GitHub, and for the same reason: this repository is intentio
 `NON_COMPLIANT` while recorded rejections stand. Its real exit code is recorded and printed, never
 suppressed. See [docs/local-ci.md](docs/local-ci.md).
 
+**The local gate now verifies committed content rather than the host checkout**
+([ADR 0015](artifacts/adr/0015-local-ci-verifies-committed-content-not-the-host-checkout.md)).
+`COPY . /work` built the image from the developer's working directory, so what it verified was one
+platform's materialisation of the tree. Measured on `a373d4c` with committed content held constant:
+a CRLF checkout produced 273 pass / 1 fail and an LF checkout 274 pass / 0 fail, while the GitHub
+runner passed. The gate produced a red the runner did not, and the mechanism is symmetric.
+
+- `scripts/ci-context.ps1`, `scripts/ci-context.sh` — the build context is a temporary clone at the
+  exact commit `HEAD` names, with `core.autocrlf=false` and `core.eol=lf` written into its own
+  config, its materialised commit confirmed against the requested one, removed by exact path on every
+  exit path. A clone rather than a `git archive` export, because the audit resolves tracked and
+  ignored paths through git and attestation freshness reads committed blob identity — an export plus
+  a synthesised repository would trade this defect for ADR 0008's.
+- `scripts/ci.ps1`, `scripts/ci.sh`, `scripts/submit-decide.ps1` all build from that context.
+  **Local CI now requires a clean tree**: uncommitted work is absent from the run, so a pass would
+  describe a tree the developer is not looking at.
+- `scripts/verify-materialisation.ps1` — the falsifier. Runs the complete pipeline from an LF and a
+  CRLF checkout of one commit, having first confirmed their bytes differ, and requires the verified
+  SHA, every stage outcome, the verdict, and the repository's own freshness and tracked/ignored
+  answers to be identical. `-Mutate` restores the defect and requires the comparison to fail.
+- Isolation is unchanged: no bind mount, no Docker socket, no host path reachable from the run.
+- The linked-worktree refusal is now conservative rather than necessary — `git clone` resolves a
+  linked worktree into a self-contained repository. The guard is left in place; lifting it is its own
+  decision.
+
+Two defects found in review of the above, before it merged:
+
+- **What counts as a clean tree no longer depends on the reader's git config.** `git status
+  --porcelain` honours `status.showUntrackedFiles`, so under `no` a brand-new source file reported
+  nothing, the context clone omitted it because it was not committed, and the run would have passed
+  over a tree missing the file being worked on — the false success the clean-tree requirement exists
+  to prevent, arriving through the check itself. Every cleanliness question in the repository now
+  states `--untracked-files=normal` rather than inheriting an answer: both context builders,
+  `scripts/submit-pr.ps1`, `scripts/verify-materialisation.ps1`, and `scripts/repository.mjs`. Under
+  the usual configuration nothing changes.
+- **A project name can no longer choose what the context builder deletes.** `--project` is an
+  advertised option on both entry points, and its value named a temporary directory that the builder
+  removed recursively; a name carrying path components aimed that delete outside the temporary root.
+  Compose would have rejected such a name, but only after the context stage had run. Both twins now
+  refuse anything outside a plain Compose project name, before reading the repository at all. Driven
+  by a test that destroys a sentinel directory if the guard is removed.
+
 **Run state became invocation-owned** ([ADR 0014](artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md)).
 `scripts/standards.mjs` no longer performs its work at module load. Importing it now runs nothing;
 `main(args)` returns an exit code, and only the CLI boundary at the foot of the file terminates the
