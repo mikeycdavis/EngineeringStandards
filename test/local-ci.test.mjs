@@ -24,6 +24,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -296,6 +297,60 @@ test("moving the context out of the working tree did not open a hole in the cont
     // be re-argued rather than absorbed.
     assert.doesNotMatch(text, /\bdocker\b/i, `${file} touches Docker at all`);
   }
+});
+
+test("the tree a verifying run executes is the committed tree, byte for byte", (t) => {
+  // The invariant, asserted from inside the run rather than from the shape of the scripts that set
+  // it up. Everything else in this section is a text assertion about ci.ps1 and compose.ci.yml; this
+  // is the one check that would notice if all of that were wired correctly and still delivered the
+  // wrong bytes.
+  //
+  // It is also what makes the cross-materialisation harness non-vacuous. That harness proves two
+  // checkouts agree, and two checkouts agree trivially when nothing in the suite can tell them
+  // apart. This can: under the old `COPY .` behaviour a CRLF checkout fails here and an LF one does
+  // not, which is exactly the divergence the harness needs to be able to observe.
+  //
+  // Deliberately scoped to runs that make verification claims. On a developer's Windows host the
+  // working tree legitimately is not the committed bytes — that is what `core.autocrlf` does — and
+  // failing `npm test` there would be reporting a checkout convention as a defect. Skipped with a
+  // reason rather than silently passing, because a check that quietly does nothing is the failure
+  // this repository names most often.
+  const verifying = process.env.LOCAL_CI_CONTAINER === "1" || process.env.GITHUB_ACTIONS === "true";
+  if (!verifying) {
+    t.skip("not a verifying run — the host checkout's byte representation is its own business");
+    return;
+  }
+
+  const git = (args, input) =>
+    spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", input, maxBuffer: 64 * 1024 * 1024 });
+
+  // Committed identity for every regular file at HEAD. Modes other than 100644/100755 — symlinks,
+  // gitlinks — are excluded because their working-tree representation is not their blob content.
+  const tree = git(["ls-tree", "-r", "-z", "HEAD"]);
+  assert.equal(tree.status, 0, "git could not read the tree at HEAD");
+  const committed = new Map();
+  for (const entry of tree.stdout.split("\0").filter(Boolean)) {
+    const m = entry.match(/^(\d{6}) blob ([0-9a-f]{40})\t(.*)$/);
+    if (m && (m[1] === "100644" || m[1] === "100755")) committed.set(m[3], m[2]);
+  }
+  assert.ok(committed.size > 100, `only ${committed.size} committed files found — has the tree shape changed?`);
+
+  // Identity of the bytes actually on disk. `--no-filters` is the whole point: it hashes the file as
+  // it lies there, without re-applying the normalisation that makes git call a CRLF checkout clean.
+  // One process for every path rather than one process per path.
+  const paths = [...committed.keys()];
+  const onDisk = git(["hash-object", "--no-filters", "--stdin-paths"], `${paths.join("\n")}\n`);
+  assert.equal(onDisk.status, 0, `git could not hash the working tree: ${onDisk.stderr}`);
+  const hashes = onDisk.stdout.split("\n").filter(Boolean);
+  assert.equal(hashes.length, paths.length, "git hashed a different number of files than were asked about");
+
+  const differing = paths.filter((rel, i) => hashes[i] !== committed.get(rel));
+  assert.deepEqual(
+    differing.slice(0, 10),
+    [],
+    `${differing.length} file(s) on disk differ from their committed content. This run is verifying a ` +
+      "materialisation of the commit rather than the commit — see ADR 0015.",
+  );
 });
 
 test("the cross-materialisation falsifier can fail, and says so in both directions", () => {
