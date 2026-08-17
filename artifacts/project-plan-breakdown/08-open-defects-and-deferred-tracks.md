@@ -591,7 +591,7 @@ that approval deliberately does not cover.
   ones would be caught, and this item stays open until a check with both fixtures exists. The two
   claims are kept separate deliberately.
 
-### Make remediation consistent with the repository state that gives it meaning
+### Make remediation carry the sequencing its repository state requires
 
 - **Status:** READY
 - **Tracked by:** GitHub issue
@@ -599,35 +599,55 @@ that approval deliberately does not cover.
 - **Evidence:** open as of 2026-08-16, verified at `e842a5a`.
   [`scripts/init.mjs`](../../scripts/init.mjs) recognises the reconstruction state and sets
   `nextStep` to *"Run the project-reconstruction skill (Standard 44). Do NOT author a plan as though
-  this project were starting now."* In that same state `artifacts/project-plan-breakdown/` is created
-  empty on purpose, so `planning.breakdown-directory` fails, and its remediation in
-  [`rules/planning.json`](../../rules/planning.json) reads *"Run /plan-structure and /plan-handoff,
-  writing each top-level section to its own file…"* unconditionally.
-  `planning.one-file-per-section` names `/plan-handoff` too and is bound to no detector, so it emits
-  nothing today — **catalog-wide scope evidence, not a second live specimen.**
-- **Purpose:** Ensure that when this framework explicitly recognises a repository state, a rule
-  remediation cannot instruct the user to perform an action another authoritative framework surface
-  forbids in that same state. The two instructions above cannot both be authoritative for one
-  repository: following the validator violates `init`, and following `init` leaves a required rule
-  failing. **The defective part is the remediation, not the finding** — `planning.breakdown-directory`
-  failing in the reconstruction state may well be correct, and "make reconstruction pass" is
-  explicitly out of scope.
-- **Deliverables:** a measured decision among the remediation and applicability alternatives, the
-  normative invariant, implementation of the selected mechanism, and regression coverage over the
-  reconstruction state. **The mechanism is deliberately not chosen here.** Conditional remediation,
-  suppression in that state, a reconstruction-specific alternative, and a deeper applicability change
-  all remain candidates until measured; naming one now would convert a recorded defect into an
-  implementation decision the evidence has not yet earned.
+  this project were starting now."*
+  [Standard 44](../../standards/44-existing-project-reconstruction.md) requires the reconstructed
+  plan to live under `artifacts/project-plan-breakdown/`, and requires that `/plan-structure` and
+  `/plan-handoff` **MUST be applied to the reconstructed plan**.
+  In that state the directory is created empty on purpose, so `planning.breakdown-directory` fails,
+  and its remediation in [`rules/planning.json`](../../rules/planning.json) reads *"Run
+  /plan-structure and /plan-handoff, writing each top-level section to its own file…"* with no
+  mention of what must happen first.
+  `planning.handoff` also prescribes `/plan-handoff` and is `manual-review`, so it emits no
+  finding — **catalog-wide scope evidence, not a second live specimen.**
+- **Purpose:** Ensure that when this framework explicitly recognises a repository state, remediation
+  preserves the prerequisites, sequencing and context that make the prescribed action valid in that
+  state.
+
+  ```text
+  wrong implication
+      reconstruction state
+      -> run /plan-structure + /plan-handoff now
+
+  required sequence
+      reconstruction state
+      -> reconstruct an evidence-based plan under Standard 44
+      -> apply /plan-structure + /plan-handoff to that reconstructed plan
+  ```
+
+  **The two instructions are not literally contradictory, and this item does not claim they are.**
+  The remediation never says to fabricate a greenfield plan, and the prescribed tools are eventually
+  required by Standard 44 itself. What is missing is the ordering: a user shown this remediation
+  before reconstruction can reasonably run the right tools at the wrong stage and produce planning
+  material without the reconstruction evidence that gives it meaning. **The defective part is the
+  remediation, not the finding** — `planning.breakdown-directory` failing in the reconstruction state
+  may well be correct, and "make reconstruction pass" is explicitly out of scope.
+- **Deliverables:** a measured decision among the remediation alternatives, the normative invariant,
+  implementation of the selected mechanism, and regression coverage over the reconstruction state.
+  **The mechanism is deliberately not chosen here**, but the candidates are no longer equally
+  motivated. State-conditional remediation and a reconstruction-specific remediation string are the
+  two the specimen directly supports. **Suppression is not**, because the finding may be legitimate;
+  a deeper applicability change stays open for measurement but is no longer implied, since it was
+  implied only by a contradiction that does not exist.
 - **Acceptance Criteria:**
   - The invariant is recorded normatively, in a form a future rule author is bound by: *for every
-    repository state the framework explicitly recognises, a reported rule's remediation must never
-    instruct the user to take an action another authoritative framework surface explicitly forbids in
-    that same state.*
-  - For a repository in the reconstruction state, no reported finding's remediation instructs the
-    user to author a plan as though the project were starting now.
+    repository state the framework explicitly recognises, remediation must preserve the
+    prerequisites, sequencing and context that make the prescribed action valid in that state.*
+  - For a repository in the reconstruction state, remediation that prescribes `/plan-structure` or
+    `/plan-handoff` also states that reconstruction comes first and that those skills apply to the
+    reconstructed plan.
   - The chosen implementation is recorded together with the alternatives measured and rejected.
-  - A test exercises the reconstruction state end to end and fails if any emitted remediation
-    contradicts `init`'s `nextStep` for that same state.
+  - A test exercises the reconstruction state end to end and fails if emitted remediation omits the
+    sequencing `init`'s `nextStep` establishes for that same state.
   - `planning.breakdown-directory` remains a legitimate finding in the reconstruction state unless a
     measured decision says otherwise.
 - **Verification:** `npm test` with the reconstruction-state fixture; the self-audit unchanged.
@@ -640,8 +660,14 @@ that approval deliberately does not cover.
   StandardsEnforcer's policy-marker defect measurably does not transfer here, since
   `project-policy.yml` is the only marker any surface names and there is no `--policy` override to
   widen. It is **not** #9 or #16 — adjacency is not ownership. It is **not** evidence that Standard 44
-  is wrong; the defect is disagreement between two of this framework's surfaces about what action
-  follows from the reconstruction state.
+  is wrong; Standard 44 is the surface that supplies the missing ordering.
+- **Corrected 2026-08-16 before merge, and the original claim is not preserved as if it held.** This
+  item was first written as a direct contradiction — that the remediation instructs an action `init`
+  forbids. Review against Standard 44 falsified that: the standard requires those same skills over
+  the reconstructed plan, so the two literal instructions can both be followed in the right order.
+  The user-facing outcome was identified correctly and its causal model was overstated. The record
+  of the overstatement is kept here because the ownership-before-implementation sequence is what
+  caught it, while no code had been changed.
 
 ---
 
