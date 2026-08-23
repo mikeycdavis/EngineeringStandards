@@ -178,3 +178,53 @@ test("a large vendored tree does not exhaust the default heap", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * The composition, which neither half establishes alone.
+ *
+ * `a large vendored tree does not exhaust the default heap` asserts only that the process did not
+ * die: no heap-error text, and a non-null exit status. Both of those hold for a run that gave up
+ * early -- measured, not supposed: the same fixture under a starved budget exits 0 with no heap
+ * error while reporting `complete: false` and an exhausted budget. So that test cannot tell
+ * "finished the work" from "stopped without crashing", and a regression that avoided the OOM by
+ * capping would pass it.
+ *
+ * Section 08 asks for the conjunction -- "a fixture with a large excluded directory completes and
+ * reports the exclusion" -- so it is asserted as a conjunction, in one invocation. Completion is
+ * spelled out as the absence of every escape hatch the run has, because "did not crash" is the
+ * weakest of the available claims and the one that survives the most breakage.
+ */
+test("a large excluded directory completes and reports its exclusion in the same run", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "audit-excl-"));
+  try {
+    await buildRepo(root, { depFiles: 6000, bigFileKb: 400 });
+    const r = audit(root, { maxHeapMb: 256 });
+
+    assert.ok(
+      !/JavaScript heap out of memory|Ineffective mark-compacts/.test(r.stderr),
+      "the audit exhausted the heap walking a large excluded tree",
+    );
+    assert.notEqual(r.status, null, "the audit was killed rather than exiting");
+
+    const s = parse(r).evidenceSurface;
+
+    // Reported, with the reason, in the run that completed -- not in a separate smaller one.
+    const hit = (s.excludedDirectories ?? []).find((e) => e.path === "test-env-3.13");
+    assert.ok(hit, "the large tree was skipped without being recorded");
+    assert.equal(
+      s.exclusionsFrom,
+      "unavailable",
+      "this fixture builds no repository; the reason asserted below assumes the marker signal fired",
+    );
+    assert.equal(hit.reason, "vendored dependency tree");
+
+    // And completed rather than stopped. Each of these is a way to survive the size without
+    // auditing it, and each would leave the assertions above intact.
+    assert.equal(s.fileCapReached, false, "the run 'completed' by reaching the file cap");
+    assert.equal(s.readBudget.exhausted, false, "the run 'completed' by exhausting the read budget");
+    assert.equal(s.readBudget.unreadFiles, 0, "eligible files were left unopened");
+    assert.equal(s.complete, true, "the run reported its own evidence surface as incomplete");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
