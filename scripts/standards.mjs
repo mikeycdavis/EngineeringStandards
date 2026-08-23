@@ -14,7 +14,7 @@
  * No third-party dependencies, by the decision recorded in design/standards-audit-cli.md.
  */
 
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -85,6 +85,35 @@ const EVALUATED_RULES = [
   "reconstruction.baseline-artifacts",
   "reconstruction.open-questions",
   "scm.no-committed-env-files",
+  "security.no-secrets-in-artifacts",
+  "errors.no-swallowed-exceptions",
+  "security.no-cert-bypass",
+  "security.no-sql-concat",
+];
+
+/**
+ * Rules whose evidence is the contents of the repository's files.
+ *
+ * Each is satisfied by the ABSENCE of something in what was read, so each passes most confidently
+ * exactly when the least was read. That is tolerable while the surface is whole and is not tolerable
+ * when whole files in scope went unsearched: a prohibited construct in a file no detector opened
+ * would otherwise produce a passing rule, and a passing rule can produce a COMPLIANT verdict over
+ * evidence nobody has.
+ *
+ * Withdrawing them is the same move `scm.no-committed-env-files` already makes when the repository
+ * cannot be read, generalised to the surface: a rule whose evidence could not be obtained was not
+ * evaluated this run, whatever the static set says (Standard 45 R6, ADR 0008).
+ *
+ * **Truncation is deliberately not a trigger.** A truncated file was opened and its prefix searched,
+ * and findings from a prefix are real findings that are kept; the run says how much it read. The
+ * triggers are the two states in which files in scope were never searched at all.
+ */
+const CONTENT_DERIVED_RULES = [
+  "documentation.code-consistency",
+  "planning.plan-code-consistency",
+  "verification.before-completion",
+  "quality.unfinished-work",
+  "quality.dead-code",
   "security.no-secrets-in-artifacts",
   "errors.no-swallowed-exceptions",
   "security.no-cert-bypass",
@@ -2266,40 +2295,52 @@ export async function main(args) {
   const unreadableFiles = [];
   const truncatedFiles = [];
   const budget = surfaceLoss.budget;
+
+  /**
+   * One eligible file whose contents are absent from this run.
+   *
+   * A single claim rather than two, because the difference between "never opened" and "opened and
+   * discarded at the boundary" is invisible to a reader and identical in consequence: nothing was
+   * searched in it. What it must never be confused with is the file-count cap, which never collected
+   * the file, or truncation, which searched a prefix and kept the findings.
+   */
+  const unsearched = (f) => {
+    budget.unreadFiles += 1;
+    if (budget.sample.length < EXCLUDED_FILE_SAMPLE) budget.sample.push(rel(f));
+  };
   for (const f of files) {
     if (!TEXT_EXT.has(path.extname(f))) continue;
 
-    // What this file would cost, decided BEFORE opening it, so an exhausted run retains no more than
-    // the limit rather than the limit plus one file. Retention is bounded by the per-file cap, so
-    // the cost is knowable from the size alone — and a file whose size cannot be read is left to
-    // `readText` to report as unreadable rather than pre-judged here.
-    let cost = 0;
-    try {
-      cost = Math.min((await stat(f)).size, MAX_READ_BYTES);
-    } catch {
-      cost = 0;
-    }
-
-    // A file skipped here was in scope and was never opened. That is a third claim, distinct from
-    // the file-count cap (never collected) and from truncation (opened and read in part). Collapsing
-    // them would tell a reader a file was searched and found clean when nothing looked at it.
-    if (budget.exhausted || budget.retainedBytes + cost > budget.limitBytes) {
-      budget.exhausted = true;
-      budget.unreadFiles += 1;
-      if (budget.sample.length < EXCLUDED_FILE_SAMPLE) budget.sample.push(rel(f));
+    // Once the budget is spent nothing further is opened at all.
+    if (budget.exhausted) {
+      unsearched(f);
       continue;
     }
 
     const read = await readText(f);
+
+    // The cost is what is RETAINED, and only the decoded text can say what that is. The file's size
+    // on disk cannot: decoding replaces each invalid byte with U+FFFD, three bytes each, so 300 KB
+    // of `0xff` in a recognised text file passes a size precheck and then retains 900 KB. That was a
+    // real defect in this accounting, found in review — the invariant it broke is the one this cap
+    // exists to hold, so the check moved to where the true figure is known rather than being
+    // approximated earlier and hoped over.
+    const cost = Buffer.byteLength(read.text, "utf8");
+    if (budget.retainedBytes + cost > budget.limitBytes) {
+      // Opened, and deliberately not retained: nothing is searched in it and nothing is held. The
+      // transient decode is bounded by the per-file cap and is gone by the next iteration.
+      budget.exhausted = true;
+      unsearched(f);
+      continue;
+    }
+
     if (!read.ok) unreadableFiles.push(f);
     else if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
     contents.set(f, read.text);
     if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
 
-    // Measured on what is actually held in `contents`, not on the file's size on disk: a truncated
-    // file retains its prefix and nothing more. The derived `sources` entry is proportional to the
-    // same text, so one accounting bounds both.
-    budget.retainedBytes += Buffer.byteLength(read.text, "utf8");
+    // The derived `sources` entry is proportional to the same text, so one accounting bounds both.
+    budget.retainedBytes += cost;
   }
 
   // Evidence-surface findings: what the audit could NOT search.
@@ -2353,9 +2394,9 @@ export async function main(args) {
       evidence: [`${surfaceLoss.budget.limitBytes}-byte aggregate read budget`],
       message:
         `The ${surfaceLoss.budget.limitBytes}-byte aggregate read budget was spent. ` +
-        `${surfaceLoss.budget.unreadFiles} eligible file(s) were collected and never opened, and are ` +
-        `outside every result in this run. This is neither the file-count cap nor per-file ` +
-        `truncation: those files were in scope and nothing read them.`,
+        `${surfaceLoss.budget.unreadFiles} eligible file(s) were collected and nothing was searched ` +
+        `in them, so they are outside every result in this run. This is neither the file-count cap ` +
+        `nor per-file truncation: those files were in scope and no detector saw their contents.`,
       standardRef: R.search,
     });
   }
@@ -2603,8 +2644,17 @@ export async function main(args) {
   // look` distinct from `nobody found anything` — a distinction that matters most for a `forbidden`
   // rule, which is satisfied by absence and would otherwise pass precisely when it knows least
   // (Standard 45 R6).
+  //
+  // The same reasoning applies to the evidence SURFACE, not only to one detector's own input. When
+  // files that were in scope were never searched — the file-count cap, or the aggregate read budget
+  // — every rule whose evidence is file contents is in the position `scm.no-committed-env-files` is
+  // in when the repository cannot be read: it can report only that it found nothing, which over an
+  // unsearched file is a statement about the run rather than about the project.
+  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted;
   const evaluatedThisRun = EVALUATED_RULES.filter(
-    (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false),
+    (id) =>
+      !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
+      !(filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)),
   );
 
   const verdict = evaluate({
