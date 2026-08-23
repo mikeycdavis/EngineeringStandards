@@ -59,10 +59,63 @@ distinction that keeps `NON_COMPLIANT` and *plan-complete* as separate claims: t
 compliance, the plan reports whether everything has an owner and an evidenced status. Both can be
 true at once, and at present both are.
 
-**The release condition, stated exactly.** Zero gaps means: *every release-relevant capability, known
-defect, recorded rejection, open issue, and intentionally dormant track has an explicit place in the
-plan, and every status is supported by evidence.* It does not mean every item is `COMPLETE`, and it
-does not mean `validate` reports `COMPLIANT`.
+**The release condition, stated exactly — two predicates, not one.**
+
+```text
+zero-gap coverage
+  every release-relevant obligation is known, owned, and evidenced
+
+release closure
+  every plan item has reached a terminal disposition:
+  COMPLETE | DEFERRED | CANCELLED
+  (recorded rejections are separately terminal — see below)
+```
+
+**Zero-gap coverage** means *every release-relevant capability, known defect, recorded rejection,
+open issue, and intentionally dormant track has an explicit place in the plan, and every status is
+supported by evidence.* It is a claim about **knowledge**: nothing is unowned, unevidenced, or
+invisible. It does not mean every item is `COMPLETE`, and it does not mean `validate` reports
+`COMPLIANT`.
+
+**Release closure** additionally requires that every plan item has reached a terminal disposition by
+one of the three routes in the table above. It is a claim about **decision**: every obligation has
+been resolved, postponed with a trigger, or abandoned with a reason. The `master`, tag, and release
+gate in [`00-overview.md`](00-overview.md) requires **both** predicates.
+
+**Coverage does not imply closure, and treating it as though it did makes ownership equivalent to
+disposition.** Read as a single condition, the gate would be satisfied by marking every known defect
+`READY`: everything owned, everything evidenced, nothing resolved, and the repository free to
+release forever without ever deciding anything. That collapses two different claims into one — the
+same error this section exists to prevent between *compliance* and *plan-complete*.
+
+**The nonterminal statuses are therefore open for release purposes.** `NOT_STARTED`, `READY`,
+`IN_PROGRESS`, `BLOCKED`, and `IN_REVIEW` ([Standard 8](../../standards/08-status-tracking.md)) each
+prove the work is *tracked*. None proves the release *decision* has been made. A `READY` item is the
+repository stating in its own vocabulary that the work is actionable and has not yet been
+dispositioned — which is precisely a reason not to release, not a reason to.
+
+**Closure does not require fixing everything.** `DEFERRED` with a named trigger and `CANCELLED` with
+a recorded reason are terminal, and an item that is genuinely not release-critical is dispositioned
+by saying so under those rules. What closure forbids is leaving the question unanswered.
+
+**What this does not change.** `NON_COMPLIANT` still coexists with release closure, because a
+recorded rejection is terminal evidence rather than a plan item (see the paragraph above). `validate`
+reporting `COMPLIANT` is still not a release condition.
+
+**One designated exception, and it must be declared rather than inferred.** [Keep the framework's own
+attestations owner-established](05-attestations-and-provenance.md) is `IN_PROGRESS` *permanently, by
+design* — a standing obligation whose openness is a property of the obligation itself, not an
+undecided question. Under a flat reading of the rule above it would block release forever, which is
+the failure mode the terminal-semantics table exists to prevent. **A standing obligation is exempt
+from release closure only where its `Status` line states that it does not close and why.** The
+exemption must be visible in the item; it must never be inferred from an item having merely stayed
+open a long time.
+
+**Amended 2026-08-23, before being relied on as a gate.** The single-predicate wording was ambiguous
+in a way that mattered: thirteen `READY` items would have satisfied it. The ambiguity is recorded
+rather than silently overwritten, because the previous reading was used to describe this repository's
+state and a future reader needs to know which reading applied when. This amendment settles the
+reading only — no item's status changed with it, and no implementation follows from it.
 
 ---
 

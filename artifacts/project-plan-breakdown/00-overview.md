@@ -109,6 +109,15 @@ smaller project than the one on `develop` cannot establish that the project has 
 01–03 while the compliance system went unrepresented would have produced a complete plan for the
 wrong project. Section 08 exists so the remaining obligations are visible rather than absent.
 
+*Amended 2026-08-23 — "zero gaps" is coverage; the release gate additionally requires closure.* The
+phrase was readable as one condition, and under that reading a repository whose every known defect
+was owned and `READY` would satisfy it — ownership would become equivalent to disposition. It is two
+predicates, defined in [`08-open-defects-and-deferred-tracks.md`](08-open-defects-and-deferred-tracks.md)
+under *Terminal semantics*: **zero-gap coverage** (every obligation known, owned, and evidenced) and
+**release closure** (every plan item at `COMPLETE`, `DEFERRED`, or `CANCELLED`). The `master`, tag,
+and release gate requires both, which is what the sentence above already says when it forbids a
+release while any item is unfinished or blocked.
+
 ## Constraints that apply to all work here
 
 - **Never fabricate history.** This constraint governs the repository's own documents, not just the
