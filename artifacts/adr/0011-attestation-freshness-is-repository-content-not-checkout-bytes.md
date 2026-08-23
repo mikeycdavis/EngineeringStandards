@@ -124,7 +124,7 @@ old mechanism was concealing. The interim carries more unestablished rules than 
 vendored snapshot. Detectors still run and every other result still stands; only attestation
 freshness is unavailable, and it says so.
 
-**This opens the repository-metadata seam** [ADR 0008](0008-the-source-of-truth-gap-working-tree-versus-repository.md)
+**This opens the repository-metadata seam** [ADR 0008](0008-detectors-do-not-assert-repository-state-they-have-not-measured.md#the-repository-metadata-seam)
 anticipated, as the first subprocess in `scripts/`. `scripts/repository.mjs` holds no module-level
 state — every function takes its root and returns its answer — so
 [ADR 0007](0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md)'s inventory is

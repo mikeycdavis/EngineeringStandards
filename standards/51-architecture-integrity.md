@@ -62,7 +62,7 @@ shortcut left. Treating them as one failure family means one finding for one def
 [ADR](11-architecture-decision-records.md), so that the new boundary is the one everyone is working
 to. What is prohibited is leaving the boundary in place, documented and believed, while writing code
 that goes around it: the diagram now describes a system that does not exist, which
-[Standard 32](32-documentation-standards.md) treats as a documentation defect as well.
+[Standard 32](32-documentation-quality.md) treats as a documentation defect as well.
 
 **Exception conditions:**
 
@@ -176,7 +176,7 @@ which is kept as the evidence for why: naming state by enumeration failed at fiv
 reviews, so the record now constrains lifetime instead. [Standard 15](15-ai-tool-contracts.md) and [Standard 21](21-versioning.md) are what R5 routes
 to. [Standard 48](48-error-handling-and-observability.md) R2 owns the source's HTTP-status
 prohibition. [Standard 22](22-adoption-and-migration.md) R6 is R3's principle stated for standards
-rather than code. [Standard 32](32-documentation-standards.md) is why a bypassed boundary is also a
+rather than code. [Standard 32](32-documentation-quality.md) is why a bypassed boundary is also a
 documentation defect. [Standard 45](45-engineering-invariants.md) defines the level semantics and the
 exception discipline.
 
