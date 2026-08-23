@@ -610,8 +610,9 @@ function usage(stream = process.stderr) {
       "  --force-overwrite=<path>   init only: approve replacing one existing file.\n" +
       "  --json         Emit the structured report on stdout instead of the readable one.\n" +
       "  --dir=<path>   Target a directory other than the resolved project root.\n" +
-      "  --max-total-read-bytes=<n>   audit only: bound the total file content one run\n" +
-      "                 retains. Defaults to 256 MB.\n" +
+      "  --max-total-read-bytes=<n>   audit and validate: bound the total file\n" +
+      "                 content one run retains. Defaults to 256 MB. `init` returns\n" +
+      "                 before the walk, so the flag is accepted and inert there.\n" +
       "  --strict       audit only: exit 1 when any finding needs attention.\n\n" +
       "Gate CI on `validate`. Use `audit` for diagnostics, discovery, and reconstruction.\n" +
       "See artifacts/adr/0004-audit-and-validate-are-separate-commands.md.\n",
