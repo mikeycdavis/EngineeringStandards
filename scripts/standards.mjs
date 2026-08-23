@@ -92,6 +92,35 @@ const EVALUATED_RULES = [
 ];
 
 /**
+ * Rules whose evidence is the contents of the repository's files.
+ *
+ * Each is satisfied by the ABSENCE of something in what was read, so each passes most confidently
+ * exactly when the least was read. That is tolerable while the surface is whole and is not tolerable
+ * when whole files in scope went unsearched: a prohibited construct in a file no detector opened
+ * would otherwise produce a passing rule, and a passing rule can produce a COMPLIANT verdict over
+ * evidence nobody has.
+ *
+ * Withdrawing them is the same move `scm.no-committed-env-files` already makes when the repository
+ * cannot be read, generalised to the surface: a rule whose evidence could not be obtained was not
+ * evaluated this run, whatever the static set says (Standard 45 R6, ADR 0008).
+ *
+ * **Truncation is deliberately not a trigger.** A truncated file was opened and its prefix searched,
+ * and findings from a prefix are real findings that are kept; the run says how much it read. The
+ * triggers are the two states in which files in scope were never searched at all.
+ */
+const CONTENT_DERIVED_RULES = [
+  "documentation.code-consistency",
+  "planning.plan-code-consistency",
+  "verification.before-completion",
+  "quality.unfinished-work",
+  "quality.dead-code",
+  "security.no-secrets-in-artifacts",
+  "errors.no-swallowed-exceptions",
+  "security.no-cert-bypass",
+  "security.no-sql-concat",
+];
+
+/**
  * Read and validate the target repository's project-policy.yml.
  *
  * A malformed or unreadable policy is an ERROR condition, never a compliance failure: the verdict
@@ -517,6 +546,35 @@ const MAX_FILES = 20000;
 const MAX_READ_BYTES = 400_000;
 const MAX_EVIDENCE = 12;
 
+/**
+ * The aggregate retained-evidence bound, and why a third cap was needed beside the other two.
+ *
+ * `MAX_FILES` bounds how many files are collected; `MAX_READ_BYTES` bounds each individual read.
+ * Neither is a total, and two per-unit caps do not compose into one. The audit holds every text
+ * simultaneously — once in `contents`, and again in derived form in `sources` for code files — so
+ * the retained ceiling was `MAX_FILES x MAX_READ_BYTES`, about 8 GB, against a default heap of
+ * roughly 4 GB.
+ *
+ * The report that produced this blamed a vendored virtualenv, and the exclusion boundary removed
+ * that instance. It did not remove the class: a large enough tree of the project's OWN tracked code
+ * reaches the same ceiling with nothing to exclude and no signal that could honestly exclude it.
+ *
+ * 256 MB sits far above any plausible first-party source tree — the largest observed adopter read
+ * under 40 MB — and an order of magnitude below the heap, so exhausting it means something has gone
+ * wrong rather than that a project grew. It is a frozen framework constant in the sense ADR 0014
+ * permits: its value does not depend on which repository is being audited. The per-run override is
+ * a flag on the invocation, not a module-scoped read of the environment, for the same reason.
+ */
+const DEFAULT_MAX_TOTAL_READ_BYTES = 256 * 1024 * 1024;
+
+/**
+ * How many paths an aggregated exclusion names.
+ *
+ * Enough that a reader can recognise the kind of thing that left, few enough that it cannot bury the
+ * directory-level exclusions that actually change what a run covers.
+ */
+const EXCLUDED_FILE_SAMPLE = 5;
+
 // ---------------------------------------------------------------------------
 // Argument parsing
 //
@@ -532,6 +590,9 @@ function parseArgs(argv) {
     json: argv.includes("--json"),
     strict: argv.includes("--strict"),
     dirFlag: argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length),
+    maxTotalReadBytes: argv
+      .find((a) => a.startsWith("--max-total-read-bytes="))
+      ?.slice("--max-total-read-bytes=".length),
     positional: argv.slice(1).find((a) => !a.startsWith("--")),
   };
 }
@@ -549,6 +610,8 @@ function usage(stream = process.stderr) {
       "  --force-overwrite=<path>   init only: approve replacing one existing file.\n" +
       "  --json         Emit the structured report on stdout instead of the readable one.\n" +
       "  --dir=<path>   Target a directory other than the resolved project root.\n" +
+      "  --max-total-read-bytes=<n>   audit only: bound the total file content one run\n" +
+      "                 retains. Defaults to 256 MB.\n" +
       "  --strict       audit only: exit 1 when any finding needs attention.\n\n" +
       "Gate CI on `validate`. Use `audit` for diagnostics, discovery, and reconstruction.\n" +
       "See artifacts/adr/0004-audit-and-validate-are-separate-commands.md.\n",
@@ -578,7 +641,7 @@ const COMMANDS = new Set(["audit", "validate", "init"]);
  * a helper that calls `process.exit` cannot be tested, cannot be called twice, and takes a decision
  * that belongs to the caller.
  */
-function checkInvocation({ subcommand }) {
+function checkInvocation({ subcommand, maxTotalReadBytes }) {
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     usage(process.stdout);
     return subcommand ? EXIT_OK : EXIT_INVOCATION;
@@ -587,6 +650,18 @@ function checkInvocation({ subcommand }) {
     process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
     usage();
     return EXIT_INVOCATION;
+  }
+  // An unusable budget is refused rather than absorbed. Falling back to the default would run the
+  // audit under a bound the caller did not ask for and report the resulting surface as though they
+  // had — the same silence this cap exists to remove, committed by the thing that removes it.
+  if (maxTotalReadBytes !== undefined) {
+    const bytes = Number(maxTotalReadBytes);
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      process.stderr.write(
+        `standards: --max-total-read-bytes must be a positive number of bytes, got '${maxTotalReadBytes}'.\n`,
+      );
+      return EXIT_INVOCATION;
+    }
   }
   return null;
 }
@@ -733,9 +808,27 @@ function createRun({ root, strict, json }) {
  *
  * `excluded` is the same idea pointed the other way. Skipping is not free of consequence: a
  * directory left out of the walk is a directory no detector can report on, so every exclusion is
- * recorded in `loss.excluded` and surfaced in the report. The difference between an exclusion and a
- * loss is that an exclusion is a *decision* about what is not the project's code, and a decision
- * nobody can see is indistinguishable from a tool that quietly went blind.
+ * recorded and surfaced in the report. The difference between an exclusion and a loss is that an
+ * exclusion is a *decision* about what is not the project's code, and a decision nobody can see is
+ * indistinguishable from a tool that quietly went blind.
+ *
+ * Exclusions are recorded at two granularities, and the difference is deliberate rather than an
+ * inconsistency the comment is papering over:
+ *
+ *   directories  one entry each in `loss.excluded`, carrying the reason that removed it. Three
+ *                reasons exist — `ignored by the repository`, `vendored dependency tree`, and
+ *                `conventional non-project directory` for `SKIP_DIRS`. The third used to be a bare
+ *                `continue`: `.mypy_cache/` was 98 MB in one reproduction and left no trace at all,
+ *                which is the same defect class as a silent cap.
+ *   files        an aggregate count and a bounded sample in `loss.excludedFiles`, never one entry
+ *                each. A generated artifact beside tracked code is not a surface anyone expected to
+ *                be audited, and listing every one would bury the directory-level exclusions that
+ *                actually change what a run covers. Aggregated is not silent; per-file would be
+ *                honest and unreadable, which is its own way of hiding something.
+ *
+ * This comment previously claimed every exclusion was recorded while the code a few lines below
+ * dropped two kinds without a word. The comment was wrong and the criterion it contradicted was
+ * right, so the code moved rather than the wording.
  */
 async function collectFiles(dir, acc, loss, excluded, run) {
   const { root, rel } = run;
@@ -767,17 +860,25 @@ async function collectFiles(dir, acc, loss, excluded, run) {
     }
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
+      if (SKIP_DIRS.has(entry.name)) {
+        loss.excluded.push({ path: rel(full), reason: "conventional non-project directory" });
+        continue;
+      }
       if (excluded.dirs.has(rel(full))) {
         loss.excluded.push({ path: rel(full), reason: "ignored by the repository" });
         continue;
       }
       await collectFiles(full, acc, loss, excluded, run);
     } else if (entry.isFile()) {
-      // Ignored FILES are dropped without a per-file record. A generated artifact sitting beside
-      // tracked code is not a surface anyone expected to be audited, and listing each one would
-      // bury the directory-level exclusions that actually change what the run covers.
-      if (excluded.files.has(rel(full))) continue;
+      // Aggregated rather than listed — see the granularity note above. The count is what tells a
+      // reader coverage shrank; the sample is what lets them recognise the kind of thing that left.
+      if (excluded.files.has(rel(full))) {
+        loss.excludedFiles.count += 1;
+        if (loss.excludedFiles.sample.length < EXCLUDED_FILE_SAMPLE) {
+          loss.excludedFiles.sample.push(rel(full));
+        }
+        continue;
+      }
       acc.push(full);
     }
   }
@@ -2041,6 +2142,12 @@ function renderHuman(fileCount, surface, run) {
     if (surface.unreadableDirectories.length) parts.push(`${surface.unreadableDirectories.length} directory(ies) unlistable`);
     if (surface.truncatedFiles.length) parts.push(`${surface.truncatedFiles.length} file(s) read in part`);
     if (surface.fileCapReached) parts.push(`the ${MAX_FILES}-file cap was reached`);
+    if (surface.readBudget.exhausted) {
+      parts.push(
+        `${surface.readBudget.unreadFiles} file(s) never opened once the ` +
+          `${surface.readBudget.limitBytes}-byte read budget was spent`,
+      );
+    }
     lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
   }
   // Stated separately from incompleteness, and always — not only when something else went wrong.
@@ -2053,6 +2160,15 @@ function renderHuman(fileCount, surface, run) {
     lines.push(
       `${surface.excludedDirectories.length} directory(ies) excluded as not this project's own code: ` +
         `${shown}${rest > 0 ? `, and ${rest} more` : ""}.`,
+    );
+  }
+  // Ignored FILES, stated at the granularity they are recorded: enough for a reader to see that
+  // coverage shrank, not so much that it buries the directory-level exclusions above.
+  if (surface.excludedFiles.count) {
+    const shown = surface.excludedFiles.sample.join(", ");
+    lines.push(
+      `${surface.excludedFiles.count} file(s) excluded as ignored by the repository` +
+        `${shown ? ` (for example ${shown})` : ""}.`,
     );
   }
 
@@ -2148,7 +2264,21 @@ export async function main(args) {
   run = createRun({ root, strict: cli.strict, json: cli.json });
   const { rel, findings, sources, addFinding } = run;
 
-  const surfaceLoss = { dirs: [], capped: false, excluded: [] };
+  // Created here, by the invocation that uses it, and carrying the budget this invocation was given
+  // rather than one read from the process — ADR 0014.
+  const surfaceLoss = {
+    dirs: [],
+    capped: false,
+    excluded: [],
+    excludedFiles: { count: 0, sample: [] },
+    budget: {
+      limitBytes: cli.maxTotalReadBytes === undefined ? DEFAULT_MAX_TOTAL_READ_BYTES : Number(cli.maxTotalReadBytes),
+      retainedBytes: 0,
+      exhausted: false,
+      unreadFiles: 0,
+      sample: [],
+    },
+  };
 
   // What the repository already treats as not-its-own. Asked before the walk so the answer costs one
   // subprocess rather than one per candidate directory, and so an unavailable repository degrades to
@@ -2164,13 +2294,53 @@ export async function main(args) {
   surface = { files, contents, surfaceLoss };
   const unreadableFiles = [];
   const truncatedFiles = [];
+  const budget = surfaceLoss.budget;
+
+  /**
+   * One eligible file whose contents are absent from this run.
+   *
+   * A single claim rather than two, because the difference between "never opened" and "opened and
+   * discarded at the boundary" is invisible to a reader and identical in consequence: nothing was
+   * searched in it. What it must never be confused with is the file-count cap, which never collected
+   * the file, or truncation, which searched a prefix and kept the findings.
+   */
+  const unsearched = (f) => {
+    budget.unreadFiles += 1;
+    if (budget.sample.length < EXCLUDED_FILE_SAMPLE) budget.sample.push(rel(f));
+  };
   for (const f of files) {
     if (!TEXT_EXT.has(path.extname(f))) continue;
+
+    // Once the budget is spent nothing further is opened at all.
+    if (budget.exhausted) {
+      unsearched(f);
+      continue;
+    }
+
     const read = await readText(f);
+
+    // The cost is what is RETAINED, and only the decoded text can say what that is. The file's size
+    // on disk cannot: decoding replaces each invalid byte with U+FFFD, three bytes each, so 300 KB
+    // of `0xff` in a recognised text file passes a size precheck and then retains 900 KB. That was a
+    // real defect in this accounting, found in review — the invariant it broke is the one this cap
+    // exists to hold, so the check moved to where the true figure is known rather than being
+    // approximated earlier and hoped over.
+    const cost = Buffer.byteLength(read.text, "utf8");
+    if (budget.retainedBytes + cost > budget.limitBytes) {
+      // Opened, and deliberately not retained: nothing is searched in it and nothing is held. The
+      // transient decode is bounded by the per-file cap and is gone by the next iteration.
+      budget.exhausted = true;
+      unsearched(f);
+      continue;
+    }
+
     if (!read.ok) unreadableFiles.push(f);
     else if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
     contents.set(f, read.text);
     if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
+
+    // The derived `sources` entry is proportional to the same text, so one accounting bounds both.
+    budget.retainedBytes += cost;
   }
 
   // Evidence-surface findings: what the audit could NOT search.
@@ -2215,6 +2385,21 @@ export async function main(args) {
       standardRef: R.search,
     });
   }
+  if (surfaceLoss.budget.exhausted) {
+    addFinding({
+      id: "evidence-read-budget",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [`${surfaceLoss.budget.limitBytes}-byte aggregate read budget`],
+      message:
+        `The ${surfaceLoss.budget.limitBytes}-byte aggregate read budget was spent. ` +
+        `${surfaceLoss.budget.unreadFiles} eligible file(s) were collected and nothing was searched ` +
+        `in them, so they are outside every result in this run. This is neither the file-count cap ` +
+        `nor per-file truncation: those files were in scope and no detector saw their contents.`,
+      standardRef: R.search,
+    });
+  }
   if (surfaceLoss.capped) {
     addFinding({
       id: "evidence-file-cap",
@@ -2237,12 +2422,29 @@ export async function main(args) {
   // So it goes where the other properties-of-the-run live, beside `fileCapReached`, and the header
   // states it in the same breath as the scanned count.
   const evidenceSurface = {
-    complete: !unreadableFiles.length && !surfaceLoss.dirs.length && !truncatedFiles.length && !surfaceLoss.capped,
+    // Budget exhaustion belongs here with the other loss modes. An eligible file nothing opened is
+    // exactly as absent from the results as one beyond the file cap, so a surface that still claimed
+    // completeness would be making the stronger available claim on the weaker evidence.
+    complete:
+      !unreadableFiles.length &&
+      !surfaceLoss.dirs.length &&
+      !truncatedFiles.length &&
+      !surfaceLoss.capped &&
+      !surfaceLoss.budget.exhausted,
     unreadableFiles: uniq(unreadableFiles.map(rel)),
     unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
     truncatedFiles: uniq(truncatedFiles),
     fileCapReached: surfaceLoss.capped,
     excludedDirectories: surfaceLoss.excluded,
+    // A count and a bounded sample, never one entry per file — see the granularity note on
+    // `collectFiles`. Reported even though it is not incompleteness: an ignored file is a decision
+    // about what is not the project's code, and a reader who cannot see the count cannot tell a
+    // focused run from a blind one.
+    excludedFiles: surfaceLoss.excludedFiles,
+    // The third evidence-loss state, reported as itself. `fileCapReached` means never collected;
+    // `truncatedFiles` means opened and read in part; this means collected, eligible, and never
+    // opened at all.
+    readBudget: surfaceLoss.budget,
     // Recorded because the exclusion set is only as good as the source that produced it. A run with
     // no repository excluded nothing, and a reader comparing two runs needs to know which they have.
     exclusionsFrom: ignored.ok ? "repository" : "unavailable",
@@ -2442,8 +2644,17 @@ export async function main(args) {
   // look` distinct from `nobody found anything` — a distinction that matters most for a `forbidden`
   // rule, which is satisfied by absence and would otherwise pass precisely when it knows least
   // (Standard 45 R6).
+  //
+  // The same reasoning applies to the evidence SURFACE, not only to one detector's own input. When
+  // files that were in scope were never searched — the file-count cap, or the aggregate read budget
+  // — every rule whose evidence is file contents is in the position `scm.no-committed-env-files` is
+  // in when the repository cannot be read: it can report only that it found nothing, which over an
+  // unsearched file is a statement about the run rather than about the project.
+  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted;
   const evaluatedThisRun = EVALUATED_RULES.filter(
-    (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false),
+    (id) =>
+      !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
+      !(filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)),
   );
 
   const verdict = evaluate({
