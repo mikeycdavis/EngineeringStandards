@@ -137,9 +137,16 @@ standing control
 ```
 
 **Designation does not mean “ignore”.** A designated standing control still blocks release when it is
-not *healthy* — when the observable check named in its own `Verification` line does not hold. The
-exemption is from *terminal disposition*, which would misdescribe an ongoing obligation; it is not an
-exemption from being in good standing at the moment of release.
+not *healthy*. The exemption is from *terminal disposition*, which would misdescribe an ongoing
+obligation; it is not an exemption from being in good standing at the moment of release. A control
+that may remain nonterminal forever earns that only by being in good standing **now**.
+
+**Release health is defined in the table below, not by the item's own `Verification` line.** The two
+answer different questions and the release bar is the stricter of them: an item's `Verification`
+line asks whether the control is operating normally day to day, which tolerates ordinary lifecycle
+states, while release health asks whether the obligation the control exists to maintain is actually
+met at the release boundary. Letting the item supply its own release-health test would reintroduce
+the self-exemption this section just closed, one level down.
 
 #### Designated standing controls
 
@@ -147,7 +154,7 @@ This is the complete list. Adding to it requires amending this section.
 
 | Standing control | Why terminal disposition is inapplicable | Healthy when | Designation reconsidered when |
 | --- | --- | --- | --- |
-| [Keep the framework's own attestations owner-established](05-attestations-and-provenance.md) | The obligation is that a *person* keeps feeding the attestation machinery. It has no completion state: `COMPLETE` would claim future reviews are already done, `DEFERRED` would claim the framework's own compliance record is postponed, and `CANCELLED` would abandon [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)'s core requirement. Its openness is the obligation, not an undecided question about it. | `node scripts/standards.mjs validate .` shows no applicable forbidden rule as `unrecorded`. A *stale* attestation is a normal state awaiting owner action, not an unhealthy one. | Attestation renewal stops requiring a human judgement — for instance if owner review became mechanically derivable, at which point the item would have a completion state and would no longer be a standing control. |
+| [Keep the framework's own attestations owner-established](05-attestations-and-provenance.md) | The obligation is that a *person* keeps feeding the attestation machinery. It has no completion state: `COMPLETE` would claim future reviews are already done, `DEFERRED` would claim the framework's own compliance record is postponed, and `CANCELLED` would abandon [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)'s core requirement. Its openness is the obligation, not an undecided question about it. | Every applicable forbidden `manual-review` rule has a **current** owner-established disposition, or a not-applicable declaration valid under its own rules. `node scripts/standards.mjs validate .` reports no such rule as `unrecorded`, `stale`, or otherwise unestablished. Staleness stays a normal lifecycle state awaiting owner action — not a defect, not a rejection, and not a compliance failure — but **while stale the control is not release-healthy**, because a stale attestation is precisely the state in which the repository as it now stands has not been owner-established for that rule. The item's own `Verification` line is the weaker operational check and is deliberately not this one. | Attestation renewal stops requiring a human judgement — for instance if owner review became mechanically derivable, at which point the item would have a completion state and would no longer be a standing control. |
 
 **Amended 2026-08-23, before being relied on as a gate.** The single-predicate wording was ambiguous
 in a way that mattered: thirteen `READY` items would have satisfied it. The ambiguity is recorded
