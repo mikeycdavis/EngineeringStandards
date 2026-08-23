@@ -273,9 +273,24 @@ that approval deliberately does not cover.
 - **Status:** COMPLETE — 2026-08-23, `05df6e8` on `develop`, established by the repository gate at
   `dfbc67f` (six stages passed; `validate` advisory) and by the adopter re-runs recorded in the gap
   table above. **Closed on the Acceptance Criteria, which is what the terminal-status contract at the
-  top of this section requires**, not on the gap table: all five criteria are met, the sixth gap row
-  was superseded rather than satisfied, and the adopter obligation is the *Consequence* bullet, which
-  sequences the re-runs *once this closes* rather than before it. Both were nonetheless re-run first
+  top of this section requires**, not on the gap table: **all six criteria are met**, each named
+  below with the falsifier that would fail if it stopped holding, one of the six gap rows was
+  superseded rather than satisfied, and the adopter obligation is the *Consequence* bullet, which
+  sequences the re-runs *once this closes* rather than before it.
+
+  | # | Acceptance criterion | Established by |
+  |---|---|---|
+  | 1 | Exclusions cannot hide a violation invisibly | `identical content is reported when governed and excluded when ignored`, plus the reporting in 2 — the excluded path is named with its reason, so a shrunk surface is stated rather than inferred |
+  | 2 | The audit reports what it excluded | `a SKIP_DIRS directory is recorded rather than silently dropped` and `ignored files are accounted for in aggregate rather than per file`; `evidenceSurface.excludedDirectories` and `.excludedFiles` |
+  | 3 | `SKIP_DIRS` defaults still apply with no declaration | `a SKIP_DIRS directory is recorded rather than silently dropped`, run against a repository declaring nothing |
+  | 4 | Paired invariance, both halves | `identical content is reported when governed and excluded when ignored` — byte-identical content at the same path in two repositories differing only in one `.gitignore` line |
+  | 5 | A case with no marker file | `an ignored tree carrying no marker is excluded BY THE REPOSITORY signal`, with `a marker tree the repository does not ignore is excluded BY THE MARKER signal` and `the fixture that carries both signals cannot isolate either` separating the two signals |
+  | 6 | Aggregate read budget is bounded | `retained evidence cannot exceed the budget the invocation was given`, `the three evidence-loss states stay distinct`, `a default run applies a real budget rather than none at all`, `a file that expands when decoded cannot breach the budget`, and `a content rule cannot pass over files nothing searched` |
+
+  **This line previously read "all five criteria". There are six.** The miscount is corrected rather
+  than left, for the same reason the claim-invariant paragraph at the top of this section was
+  corrected: a closure justified by a count of criteria is worth nothing if the count is wrong, and
+  the criterion that goes unnamed in a miscount is the one nobody checks. Both were nonetheless re-run first
   and both outcomes are recorded, so nothing is deferred into the closure. **`Dependencies` is
   discharged by supersession, not by delivery**: it names the policy mechanism in section 04, and that
   mechanism is the struck Deliverable — no `exclusions:` key exists in the policy schema, and adding
