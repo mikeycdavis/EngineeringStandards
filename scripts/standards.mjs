@@ -612,7 +612,8 @@ function usage(stream = process.stderr) {
       "  --dir=<path>   Target a directory other than the resolved project root.\n" +
       "  --max-total-read-bytes=<n>   audit and validate: bound the total file\n" +
       "                 content one run retains. Defaults to 256 MB. `init` returns\n" +
-      "                 before the walk, so the flag is accepted and inert there.\n" +
+      "                 before the walk, so a valid value is inert there; an unusable\n" +
+      "                 one is still refused, because the value is checked first.\n" +
       "  --strict       audit only: exit 1 when any finding needs attention.\n\n" +
       "Gate CI on `validate`. Use `audit` for diagnostics, discovery, and reconstruction.\n" +
       "See artifacts/adr/0004-audit-and-validate-are-separate-commands.md.\n",

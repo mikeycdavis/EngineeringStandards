@@ -431,6 +431,24 @@ test("--max-total-read-bytes is documented for exactly the commands that honour 
       /readBudget/,
       "init reported a read budget, so excluding it from the documented scope is wrong",
     );
+
+    // `inert` is about the BUDGET, not about validation. The value is checked in
+    // `checkInvocation` before `init` returns, so an unusable one is refused there too — and the
+    // help says so, because `accepted and inert` on its own reads as though `init` would take any
+    // value at all. Review caught that the first wording overclaimed and the first test only
+    // exercised a valid value, which could not have detected it.
+    for (const bad of ["0", "-5", "nonsense"]) {
+      const refused = spawnSync(
+        process.execPath,
+        [CLI, "init", `--dir=${root}`, "--dry-run", "--json", `--max-total-read-bytes=${bad}`],
+        { encoding: "utf8" },
+      );
+      assert.equal(
+        refused.status,
+        2,
+        `init must refuse the unusable value ${bad} rather than fall back to the default`,
+      );
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
