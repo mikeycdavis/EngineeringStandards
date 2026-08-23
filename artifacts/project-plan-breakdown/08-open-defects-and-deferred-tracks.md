@@ -102,14 +102,52 @@ by saying so under those rules. What closure forbids is leaving the question una
 recorded rejection is terminal evidence rather than a plan item (see the paragraph above). `validate`
 reporting `COMPLIANT` is still not a release condition.
 
-**One designated exception, and it must be declared rather than inferred.** [Keep the framework's own
-attestations owner-established](05-attestations-and-provenance.md) is `IN_PROGRESS` *permanently, by
-design* — a standing obligation whose openness is a property of the obligation itself, not an
-undecided question. Under a flat reading of the rule above it would block release forever, which is
-the failure mode the terminal-semantics table exists to prevent. **A standing obligation is exempt
-from release closure only where its `Status` line states that it does not close and why.** The
-exemption must be visible in the item; it must never be inferred from an item having merely stayed
-open a long time.
+**Standing controls — the one nonterminal state that does not block release, and it is designated
+here rather than claimed by the item.** Some obligations are ongoing by their nature: they are not
+unfinished decisions and terminal disposition would misdescribe them. [Keep the framework's own
+attestations owner-established](05-attestations-and-provenance.md) is the worked example — it is
+`IN_PROGRESS` *permanently, by design*, and marking it `COMPLETE`, `DEFERRED`, or `CANCELLED` would
+each state something false. Under a flat reading of the rule above it would block release forever,
+which is the failure mode the terminal-semantics table exists to prevent.
+
+**A standing obligation may remain nonterminal without blocking release only when this plan
+explicitly designates it a standing control, records why terminal disposition is semantically
+inapplicable, and identifies the observable condition under which that designation must be
+reconsidered. A plan item's own `Status` text cannot exempt itself from release closure.**
+
+The authority is deliberately not local to the item. A self-describing rule — *exempt where the
+`Status` line says it does not close* — lets any `READY` or `IN_PROGRESS` item mint its own exemption
+by rewriting its own prose, with the governed item supplying the grounds for escaping the gate. The
+designation therefore lives in the release plan, where adding one is an amendment that gets reviewed,
+and where the full set is readable in a single place rather than distributed across the items that
+benefit from it.
+
+```text
+zero-gap coverage
+  all obligations known, owned, evidenced
+
+release closure
+  all ordinary plan items terminal
+  + explicitly designated standing controls remain healthy
+
+standing control
+  ongoing by nature
+  != unfinished decision
+  != self-exemption by Status prose
+```
+
+**Designation does not mean “ignore”.** A designated standing control still blocks release when it is
+not *healthy* — when the observable check named in its own `Verification` line does not hold. The
+exemption is from *terminal disposition*, which would misdescribe an ongoing obligation; it is not an
+exemption from being in good standing at the moment of release.
+
+#### Designated standing controls
+
+This is the complete list. Adding to it requires amending this section.
+
+| Standing control | Why terminal disposition is inapplicable | Healthy when | Designation reconsidered when |
+| --- | --- | --- | --- |
+| [Keep the framework's own attestations owner-established](05-attestations-and-provenance.md) | The obligation is that a *person* keeps feeding the attestation machinery. It has no completion state: `COMPLETE` would claim future reviews are already done, `DEFERRED` would claim the framework's own compliance record is postponed, and `CANCELLED` would abandon [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)'s core requirement. Its openness is the obligation, not an undecided question about it. | `node scripts/standards.mjs validate .` shows no applicable forbidden rule as `unrecorded`. A *stale* attestation is a normal state awaiting owner action, not an unhealthy one. | Attestation renewal stops requiring a human judgement — for instance if owner review became mechanically derivable, at which point the item would have a completion state and would no longer be a standing control. |
 
 **Amended 2026-08-23, before being relied on as a gate.** The single-predicate wording was ambiguous
 in a way that mattered: thirteen `READY` items would have satisfied it. The ambiguity is recorded
