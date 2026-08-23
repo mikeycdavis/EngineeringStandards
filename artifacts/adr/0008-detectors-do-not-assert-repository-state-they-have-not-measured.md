@@ -68,9 +68,18 @@ finding this tool produces.
 
 ## Decision
 
+This decision has two levels, and they are named separately below because citing the second one is
+what the title does not help you do. The constraint is what a detector may say; the seam is where
+the answer it needs comes from. Both are this ADR. **There is no second ADR 0008 and there never
+was** — see *Naming* under Consequences.
+
+### The detector constraint
+
 **A finding MUST NOT assert version-control state the tool has not measured.** A detector that has
 observed the working tree may say what is present in the working tree. Saying *committed*, *tracked*,
 or *pushed* requires having asked the repository.
+
+### The repository-metadata seam
 
 **Where a rule's correctness depends on repository state, that state is obtained behind a narrow
 abstraction with a named contract — never by reimplementing version control.** The abstraction owes
@@ -153,6 +162,28 @@ branch topology; a rule wanting any of those is a new decision, not an extension
 Six rules, one root cause. When the seam is designed, `isTracked(path)` should be available to every
 structural detector rather than bolted onto the two that surfaced it first — and the passing-direction
 cases are the argument for prioritising it, because nothing surfaces them.
+
+### Naming — this ADR was cited twice under a filename that does not exist
+
+`scripts/repository.mjs` and
+[ADR 0011](0011-attestation-freshness-is-repository-content-not-checkout-bytes.md) each cited *"the
+repository-metadata seam ADR 0008 anticipated"* as
+`0008-the-source-of-truth-gap-working-tree-versus-repository.md`. That file has never existed in any
+commit reachable from any ref: this ADR was created once, under the name it still has, and was never
+renamed. Both citations were written from the concept rather than from the file.
+
+Two authors independently inventing the same name is not a typo, and the correction is not only to
+repoint the links. **The title names the constraint and says nothing about the seam**, so a writer
+citing the seam has no name to reach for and constructs one. That is why the two levels above are
+now named, and why the search was widened past the one occurrence
+[issue #17](https://github.com/mikeycdavis/EngineeringStandards/issues/17) recorded — it knew about
+`repository.mjs` and not about ADR 0011, which is the more telling of the two.
+
+**Recorded rather than repaired by renaming.** Renaming this ADR to cover both levels, or splitting
+the seam into its own ADR, would each make every existing correct citation wrong to fix two that
+were never right. The identity is one decision; only its discoverability was broken.
+`scripts/links.mjs` now resolves every relative link in the repository, so the next reference written
+from memory fails a check rather than waiting to be read.
 
 **[Standard 31](../../standards/31-whatsnext-compatibility.md) consumers are unaffected in shape and
 affected in substance.** The envelope does not change. But a consumer that turns findings into work

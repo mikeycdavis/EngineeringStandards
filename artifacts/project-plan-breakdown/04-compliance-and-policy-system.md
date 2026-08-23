@@ -75,7 +75,7 @@ the one failure class this repository exists to prevent.
   data genuinely has no subject for `data.no-prod-data-in-dev`. Severity is not.
 - **Deliverables:** the policy file, a JSON Schema for it, a validator, and four declaration
   mechanisms: applicability, not-applicable declarations carrying a `revisitWhen`, exceptions under
-  [Standard 20](../../standards/20-exceptions-and-deviations.md), and attestations (covered in
+  [Standard 20](../../standards/20-exceptions.md), and attestations (covered in
   [`05`](05-attestations-and-provenance.md)).
 - **Acceptance Criteria:**
   - The schema only ever widens across versions: a 1.x policy file still validates against the 2.0

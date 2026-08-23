@@ -18,7 +18,7 @@ is worse than none, because it is read as current.
 
 ## Standards
 
-- **Standards version:** `1.0.0` — declared in [`project-policy.yml`](../project-policy.yml)
+- **Standards version:** `1.0.0` — declared in [`project-policy.yml`](project-policy.yml)
 - **Adoption guide:** see the standards repository's `INSTRUCTIONS.md`
 
 ## Stack

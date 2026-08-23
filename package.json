@@ -15,6 +15,7 @@
     "fidelity": "node scripts/fidelity.mjs",
     "policy": "node scripts/policy.mjs",
     "diagrams": "node scripts/diagrams.mjs",
+    "links": "node scripts/links.mjs",
     "audit:strict": "node scripts/standards.mjs audit . --strict",
     "pipeline": "node scripts/pipeline.mjs list"
   },

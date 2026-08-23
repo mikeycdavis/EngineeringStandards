@@ -23,8 +23,10 @@
  * one mechanism and stale under the other. Failure to know is represented as failure to know, never
  * converted into a fact about the project (Standard 44 R12).
  *
- * This is the repository-metadata seam [ADR 0008](../artifacts/adr/0008-the-source-of-truth-gap-working-tree-versus-repository.md)
- * anticipated. It is the first subprocess in `scripts/`, and it holds no module-level state — every
+ * This is the repository-metadata seam
+ * [ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md#the-repository-metadata-seam)
+ * anticipated -- the second of that ADR's two decision levels, which its title does not name. The
+ * filename this comment used to cite has never existed; see that ADR's Naming consequence. It is the first subprocess in `scripts/`, and it holds no module-level state — every
  * function takes its root and returns its answer, so ADR 0007's inventory is unaffected.
  */
 

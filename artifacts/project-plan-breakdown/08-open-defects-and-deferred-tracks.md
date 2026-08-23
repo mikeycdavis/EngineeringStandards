@@ -8,8 +8,8 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Fifteen are open. Nine are claimed
-here — #1, #4, #5, #6, #8, #17, #19, #21, #32 — and the other six are claimed where their subject
+**Every open GitHub issue is claimed by exactly one plan item.** Fourteen are open. Eight are claimed
+here — #1, #4, #5, #6, #8, #19, #21, #32 — and the other six are claimed where their subject
 lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -529,13 +529,64 @@ that approval deliberately does not cover.
 
 ### Settle ADR 0008's canonical identity
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-23, established by `test/links.test.mjs` and by
+  `node scripts/links.mjs`, which resolves every relative link in the repository. The commit is named
+  in the closing pull request; the check that establishes it runs in the `test` stage of the
+  repository gate.
 - **Tracked by:** GitHub issue [#17](https://github.com/mikeycdavis/EngineeringStandards/issues/17)
-- **Evidence:** open as of 2026-08-11.
-  [`scripts/repository.mjs`](../../scripts/repository.mjs) cites ADR 0008 twice under two filenames —
+- **Evidence:** opened 2026-08-11; measured and closed 2026-08-23.
+  [`scripts/repository.mjs`](../../scripts/repository.mjs) cited ADR 0008 twice under two filenames —
   `0008-the-source-of-truth-gap-working-tree-versus-repository.md` at line 26 and
   `0008-detectors-do-not-assert-repository-state-they-have-not-measured.md` at line 98. Only the
-  second exists in `artifacts/adr/`.
+  second existed in `artifacts/adr/`.
+
+  **The measurement found all three of the issue's possibilities false, and found a second occurrence
+  the issue did not know about.**
+
+  1. **Not a rename.** `0008-the-source-of-truth-gap-working-tree-versus-repository.md` has never
+     existed in any commit reachable from any ref. ADR 0008 was created once, at `2c9754c`, under the
+     name it still carries, and was never renamed. There was no reference left behind by a move,
+     because there was no move — both citations were written from the concept rather than from the
+     file, so neither was ever correct.
+  2. **Not an unwritten second ADR, and not two decisions collapsed.** The general statement is
+     present, as the second paragraph of ADR 0008's own `## Decision`: *"Where a rule's correctness
+     depends on repository state, that state is obtained behind a narrow abstraction with a named
+     contract — never by reimplementing version control."* That paragraph is the repository-metadata
+     seam. Nothing was lost in drafting and nothing is missing.
+  3. **It is one decision stated at two levels, of which the title names only the narrower one.**
+     Decision paragraph 1 is the constraint on detector behaviour the title names. Paragraph 2 is the
+     seam that constraint follows from, and it had no name anywhere. A writer citing it had nothing
+     to cite and constructed a name from the concept.
+  4. **Two authors did exactly that, independently, in the same sentence shape.**
+     [`scripts/repository.mjs`](../../scripts/repository.mjs) line 26 and
+     [ADR 0011](../adr/0011-attestation-freshness-is-repository-content-not-checkout-bytes.md) line
+     127 both read *"the repository-metadata seam ADR 0008 anticipated"* — link markup and all — and
+     both invented the
+     same filename. **Issue #17 recorded only the first.** One occurrence is a typo; two, reached
+     independently, is a naming gap — which is why the correction names the level rather than only
+     repointing the link.
+  5. **No executable behaviour was keyed to either identity.** Every citation is prose or comment; no
+     test, rule or script branches on an ADR filename. That is why this survived every passing check
+     until now, and why the mechanical check is the part of the fix that matters.
+
+  The rest of the corpus had already settled the semantics: `scripts/repository.mjs:98`,
+  `scripts/ci-context.sh`, `scripts/ci-context.ps1`, `test/local-ci.test.mjs`, `docs/local-ci.md` and
+  `test/audit.test.mjs` all attribute the source-of-truth gap **to ADR 0008 itself**. The repository
+  held one identity throughout; only its discoverability was broken.
+
+  **The escape clause did not fire.** This item and its issue both sequence it ahead of the
+  audit-exclusions item *if* possibility 2 or 3 holds and the general decision must be stated before
+  evaluation scope can be built on it. Neither holds: the general decision was already written, and
+  `scripts/repository.mjs` already implements it. #7's exclusion and read-budget evidence is untouched
+  by this item and is not reinterpreted by it.
+
+  **The check found four more broken references on its first run, and none is allowlisted.**
+  `standards/20-exceptions.md` and `standards/32-documentation-quality.md` were each renamed with
+  citations left behind — one in [`04`](04-compliance-and-policy-system.md) and two in
+  [Standard 51](../../standards/51-architecture-integrity.md). The fourth is the more interesting:
+  `templates/PROJECT.md` linked to `../project-policy.yml`, which resolves from `templates/` and
+  points **outside the repository** once `init` writes the file to the adopter's root. It read as
+  correct here and was broken everywhere it was actually used. All four are repointed.
 - **Purpose:** The smallest of the open defects and the one most likely to be closed by assumption.
   The obvious reading is a rename that missed a reference, and the obvious fix is to correct line 26
   — but the two titles name different things. One is a constraint on detector behaviour; the other is
@@ -549,19 +600,34 @@ that approval deliberately does not cover.
   evidence for the latter two — a general decision existing conceptually while only its specific
   applications are written down.
 - **Deliverables:** one intentional canonical identity for the decision, with every citation
-  resolving to it.
+  resolving to it. **Delivered as a naming correction rather than a rename.** ADR 0008 keeps its
+  filename and its title, and its two decision levels are now named — `### The detector constraint`
+  and `### The repository-metadata seam` — so the level a citer means is citable. Renaming the ADR to
+  cover both, or splitting the seam into its own ADR, would each have made every existing correct
+  citation wrong in order to repair two that were never right. Both phantom citations now point at the
+  canonical file *and* at the subsection they were reaching for, and the ADR records under
+  `### Naming` that the filename never existed.
 - **Acceptance Criteria:**
-  - The investigation records which of the three it was, rather than leaving a corrected path with no
-    explanation. **Do not presuppose "fix the link"** — that is the cheapest answer and the one this
-    item exists to question.
-  - Every ADR path cited from `scripts/` resolves to a file that exists.
-  - A mechanical check establishes that, so the next rename is caught rather than found by reading.
-    Standard 42 (documentation freshness) is the likely owner.
-- **Verification:** `npm test`; the link check runs over `scripts/` and fails on a deliberately
-  broken reference.
-- **Dependencies:** none — **unless** the answer is the second or third possibility and the general
-  decision must be stated before evaluation scope can be built on it. In that case this sequences
-  *ahead of* the audit-exclusions item above rather than beside it. Deciding which is the first task.
+
+  | # | Criterion | Established by |
+  |---|---|---|
+  | 1 | The investigation records which of the three it was, without presupposing "fix the link" | The Evidence above records that it was **none of the three**, with (1) falsified by the filename never having existed in any commit and (2) and (3) falsified by Decision paragraph 2 already stating the general decision. `ADR 0008 has one file, and the name both phantom citations used is not it` holds the first half mechanically |
+  | 2 | Every ADR path cited from `scripts/` resolves to a file that exists | `every relative link in the repository resolves`, which is stronger than the criterion in two directions: it covers every file rather than `scripts/`, and it reads Markdown links inside `.mjs` comments, which is where the phantom lived. `the seam citations resolve to the canonical file and name the level they mean` additionally requires each citation to name its subsection, so a resolving link pointing at the wrong level still fails |
+  | 3 | A mechanical check establishes that, so the next rename is caught rather than found by reading | [`scripts/links.mjs`](../../scripts/links.mjs) and [`test/links.test.mjs`](../../test/links.test.mjs), run by the gate's `test` stage. `a deliberately broken ordinary relative link is caught` is the direct falsifier; `a citation left behind by a renamed standard fails the check` is the rename case in the exact shape the three real ones had |
+
+  Each correction is falsified by a test that fails without it. `each phantom ADR 0008 citation fails
+  the check before correction` drives **both** citations verbatim as they stood and asserts two
+  failures rather than one, so a fix repairing only the occurrence issue #17 named would fail it.
+  `the Copilot template link passes only under destination-relative semantics` asserts both that the
+  link resolves at its installed destination and that its source-relative target is genuinely absent,
+  so the rule is load-bearing rather than a second spelling of the same answer. `a template link that
+  escapes the installed root is caught` holds the other edge — the destination rule is not a licence,
+  and `templates/PROJECT.md` failed under it. `every relative link in the repository resolves` also
+  asserts that more than a thousand links were examined, so a link pattern that stopped matching
+  reports nothing rather than reporting a clean repository.
+- **Verification:** `npm test`, or `node scripts/links.mjs` alone; 10 tests in `test/links.test.mjs`,
+  and 1556 relative links across 129 files with 0 unresolved.
+- **Dependencies:** none, and the conditional dependency did not fire — see the escape clause above.
 
 ### Decouple `Tracked by` resolution from one backlog implementation
 
