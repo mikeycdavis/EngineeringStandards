@@ -59,10 +59,108 @@ distinction that keeps `NON_COMPLIANT` and *plan-complete* as separate claims: t
 compliance, the plan reports whether everything has an owner and an evidenced status. Both can be
 true at once, and at present both are.
 
-**The release condition, stated exactly.** Zero gaps means: *every release-relevant capability, known
-defect, recorded rejection, open issue, and intentionally dormant track has an explicit place in the
-plan, and every status is supported by evidence.* It does not mean every item is `COMPLETE`, and it
-does not mean `validate` reports `COMPLIANT`.
+**The release condition, stated exactly — two predicates, not one.**
+
+```text
+zero-gap coverage
+  every release-relevant obligation is known, owned, and evidenced
+
+release closure
+  every plan item has reached a terminal disposition:
+  COMPLETE | DEFERRED | CANCELLED
+  (recorded rejections are separately terminal — see below)
+```
+
+**Zero-gap coverage** means *every release-relevant capability, known defect, recorded rejection,
+open issue, and intentionally dormant track has an explicit place in the plan, and every status is
+supported by evidence.* It is a claim about **knowledge**: nothing is unowned, unevidenced, or
+invisible. It does not mean every item is `COMPLETE`, and it does not mean `validate` reports
+`COMPLIANT`.
+
+**Release closure** additionally requires that every plan item has reached a terminal disposition by
+one of the three routes in the table above. It is a claim about **decision**: every obligation has
+been resolved, postponed with a trigger, or abandoned with a reason. The `master`, tag, and release
+gate in [`00-overview.md`](00-overview.md) requires **both** predicates.
+
+**Coverage does not imply closure, and treating it as though it did makes ownership equivalent to
+disposition.** Read as a single condition, the gate would be satisfied by marking every known defect
+`READY`: everything owned, everything evidenced, nothing resolved, and the repository free to
+release forever without ever deciding anything. That collapses two different claims into one — the
+same error this section exists to prevent between *compliance* and *plan-complete*.
+
+**The nonterminal statuses are therefore open for release purposes.** `NOT_STARTED`, `READY`,
+`IN_PROGRESS`, `BLOCKED`, and `IN_REVIEW` ([Standard 8](../../standards/08-status-tracking.md)) each
+prove the work is *tracked*. None proves the release *decision* has been made. A `READY` item is the
+repository stating in its own vocabulary that the work is actionable and has not yet been
+dispositioned — which is precisely a reason not to release, not a reason to.
+
+**Closure does not require fixing everything.** `DEFERRED` with a named trigger and `CANCELLED` with
+a recorded reason are terminal, and an item that is genuinely not release-critical is dispositioned
+by saying so under those rules. What closure forbids is leaving the question unanswered.
+
+**What this does not change.** `NON_COMPLIANT` still coexists with release closure, because a
+recorded rejection is terminal evidence rather than a plan item (see the paragraph above). `validate`
+reporting `COMPLIANT` is still not a release condition.
+
+**Standing controls — the one nonterminal state that does not block release, and it is designated
+here rather than claimed by the item.** Some obligations are ongoing by their nature: they are not
+unfinished decisions and terminal disposition would misdescribe them. [Keep the framework's own
+attestations owner-established](05-attestations-and-provenance.md) is the worked example — it is
+`IN_PROGRESS` *permanently, by design*, and marking it `COMPLETE`, `DEFERRED`, or `CANCELLED` would
+each state something false. Under a flat reading of the rule above it would block release forever,
+which is the failure mode the terminal-semantics table exists to prevent.
+
+**A standing obligation may remain nonterminal without blocking release only when this plan
+explicitly designates it a standing control, records why terminal disposition is semantically
+inapplicable, and identifies the observable condition under which that designation must be
+reconsidered. A plan item's own `Status` text cannot exempt itself from release closure.**
+
+The authority is deliberately not local to the item. A self-describing rule — *exempt where the
+`Status` line says it does not close* — lets any `READY` or `IN_PROGRESS` item mint its own exemption
+by rewriting its own prose, with the governed item supplying the grounds for escaping the gate. The
+designation therefore lives in the release plan, where adding one is an amendment that gets reviewed,
+and where the full set is readable in a single place rather than distributed across the items that
+benefit from it.
+
+```text
+zero-gap coverage
+  all obligations known, owned, evidenced
+
+release closure
+  all ordinary plan items terminal
+  + explicitly designated standing controls remain healthy
+
+standing control
+  ongoing by nature
+  != unfinished decision
+  != self-exemption by Status prose
+```
+
+**Designation does not mean “ignore”.** A designated standing control still blocks release when it is
+not *healthy*. The exemption is from *terminal disposition*, which would misdescribe an ongoing
+obligation; it is not an exemption from being in good standing at the moment of release. A control
+that may remain nonterminal forever earns that only by being in good standing **now**.
+
+**Release health is defined in the table below, not by the item's own `Verification` line.** The two
+answer different questions and the release bar is the stricter of them: an item's `Verification`
+line asks whether the control is operating normally day to day, which tolerates ordinary lifecycle
+states, while release health asks whether the obligation the control exists to maintain is actually
+met at the release boundary. Letting the item supply its own release-health test would reintroduce
+the self-exemption this section just closed, one level down.
+
+#### Designated standing controls
+
+This is the complete list. Adding to it requires amending this section.
+
+| Standing control | Why terminal disposition is inapplicable | Healthy when | Designation reconsidered when |
+| --- | --- | --- | --- |
+| [Keep the framework's own attestations owner-established](05-attestations-and-provenance.md) | The obligation is that a *person* keeps feeding the attestation machinery. It has no completion state: `COMPLETE` would claim future reviews are already done, `DEFERRED` would claim the framework's own compliance record is postponed, and `CANCELLED` would abandon [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)'s core requirement. Its openness is the obligation, not an undecided question about it. | Every applicable forbidden `manual-review` rule has a **current** owner-established disposition, or a not-applicable declaration valid under its own rules. `node scripts/standards.mjs validate .` reports no such rule as `unrecorded`, `stale`, or otherwise unestablished. Staleness stays a normal lifecycle state awaiting owner action — not a defect, not a rejection, and not a compliance failure — but **while stale the control is not release-healthy**, because a stale attestation is precisely the state in which the repository as it now stands has not been owner-established for that rule. The item's own `Verification` line is the weaker operational check and is deliberately not this one. | Attestation renewal stops requiring a human judgement — for instance if owner review became mechanically derivable, at which point the item would have a completion state and would no longer be a standing control. |
+
+**Amended 2026-08-23, before being relied on as a gate.** The single-predicate wording was ambiguous
+in a way that mattered: thirteen `READY` items would have satisfied it. The ambiguity is recorded
+rather than silently overwritten, because the previous reading was used to describe this repository's
+state and a future reader needs to know which reading applied when. This amendment settles the
+reading only — no item's status changed with it, and no implementation follows from it.
 
 ---
 
