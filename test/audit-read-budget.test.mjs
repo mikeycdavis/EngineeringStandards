@@ -368,3 +368,88 @@ test("a content rule cannot pass over files nothing searched", async () => {
  * traversal cap, stated here for the same reason: a gap that is disclosed is a known gap, and a gap
  * that is implied to be covered is a false green.
  */
+
+/**
+ * The documented scope of `--max-total-read-bytes`, pinned against the commands that honour it.
+ *
+ * The help text said `audit only` while this file's own tests drove the flag through `validate`,
+ * where the budget decides whether content-derived rules stay evaluated — the flag's most
+ * consequential effect was reachable by a command the help said it did not apply to. A reader
+ * checking whether a verdict was taken under a reduced surface would have been told to look at the
+ * wrong command.
+ *
+ * Prose alone would drift again, so scope is asserted from BEHAVIOUR in both directions: each
+ * command the help names must demonstrably honour the flag, and the command it excludes must
+ * demonstrably ignore it. Restoring `audit only`, or making the flag inert under `validate`, fails
+ * here and nowhere else.
+ */
+test("--max-total-read-bytes is documented for exactly the commands that honour it", async () => {
+  const help = spawnSync(process.execPath, [CLI, "--help"], { encoding: "utf8" });
+  assert.equal(help.status, 0, "--help must succeed");
+  const documented = help.stdout
+    .split("\n")
+    .find((l) => l.includes("--max-total-read-bytes"));
+  assert.ok(documented, "the flag must be documented at all");
+
+  // The claim under test, read from the help rather than assumed.
+  assert.match(documented, /audit and validate/, "the help must name both commands that honour the flag");
+  assert.doesNotMatch(documented, /audit only/, "`audit only` was the false claim this test exists to catch");
+
+  const root = await tmp();
+  try {
+    await buildGovernedTree(root, TREE);
+
+    // audit honours it: the bound it was given is the bound it reports.
+    const audited = JSON.parse(audit(root, { budget: BUDGET }).stdout);
+    assert.equal(
+      audited.evidenceSurface.readBudget.limitBytes,
+      BUDGET,
+      "audit did not run under the budget it was given",
+    );
+    assert.equal(
+      audited.evidenceSurface.readBudget.exhausted,
+      true,
+      "the fixture must exhaust the budget, or this proves nothing about either command",
+    );
+
+    // validate honours it too — the half the help used to deny, and the half that reaches a verdict.
+    const validated = validate(root, { budget: BUDGET });
+    assert.ok(
+      (validated.findings ?? []).some((f) => f.id === "evidence-read-budget"),
+      "validate ignored the budget, so the documented scope overstates it",
+    );
+
+    // init is excluded, and the help says why: it returns before the walk. Accepted, and inert.
+    const inited = spawnSync(
+      process.execPath,
+      [CLI, "init", `--dir=${root}`, "--dry-run", "--json", `--max-total-read-bytes=${BUDGET}`],
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    );
+    assert.notEqual(inited.status, 2, `init must accept the flag, not refuse it: ${inited.stderr.slice(0, 500)}`);
+    assert.doesNotMatch(
+      inited.stdout,
+      /readBudget/,
+      "init reported a read budget, so excluding it from the documented scope is wrong",
+    );
+
+    // `inert` is about the BUDGET, not about validation. The value is checked in
+    // `checkInvocation` before `init` returns, so an unusable one is refused there too — and the
+    // help says so, because `accepted and inert` on its own reads as though `init` would take any
+    // value at all. Review caught that the first wording overclaimed and the first test only
+    // exercised a valid value, which could not have detected it.
+    for (const bad of ["0", "-5", "nonsense"]) {
+      const refused = spawnSync(
+        process.execPath,
+        [CLI, "init", `--dir=${root}`, "--dry-run", "--json", `--max-total-read-bytes=${bad}`],
+        { encoding: "utf8" },
+      );
+      assert.equal(
+        refused.status,
+        2,
+        `init must refuse the unusable value ${bad} rather than fall back to the default`,
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
