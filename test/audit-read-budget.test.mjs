@@ -40,7 +40,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -215,3 +215,156 @@ test("an unusable budget is an invocation error, not a silent fallback", async (
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Review findings, both reproduced before they were fixed
+// ---------------------------------------------------------------------------
+
+/**
+ * A recognised text file whose bytes are not valid UTF-8.
+ *
+ * Decoding replaces each invalid byte with U+FFFD, three bytes each, so the retained text is three
+ * times the file's size on disk. A cap that measured cost from the size would let this through and
+ * then retain triple its own limit.
+ */
+async function buildInvalidUtf8Tree(root, { bytes }) {
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  };
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  await mkdir(path.join(root, "myapp"), { recursive: true });
+  await writeFile(path.join(root, "pyproject.toml"), '[project]\nname = "myapp"\n');
+  await writeFile(path.join(root, "myapp", "blob.js"), Buffer.alloc(bytes, 0xff));
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "invalid utf-8");
+}
+
+test("a file that expands when decoded cannot breach the budget", async () => {
+  const root = await tmp();
+  try {
+    // 300 KB of 0xff sits inside the 400 KB per-file cap on disk and decodes to 900 KB of
+    // replacement characters. Measuring the cost from the size on disk admitted it and then retained
+    // 900_000 bytes against a 400_000-byte limit, which is the invariant this cap exists to hold.
+    await buildInvalidUtf8Tree(root, { bytes: 300_000 });
+    const limit = 400_000;
+    const s = surfaceOf(audit(root, { budget: limit }));
+
+    assert.ok(
+      s.readBudget.retainedBytes <= limit,
+      `retained ${s.readBudget.retainedBytes} bytes against a ${limit}-byte budget`,
+    );
+    // And the file is accounted for rather than silently dropped: opened at the boundary, not
+    // retained, and reported among the files nothing searched.
+    assert.equal(s.readBudget.exhausted, true, "the oversized file was absorbed instead of reported");
+    assert.ok(s.readBudget.unreadFiles > 0, "a file went unsearched with no record");
+    assert.equal(s.complete, false, "the surface claimed completeness over a file nothing searched");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * A repository whose policy governs the rules whose evidence is file contents.
+ *
+ * Each is satisfied by an absence, so each passes most confidently when the least was read. That is
+ * the shape this test exists to refuse: a passing rule over a file no detector opened.
+ */
+async function buildGovernedTree(root, { files, kbEach }) {
+  const total = await buildTrackedTree(root, { files, kbEach });
+  // The framework refuses a policy declaring a different standardVersion, and rightly: a verdict
+  // reported under a version that did not evaluate it would misstate its own provenance. Read rather
+  // than hardcoded, so the next version bump does not silently turn this test into a VERSION_MISMATCH
+  // that never reaches the assertions.
+  const version = JSON.parse(await readFile(path.join(HERE, "..", "package.json"), "utf8")).version;
+  await writeFile(
+    path.join(root, "project-policy.yml"),
+    [
+      `standardVersion: "${version}"`,
+      "",
+      "rules:",
+      "  errors.no-swallowed-exceptions:",
+      "    level: forbidden",
+      "  security.no-sql-concat:",
+      "    level: forbidden",
+      "  quality.dead-code:",
+      "    level: required",
+      "",
+    ].join("\n"),
+  );
+  const git = (...args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "policy");
+  return total;
+}
+
+function validate(dir, { budget = null } = {}) {
+  const flags = budget === null ? [] : [`--max-total-read-bytes=${budget}`];
+  const r = spawnSync(process.execPath, [CLI, "validate", `--dir=${dir}`, "--json", ...flags], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  assert.equal(r.error, undefined, `spawn failed: ${r.error}`);
+  try {
+    return JSON.parse(r.stdout);
+  } catch {
+    assert.fail(`stdout was not JSON.\nstatus: ${r.status}\nstderr: ${r.stderr.slice(0, 2000)}`);
+  }
+}
+
+const CONTENT_RULES = ["errors.no-swallowed-exceptions", "security.no-sql-concat", "quality.dead-code"];
+
+const statusOf = (report, ruleId) => report.results.find((r) => r.ruleId === ruleId);
+
+test("a content rule cannot pass over files nothing searched", async () => {
+  const root = await tmp();
+  try {
+    await buildGovernedTree(root, TREE);
+
+    // The control: with the whole surface read, these rules really are evaluated. Without this the
+    // assertion below would also hold for a run in which they were never evaluated at all, and would
+    // establish nothing.
+    const whole = validate(root);
+    for (const id of CONTENT_RULES) {
+      const hit = statusOf(whole, id);
+      assert.ok(hit, `${id} is not in the report at all, so the comparison below is vacuous`);
+      assert.equal(hit.disposition, "evaluated", `${id} was not evaluated even over a complete surface`);
+    }
+
+    // The same repository, read under a budget that leaves files unsearched. A prohibited construct
+    // in a file no detector opened would otherwise produce a passing rule, and a passing rule can
+    // produce a COMPLIANT verdict over evidence nobody has.
+    const partial = validate(root, { budget: BUDGET });
+    // `validate`'s envelope carries findings rather than the audit's evidenceSurface, so the
+    // exhaustion is confirmed from the finding the run emitted for it.
+    assert.ok(
+      (partial.findings ?? []).some((f) => f.id === "evidence-read-budget"),
+      "the run did not report an exhausted budget, so the assertions below prove nothing",
+    );
+    for (const id of CONTENT_RULES) {
+      const hit = statusOf(partial, id);
+      assert.ok(hit, `${id} disappeared from the report entirely`);
+      assert.notEqual(
+        hit.status,
+        "passed",
+        `${id} passed over a surface with unsearched files: ${JSON.stringify(hit)}`,
+      );
+      assert.notEqual(hit.disposition, "evaluated", `${id} claimed evaluation over unsearched files`);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * NOT TESTED, and disclosed rather than implied: the file-count cap.
+ *
+ * `surfaceLoss.capped` shares the withdrawal expression with the budget — `filesWentUnsearched` is
+ * one condition covering both — so the rule set and the withdrawal are exercised above. What no test
+ * drives is the `capped` half of that OR, because reaching `MAX_FILES` means creating twenty
+ * thousand files. This is the same limitation the evidence-surface work already recorded for the
+ * traversal cap, stated here for the same reason: a gap that is disclosed is a known gap, and a gap
+ * that is implied to be covered is a false green.
+ */
