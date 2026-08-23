@@ -529,10 +529,10 @@ that approval deliberately does not cover.
 
 ### Settle ADR 0008's canonical identity
 
-- **Status:** COMPLETE — 2026-08-23, established by `test/links.test.mjs` and by
-  `node scripts/links.mjs`, which resolves every relative link in the repository. The commit is named
-  in the closing pull request; the check that establishes it runs in the `test` stage of the
-  repository gate.
+- **Status:** COMPLETE — 2026-08-23 at `cc41eac`, established by the ten tests in
+  `test/links.test.mjs` and by `node scripts/links.mjs`, which resolves all 1556 relative links in
+  the repository with none unresolved. The check runs in the `test` stage of the repository gate, so
+  a reference written from memory fails a gate rather than waiting to be read.
 - **Tracked by:** GitHub issue [#17](https://github.com/mikeycdavis/EngineeringStandards/issues/17)
 - **Evidence:** opened 2026-08-11; measured and closed 2026-08-23.
   [`scripts/repository.mjs`](../../scripts/repository.mjs) cited ADR 0008 twice under two filenames —
