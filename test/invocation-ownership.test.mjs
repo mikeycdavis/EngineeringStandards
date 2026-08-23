@@ -265,7 +265,14 @@ test("importing the module still runs nothing, by either of its two paths", (t) 
  * fails. A suite that tested output alone would have reported this defect as absent.
  */
 test("the identity assertion detects a shared cache that output comparison cannot", async () => {
-  const src = readFileSync(CLI, "utf8");
+  // Read line-ending-agnostically. A Windows checkout materialises CRLF -- `core.autocrlf` is on
+  // and .gitattributes pins only `*.sh` and the Dockerfile to LF -- so the LF-joined anchor below
+  // could not match, the guard fired, and the mutant was never built. This control was therefore
+  // inert on every Windows checkout, at every revision back to 9a92d12. It failed loudly rather
+  // than passing falsely, which is why it was a coverage gap and not a false green, and why the
+  // guard is kept rather than relaxed. Normalising once here puts the anchor and both replaces on
+  // one line ending; the patched copy is written with LF and Node parses it on either platform.
+  const src = readFileSync(CLI, "utf8").replace(/\r\n/g, "\n");
   const anchor = "  const findings = [];\n  const sources = new Map();";
   assert.ok(
     src.includes(anchor),
