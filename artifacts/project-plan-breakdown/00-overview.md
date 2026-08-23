@@ -114,9 +114,27 @@ phrase was readable as one condition, and under that reading a repository whose 
 was owned and `READY` would satisfy it — ownership would become equivalent to disposition. It is two
 predicates, defined in [`08-open-defects-and-deferred-tracks.md`](08-open-defects-and-deferred-tracks.md)
 under *Terminal semantics*: **zero-gap coverage** (every obligation known, owned, and evidenced) and
-**release closure** (every plan item at `COMPLETE`, `DEFERRED`, or `CANCELLED`). The `master`, tag,
-and release gate requires both, which is what the sentence above already says when it forbids a
-release while any item is unfinished or blocked.
+**release closure** (every ordinary plan item at `COMPLETE`, `DEFERRED`, or `CANCELLED`, and every
+designated standing control healthy). The `master`, tag, and release gate requires both.
+
+**This amendment supersedes two phrases in the paragraphs above, which section 08 already
+contradicted before it was written.** Both are left in place as the record of what was originally
+decided; where they and this amendment differ, this governs.
+
+- *"every blocker resolved rather than deferred"* — superseded. `DEFERRED` **is** a terminal
+  disposition, but only under section 08's rule, which requires *a named trigger: the specific
+  observable condition under which it reopens*. The original phrase was written against deferral as
+  evasion — a deferral with no trigger, which section 08 defines as "an open item wearing a closed
+  label" and which closure still rejects. That concern is now enforced by the trigger requirement
+  rather than by banning the status, so a triggered deferral satisfies release closure and an
+  untriggered one does not.
+- *"while any item in any section is unfinished or blocked"* — superseded for **designated standing
+  controls** only. An obligation that is ongoing by nature is not an unfinished decision, and section
+  08 names the complete set, one entry at present. Every other item is covered by the sentence as
+  written. A standing control that is not *healthy* by its own `Verification` check still blocks.
+
+Left unreconciled, the two readings would both permit and prohibit the same release the moment the
+current `READY` work was dispositioned — which is what a reviewer found here before this landed.
 
 ## Constraints that apply to all work here
 
