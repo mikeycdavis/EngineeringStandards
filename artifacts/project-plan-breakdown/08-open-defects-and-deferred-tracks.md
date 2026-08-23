@@ -529,10 +529,12 @@ that approval deliberately does not cover.
 
 ### Settle ADR 0008's canonical identity
 
-- **Status:** COMPLETE — 2026-08-23 at `cc41eac`, established by the ten tests in
-  `test/links.test.mjs` and by `node scripts/links.mjs`, which resolves all 1556 relative links in
-  the repository with none unresolved. The check runs in the `test` stage of the repository gate, so
-  a reference written from memory fails a gate rather than waiting to be read.
+- **Status:** COMPLETE — 2026-08-23 at `79e60c1`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 344 tests, 0
+  failures. Within it, the ten tests in `test/links.test.mjs` and `node scripts/links.mjs` resolve all
+  1556 relative links in the repository with none unresolved. The check runs in the gate's `test`
+  stage, so a reference written from memory fails a gate rather than waiting to be read. This row is
+  the commit after `79e60c1` and changes only this section.
 - **Tracked by:** GitHub issue [#17](https://github.com/mikeycdavis/EngineeringStandards/issues/17)
 - **Evidence:** opened 2026-08-11; measured and closed 2026-08-23.
   [`scripts/repository.mjs`](../../scripts/repository.mjs) cited ADR 0008 twice under two filenames —
@@ -587,6 +589,20 @@ that approval deliberately does not cover.
   `templates/PROJECT.md` linked to `../project-policy.yml`, which resolves from `templates/` and
   points **outside the repository** once `init` writes the file to the adopter's root. It read as
   correct here and was broken everywhere it was actually used. All four are repointed.
+
+  **Adding a tenth test file made the gate fail on a file this change does not touch, and that was a
+  real defect rather than noise.** `test/diagrams.test.mjs`'s mutation test wrote a drifted copy over
+  the repository's own `docs/architecture.mmd` and restored it in a `finally`. Restoring is not
+  enough: the test runner executes files concurrently, so for the width of that window the tree on
+  disk did not match its commit — and `test/local-ci.test.mjs`'s byte-for-byte invariant hashes the
+  whole tree with `--no-filters`. The two had never overlapped until the scheduling changed. **Both
+  tests were right**: the tree genuinely differed from its commit, which is what the invariant exists
+  to say, and nothing was left behind afterwards. What was wrong is that a mutation test used the
+  verified tree as scratch space, so the gate's result depended on which test happened to be running.
+  The drift is now introduced in a copy of the real source and the real document that embeds it, with
+  the host discovered rather than named and a control asserting the copied pair is clean before it is
+  mutated. Recorded here rather than left in the commit alone, because a green gate obtained by
+  changing an unrelated test is exactly the kind of closure this section exists to make visible.
 - **Purpose:** The smallest of the open defects and the one most likely to be closed by assumption.
   The obvious reading is a rename that missed a reference, and the obvious fix is to correct line 26
   — but the two titles name different things. One is a constraint on detector behaviour; the other is
