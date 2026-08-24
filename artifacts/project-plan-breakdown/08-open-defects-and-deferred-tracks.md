@@ -529,8 +529,8 @@ that approval deliberately does not cover.
 
 ### Settle ADR 0008's canonical identity
 
-- **Status:** COMPLETE — 2026-08-23 at `79e60c1`, established by the full repository gate at that
-  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 344 tests, 0
+- **Status:** COMPLETE — 2026-08-23 at `9a3e7dd`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 347 tests, 0
   failures. Within it, the thirteen tests in `test/links.test.mjs` and `node scripts/links.mjs` resolve all
   1556 relative links in the repository with none unresolved. The check runs in the gate's `test`
   stage, so a reference written from memory fails a gate rather than waiting to be read. This row is
