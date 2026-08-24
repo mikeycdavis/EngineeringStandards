@@ -534,7 +534,8 @@ that approval deliberately does not cover.
   failures. Within it, the thirteen tests in `test/links.test.mjs` and `node scripts/links.mjs` resolve all
   1556 relative links in the repository with none unresolved. The check runs in the gate's `test`
   stage, so a reference written from memory fails a gate rather than waiting to be read. This row is
-  the commit after `79e60c1` and changes only this section.
+  the commit after `9a3e7dd` and changes only this line, which is why the gate it names is the one
+  before it rather than the one on itself.
 - **Tracked by:** GitHub issue [#17](https://github.com/mikeycdavis/EngineeringStandards/issues/17)
 - **Evidence:** opened 2026-08-11; measured and closed 2026-08-23.
   [`scripts/repository.mjs`](../../scripts/repository.mjs) cited ADR 0008 twice under two filenames —
