@@ -26,15 +26,30 @@
  *                Checking it where it is stored reports a defect that is not there — and the
  *                obvious repair, deleting the `../`, would break the file for every adopter.
  *
- * The installed layout is the repository's own files PLUS the files init creates, since a template
- * may legitimately point at another artefact init writes. That set is parsed out of
- * `scripts/init.mjs` rather than restated here: a mapping written down twice is a mapping that
- * disagrees with itself later, and this check exists because of a reference that stopped matching
- * its target.
+ * A template link is resolved against the installed layout and NOTHING ELSE — not against this
+ * repository's own files. The set is parsed out of `scripts/init.mjs` rather than restated here,
+ * because a mapping written down twice is a mapping that disagrees with itself later, and this
+ * check exists because of a reference that stopped matching its target.
+ *
+ * The temptation is to accept a template target that exists in this repository as a fallback. That
+ * answers the wrong question in the more dangerous direction: `templates/PROJECT.md` linking to
+ * `INSTRUCTIONS.md` resolves here, where that file sits at the root, and dangles in every adopter,
+ * because init does not copy it. Same defect as the `../project-policy.yml` this check caught on its
+ * first run, one step subtler because the target does exist — somewhere that is not the reader's
+ * repository.
  *
  * WHAT IS SCANNED. Every `.md` file, and Markdown links inside `.mjs` comments — the phantom this
  * was written for lived in a JSDoc header, and issue #17's criterion is about paths cited *from
  * `scripts/`*. Code lines are not scanned: `]( ` appears in regular expressions.
+ *
+ * Both link syntaxes are read: the inline parenthesised form, and the reference-definition form
+ * that names a label and its destination. (Neither is spelled out here, because a file describing
+ * this pattern cannot contain it — the check reads its own prose and reports the example. That is
+ * the same rule as the code spans above, applied to the one file guaranteed to trip it.) Reading
+ * only the first would leave an entire syntax unguarded, and the count assertion in the test would
+ * stay green while it was, because the links that ARE read still number in the thousands. Reference
+ * definitions are read outside fenced code blocks only — `[label]: value` is imitated exactly by a
+ * computed object key, and this repository's own tests are full of them.
  *
  * WHAT IS NOT SCANNED. `test/fixtures/` — each fixture is a miniature repository whose links
  * resolve inside itself, and several are deliberately malformed because that is what they are for.
@@ -68,6 +83,22 @@ const SKIP = new Set([".git", "node_modules", "fixtures", ".vs", "dist", "covera
 
 /** A Markdown inline link whose target is relative — not a URL, not a bare fragment. */
 const LINK = /\]\((?!https?:|mailto:|#)([^)\s]+)\)/g;
+
+/**
+ * A reference-style definition: `[adr]: ../artifacts/adr/0008-....md`.
+ *
+ * `[ADR][adr]` renders identically to an inline link and breaks identically when the target moves,
+ * so a check reading only the inline form would let a whole syntax through — and the count assertion
+ * would stay green while it did, because the links it does read still number in the thousands.
+ *
+ * CommonMark also allows the destination on the line after the label. That form is not read here,
+ * and the limitation is stated rather than papered over: nothing in this repository uses it, and
+ * inventing multi-line parsing for a form nothing writes would be untested code guarding nothing.
+ */
+const REFDEF = /^ {0,3}\[[^\]]+\]:[ \t]+(?!https?:|mailto:|#|<)(\S+)/;
+
+/** Opening or closing fence of a fenced code block. */
+const FENCE = /^\s*(?:```|~~~)/;
 
 /** A line of a `.mjs` file that is comment rather than code. */
 const isComment = (line) => {
@@ -129,10 +160,26 @@ async function sources(root) {
 export function linksIn(file, text) {
   const code = file.endsWith(".mjs");
   const out = [];
+  let fenced = false;
+
   text.split("\n").forEach((line, i) => {
     if (code && !isComment(line)) return;
+    if (!code && FENCE.test(line)) {
+      fenced = !fenced;
+      return;
+    }
     for (const m of line.matchAll(LINK)) out.push({ target: m[1], line: i + 1 });
+
+    // Reference definitions are read outside fenced blocks only. Unlike the inline form, which is a
+    // distinctive shape, a label-and-destination line is imitated exactly by a computed object key — this
+    // repository's own tests are full of `[FORBIDDEN_MANUAL]: { level: "forbidden" }` — so inside a
+    // code block the pattern means something else entirely. Inline links are deliberately still
+    // read everywhere, including inside backticks; that is recorded above and has not misfired.
+    if (fenced) return;
+    const ref = line.match(REFDEF);
+    if (ref) out.push({ target: ref[1], line: i + 1 });
   });
+
   return out;
 }
 
@@ -162,12 +209,20 @@ export async function checkLinks(root = ROOT) {
     for (const { target, line } of linksIn(file, text)) {
       checked += 1;
       const resolved = path.posix.normalize(path.posix.join(base, target.split("#")[0]));
-      // A template may point at another artefact init writes, which need not exist in this
-      // repository at all. Nothing else gets that latitude.
-      const installed = rule === "template" && (created.has(resolved) || created.has(`${resolved}/`));
-      if (resolved.startsWith("..") || (!installed && !existsSync(path.join(root, resolved)))) {
-        broken.push({ file, line, target, resolved, rule });
-      }
+
+      // A template is resolved against the installed layout and ONLY the installed layout. Falling
+      // back to "does it exist here" would answer the wrong question in the more dangerous
+      // direction: `templates/PROJECT.md` linking to `INSTRUCTIONS.md` resolves in this repository,
+      // where INSTRUCTIONS.md sits at the root, and is dangling in every adopter, because init does
+      // not copy it. That link would read as correct here and be broken everywhere it was used —
+      // the same defect as the `../project-policy.yml` this check already caught, one step subtler
+      // because the target does exist somewhere.
+      const ok =
+        rule === "template"
+          ? created.has(resolved) || created.has(`${resolved}/`)
+          : existsSync(path.join(root, resolved));
+
+      if (resolved.startsWith("..") || !ok) broken.push({ file, line, target, resolved, rule });
     }
   }
 

@@ -531,7 +531,7 @@ that approval deliberately does not cover.
 
 - **Status:** COMPLETE — 2026-08-23 at `79e60c1`, established by the full repository gate at that
   commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 344 tests, 0
-  failures. Within it, the ten tests in `test/links.test.mjs` and `node scripts/links.mjs` resolve all
+  failures. Within it, the thirteen tests in `test/links.test.mjs` and `node scripts/links.mjs` resolve all
   1556 relative links in the repository with none unresolved. The check runs in the gate's `test`
   stage, so a reference written from memory fails a gate rather than waiting to be read. This row is
   the commit after `79e60c1` and changes only this section.
@@ -603,6 +603,20 @@ that approval deliberately does not cover.
   the host discovered rather than named and a control asserting the copied pair is clean before it is
   mutated. Recorded here rather than left in the commit alone, because a green gate obtained by
   changing an unrelated test is exactly the kind of closure this section exists to make visible.
+
+  **Automated review then found two ways the check could report a clean repository over a broken
+  reference, and both were real.** First, a template link was accepted if its target existed *in this
+  repository*, as a fallback behind the installed layout. That answers the wrong question in the more
+  dangerous direction: `templates/PROJECT.md` linking to `INSTRUCTIONS.md` resolves here, where that
+  file sits at the root, and dangles in every adopter, because `init` does not copy it — the same
+  defect as the `../project-policy.yml` above, one step subtler because the target does exist
+  somewhere. Template links now resolve against the installed layout and nothing else. Second, only
+  the inline link form was read, so a reference-style definition could dangle unseen — and the
+  thousand-link count assertion would have stayed green while it did, since the links being read
+  still number in the thousands. Both forms are now read, with reference definitions excluded inside
+  fenced code blocks because a computed object key is written identically and this repository's own
+  tests are full of them. Neither gap had produced a live broken link, which is the point: a check
+  is worth what it would catch, not what it happens to have caught.
 - **Purpose:** The smallest of the open defects and the one most likely to be closed by assumption.
   The obvious reading is a rename that missed a reference, and the obvious fix is to correct line 26
   — but the two titles name different things. One is a constraint on detector behaviour; the other is
@@ -641,7 +655,7 @@ that approval deliberately does not cover.
   and `templates/PROJECT.md` failed under it. `every relative link in the repository resolves` also
   asserts that more than a thousand links were examined, so a link pattern that stopped matching
   reports nothing rather than reporting a clean repository.
-- **Verification:** `npm test`, or `node scripts/links.mjs` alone; 10 tests in `test/links.test.mjs`,
+- **Verification:** `npm test`, or `node scripts/links.mjs` alone; 13 tests in `test/links.test.mjs`,
   and 1556 relative links across 129 files with 0 unresolved.
 - **Dependencies:** none, and the conditional dependency did not fire — see the escape clause above.
 
