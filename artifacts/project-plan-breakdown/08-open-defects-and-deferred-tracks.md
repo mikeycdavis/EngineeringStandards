@@ -8,8 +8,8 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Fourteen are open. Eight are claimed
-here — #1, #4, #5, #6, #8, #19, #21, #32 — and the other six are claimed where their subject
+**Every open GitHub issue is claimed by exactly one plan item.** Sixteen are open. Ten are claimed
+here — #1, #4, #5, #6, #7, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
 lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -31,6 +31,33 @@ The counts in this paragraph previously read "seven here, four elsewhere" agains
 while naming five elsewhere. Six were claimed here and five elsewhere. Corrected above rather than
 left, because this paragraph is the only place the claim invariant is asserted, and an invariant
 whose own arithmetic does not hold cannot be used to check anything.
+
+**Amended 2026-08-24, from two drafts that were each wrong in a different direction.** Three
+independent movements landed against this paragraph within two days, and neither draft saw all of
+them:
+
+| Movement | Effect on the open set | Effect on *claimed here* |
+|---|---|---|
+| **#17** closed 2026-08-23 at `9a3e7dd`, ADR 0008's canonical identity settled | leaves | leaves |
+| **#38** opened 2026-08-23, unavailable content read as content | joins | joins |
+| **#7** reopened 2026-08-24 by owner ruling, its exclusion-completeness criterion falsified | rejoins | rejoins |
+
+The paragraph read *"Fifteen are open. Nine are claimed here"* before any of them, which counted
+neither #38 nor the reopening. It was then amended twice, concurrently and in ignorance of the other
+amendment: once to *"Fourteen are open. Eight are claimed here"*, which correctly removed #17 and
+still did not count #38, and once to *"Seventeen are open. Eleven are claimed here"*, which correctly
+added #7 and #38 and **left #17 in the open set after it had closed**. One departure and two arrivals
+net to no change in the total and to one more owned here, so the figures are **sixteen open, ten
+claimed here, six elsewhere**, and the partition is the whole open set with nothing counted twice.
+
+Recorded at this length because the failure is instructive and neither draft was careless. Each
+amendment was correct about the issue its author had just touched and stale about the one they had
+not, which is the normal condition of a shared counter and not an accident. **A count is not
+evidence of the thing it counts.** This paragraph asserts the claim invariant and cannot check it;
+that #17's closure was reachable only by reading the section, and #38's existence only by reading
+GitHub, is why the arithmetic must be re-derived from the issue list rather than adjusted by
+increment. The earlier figures are all stated rather than replaced, because a count that changes
+silently is indistinguishable from one that was always wrong.
 
 ---
 
@@ -368,7 +395,88 @@ that approval deliberately does not cover.
 
 ### Fix the audit's project-level exclusions
 
-- **Status:** COMPLETE — 2026-08-23, `05df6e8` on `develop`, established by the repository gate at
+- **Status:** READY — **reopened 2026-08-24 by owner ruling.** This item held `COMPLETE` from
+  2026-08-23 at `05df6e8`. That disposition is superseded rather than deleted, and the whole closure
+  record it rested on is kept below, because an item that closed and then reopened is a different
+  history from one that never closed and only the first of the two can be audited.
+
+  **The finding, stated narrowly:** *tool-decided directory exclusion can remove tracked first-party
+  evidence without making the evidence surface incomplete; therefore the exclusion boundary
+  previously accepted as complete is not complete.*
+
+  **Measured 2026-08-24.** Two repositories, byte-identical bait at the same filename, **no
+  `.gitignore` anywhere**, full budget, nothing declared by the project. The only difference between
+  them is the name of the directory the bait sits in. `git ls-files` is printed so the content is
+  proved tracked and committed rather than assumed:
+
+  ```text
+  --- bait in src/ ---
+    git ls-files             : project-policy.yml, src/query.js, src/tls.js
+    security.no-sql-concat   : failed / evaluated
+    security.no-cert-bypass  : failed / evaluated
+    excludedDirectories      : []
+    complete: true   capped: false   exhausted: false
+
+  --- bait in fixtures/ ---
+    git ls-files             : fixtures/query.js, fixtures/tls.js, project-policy.yml
+    security.no-sql-concat   : passed / evaluated
+    security.no-cert-bypass  : passed / evaluated
+    excludedDirectories      : [{"path":"fixtures","reason":"conventional non-project directory"}]
+    complete: true   capped: false   exhausted: false
+  ```
+
+  Two **forbidden** rules report `passed` over tracked, committed, first-party code carrying a real
+  violation, because the directory is named `fixtures`. `SKIP_DIRS` in
+  [`scripts/standards.mjs`](../../scripts/standards.mjs) carries `fixtures` and `vendor` beside
+  `node_modules`, `dist` and `__pycache__`. The specimen was originated by a concurrent review
+  session and reproduced here independently before being recorded; the bait is copied from this
+  repository's own `test/fixtures/never-violations/src/`.
+
+  **Why this falsifies this item's own criterion rather than #38's.** Criterion 2 requires that the
+  audit reports what it excluded, and it does — the exclusion is named in `excludedDirectories` with
+  its reason, so criterion 2 holds. What fails is the completeness claim standing beside it. The same
+  report simultaneously lists the exclusion and asserts `complete: true`, so a consumer reading the
+  surface is told the evidence is whole while a tracked first-party tree was never opened, and
+  criterion 1's *invisibly* is defeated one level up from where it was checked. The exclusion
+  boundary is this item's subject, so the defect is this item's.
+
+  **The three-way split this establishes**, which corrects a two-way split first recorded on #38:
+
+  | Loss mode | Who decided | Reporting `complete` over it |
+  |---|---|---|
+  | repository-ignore exclusion | the **project** declared it disposable | defensible |
+  | `SKIP_DIRS` exclusion | the **tool** decided, from a hardcoded name | not defensible |
+  | read budget / file cap | undeclared capacity failure | not defensible |
+
+  The split that failed put every exclusion on the defensible side, on the reasoning that an
+  exclusion is a declared scope decision. That holds for `ignoredEntries()` and is false for
+  `SKIP_DIRS`, where nothing was declared: the project committed `fixtures/`, and the tool decided
+  it was disposable from a hardcoded name list.
+
+  **`evidenceSurface.complete` already states the principle it breaks.** The doc comment directly
+  above the expression reads *"An eligible file nothing opened is exactly as absent from the results
+  as one beyond the file cap, so a surface that still claimed completeness would be making the
+  stronger available claim on the weaker evidence."* It was written for budget exhaustion and
+  generalises to exclusion without modification. The expression beneath it lists `unreadableFiles`,
+  `dirs`, `truncatedFiles`, `capped` and `budget.exhausted`, and does not list `excluded`. So no new
+  principle is needed here — only the application of the one already on the page. **This is the third
+  instance of one shape in this file, and every one was found by a human reading prose against code
+  rather than by a check:** `collectFiles`'s comment claimed every exclusion was recorded while the
+  code below it dropped two kinds without a word (corrected at `a8be93f`, in the gap table below);
+  the aggregate-budget row asserted a mechanism the code no longer used (corrected 2026-08-23, in the
+  same table); and `complete` now. A stated invariant that nothing executes has now drifted three
+  times in one file, which is an argument about mechanism and not only about this defect.
+
+  **What is not reopened.** #38's unread-content symmetry is a separate and broader
+  evaluator-integrity defect with [its own item](#unavailable-content-evidence-must-never-be-read-as-content):
+  content the run did not obtain is coerced to empty content, fabricating passes and failures across
+  detectors this exclusion boundary does not touch. Whether `fixtures` and `vendor` are the right
+  names to drop is a third question, about the name list rather than about completeness, and is not
+  this item either. One implementation may touch the same code for this item and for #38; the claims
+  stay separate and each closes on its own acceptance evidence.
+
+  **Previously — the closure record this reopening supersedes, kept in full.** COMPLETE — 2026-08-23,
+  `05df6e8` on `develop`, established by the repository gate at
   `dfbc67f` (six stages passed; `validate` advisory) and by the adopter re-runs recorded in the gap
   table above. **Closed on the Acceptance Criteria, which is what the terminal-status contract at the
   top of this section requires**, not on the gap table: **all six criteria are met**, each named
@@ -384,6 +492,16 @@ that approval deliberately does not cover.
   | 4 | Paired invariance, both halves | `identical content is reported when governed and excluded when ignored` — byte-identical content at the same path in two repositories differing only in one `.gitignore` line |
   | 5 | A case with no marker file | `an ignored tree carrying no marker is excluded BY THE REPOSITORY signal`, with `a marker tree the repository does not ignore is excluded BY THE MARKER signal` and `the fixture that carries both signals cannot isolate either` separating the two signals |
   | 6 | Aggregate read budget is bounded | `retained evidence cannot exceed the budget the invocation was given`, `the three evidence-loss states stay distinct`, `a default run applies a real budget rather than none at all`, `a file that expands when decoded cannot breach the budget`, and `a content rule cannot pass over files nothing searched` |
+
+  **A seventh criterion is added 2026-08-24, rather than the sixth being reworded.** The
+  falsification recorded in the Status above leaves criterion 2 standing and defeats criterion 1 at a
+  level above where it was checked, so rewriting an existing row would erase the fact that the
+  earlier closure was reached honestly against the criteria as they then read. The new row is stated
+  with its falsifier like the others:
+
+  | # | Acceptance criterion | Established by |
+  |---|---|---|
+  | 7 | A framework-caused loss of eligible project evidence makes the evidence surface incomplete | **Not met.** `evidenceSurface.complete` must account for every framework-caused loss of eligible project evidence. A repository-authorized exclusion — content the repository itself marks ignored — may stay outside the project evidence surface without making it incomplete, because the project declared it disposable. A hardcoded tool exclusion over otherwise eligible tracked content must make `complete: false`. Falsifier: the two-repository specimen in the Status above must stop reporting `complete: true` on the `fixtures/` side while a repository-ignored tree continues to report `complete: true`, so a fix that simply made every exclusion incomplete would fail this test rather than pass it. |
 
   **This line previously read "all five criteria". There are six.** The miscount is corrected rather
   than left, for the same reason the claim-invariant paragraph at the top of this section was
@@ -682,6 +800,121 @@ that approval deliberately does not cover.
     An unreachable tracker is the search-mechanism case of Standard 44 R12.
 - **Verification:** `npm test`; the `ST-999` assertion still produces exactly one finding.
 - **Dependencies:** the discrepancy categories in [`03`](03-standards-audit-cli.md).
+
+### Unavailable content evidence must never be read as content
+
+- **Status:** READY
+- **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)
+- **Evidence:** opened 2026-08-23, measured before it was filed and enumerated afterwards. The
+  prevailing idiom at the twelve content-read sites in
+  [`scripts/standards.mjs`](../../scripts/standards.mjs) is `contents.get(f) ?? ""` — or `?? "{}"`
+  — which coerces **unread** into **empty**. Empty is meaningful evidence in both polarities, so the
+  coercion does not merely lose coverage; it manufactures a verdict.
+- **Purpose:** This corrupts verdict truth rather than detector sensitivity, which is why it precedes
+  [#6/#8](#make-architectureproject-manifest-check-content-not-presence) in the queue. A rule that
+  reports `passed` or `failed` from evidence the run never obtained is not a weak check; it is a
+  check reporting a result it does not have.
+
+  **The invariant.** *Unavailable content evidence may never be interpreted as content. A check whose
+  required evidence was not obtained is `UNKNOWN`; it may produce neither a satisfaction claim nor a
+  violation finding. Rule disposition is derived from the known and unknown checks without
+  fabricating either polarity.*
+
+  This is a refinement of the invariant the issue opens with — *a content-derived rule may not reach
+  either `passed` or `failed` from content evidence the run did not obtain* — and it is narrower on
+  purpose. The earlier phrasing makes the **rule** the unit, which would erase a genuinely
+  established failure whenever any one of its evidence sources went unread. The
+  `reconstruction.baseline-artifacts` specimen is exactly that mixed case: its R4 failure is
+  established structurally while its R6 content is unread. The real R4 finding must survive and the
+  fabricated R6 finding must not, so the **check** is the unit and the rule is aggregated from
+  checks.
+
+  **Measured — five fabricators, in both polarities.** The nine rules in `CONTENT_DERIVED_RULES` are
+  withdrawn when files go unsearched and fabricate a pass only through the exclusion path. These five
+  are not withdrawn at all:
+
+  | Rule | Read site | Missing evidence fabricates |
+  |---|---|---|
+  | `documentation.architecture` | 1236 | a **failure** — demonstrated |
+  | `planning.breakdown-directory` | 1341 | a **failure** — demonstrated |
+  | `reconstruction.baseline-artifacts` | 1742 | a **failure**, at error severity — demonstrated |
+  | `reconstruction.open-questions` | 1498 | a **pass** — demonstrated |
+  | `planning.item-fields` | 1576 | a **pass** |
+
+  Presence-only and safe today: `architecture.project-manifest`, `architecture.adr`,
+  `audit.business-state`, `scm.no-committed-env-files`.
+
+  **The rule is the wrong unit, demonstrated a second way.** `planning.item-fields` and
+  `planning.plan-code-consistency` are emitted by the same detector `detectPlanDiscrepancies` from
+  the same read at line 1576. One is in `CONTENT_DERIVED_RULES` and one is not, so byte-identical
+  evidence produces withdrawal for one rule and fabrication for the other. No entry added to a
+  recognition table fixes that, because the table is not addressing the thing that varies.
+- **Deliverables:** an evidence-aware read with tri-state aggregation at the check boundary.
+  **Explicitly not** an extension of `CONTENT_DERIVED_RULES`, and not per-detector accessor binding:
+  the evidence has rejected recognition tables as the primary control — five rules were omitted from
+  the existing table, two rules sharing one read site are classified differently by it, and the same
+  file has now accumulated three prose-versus-code drift instances that no table would have caught.
+
+  ```text
+  content lookup
+      ↓
+  AVAILABLE(text) | UNAVAILABLE(reason)
+      ↓
+  individual check
+      ↓
+  SATISFIED | VIOLATED | UNKNOWN
+      ↓
+  rule aggregation
+  ```
+
+  Aggregation, and only `VIOLATED` checks may emit violation findings:
+
+  ```text
+  any confirmed violation      → FAILED
+  no violation + any UNKNOWN   → NOT_EVALUATED
+  all required evidence known
+    and no violation           → PASSED
+  ```
+
+  Which yields the truth table the mixed case requires:
+
+  ```text
+  known violation + unknown check → failed, carrying only the known finding
+  no violation + unknown check    → not-evaluated
+  all known + no violation        → passed
+  ```
+
+  `UNAVAILABLE` must carry its reason rather than collapse to a single flag, because the three
+  evidence-loss states are already distinct in this codebase — never collected (`fileCapReached`),
+  read in part (`truncatedFiles`), collected and never opened (`readBudget`) — and exclusion is a
+  fourth. Collapsing them is the defect one level down.
+- **Acceptance Criteria:**
+  - A content lookup for a file the run did not obtain cannot return a string. No call site can
+    reach `""` or `"{}"` for unread content, and the mechanism enforces this rather than a comment
+    asserting it.
+  - **Known-negative tests in both directions.** Under a constrained budget, each of the five
+    fabricators is shown to fabricate before the fix and to report `not-evaluated` after it, with a
+    full-coverage control on the same fixture proving the rule still reaches its correct verdict when
+    the evidence is read. A test that only ever suppresses is as uninformative as one that only ever
+    passes.
+  - **The mixed case is preserved, not erased.** `reconstruction.baseline-artifacts` with R4
+    structurally failing and R6 unread reports `failed` and emits the R4 finding and only the R4
+    finding.
+  - `planning.item-fields` and `planning.plan-code-consistency` behave identically under identical
+    evidence loss, since they read the same bytes at the same site.
+  - This repository's own self-audit is unchanged at zero error findings, and `validate` on it is
+    unchanged at full coverage — the mechanism must be inert when nothing is lost.
+- **Verification:** `npm test`; the constrained-budget fixtures above; and the mechanism is
+  **mutation-tested before it is treated as the fix** — disabling the tri-state at the aggregation
+  boundary, and separately at the lookup boundary, must each be caught by a test, and by a different
+  test, or the mechanism is not established.
+- **Dependencies:** none blocking. It shares code with
+  [the exclusion boundary](#fix-the-audits-project-level-exclusions), whose seventh criterion repairs
+  the global completeness claim; that repair does not close this item and this item does not close
+  that criterion. It precedes
+  [#6/#8](#make-architectureproject-manifest-check-content-not-presence), which must not land first:
+  making `architecture.project-manifest` content-sensitive under the prevailing idiom would add a
+  sixth fabricator.
 
 ### Make `architecture.project-manifest` check content, not presence
 
