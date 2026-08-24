@@ -164,6 +164,65 @@ test("a template link that escapes the installed root is caught", async () => {
   }
 });
 
+test("a template link to a file init does not install is caught", async () => {
+  // Raised in review, and it is the subtler half of the same defect. `templates/PROJECT.md` linking
+  // to `INSTRUCTIONS.md` resolves in this repository, where that file sits at the root — so a check
+  // that fell back to "does it exist here" would pass it, and it would dangle in every adopter,
+  // because init does not copy it. The target existing somewhere is not the question.
+  const root = await scratch(
+    {
+      "templates/PROJECT.md": "See [the guide](INSTRUCTIONS.md).\n",
+      "INSTRUCTIONS.md": "# guide\n",
+    },
+    [`path: "PROJECT.md", template: "templates/PROJECT.md"`],
+  );
+  try {
+    // The target really is present, so this cannot pass by the file simply being absent.
+    assert.ok(existsSync(path.join(root, "INSTRUCTIONS.md")));
+    const { broken } = await checkLinks(root);
+    assert.equal(broken.length, 1, "a template target outside the installed layout must be reported");
+    assert.equal(broken[0].rule, "template");
+    assert.equal(broken[0].resolved, "INSTRUCTIONS.md");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a reference-style definition is resolved like any other link", async () => {
+  // Also raised in review. `[ADR][adr]` renders identically to an inline link and breaks identically
+  // when the target moves. Reading only the inline form would leave a whole syntax unguarded, and
+  // the count assertion would stay green while it was.
+  const root = await scratch({
+    "docs/real.md": "# real\n",
+    "docs/index.md": "[good][a] and [gone][b]\n\n[a]: real.md\n[b]: moved-away.md\n",
+  });
+  try {
+    const { broken, checked } = await checkLinks(root);
+    assert.equal(checked, 2, "both definitions must be examined, not only the failing one");
+    assert.equal(broken.length, 1);
+    assert.equal(broken[0].target, "moved-away.md");
+    assert.equal(broken[0].line, 4);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a label-shaped line inside a fenced code block is not a link", async () => {
+  // The cost of reading the reference form: a computed object key is written the same way, and this
+  // repository's own tests are full of them. Fenced blocks are therefore excluded from that pattern
+  // — and only from that pattern, since the inline form is distinctive enough not to need it.
+  const root = await scratch({
+    "docs/index.md": "```js\nconst x = {\n  [FORBIDDEN_MANUAL]: { level: \"forbidden\" },\n};\n```\n",
+  });
+  try {
+    const { broken, checked } = await checkLinks(root);
+    assert.equal(checked, 0, "code inside a fence was read as a link");
+    assert.deepEqual(broken, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a deliberately broken ordinary relative link is caught", async () => {
   // Standard 42's own trigger: the next rename is caught by a failing check rather than by someone
   // reading the file.
