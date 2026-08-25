@@ -395,7 +395,15 @@ that approval deliberately does not cover.
 
 ### Fix the audit's project-level exclusions
 
-- **Status:** READY — **reopened 2026-08-24 by owner ruling.** This item held `COMPLETE` from
+- **Status:** IN_REVIEW — **the seventh criterion is met at `f564d6c`; whether that closes this
+  item a second time is the owner's call and is deliberately not taken here.** All seven acceptance
+  criteria now have an establishing commit and a falsifier. This item nonetheless closed once
+  already, on a criteria set that turned out to be incomplete, and an item that re-closes itself on
+  the strength of the same reasoning that failed the first time is asserting exactly what it cannot
+  establish. `IN_REVIEW` is nonterminal, so release closure stays blocked while the disposition is
+  open — which is the correct state for work that is done and not yet judged.
+
+  **Previously: READY — reopened 2026-08-24 by owner ruling.** This item held `COMPLETE` from
   2026-08-23 at `05df6e8`. That disposition is superseded rather than deleted, and the whole closure
   record it rested on is kept below, because an item that closed and then reopened is a different
   history from one that never closed and only the first of the two can be audited.
@@ -501,7 +509,7 @@ that approval deliberately does not cover.
 
   | # | Acceptance criterion | Established by |
   |---|---|---|
-  | 7 | A framework-caused loss of eligible project evidence makes the evidence surface incomplete | **Not met.** `evidenceSurface.complete` must account for every framework-caused loss of eligible project evidence. A repository-authorized exclusion — content the repository itself marks ignored — may stay outside the project evidence surface without making it incomplete, because the project declared it disposable. A hardcoded tool exclusion over otherwise eligible tracked content must make `complete: false`. Falsifier: the two-repository specimen in the Status above must stop reporting `complete: true` on the `fixtures/` side while a repository-ignored tree continues to report `complete: true`, so a fix that simply made every exclusion incomplete would fail this test rather than pass it. |
+  | 7 | A framework-caused loss of eligible project evidence makes the evidence surface incomplete | **Met 2026-08-25 at `f564d6c`.** `evidenceSurface.complete` now has a sixth term, and each exclusion entry carries `authorizedBy` beside `reason` — the two answer different questions, and only the first bears on completeness. **Authority is asked, not inferred**, because `SKIP_DIRS` is consulted *before* the repository-ignore set: a name match wins the reported `reason` even where the repository independently ignores the same path, which is the ordinary state of every real dependency tree. Deriving authority from `reason` alone would have reported almost every repository as having lost evidence it had itself declared disposable, so the `SKIP_DIRS` branch consults the ignore set directly. The walk order is deliberately left alone: it decides which reason is reported, and this decides what that reason is worth, and changing the first to serve the second would rewrite evidence to suit a conclusion. **Three authorities, not two** — `repository` (the project declared it disposable), `framework` (this tool decided, from a name or a marker), and `not-project-evidence` for `.git`, which is the repository's own storage and was never candidate evidence. The third exists because the falsifier below rejected the first implementation, which counted `.git` as lost evidence and reported **every** repository incomplete — the blanket rule arrived at from the other direction. **Falsified four ways**, each by a distinct test: dropping the new term is caught only by the specimen; making the rule blanket is caught by all four; and refusing to consult the ignore set for a `SKIP_DIRS` name is caught only by the both-signals case. **Verdicts are unchanged** — the excluded bait still reports `passed`, which is #38 and stays there. **Previously:** `evidenceSurface.complete` must account for every framework-caused loss of eligible project evidence. A repository-authorized exclusion — content the repository itself marks ignored — may stay outside the project evidence surface without making it incomplete, because the project declared it disposable. A hardcoded tool exclusion over otherwise eligible tracked content must make `complete: false`. Falsifier: the two-repository specimen in the Status above must stop reporting `complete: true` on the `fixtures/` side while a repository-ignored tree continues to report `complete: true`, so a fix that simply made every exclusion incomplete would fail this test rather than pass it. |
 
   **This line previously read "all five criteria". There are six.** The miscount is corrected rather
   than left, for the same reason the claim-invariant paragraph at the top of this section was
