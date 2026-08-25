@@ -8,8 +8,8 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Sixteen are open. Ten are claimed
-here — #1, #4, #5, #6, #7, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
+**Every open GitHub issue is claimed by exactly one plan item.** Fifteen are open. Nine are claimed
+here — #1, #4, #6, #7, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
 lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -780,26 +780,100 @@ that approval deliberately does not cover.
 
 ### Decouple `Tracked by` resolution from one backlog implementation
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-24 at `d53a627`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 358 tests, 0
+  failures. `validate` at that content is unchanged from `develop` at `be30c081` — 23 passed, 4
+  failed, 23 skipped, with the four failures being the four standing recorded human rejections and no
+  rule changing status or assurance. This row is the commit after `d53a627` and changes only this
+  section.
 - **Tracked by:** GitHub issue [#5](https://github.com/mikeycdavis/EngineeringStandards/issues/5)
-- **Evidence:** open as of 2026-08-11; the resolver in
-  [`scripts/standards.mjs`](../../scripts/standards.mjs) builds
-  `artifacts/backlog/items/<ID>.md` directly, and the id pattern it accepts is `[A-Z]{2}-\d+`.
+- **Evidence:** opened 2026-08-11; measured and closed 2026-08-24. The recorded gap was accurate at
+  `develop`: the resolver in [`scripts/standards.mjs`](../../scripts/standards.mjs) built
+  `artifacts/backlog/items/<ID>.md` directly and accepted only `[A-Z]{2}-\d+`. **Missing behaviour,
+  not stale wording — and on two axes, of which the issue records one.**
+
+  1. **The recorded axis.** The backlog root was hardcoded, so a project keeping its backlog anywhere
+     else had every tracked item reported dangling: a wall of red asserting *untracked work is
+     presented as tracked* about work that was tracked.
+  2. **The unrecorded axis, which is worse.** The resolver answered a three-valued question with a
+     boolean. *The authority was found and does not contain this id* and *there was no authority to
+     ask* arrived at the same branch — and a reference it could not parse at all, such as a GitHub
+     issue or a Jira key, matched nothing, was dropped, and left the item falling through to its own
+     cached `Status`. Silence read as agreement.
+
+  **This repository demonstrated the second axis on itself.** It has no `artifacts/backlog/` at all,
+  and **fourteen** plan items across sections 03, 04, 06, 07 and this one carry
+  `Tracked by: GitHub issue …`. `node scripts/standards.mjs audit .` at `be30c081` returned three
+  informational findings and nothing else — a clean plan reported over fourteen items whose authority
+  the run had never contacted, and indistinguishable from a correct clean result. That is the trap
+  [`03`](03-standards-audit-cli.md) already names one level up, in its own words: an implementation
+  that *"returns zero findings on precisely the repositories that follow the standard most
+  completely."*
 - **Purpose:** Plan validation is coupled to one backlog storage implementation. A project tracking
   work in GitHub issues, Jira, or any other system cannot have its `Tracked by` pointers verified —
   which this very plan demonstrates: the items in
   [`04`](04-compliance-and-policy-system.md) and [`07`](07-distributed-validation-and-ci.md) point at
   GitHub issues and are checked by hand.
 - **Deliverables:** a resolution seam, so the storage layout is a property of the project rather than
-  of the checker.
+  of the checker. Delivered as [`scripts/tracking.mjs`](../../scripts/tracking.mjs), answering with
+  `resolved`, `missing` or `unverifiable` and no fourth outcome.
+
+  **Built on repository discovery, and deliberately not on the mechanism the issue asked for.** Issue
+  #5's *Expected direction* proposes declaring a backlog root in `project-policy.yml`. That is the
+  option [ADR 0008](../adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+  rejects by name: *detectors also serve `audit`, which takes no policy at all*
+  ([ADR 0004](../adr/0004-audit-and-validate-are-separate-commands.md)), so *sourcing evidence
+  discovery from configuration would give the two commands different answers about what a repository
+  contains*. `detectPlanDiscrepancies` is an audit detector, so the objection applies exactly.
+  Conventional layouts are discovered from the repository instead — the shape `adrDirs` already uses
+  in `scripts/standards.mjs` for the same problem, where three ADR locations are accepted rather than
+  one imposed. **Recorded here rather than implemented silently**: an issue's proposed mechanism
+  being overruled by a standing decision is a thing to write down, not to route around.
+
+  **An id-shaped reference is not always local, and this is where the two outcomes divide.**
+  `PROJ-1234` and `ST-014` are the same shape, so syntax cannot separate a Jira key from a backlog
+  id. What separates them is whether a local authority exists to consult. With a backlog discovered,
+  an id it does not contain is `missing` — the authority was asked and answered. With none
+  discovered, the same string is `unverifiable`, because reporting it absent from a backlog that does
+  not exist would assert something nothing checked. The residual case is stated rather than hidden: a
+  project using Jira keys *and* keeping a local backlog will see its Jira references reported
+  `missing`, which is honest — the local authority genuinely was consulted — and the fix for it is an
+  adapter contract for reachable external systems, a larger decision than this seam.
+
+  **The `unverifiable` finding carries no `rule`, and that is load-bearing.** A finding bound to
+  `planning.plan-code-consistency` fails that rule outright, whatever its own severity. Binding this
+  one would make a repository non-compliant with *a completed plan item's deliverables exist* because
+  it tracks work in GitHub issues — converting a limit on what the run could reach into a claim that
+  the plan is inconsistent, which is the exact inversion the finding exists to stop. It is reported
+  at `warning`, scores nothing in either direction, and this repository's `validate` result is
+  therefore byte-identical in shape to `develop`'s. A new catalog rule is the other way to carry it,
+  and that is a versioning decision with adopter consequences rather than a detail of this fix:
+  **recorded as available and not taken.**
 - **Acceptance Criteria:**
-  - An unresolvable reference is still an `error` finding. This must not become a way to make
-    dangling references stop being reported — that check is the whole point of Standard 44 R7.
-  - The existing `delegated` fixture, including its `ST-999` dangling reference, behaves unchanged.
-  - A reference to a system the resolver cannot reach is reported as *unverifiable*, not as *valid*.
-    An unreachable tracker is the search-mechanism case of Standard 44 R12.
-- **Verification:** `npm test`; the `ST-999` assertion still produces exactly one finding.
-- **Dependencies:** the discrepancy categories in [`03`](03-standards-audit-cli.md).
+
+  | # | Criterion | Established by |
+  |---|---|---|
+  | 1 | An unresolvable reference is still an `error` finding — this must not become a way to stop reporting dangling references (Standard 44 R7) | `an id-shaped reference the discovered backlog does not contain is missing, not unverifiable`, and the unchanged `a backlog id that resolves to nothing is reported` in `test/audit.test.mjs`, which still asserts exactly one finding at severity `error` |
+  | 2 | The existing `delegated` fixture, including its `ST-999` dangling reference, behaves unchanged | All 60 tests in `test/audit.test.mjs` pass untouched, including the four that drive that fixture. `the conventional layout resolves, exactly as it did when the path was hardcoded` holds the default at the seam level |
+  | 3 | A reference to a system the resolver cannot reach is reported as *unverifiable*, not as *valid* (Standard 44 R12) | `a GitHub issue reference is unverifiable — neither valid nor dangling`, `an unrecognised or Jira-style reference is unverifiable when no backlog was discovered`, and — against the repository that had the defect — `this repository's externally tracked items produce evidence rather than silence` |
+
+  Two further falsifiers hold properties nothing in the criteria names but the design depends on.
+  `audit and validate resolve the same references identically` runs both commands against this
+  repository and compares the finding's evidence, message and severity, so ADR 0004's separation is
+  asserted end to end rather than argued from both calling one function. `the seam locates the item
+  and deliberately does not read it` keeps reading with the caller, so a backlog item passes through
+  the same read accounting as every other file the run opens rather than becoming a second,
+  unbudgeted way into the repository — the evidence-surface hole the exclusions item above closed,
+  reopened one module along.
+
+  All eleven were written before `scripts/tracking.mjs` existed and were run against a missing
+  module first.
+- **Verification:** `npm test`; 358 tests, 0 failures at `d53a627`. The `ST-999` assertion still
+  produces exactly one finding, and `node scripts/standards.mjs audit .` on this repository now
+  reports fourteen unverifiable delegations where it previously reported none.
+- **Dependencies:** the discrepancy categories in [`03`](03-standards-audit-cli.md) — satisfied; this
+  extends `plan-code-discrepancies` rather than replacing it, and the delegated-liveness trap that
+  item records is now guarded in both directions rather than one.
 
 ### Unavailable content evidence must never be read as content
 
