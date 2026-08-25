@@ -2250,6 +2250,26 @@ function renderHuman(fileCount, surface, run) {
           `${surface.readBudget.limitBytes}-byte read budget was spent`,
       );
     }
+    // Six terms here, six in `complete`. The two lists are parallel by obligation and not by
+    // construction — one lives on the evidence surface and one lives in this renderer — and this
+    // term was missing for exactly as long as it took to notice. The sixth was added to `complete`
+    // and not to this list, so on a run whose only loss was a tool-decided exclusion the header
+    // printed `Evidence surface INCOMPLETE — .`: a run announcing it had lost evidence and then
+    // naming none of it. Measured on this repository, where `test/fixtures` is the only loss.
+    //
+    // That is the same defect this whole boundary exists to prevent, one layer up: the predicate
+    // told the truth and the sentence a reader actually sees did not. The paths are named rather
+    // than counted because the exclusion summary below lists EVERY exclusion, repository-authorized
+    // ones included, so a count alone would leave the reader unable to tell which subset was the
+    // cause. Anything added to `complete` after this belongs here in the same commit.
+    if (surface.frameworkExcludedDirectories.length) {
+      const all = surface.frameworkExcludedDirectories;
+      const rest = all.length > 6 ? ` and ${all.length - 6} more` : "";
+      parts.push(
+        `${all.length} directory(ies) excluded by this tool rather than by the repository ` +
+          `(${all.slice(0, 6).join(", ")}${rest})`,
+      );
+    }
     lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
   }
   // Stated separately from incompleteness, and always — not only when something else went wrong.

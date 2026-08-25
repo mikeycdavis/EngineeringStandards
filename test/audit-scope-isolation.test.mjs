@@ -57,6 +57,26 @@ function audit(dir) {
   return r;
 }
 
+/**
+ * The same run without `--json`. Every other assertion in this file reads the machine surface, and
+ * that is exactly how the rendering defect below survived: `frameworkExcludedDirectories` was
+ * correct in the JSON while the sentence a person reads named nothing at all.
+ */
+function auditHuman(dir) {
+  const r = spawnSync(process.execPath, [CLI, "audit", `--dir=${dir}`], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  assert.equal(r.error, undefined, `spawn failed: ${r.error}`);
+  return r.stdout;
+}
+
+/** The reason list from the incomplete-surface header, or `null` if no such header was printed. */
+function incompleteHeader(out) {
+  const m = out.match(/^Evidence surface INCOMPLETE — (.*)\. Results below/m);
+  return m ? m[1] : null;
+}
+
 function parse(r) {
   try {
     return JSON.parse(r.stdout);
@@ -461,6 +481,86 @@ test("the repository's own .git directory cannot make a surface incomplete", asy
 
     assert.equal(surface.complete, true, "a repository's own storage was counted as lost project evidence");
     assert.deepEqual(surface.frameworkExcludedDirectories, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the incomplete-surface header names the tool-decided exclusion that caused it", async () => {
+  // THE REGRESSION. Adding the sixth term to `complete` without adding it to `renderHuman`'s reason
+  // list made this very repository print:
+  //
+  //     Evidence surface INCOMPLETE — . Results below cover what was read, and nothing else.
+  //
+  // A run announcing it had lost evidence and then naming none of it — the same failure the sixth
+  // term was added to fix, moved one layer up into the sentence a person actually reads. It was
+  // invisible to every other test in this file because they all read `--json`, where the field was
+  // correct all along.
+  //
+  // The property, stated once: whenever `complete` is false, the header must name at least one
+  // actual loss mode that caused it. Not a generic phrase, and not a bare count the reader has to
+  // match up against some later line.
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-render-excl-"));
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    await baitIn(root, "fixtures");
+    commit();
+
+    // The exclusion is the ONLY loss mode here: nothing unreadable, nothing truncated, no cap, no
+    // budget. So the reason list has exactly one thing it can say, and an empty list is the defect.
+    const surface = surfaceOf(audit(root));
+    assert.equal(surface.complete, false, JSON.stringify(surface, null, 2));
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["fixtures"]);
+    assert.deepEqual(surface.unreadableFiles, []);
+    assert.deepEqual(surface.truncatedFiles, []);
+    assert.equal(surface.fileCapReached, false);
+    assert.equal(surface.readBudget.exhausted, false);
+
+    const out = auditHuman(root);
+    const reasons = incompleteHeader(out);
+    assert.ok(reasons !== null, `no incomplete-surface header was printed at all: ${out.slice(0, 1200)}`);
+    assert.notEqual(reasons.trim(), "", "the header declared incompleteness and then named nothing");
+    assert.match(reasons, /fixtures/, `the header did not name the directory that caused it: "${reasons}"`);
+    assert.match(
+      reasons,
+      /this tool rather than by the repository/,
+      `the header did not say who decided the exclusion: "${reasons}"`,
+    );
+
+    // Load-bearing, and the reason this asserts on the header rather than on the output as a whole:
+    // the exclusion summary further down lists EVERY exclusion, repository-authorized ones included,
+    // so a reader who has only that line cannot tell which subset made the surface incomplete.
+    // Remove it, and the cause must still be named.
+    const withoutSummary = out.replace(/^\d+ directory\(ies\) excluded as not this project's own code.*$/m, "");
+    assert.match(incompleteHeader(withoutSummary) ?? "", /fixtures/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a repository-authorized exclusion prints no incompleteness header at all", async () => {
+  // The control that stops the fix above from being satisfied by always printing something. The
+  // project declared this tree disposable, so there is no loss to name and no header to print. A
+  // renderer that manufactured a reason here would be fabricating incompleteness to keep its own
+  // reason list non-empty, which is the defect inverted rather than repaired.
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-render-authorized-"));
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    await baitIn(root, "thirdparty");
+    await writeFile(path.join(root, ".gitignore"), "thirdparty/\n");
+    commit();
+
+    assert.equal(surfaceOf(audit(root)).complete, true);
+    const out = auditHuman(root);
+    assert.equal(
+      incompleteHeader(out),
+      null,
+      `an incompleteness header was printed over a complete surface: ${out.slice(0, 1200)}`,
+    );
+    // The exclusion is still reported. It is a decision about scope, not a loss.
+    assert.match(out, /thirdparty/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
