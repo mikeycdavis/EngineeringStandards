@@ -8,8 +8,8 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Fifteen are open. Nine are claimed
-here — #1, #4, #6, #7, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
+**Every open GitHub issue is claimed by exactly one plan item.** Fourteen are open. Eight are
+claimed here — #1, #4, #6, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
 lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -31,6 +31,13 @@ The counts in this paragraph previously read "seven here, four elsewhere" agains
 while naming five elsewhere. Six were claimed here and five elsewhere. Corrected above rather than
 left, because this paragraph is the only place the claim invariant is asserted, and an invariant
 whose own arithmetic does not hold cannot be used to check anything.
+
+**Amended again 2026-08-25:** **#7** closed on owner review of its seven-criterion contract, so it
+leaves both the open set and *claimed here*, taking fifteen/nine to fourteen/eight. Six elsewhere is
+unchanged. Written here rather than only in the item below, because this paragraph has now drifted
+silently three times, each time because a movement was recorded where the work happened and not
+where the count is asserted. The count is a shared counter with no owner, and every item that opens
+or closes has to touch it.
 
 **Amended 2026-08-24, from two drafts that were each wrong in a different direction.** Three
 independent movements landed against this paragraph within two days, and neither draft saw all of
@@ -395,11 +402,38 @@ that approval deliberately does not cover.
 
 ### Fix the audit's project-level exclusions
 
-- **Status:** IN_REVIEW — **the seventh criterion is met at `f564d6c`; whether that closes this
+- **Status:** COMPLETE — **closed 2026-08-25 by owner review, on the seven-criterion contract as
+  it now stands.** The full history is `COMPLETE` -> `READY` -> `IN_REVIEW` -> `COMPLETE`, and every
+  step of it is kept below.
+
+  **What the owner approved, in their own terms:** closure of *the item's presently stated acceptance
+  contract*, deliberately narrower than a claim that no eighth criterion can ever be discovered. This
+  item has already had a criterion discovered after it closed; a closure that claimed otherwise would
+  be making the same mistake in the same place.
+
+  **Closure was taken after both the criterion and its consequence were verified, not after the
+  criterion alone.** The seventh criterion was met at `f564d6c`, and that same commit introduced a
+  human-rendering regression — a run whose only loss was a tool-decided exclusion printed
+  `Evidence surface INCOMPLETE — .`, naming nothing — which was found in review and repaired at
+  `ebb8db9`. The owner's disposition is recorded against the state that carries both, and not
+  against the intermediate head that carried only the first. This distinction is written down because
+  a closure record that named `f564d6c` alone would read as approval of a head already known to be
+  defective, and the reader would have no way to tell that it was not.
+
+  **Why it was not closed by this item on its own authority.** All seven criteria have an
+  establishing commit and a falsifier, and that was true at `IN_REVIEW` too. It was not sufficient
+  then and is not what closed the item now: the first closure also rested on every criterion then
+  stated having an establishing commit and a falsifier, and the criteria set was incomplete. What
+  changed is that a second party reviewed the contract and took the disposition. Under
+  [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md) the agent does not attest to
+  its own work, and closing an item on the strength of the reasoning that failed the first time would
+  be exactly that.
+
+  **Previously: IN_REVIEW — the seventh criterion is met at `f564d6c`; whether that closes this
   item a second time is the owner's call and is deliberately not taken here.** All seven acceptance
-  criteria now have an establishing commit and a falsifier. This item nonetheless closed once
-  already, on a criteria set that turned out to be incomplete, and an item that re-closes itself on
-  the strength of the same reasoning that failed the first time is asserting exactly what it cannot
+  criteria have an establishing commit and a falsifier. This item nonetheless closed once already,
+  on a criteria set that turned out to be incomplete, and an item that re-closes itself on the
+  strength of the same reasoning that failed the first time is asserting exactly what it cannot
   establish. `IN_REVIEW` is nonterminal, so release closure stays blocked while the disposition is
   open — which is the correct state for work that is done and not yet judged.
 
@@ -509,7 +543,7 @@ that approval deliberately does not cover.
 
   | # | Acceptance criterion | Established by |
   |---|---|---|
-  | 7 | A framework-caused loss of eligible project evidence makes the evidence surface incomplete | **Met 2026-08-25 at `f564d6c`.** `evidenceSurface.complete` now has a sixth term, and each exclusion entry carries `authorizedBy` beside `reason` — the two answer different questions, and only the first bears on completeness. **Authority is asked, not inferred**, because `SKIP_DIRS` is consulted *before* the repository-ignore set: a name match wins the reported `reason` even where the repository independently ignores the same path, which is the ordinary state of every real dependency tree. Deriving authority from `reason` alone would have reported almost every repository as having lost evidence it had itself declared disposable, so the `SKIP_DIRS` branch consults the ignore set directly. The walk order is deliberately left alone: it decides which reason is reported, and this decides what that reason is worth, and changing the first to serve the second would rewrite evidence to suit a conclusion. **Three authorities, not two** — `repository` (the project declared it disposable), `framework` (this tool decided, from a name or a marker), and `not-project-evidence` for `.git`, which is the repository's own storage and was never candidate evidence. The third exists because the falsifier below rejected the first implementation, which counted `.git` as lost evidence and reported **every** repository incomplete — the blanket rule arrived at from the other direction. **Falsified four ways**, each by a distinct test: dropping the new term is caught only by the specimen; making the rule blanket is caught by all four; and refusing to consult the ignore set for a `SKIP_DIRS` name is caught only by the both-signals case. **Verdicts are unchanged** — the excluded bait still reports `passed`, which is #38 and stays there. **Previously:** `evidenceSurface.complete` must account for every framework-caused loss of eligible project evidence. A repository-authorized exclusion — content the repository itself marks ignored — may stay outside the project evidence surface without making it incomplete, because the project declared it disposable. A hardcoded tool exclusion over otherwise eligible tracked content must make `complete: false`. Falsifier: the two-repository specimen in the Status above must stop reporting `complete: true` on the `fixtures/` side while a repository-ignored tree continues to report `complete: true`, so a fix that simply made every exclusion incomplete would fail this test rather than pass it. |
+  | 7 | A framework-caused loss of eligible project evidence makes the evidence surface incomplete | **Met 2026-08-25 at `f564d6c`, with a consequence in the human rendering repaired at `ebb8db9`.** The predicate change made a mode of incompleteness reachable that `renderHuman` had no reason for, so a run whose only loss was a tool-decided exclusion printed `Evidence surface INCOMPLETE — .` — incompleteness declared and then not named, which is this same defect one layer up in the sentence a person reads. It was introduced by this criterion's own commit: before it, `complete` could only go false through a mode that pushes a reason, so the empty branch was unreachable. It survived the criterion's four falsifiers because every one of them reads `--json`, where the field was correct throughout, and it was found by review rather than by this repository's own tests. Recorded in the row rather than only in the commit, because a criterion whose fix required a second fix is not the same evidence as one that did not. `evidenceSurface.complete` now has a sixth term, and each exclusion entry carries `authorizedBy` beside `reason` — the two answer different questions, and only the first bears on completeness. **Authority is asked, not inferred**, because `SKIP_DIRS` is consulted *before* the repository-ignore set: a name match wins the reported `reason` even where the repository independently ignores the same path, which is the ordinary state of every real dependency tree. Deriving authority from `reason` alone would have reported almost every repository as having lost evidence it had itself declared disposable, so the `SKIP_DIRS` branch consults the ignore set directly. The walk order is deliberately left alone: it decides which reason is reported, and this decides what that reason is worth, and changing the first to serve the second would rewrite evidence to suit a conclusion. **Three authorities, not two** — `repository` (the project declared it disposable), `framework` (this tool decided, from a name or a marker), and `not-project-evidence` for `.git`, which is the repository's own storage and was never candidate evidence. The third exists because the falsifier below rejected the first implementation, which counted `.git` as lost evidence and reported **every** repository incomplete — the blanket rule arrived at from the other direction. **Falsified four ways**, each by a distinct test: dropping the new term is caught only by the specimen; making the rule blanket is caught by all four; and refusing to consult the ignore set for a `SKIP_DIRS` name is caught only by the both-signals case. **Verdicts are unchanged** — the excluded bait still reports `passed`, which is #38 and stays there. **Previously:** `evidenceSurface.complete` must account for every framework-caused loss of eligible project evidence. A repository-authorized exclusion — content the repository itself marks ignored — may stay outside the project evidence surface without making it incomplete, because the project declared it disposable. A hardcoded tool exclusion over otherwise eligible tracked content must make `complete: false`. Falsifier: the two-repository specimen in the Status above must stop reporting `complete: true` on the `fixtures/` side while a repository-ignored tree continues to report `complete: true`, so a fix that simply made every exclusion incomplete would fail this test rather than pass it. |
 
   **This line previously read "all five criteria". There are six.** The miscount is corrected rather
   than left, for the same reason the claim-invariant paragraph at the top of this section was
