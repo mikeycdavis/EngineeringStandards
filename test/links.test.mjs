@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -239,6 +239,64 @@ test("a deliberately broken ordinary relative link is caught", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+// --- Files that are not there when the scan reaches them ----------------------------------------
+
+test("a dot-prefixed file beside real sources is not scanned", async () => {
+  // The failure this exists for. `test/invocation-ownership.test.mjs` writes its negative control to
+  // `scripts/.shared-cache-control.mjs` and removes it in a `finally`, dot-prefixed precisely so
+  // nothing treats it as a source file. This scan did, the runner deleted it between the listing and
+  // the read, and the check died on ENOENT — passing locally and losing the race in CI.
+  //
+  // Dot-prefixing is a convention the repository already keeps; honouring it costs no coverage,
+  // which the repository-wide count above holds.
+  const root = await scratch({
+    "scripts/real.mjs": " * see [a doc](../docs/gone.md)\n",
+    "scripts/.shared-cache-control.mjs": " * see [b doc](../docs/also-gone.md)\n",
+    "docs/.draft.md": "[c](nowhere.md)\n",
+  });
+  try {
+    const { broken } = await checkLinks(root);
+    assert.deepEqual(
+      broken.map((b) => b.file),
+      ["scripts/real.mjs"],
+      "only the undotted file may be scanned",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a file that cannot be opened is reported as unread rather than crashing the scan", async (t) => {
+  // The general case behind that specific one: listing and reading are two moments, and a file can
+  // stop existing in between. Neither fatal nor silent — a clean result over files nobody opened is
+  // the shape this repository names most often, so the file is named and the run continues.
+  const root = await scratch({ "docs/real.md": "# real\n", "docs/index.md": "[ok](real.md)\n" });
+  try {
+    try {
+      await symlink(path.join(root, "docs/absent-target.md"), path.join(root, "docs/dangling.md"));
+    } catch {
+      // Windows refuses symlink creation without privilege, the same reason the installed-bin cases
+      // in test/invocation-ownership.test.mjs skip. Skipped with a reason rather than passing
+      // quietly, because a check that silently does nothing is what this file exists to prevent.
+      t.skip("this host refuses symlink creation; the unread path runs on the Linux image");
+      return;
+    }
+    const { broken, unread, checked } = await checkLinks(root);
+    assert.deepEqual(broken, [], "an unreadable file is not a broken link");
+    assert.deepEqual(unread.map((u) => u.file), ["docs/dangling.md"]);
+    assert.equal(checked, 1, "the readable file must still have been checked");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a healthy repository reports nothing unread", async () => {
+  // The other half of the pair: `unread` must be part of the answer even when it is empty, or the
+  // field would only ever appear in the failing case and nothing would notice it going missing.
+  const { unread } = await checkLinks(ROOT);
+  assert.deepEqual(unread, []);
 });
 
 // --- Scope of the scan --------------------------------------------------------------------------

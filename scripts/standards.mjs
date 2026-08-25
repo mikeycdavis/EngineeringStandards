@@ -22,6 +22,7 @@ import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
+import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
 import { validate } from "./jsonschema.mjs";
 import {
   classifyFreshness,
@@ -1628,8 +1629,15 @@ async function detectPlanDiscrepancies(files, contents, run) {
   if (executable.length === 0) return;
 
   const dangling = [];
+  const unverifiable = [];
   const missingDeliverables = [];
   const incomplete = [];
+
+  // Discovered once per run, not per item: the backlog a repository has does not change between two
+  // plan items, and asking the filesystem the same question forty times would be forty chances for
+  // two items to get different answers. Discovery reads the repository rather than a policy, so
+  // `audit` — which takes no policy at all (ADR 0004) — reaches the same result as `validate`.
+  const backlog = discoverBacklog(root);
 
   for (const item of executable) {
     for (const field of PLAN_FIELDS) {
@@ -1644,18 +1652,36 @@ async function detectPlanDiscrepancies(files, contents, run) {
     //
     // `Tracked by` is a separate field: a reference to another system is not a status (Standard 8
     // R2). The legacy `Status: tracked as <id>` form is still read so older plans keep working.
-    const legacyTracked = String(item.fields.get("Status") ?? "").match(/tracked as\s+([A-Z]{2}-\d+)/i);
-    const trackedBy = (item.fields.get("Tracked by") ?? item.fields.get("TrackedBy") ?? "").match(/([A-Z]{2}-\d+)/i);
-    const tracked = trackedBy ?? legacyTracked;
-    if (tracked) {
-      const id = tracked[1].toUpperCase();
-      const itemPath = path.join(root, "artifacts/backlog/items", `${id}.md`);
-      if (!existsSync(itemPath)) {
-        dangling.push(`${item.file} :: ${item.title} -> ${id}`);
+    const legacyTracked = String(item.fields.get("Status") ?? "").match(/tracked as\s+(.+)$/i);
+    const declared = String(
+      item.fields.get("Tracked by") ?? item.fields.get("TrackedBy") ?? (legacyTracked ? legacyTracked[1] : ""),
+    ).trim();
+
+    if (declared) {
+      // Three outcomes, not a boolean. `scripts/tracking.mjs` separates *the authority was asked and
+      // does not have this* from *there was no authority to ask*, which the previous existsSync
+      // check collapsed into one branch — and which is the difference between a defect in the plan
+      // and a limit on what this run could establish (Standard 44 R12).
+      const ref = resolveTracked(declared, { root, backlog });
+
+      if (ref.outcome === OUTCOME.missing) {
+        dangling.push(`${item.file} :: ${item.title} -> ${ref.id} (${ref.reason})`);
         continue;
       }
-      const backlogText = (await readText(itemPath)).text;
-      status = canonicalStatus((backlogText.match(/^status:\s*(\S+)/im) ?? [, "unknown"])[1]);
+
+      if (ref.outcome === OUTCOME.unverifiable) {
+        // Recorded, and deliberately NOT resolved into a status. The plan says this item's liveness
+        // lives elsewhere; this run did not go there. Falling through to the item's own Status — as
+        // the previous implementation silently did for every reference it could not parse — turns
+        // "I did not ask" into "the authority agrees".
+        unverifiable.push(
+          `${item.file} :: ${item.title} -> ${declared} (${ref.reason}); the item's own ` +
+            `Status ${canonicalStatus(item.fields.get("Status"))} is a cached copy this run did not validate`,
+        );
+      } else {
+        const backlogText = (await readText(ref.path)).text;
+        status = canonicalStatus((backlogText.match(/^status:\s*(\S+)/im) ?? [, "unknown"])[1]);
+      }
     }
 
     if (status !== "COMPLETE") continue;
@@ -1682,6 +1708,30 @@ async function detectPlanDiscrepancies(files, contents, run) {
       message:
         `${dangling.length} plan item(s) delegate status to a backlog id that does not exist. ` +
         "Untracked work is presented as tracked.",
+      standardRef: R.plan,
+    });
+  }
+  if (unverifiable.length) {
+    // Carries NO `rule`, and that is the load-bearing part of this finding rather than an omission.
+    //
+    // A finding bound to `planning.plan-code-consistency` fails that rule outright, whatever its own
+    // severity. Binding this one would mean a repository is non-compliant with "a completed plan
+    // item's deliverables exist" because it tracks work in GitHub issues — converting a limit on
+    // what the run could reach into a claim that the plan is inconsistent, which is precisely the
+    // inversion this finding exists to stop. Not-knowing is reported as not-knowing and scores
+    // nothing, in either direction (Standard 44 R12, ADR 0008).
+    //
+    // A new catalog rule would be the other way to carry it, and that is a versioning decision with
+    // adopter consequences rather than a detail of this fix. Recorded as available and not taken.
+    addFinding({
+      id: "delegated-liveness-unverifiable",
+      category: "Plan/code discrepancies",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: unverifiable,
+      message:
+        `${unverifiable.length} plan item(s) delegate status to an authority this run did not consult. ` +
+        "Their own Status is a cached copy, and this run neither confirms nor contradicts it.",
       standardRef: R.plan,
     });
   }
