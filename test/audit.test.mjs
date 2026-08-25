@@ -995,11 +995,38 @@ test("a fully readable tree reports a complete evidence surface and no evidence-
   }
 });
 
-test("this repository's own evidence surface is complete", async () => {
-  // The self-audit asserts zero error findings elsewhere; that assertion is only worth something if
-  // the run actually read everything it claims to have read.
+test("this repository's own evidence surface loses nothing unintentionally, and names what it does lose", async () => {
+  // THIS TEST PREVIOUSLY ASSERTED `complete === true` FOR THIS REPOSITORY, AND THAT WAS FALSE.
+  //
+  // Its reason for existing was right and is kept: the self-audit's zero-error-findings claim is
+  // only worth something if the run actually read what it claims to have read. But the run does not
+  // read `test/fixtures` — tracked, committed, first-party, and removed because `SKIP_DIRS` contains
+  // the name `fixtures`. The old assertion passed anyway, because `complete` did not account for
+  // exclusion at all. So this repository was the defect's own specimen while asserting it was not.
+  //
+  // The assertion is not flipped to `false`, which would accept the loss and check nothing. It is
+  // replaced by the two claims that are actually true and actually worth defending: no UNINTENDED
+  // loss of any kind, and every intentional loss named explicitly. If a second directory ever leaves
+  // this repository's evidence surface, this test fails until someone writes down why.
   const { json } = audit(REPO);
-  assert.equal(json.evidenceSurface.complete, true, JSON.stringify(json.evidenceSurface, null, 2));
+  const s = json.evidenceSurface;
+  const shown = JSON.stringify(s, null, 2);
+
+  // Nothing was unreadable, truncated, capped, or left unopened for want of budget. Every one of
+  // these would be a run that lost evidence it meant to have.
+  assert.deepEqual(s.unreadableFiles, [], shown);
+  assert.deepEqual(s.unreadableDirectories, [], shown);
+  assert.deepEqual(s.truncatedFiles, [], shown);
+  assert.equal(s.fileCapReached, false, shown);
+  assert.equal(s.readBudget.exhausted, false, shown);
+
+  // The single intentional loss, pinned by path. `test/fixtures` holds deliberate violations used by
+  // the detector suites; whether `fixtures` should be in `SKIP_DIRS` at all is a separate question
+  // about the name list, deliberately not settled here.
+  assert.deepEqual(s.frameworkExcludedDirectories, ["test/fixtures"], shown);
+
+  // And therefore the surface is honestly incomplete, rather than dishonestly whole.
+  assert.equal(s.complete, false, shown);
 });
 
 // ---------------------------------------------------------------------------

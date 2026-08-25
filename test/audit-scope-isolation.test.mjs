@@ -329,3 +329,139 @@ test("ignored files are accounted for in aggregate rather than per file", async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * Criterion 7: a framework-caused loss of eligible project evidence makes the evidence surface
+ * incomplete.
+ *
+ * This is the criterion that reopened #7 after the item had closed on six. The exclusion boundary
+ * records what it removed — criterion 2, met — and then asserted `complete: true` beside the record,
+ * so a consumer reading the surface was told the evidence was whole while a tracked first-party tree
+ * had never been opened. Measured on this repository itself: `test/fixtures` is tracked, committed,
+ * first-party, excluded by name, and the run called its surface complete.
+ *
+ * The four tests below are one specimen and three controls, and the controls are not decoration. The
+ * criterion forbids a blanket rule as explicitly as it requires the fix: repository-ignored content
+ * is legitimately outside the evidence surface, so an implementation that made every exclusion mean
+ * incompleteness must FAIL here rather than pass. It did. The first implementation of this criterion
+ * counted `.git` as lost project evidence and reported every repository on earth incomplete,
+ * including one with nothing excluded at all — caught by the last test in this file, before review.
+ *
+ * What these do NOT assert is the rule verdict. `security.no-sql-concat` still reports `passed` over
+ * the excluded bait, and that is #38's defect, not this one. Keeping the two apart is why each
+ * falsifier can prove one invariant without the other fix making its test green by accident.
+ */
+
+/** A tracked, committed, first-party defect inside a directory `SKIP_DIRS` removes by name. */
+async function baitIn(root, dir) {
+  await mkdir(path.join(root, dir), { recursive: true });
+  await writeFile(path.join(root, dir, "service.py"), SWALLOWED);
+}
+
+test("a tool-decided exclusion of tracked first-party code makes the surface incomplete", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-excl-complete-"));
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    await baitIn(root, "fixtures");
+    commit();
+
+    const surface = surfaceOf(audit(root));
+    const hit = excludedDir(surface, "fixtures");
+    assert.ok(hit, `fixtures was not excluded at all: ${JSON.stringify(surface.excludedDirectories)}`);
+    assert.equal(hit.reason, "conventional non-project directory");
+    assert.equal(hit.authorizedBy, "framework", "a name match is this tool's decision, not the project's");
+
+    assert.equal(
+      surface.complete,
+      false,
+      "the surface claimed completeness over a tracked tree this tool dropped from a hardcoded name",
+    );
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["fixtures"]);
+
+    // Load-bearing: without it, an implementation that excluded the whole repository would satisfy
+    // every assertion above by reporting nothing and losing everything.
+    assert.ok(
+      evidenceOf(parse(audit(root))).some((e) => e.includes("service.py")),
+      "first-party code outside the exclusion went unreported, so the run lost more than the tree",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a repository-authorized exclusion leaves the surface complete", async () => {
+  // THE FALSIFIER the criterion names. A blanket "any exclusion means incomplete" fails here, and
+  // that is the point: the project declared this tree disposable, so honouring the declaration loses
+  // nothing the run was ever owed. Content, and the defect in it, are identical to the test above.
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-excl-authorized-"));
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    await baitIn(root, "thirdparty");
+    await writeFile(path.join(root, ".gitignore"), "thirdparty/\n");
+    commit();
+
+    const surface = surfaceOf(audit(root));
+    const hit = excludedDir(surface, "thirdparty");
+    assert.ok(hit, `thirdparty was not excluded: ${JSON.stringify(surface.excludedDirectories)}`);
+    assert.equal(hit.reason, "ignored by the repository");
+    assert.equal(hit.authorizedBy, "repository");
+
+    assert.equal(surface.complete, true, "a project's own declaration was counted as this tool's loss");
+    assert.deepEqual(surface.frameworkExcludedDirectories, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a SKIP_DIRS name the repository also ignores is the project's decision, not this tool's", async () => {
+  // The case that decides whether the criterion is meaningful in practice rather than only in a
+  // fixture. SKIP_DIRS is consulted BEFORE the ignore set, so a name match wins the reported reason
+  // even when the repository independently ignores the same path — which is the ordinary state of
+  // every real dependency tree. Attributing authority from the reason alone would therefore report
+  // almost every repository as having lost evidence it had itself declared disposable.
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-excl-both-"));
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    await baitIn(root, "vendor");
+    await writeFile(path.join(root, ".gitignore"), "vendor/\n");
+    commit();
+
+    const surface = surfaceOf(audit(root));
+    const hit = excludedDir(surface, "vendor");
+    assert.ok(hit, `vendor was not excluded: ${JSON.stringify(surface.excludedDirectories)}`);
+    // The reason still reports which branch removed it. Only the authority is re-derived.
+    assert.equal(hit.reason, "conventional non-project directory");
+    assert.equal(hit.authorizedBy, "repository", "the repository's declaration was overridden by a name match");
+
+    assert.equal(surface.complete, true);
+    assert.deepEqual(surface.frameworkExcludedDirectories, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the repository's own .git directory cannot make a surface incomplete", async () => {
+  // The negative control, and it earned its place: the first implementation of this criterion
+  // treated .git as framework-caused loss, so EVERY repository reported an incomplete surface — the
+  // blanket rule the criterion exists to forbid, arrived at from the other direction. Nothing here
+  // is excluded but .git, and the surface must be complete.
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-excl-dotgit-"));
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    commit();
+
+    const surface = surfaceOf(audit(root));
+    const hit = excludedDir(surface, ".git");
+    assert.ok(hit, "the .git directory was not recorded as excluded at all");
+    assert.equal(hit.authorizedBy, "not-project-evidence");
+
+    assert.equal(surface.complete, true, "a repository's own storage was counted as lost project evidence");
+    assert.deepEqual(surface.frameworkExcludedDirectories, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
