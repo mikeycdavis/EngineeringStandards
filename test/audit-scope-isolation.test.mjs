@@ -329,3 +329,151 @@ test("ignored files are accounted for in aggregate rather than per file", async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// 4. Completeness is a claim about evidence, and only the project may narrow it
+//
+// Acceptance criterion 7 on the audit-exclusions item. The three exclusion authorities are not
+// interchangeable: a project that marks content ignored has declared it disposable, and a run that
+// skips it has lost nothing. A hardcoded name list has declared nothing, so when it removes tracked
+// content the run has lost project evidence and may not go on calling its surface complete.
+//
+// Both halves are load-bearing. A fix that simply made every exclusion incomplete would satisfy the
+// first test and fail the second, which is why the second exists.
+// ---------------------------------------------------------------------------
+
+/** Rule dispositions, for the polarity the surface flags alone cannot show. */
+function validateRules(dir) {
+  const r = spawnSync(process.execPath, [CLI, "validate", `--dir=${dir}`, "--json"], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  assert.equal(r.error, undefined, `spawn failed: ${r.error}`);
+  let json;
+  try {
+    json = JSON.parse(r.stdout);
+  } catch {
+    assert.fail(`stdout was not JSON. status: ${r.status} stderr: ${r.stderr.slice(0, 2000)}`);
+  }
+  return new Map(json.results.map((x) => [x.ruleId, x]));
+}
+
+async function policy(root) {
+  await writeFile(path.join(root, "project-policy.yml"), `standardVersion: "2.0.0"\n`);
+}
+
+test("a tool-decided exclusion over tracked content makes the surface incomplete", async () => {
+  const root = await tmp();
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    // `fixtures` is in SKIP_DIRS. Nothing here is ignored, nothing carries a marker, and the content
+    // is committed, so the ONLY thing removing it is the name.
+    await mkdir(path.join(root, "fixtures"), { recursive: true });
+    await writeFile(path.join(root, "fixtures", "vendored.py"), SWALLOWED);
+    commit();
+
+    const s = surfaceOf(audit(root));
+    const hit = excludedDir(s, "fixtures");
+    assert.ok(hit, `fixtures left no record; excludedDirectories was ${JSON.stringify(s.excludedDirectories)}`);
+    assert.equal(hit.authority, "framework", "the name list is not the project speaking");
+    assert.equal(hit.evidenceLost, true, "committed content under the excluded tree was not recognised as lost");
+    assert.equal(
+      s.complete,
+      false,
+      `the run dropped tracked content and still claimed a complete surface: ${JSON.stringify(s)}`,
+    );
+    assert.ok(
+      (s.evidenceLosses ?? []).includes("framework-exclusion"),
+      `the loss was not attributed; evidenceLosses was ${JSON.stringify(s.evidenceLosses)}`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a repository-authorized exclusion leaves the surface complete", async () => {
+  // The over-correction guard, and the reason criterion 7 names two outcomes rather than one. The
+  // cheap way to pass the test above is to make every exclusion defeat completeness; that fix fails
+  // here, because the project declaring content disposable is not the framework losing evidence.
+  const root = await tmp();
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    await mkdir(path.join(root, "thirdparty"), { recursive: true });
+    await writeFile(path.join(root, "thirdparty", "widget.py"), SWALLOWED);
+    await writeFile(path.join(root, ".gitignore"), "thirdparty/\n");
+    commit();
+
+    const s = surfaceOf(audit(root));
+    const hit = excludedDir(s, "thirdparty");
+    assert.ok(hit, `thirdparty left no record; excludedDirectories was ${JSON.stringify(s.excludedDirectories)}`);
+    assert.equal(hit.authority, "project", "an ignored tree is the project's own decision");
+    assert.equal(
+      s.complete,
+      true,
+      `an exclusion the project declared was treated as lost evidence: ${JSON.stringify(s)}`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a tool-decided exclusion that removes no committed content leaves the surface complete", async () => {
+  // `.git` and `dist` are excluded by name in every run of every repository. If the name alone were
+  // the test, no repository could ever report a complete surface and the flag would carry no
+  // information at all. What makes an exclusion a loss is committed content behind it, which is a
+  // question for the repository rather than for the name.
+  const root = await tmp();
+  try {
+    const commit = await initRepo(root);
+    await firstParty(root);
+    commit();
+    // Written after the commit so it is genuinely untracked rather than merely ignored.
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "bundle.py"), SWALLOWED);
+
+    const s = surfaceOf(audit(root));
+    for (const p of ["dist", ".git"]) {
+      const hit = excludedDir(s, p);
+      if (!hit) continue;
+      assert.equal(hit.authority, "framework", `${p} should be excluded on the framework's authority`);
+      assert.equal(hit.evidenceLost, false, `${p} holds nothing committed but was counted as lost evidence`);
+    }
+    assert.ok(excludedDir(s, "dist"), "dist was not recorded at all");
+    assert.equal(
+      s.complete,
+      true,
+      `an exclusion that cost the run nothing was treated as incompleteness: ${JSON.stringify(s)}`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a content rule does not report passed over a tool-excluded tracked tree", async () => {
+  // The surface flag and the verdict are two claims, and only the second is what a reader acts on.
+  // Criterion 1 is defeated by the pair: the report names the exclusion AND asserts the rule passed,
+  // so the exclusion is visible while its consequence is not. Withdrawal is what separates them.
+  const root = await tmp();
+  try {
+    const commit = await initRepo(root);
+    await policy(root);
+    await mkdir(path.join(root, "myapp"), { recursive: true });
+    await writeFile(path.join(root, "myapp", "clean.py"), "def add(a, b):\n    return a + b\n");
+    await mkdir(path.join(root, "fixtures"), { recursive: true });
+    await writeFile(path.join(root, "fixtures", "vendored.py"), SWALLOWED);
+    commit();
+
+    const hidden = validateRules(root).get("errors.no-swallowed-exceptions");
+    assert.ok(hidden, "the rule is absent from the report entirely");
+    assert.notEqual(
+      hidden.status,
+      "passed",
+      "a content rule reported passed over a tracked tree the run never opened",
+    );
+    assert.equal(hidden.disposition, "not-evaluated", `unexpected disposition: ${hidden.disposition}`);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

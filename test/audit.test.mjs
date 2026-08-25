@@ -995,11 +995,31 @@ test("a fully readable tree reports a complete evidence surface and no evidence-
   }
 });
 
-test("this repository's own evidence surface is complete", async () => {
-  // The self-audit asserts zero error findings elsewhere; that assertion is only worth something if
-  // the run actually read everything it claims to have read.
+test("this repository's own evidence surface loses exactly one tree, and names it", async () => {
+  // This test read `complete === true` until 2026-08-25, and it passed because the audit did not
+  // count a tool-decided exclusion as a loss. It does now, and the honest answer changed: this
+  // repository skips its own `test/fixtures` on the strength of the name `fixtures` being in
+  // SKIP_DIRS, and 71 files under it are tracked and committed. The original comment is the reason
+  // this is not softened away -- "the self-audit asserts zero error findings elsewhere; that
+  // assertion is only worth something if the run actually read everything it claims to have read."
+  // It did not, so nine content-derived rules now withdraw rather than reporting a pass this run
+  // did not establish. One of the unread files carries deliberate SQL-concatenation bait.
+  //
+  // The invariant is therefore pinned rather than dropped: ONE loss mode, ONE tree, and that tree
+  // named. Anything else going unsearched -- a cap, a starved budget, a second skipped directory --
+  // fails here exactly as the old assertion would have. Restoring `complete === true` is a change
+  // to what this repository excludes, not to what the audit reports, and it belongs to the open
+  // question of whether `fixtures` and `vendor` are names a tool may act on at all.
   const { json } = audit(REPO);
-  assert.equal(json.evidenceSurface.complete, true, JSON.stringify(json.evidenceSurface, null, 2));
+  const s = json.evidenceSurface;
+  const shown = JSON.stringify(s, null, 2);
+  assert.deepEqual(s.evidenceLosses, ["framework-exclusion"], shown);
+  const lost = (s.excludedDirectories ?? []).filter((e) => e.evidenceLost === true);
+  assert.deepEqual(
+    lost.map((e) => e.path),
+    ["test/fixtures"],
+    shown,
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -301,6 +301,29 @@ const R = {
  * that a genuine `fixtures/` directory of production code is skipped; that trade is worth it, and a
  * repository can still audit one directly with `--dir=`.
  */
+/**
+ * Who decided that content this walk could have searched will not be searched.
+ *
+ * Recorded at the moment of the decision rather than inferred later from the reason string, because
+ * the question `complete` has to answer is not *what* was excluded but *on whose authority* — and
+ * only the branch that made the call knows that. A later mapping from reason text back to authority
+ * would be a second definition of the same fact, free to drift from the first.
+ *
+ * The three are not interchangeable:
+ *
+ *   project    the repository itself marks the content ignored. The project declared it disposable,
+ *              so a run that does not search it has lost nothing it was owed, and may still call its
+ *              evidence surface complete.
+ *   content    the tree identified itself from the inside, through a marker its own tooling wrote
+ *              (`pyvenv.cfg`). Not the project speaking, but not a guess either: the content is
+ *              self-describing, and the framework is believing it rather than deciding for it.
+ *   framework  nobody declared anything. A hardcoded name matched. This is the framework removing
+ *              content on its own authority, and where that content was otherwise eligible it is a
+ *              loss of project evidence, indistinguishable in the results from a file the run never
+ *              had the budget to open.
+ */
+const EXCLUSION_AUTHORITY = { project: "project", content: "content", framework: "framework" };
+
 const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "out", "bin", "obj", ".next", ".nuxt",
   ".venv", "venv", "__pycache__", "target", "vendor", "coverage", ".turbo",
@@ -832,6 +855,25 @@ function createRun({ root, strict, json }) {
  * dropped two kinds without a word. The comment was wrong and the criterion it contradicted was
  * right, so the code moved rather than the wording.
  */
+/**
+ * Every directory that contains committed content, derived once from the repository's own answer.
+ *
+ * Built from `git ls-files` rather than from the walk, for the reason `trackedMatching` exists: a
+ * directory's tracked content is a fact about the repository, and a filesystem walk that has already
+ * decided to skip the directory is in no position to establish it.
+ */
+function ancestorDirectories(files) {
+  const dirs = new Set();
+  for (const f of files) {
+    let i = f.lastIndexOf("/");
+    while (i > 0) {
+      dirs.add(f.slice(0, i));
+      i = f.lastIndexOf("/", i - 1);
+    }
+  }
+  return dirs;
+}
+
 async function collectFiles(dir, acc, loss, excluded, run) {
   const { root, rel } = run;
   if (acc.length >= MAX_FILES) {
@@ -851,7 +893,11 @@ async function collectFiles(dir, acc, loss, excluded, run) {
   // virtualenv is a project someone deliberately pointed the audit at, and excluding everything
   // would report a clean run over a repository nothing examined.
   if (dir !== root && entries.some((e) => e.isFile() && VENDOR_MARKERS.has(e.name))) {
-    loss.excluded.push({ path: rel(dir), reason: "vendored dependency tree" });
+    loss.excluded.push({
+      path: rel(dir),
+      reason: "vendored dependency tree",
+      authority: EXCLUSION_AUTHORITY.content,
+    });
     return acc;
   }
 
@@ -863,11 +909,27 @@ async function collectFiles(dir, acc, loss, excluded, run) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) {
-        loss.excluded.push({ path: rel(full), reason: "conventional non-project directory" });
+        // Whether this cost the run anything is a question about the repository, not about the
+        // name, and it is asked of the repository. `.git`, `node_modules` and `dist` hold nothing
+        // committed, so excluding them removes no project evidence and the surface stays whole. A
+        // committed `fixtures/` or `vendor/` is the opposite case, and is why this field exists.
+        // `null` is neither answer: with no repository the run cannot establish that the exclusion
+        // was harmless, and an unestablished claim is not a true one.
+        const at = rel(full);
+        loss.excluded.push({
+          path: at,
+          reason: "conventional non-project directory",
+          authority: EXCLUSION_AUTHORITY.framework,
+          evidenceLost: excluded.trackedDirs ? excluded.trackedDirs.has(at) : null,
+        });
         continue;
       }
       if (excluded.dirs.has(rel(full))) {
-        loss.excluded.push({ path: rel(full), reason: "ignored by the repository" });
+        loss.excluded.push({
+          path: rel(full),
+          reason: "ignored by the repository",
+          authority: EXCLUSION_AUTHORITY.project,
+        });
         continue;
       }
       await collectFiles(full, acc, loss, excluded, run);
@@ -2286,9 +2348,13 @@ export async function main(args) {
   // subprocess rather than one per candidate directory, and so an unavailable repository degrades to
   // "exclude nothing" in one place instead of at every decision point.
   const ignored = ignoredEntries(root);
+  // Asked here for the same reason and at the same cost as the question above it: one subprocess
+  // rather than one per skipped directory, and one place where an unavailable repository degrades.
+  const tracked = trackedMatching(root, []);
   const exclusions = {
     dirs: new Set(ignored.ok ? ignored.directories : []),
     files: new Set(ignored.ok ? ignored.files : []),
+    trackedDirs: tracked.ok ? ancestorDirectories(tracked.files) : null,
   };
   const files = await collectFiles(root, [], surfaceLoss, exclusions, run);
   const contents = new Map();
@@ -2423,16 +2489,48 @@ export async function main(args) {
   //
   // So it goes where the other properties-of-the-run live, beside `fileCapReached`, and the header
   // states it in the same breath as the scanned count.
+  // ── Every way this run failed to search content it was eligible to search ────────────────────
+  //
+  // One table, because the two consumers below had been stating the policy separately and had
+  // already drifted apart: `complete` counted five loss modes, rule withdrawal counted two, and
+  // neither counted exclusion at all. A framework-authored exclusion is a sixth mode and belongs to
+  // both — a tracked tree the tool dropped on its own authority is exactly as absent from the
+  // results as one beyond the file cap, which is what the comment on `complete` has said since it
+  // was written for budget exhaustion.
+  //
+  // The two columns are different questions and are kept apart rather than collapsed:
+  //
+  //   defeats completeness  the run did not search everything it was eligible to search. True of
+  //                         every mode here, including the partial ones — a prefix is not the file.
+  //   withheld entirely     nothing at all was obtained for the affected content, so a rule reading
+  //                         it would be reading absence. Partial modes are false: a truncated file
+  //                         and an unreadable one produce real findings from what WAS read, and
+  //                         withdrawing every content rule over one such file would convert a small
+  //                         measured loss into a total refusal to conclude.
+  //
+  // Project- and content-authored exclusions are not in the table at all. They are decisions about
+  // what is not the project's code, not failures to search it — see `EXCLUSION_AUTHORITY`.
+  const frameworkExclusions = surfaceLoss.excluded.filter(
+    (e) => e.authority === EXCLUSION_AUTHORITY.framework && e.evidenceLost !== false,
+  );
+  const evidenceLosses = [
+    { mode: "unreadable-file", present: unreadableFiles.length > 0, withheldEntirely: false },
+    { mode: "unreadable-directory", present: surfaceLoss.dirs.length > 0, withheldEntirely: false },
+    { mode: "truncated-file", present: truncatedFiles.length > 0, withheldEntirely: false },
+    { mode: "file-cap", present: surfaceLoss.capped, withheldEntirely: true },
+    { mode: "read-budget", present: surfaceLoss.budget.exhausted, withheldEntirely: true },
+    { mode: "framework-exclusion", present: frameworkExclusions.length > 0, withheldEntirely: true },
+  ].filter((m) => m.present);
+
   const evidenceSurface = {
-    // Budget exhaustion belongs here with the other loss modes. An eligible file nothing opened is
+    // Derived from the table above rather than restating it. An eligible file nothing opened is
     // exactly as absent from the results as one beyond the file cap, so a surface that still claimed
-    // completeness would be making the stronger available claim on the weaker evidence.
-    complete:
-      !unreadableFiles.length &&
-      !surfaceLoss.dirs.length &&
-      !truncatedFiles.length &&
-      !surfaceLoss.capped &&
-      !surfaceLoss.budget.exhausted,
+    // completeness would be making the stronger available claim on the weaker evidence. That was
+    // written for budget exhaustion and generalises to a tool-decided exclusion without amendment;
+    // it now governs both, because both are terms in the one list rather than clauses in this
+    // expression. The list also carries the modes this expression used to enumerate by hand, which
+    // is the point: the sentence above stops being a promise and becomes the definition.
+    complete: evidenceLosses.length === 0,
     unreadableFiles: uniq(unreadableFiles.map(rel)),
     unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
     truncatedFiles: uniq(truncatedFiles),
@@ -2450,6 +2548,10 @@ export async function main(args) {
     // Recorded because the exclusion set is only as good as the source that produced it. A run with
     // no repository excluded nothing, and a reader comparing two runs needs to know which they have.
     exclusionsFrom: ignored.ok ? "repository" : "unavailable",
+    // The term itself, reported rather than only its consequences. A reader who sees `complete:
+    // false` and cannot tell which mode caused it is back to guessing between a cap, a starved
+    // budget and a dropped directory, which are three different things to do something about.
+    evidenceLosses: evidenceLosses.map((l) => l.mode),
   };
 
   // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
@@ -2652,7 +2754,7 @@ export async function main(args) {
   // — every rule whose evidence is file contents is in the position `scm.no-committed-env-files` is
   // in when the repository cannot be read: it can report only that it found nothing, which over an
   // unsearched file is a statement about the run rather than about the project.
-  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted;
+  const filesWentUnsearched = evidenceLosses.some((l) => l.withheldEntirely);
   const evaluatedThisRun = EVALUATED_RULES.filter(
     (id) =>
       !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
