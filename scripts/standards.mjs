@@ -310,6 +310,22 @@ const SKIP_DIRS = new Set([
 ]);
 
 /**
+ * The members of `SKIP_DIRS` that are not candidate project evidence in the first place.
+ *
+ * `.git` is the repository's own storage, not content the repository is made of. Skipping it removes
+ * nothing anyone could have audited, so it must not bear on whether the evidence surface is
+ * complete. Everything else in `SKIP_DIRS` is a judgement about content that could have been the
+ * project's — `vendor`, `fixtures`, `dist` and the rest can all hold tracked first-party code — and
+ * those do bear on it.
+ *
+ * This set exists because the completeness criterion's falsifier caught its absence: an
+ * implementation that treated every tool exclusion as lost evidence reported **every** repository
+ * incomplete, including one with nothing excluded but `.git`. That is the blanket rule the criterion
+ * was written to forbid, and it was the first thing written.
+ */
+const NOT_PROJECT_EVIDENCE = new Set([".git"]);
+
+/**
  * Files that identify their own directory as a dependency tree rather than the project's code.
  *
  * A name list cannot do this job, and the defect that produced this constant is the proof: the
@@ -823,6 +839,27 @@ function createRun({ root, strict, json }) {
  *                `conventional non-project directory` for `SKIP_DIRS`. The third used to be a bare
  *                `continue`: `.mypy_cache/` was 98 MB in one reproduction and left no trace at all,
  *                which is the same defect class as a silent cap.
+ *
+ * Each entry also carries `authorizedBy`, and it is a different question from `reason`. `reason`
+ * says which branch removed the directory; `authorizedBy` says **who decided** it was disposable —
+ * the project, or this tool. Only the project's own decision leaves the evidence surface complete,
+ * so the two cannot be collapsed:
+ *
+ *   repository   the project marked the path ignored. It said this is not its code, and a run that
+ *                honours that has lost nothing it was ever owed.
+ *   framework    this tool decided, from a hardcoded name or a marker file. Nobody declared the
+ *                content disposable; it may be tracked, committed and first-party.
+ *   not-project-evidence
+ *                the path was never candidate evidence — see `NOT_PROJECT_EVIDENCE`. Recorded so
+ *                the exclusion stays visible, but it cannot make a surface incomplete.
+ *
+ * `SKIP_DIRS` is checked before the repository-ignore set, so a name match wins the `reason` even
+ * when the repository independently ignores the same path — which is most real dependency trees.
+ * Attributing authority from `reason` alone would therefore report almost every repository as having
+ * lost evidence it had in fact declared disposable, so the `SKIP_DIRS` branch asks the ignore set
+ * directly rather than inferring. The ordering is left alone: it decides which reason is reported
+ * and this decides what the reason is worth, and changing the first to serve the second would
+ * rewrite evidence to suit a conclusion.
  *   files        an aggregate count and a bounded sample in `loss.excludedFiles`, never one entry
  *                each. A generated artifact beside tracked code is not a surface anyone expected to
  *                be audited, and listing every one would bury the directory-level exclusions that
@@ -852,7 +889,9 @@ async function collectFiles(dir, acc, loss, excluded, run) {
   // virtualenv is a project someone deliberately pointed the audit at, and excluding everything
   // would report a clean run over a repository nothing examined.
   if (dir !== root && entries.some((e) => e.isFile() && VENDOR_MARKERS.has(e.name))) {
-    loss.excluded.push({ path: rel(dir), reason: "vendored dependency tree" });
+    // Always `framework`: the parent loop consults the ignore set before recursing, so a tree
+    // that reaches this branch is one the repository did not declare disposable.
+    loss.excluded.push({ path: rel(dir), reason: "vendored dependency tree", authorizedBy: "framework" });
     return acc;
   }
 
@@ -864,11 +903,22 @@ async function collectFiles(dir, acc, loss, excluded, run) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) {
-        loss.excluded.push({ path: rel(full), reason: "conventional non-project directory" });
+        loss.excluded.push({
+          path: rel(full),
+          reason: "conventional non-project directory",
+          // Three authorities, not two. The repository's own storage was never project evidence; a
+          // path the repository declares ignored is the project's decision; anything else here is
+          // this tool's decision about content nobody declared disposable.
+          authorizedBy: NOT_PROJECT_EVIDENCE.has(entry.name)
+            ? "not-project-evidence"
+            : excluded.dirs.has(rel(full))
+              ? "repository"
+              : "framework",
+        });
         continue;
       }
       if (excluded.dirs.has(rel(full))) {
-        loss.excluded.push({ path: rel(full), reason: "ignored by the repository" });
+        loss.excluded.push({ path: rel(full), reason: "ignored by the repository", authorizedBy: "repository" });
         continue;
       }
       await collectFiles(full, acc, loss, excluded, run);
@@ -2200,6 +2250,26 @@ function renderHuman(fileCount, surface, run) {
           `${surface.readBudget.limitBytes}-byte read budget was spent`,
       );
     }
+    // Six terms here, six in `complete`. The two lists are parallel by obligation and not by
+    // construction — one lives on the evidence surface and one lives in this renderer — and this
+    // term was missing for exactly as long as it took to notice. The sixth was added to `complete`
+    // and not to this list, so on a run whose only loss was a tool-decided exclusion the header
+    // printed `Evidence surface INCOMPLETE — .`: a run announcing it had lost evidence and then
+    // naming none of it. Measured on this repository, where `test/fixtures` is the only loss.
+    //
+    // That is the same defect this whole boundary exists to prevent, one layer up: the predicate
+    // told the truth and the sentence a reader actually sees did not. The paths are named rather
+    // than counted because the exclusion summary below lists EVERY exclusion, repository-authorized
+    // ones included, so a count alone would leave the reader unable to tell which subset was the
+    // cause. Anything added to `complete` after this belongs here in the same commit.
+    if (surface.frameworkExcludedDirectories.length) {
+      const all = surface.frameworkExcludedDirectories;
+      const rest = all.length > 6 ? ` and ${all.length - 6} more` : "";
+      parts.push(
+        `${all.length} directory(ies) excluded by this tool rather than by the repository ` +
+          `(${all.slice(0, 6).join(", ")}${rest})`,
+      );
+    }
     lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
   }
   // Stated separately from incompleteness, and always — not only when something else went wrong.
@@ -2473,21 +2543,40 @@ export async function main(args) {
   //
   // So it goes where the other properties-of-the-run live, beside `fileCapReached`, and the header
   // states it in the same breath as the scanned count.
+  // Every loss of eligible project evidence that this framework caused, whatever removed it. The
+  // filter is on who decided, never on which branch reported it — see `authorizedBy` on
+  // `collectFiles`.
+  const frameworkExcluded = surfaceLoss.excluded.filter((e) => e.authorizedBy === "framework");
+
   const evidenceSurface = {
     // Budget exhaustion belongs here with the other loss modes. An eligible file nothing opened is
     // exactly as absent from the results as one beyond the file cap, so a surface that still claimed
     // completeness would be making the stronger available claim on the weaker evidence.
+    //
+    // That sentence was written for budget exhaustion and generalises to exclusion without a word
+    // changed, which is how this expression came to contradict its own comment: a directory this
+    // tool dropped from a hardcoded name is exactly as absent as one beyond the cap, and `complete`
+    // stayed true over it. Measured on this repository — `test/fixtures` is tracked, committed,
+    // first-party, and was excluded while the surface reported itself whole. A repository-authorized
+    // exclusion is the one case that does not count: content the project marked ignored was never
+    // owed to the run, so honouring the declaration loses nothing. Tool-decided exclusion is not a
+    // declaration by anyone.
     complete:
       !unreadableFiles.length &&
       !surfaceLoss.dirs.length &&
       !truncatedFiles.length &&
       !surfaceLoss.capped &&
-      !surfaceLoss.budget.exhausted,
+      !surfaceLoss.budget.exhausted &&
+      !frameworkExcluded.length,
     unreadableFiles: uniq(unreadableFiles.map(rel)),
     unreadableDirectories: uniq(surfaceLoss.dirs.map(rel)),
     truncatedFiles: uniq(truncatedFiles),
     fileCapReached: surfaceLoss.capped,
     excludedDirectories: surfaceLoss.excluded,
+    // The subset of the above that this tool decided rather than the project, and therefore the
+    // reason `complete` can be false while every exclusion is nonetheless recorded. Named rather
+    // than left to be re-derived: the distinction is the whole content of the completeness claim.
+    frameworkExcludedDirectories: frameworkExcluded.map((e) => e.path),
     // A count and a bounded sample, never one entry per file — see the granularity note on
     // `collectFiles`. Reported even though it is not incompleteness: an ignored file is a decision
     // about what is not the project's code, and a reader who cannot see the count cannot tell a
