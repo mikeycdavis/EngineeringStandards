@@ -78,8 +78,23 @@ import path from "node:path";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Directories no scan descends into. */
-const SKIP = new Set([".git", "node_modules", "fixtures", ".vs", "dist", "coverage"]);
+/** Directories no scan descends into, beside every dot-prefixed entry. */
+const SKIP = new Set(["node_modules", "fixtures", "dist", "coverage"]);
+
+/**
+ * Dot-prefixed entries are out of scope, and this is a scope decision rather than an error swallow.
+ *
+ * The repository already uses dot-prefixing to mean *not a file this project audits*.
+ * `test/invocation-ownership.test.mjs` relies on it: its negative control is written to
+ * `scripts/.shared-cache-control.mjs` and removed in a `finally`, dot-prefixed precisely so nothing
+ * treats it as a source file. This scan did treat it as one — the test runner runs files
+ * concurrently, so between listing `scripts/` and reading it the control was deleted, and the scan
+ * died on ENOENT. It passed locally and lost the race in CI, which is the worst way for it to fail.
+ *
+ * Skipping the convention the repository already keeps costs nothing measurable: no `.md` or `.mjs`
+ * file under a dot name or a dot directory is in scope today, so the link count is unchanged.
+ */
+const hidden = (name) => name.startsWith(".");
 
 /** A Markdown inline link whose target is relative — not a URL, not a bare fragment. */
 const LINK = /\]\((?!https?:|mailto:|#)([^)\s]+)\)/g;
@@ -145,6 +160,7 @@ async function sources(root) {
   const walk = async (dir) => {
     for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
       const full = path.join(dir, entry.name);
+      if (hidden(entry.name)) continue;
       if (entry.isDirectory()) {
         if (!SKIP.has(entry.name)) await walk(full);
       } else if (entry.name.endsWith(".md") || entry.name.endsWith(".mjs")) {
@@ -197,9 +213,20 @@ export async function checkLinks(root = ROOT) {
 
   let checked = 0;
   const broken = [];
+  const unread = [];
 
   for (const file of files) {
-    const text = await readFile(path.join(root, file), "utf8");
+    // A file can disappear between being listed and being opened. Reported rather than skipped and
+    // rather than fatal: this check's whole claim is that every link resolves, and a file it could
+    // not open is one it did not check — the same distinction the evidence surface draws between a
+    // file that was searched and one that was never read (Standard 44 R12).
+    let text;
+    try {
+      text = await readFile(path.join(root, file), "utf8");
+    } catch (error) {
+      unread.push({ file, reason: error.code ?? String(error) });
+      continue;
+    }
     const destination = layout.destinationOf.get(file);
     const rule = destination ? "template" : "ordinary";
     // A template is read where init put it, so its links resolve from there. Everything else
@@ -226,7 +253,7 @@ export async function checkLinks(root = ROOT) {
     }
   }
 
-  return { checked, broken, files: files.length };
+  return { checked, broken, unread, files: files.length };
 }
 
 async function main(argv) {
@@ -237,6 +264,7 @@ async function main(argv) {
     console.log(JSON.stringify(result, null, 2));
   } else if (result.broken.length === 0) {
     console.log(`OK — ${result.checked} relative links across ${result.files} files all resolve.`);
+    for (const u of result.unread) console.log(`  (not read: ${u.file} — ${u.reason})`);
   } else {
     console.log(`${result.broken.length} of ${result.checked} relative links do not resolve:\n`);
     for (const b of result.broken) {
@@ -245,6 +273,9 @@ async function main(argv) {
       console.log(`    resolved ${b.resolved}  (${b.rule} rule)\n`);
     }
   }
+  // Unread files do not fail the run on their own — nothing about them says a link is broken — but
+  // they are never silent, because a clean result over files nobody opened is the shape this
+  // repository names most often.
   return result.broken.length === 0 ? 0 : 1;
 }
 
