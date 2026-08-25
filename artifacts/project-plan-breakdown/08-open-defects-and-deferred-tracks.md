@@ -780,12 +780,22 @@ that approval deliberately does not cover.
 
 ### Decouple `Tracked by` resolution from one backlog implementation
 
-- **Status:** COMPLETE — 2026-08-24 at `d53a627`, established by the full repository gate at that
-  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 358 tests, 0
-  failures. `validate` at that content is unchanged from `develop` at `be30c081` — 23 passed, 4
+- **Status:** COMPLETE — 2026-08-24 at `85787e6`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 361 tests, 0
+  failures, 0 skipped. `validate` at that content is unchanged from `develop` at `be30c081` — 23 passed, 4
   failed, 23 skipped, with the four failures being the four standing recorded human rejections and no
   rule changing status or assurance. This row is the commit after `d53a627` and changes only this
   section.
+
+  **The seam was correct and the check that guards it was not.** GitHub's `test` job failed at
+  `ef87565` where six local gate runs had passed: `scripts/links.mjs` listed `scripts/`, then opened
+  each file, and `test/invocation-ownership.test.mjs` deleted its dot-prefixed negative control in
+  between. The scan was not honouring a convention the repository already keeps — that control is
+  dot-prefixed precisely so nothing treats it as a source file. Dot-prefixed entries are now out of
+  scope, at no cost in coverage (1562 links across 131 files before and after), and a file that
+  cannot be opened is recorded as `unread` and named rather than crashing the run or vanishing from
+  it. Recorded here because a green gate obtained after CI found what six local runs missed is worth
+  saying out loud.
 - **Tracked by:** GitHub issue [#5](https://github.com/mikeycdavis/EngineeringStandards/issues/5)
 - **Evidence:** opened 2026-08-11; measured and closed 2026-08-24. The recorded gap was accurate at
   `develop`: the resolver in [`scripts/standards.mjs`](../../scripts/standards.mjs) built
@@ -868,7 +878,7 @@ that approval deliberately does not cover.
 
   All eleven were written before `scripts/tracking.mjs` existed and were run against a missing
   module first.
-- **Verification:** `npm test`; 358 tests, 0 failures at `d53a627`. The `ST-999` assertion still
+- **Verification:** `npm test`; 361 tests, 0 failures, 0 skipped at `85787e6`. The `ST-999` assertion still
   produces exactly one finding, and `node scripts/standards.mjs audit .` on this repository now
   reports fourteen unverifiable delegations where it previously reported none.
 - **Dependencies:** the discrepancy categories in [`03`](03-standards-audit-cli.md) — satisfied; this
