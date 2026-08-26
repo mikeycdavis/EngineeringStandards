@@ -1121,35 +1121,39 @@ that approval deliberately does not cover.
   making `architecture.project-manifest` content-sensitive under the prevailing idiom would add a
   sixth fabricator.
 
-### `validate` reports a verdict without reporting what it could not read
+### Candidate finding — `validate` reports a verdict without saying what it could not read
 
-- **Status:** CANDIDATE — measured, not yet triaged into a tracked item.
-- **Tracked by:** nothing yet. Recorded here so it is not rediscovered later from the same symptom.
-- **Evidence:** measured 2026-08-26 at `6b64908` while building the falsifiers for
-  [#38](#unavailable-content-evidence-must-never-be-read-as-content). `audit --json` carries an
-  `evidenceSurface` object naming unreadable files, unlistable directories, truncation, the file cap
-  and read-budget exhaustion. `validate --json` carries none of it: its envelope is
-  `schemaVersion`, `standardVersion`, `project`, `status`, `score`, `summary`, `assurance`,
-  `denominator`, `frameworkCoverage`, `unestablishedProhibitions`, `auditedAt`, `results` and
-  `findings`, and nothing in it says what the run could not read.
-- **Purpose:** `validate` is the command CI gates on, and it is the one that cannot say how much of
-  the project its verdict covers. A consumer joining results across runs (Standard 31) cannot
-  distinguish a full-coverage `COMPLIANT` from one reached over a partially read tree. #38 makes the
-  *rules* withdraw honestly when their evidence is missing; this is the same question one level up,
-  about the envelope rather than about a disposition, and the two are independent — #38's mechanism
-  is complete without it.
+**A measured finding, not a plan item, and the distinction is deliberate.** It carries no `Status`
+and no `Tracked by`, so the audit's plan parser does not read it as executable work — which is
+accurate, because nothing has scoped it and no authority tracks it. Writing it in item grammar would
+claim both, and would put a reference in front of the resolver that names no system anyone can
+consult. Recorded here so it is not rediscovered later from the same symptom.
 
-  The measurement is not hypothetical: `test/evidence-availability.test.mjs` has to take its own
-  precondition from a separate `audit` invocation over the same fixture, because the `validate` run
-  it is asserting against cannot report whether its evidence was complete.
-- **Deliverables:** not designed. The obvious shape — carry `evidenceSurface` into the validate
-  envelope — is a **schema change to a published contract** and is a versioning decision with
-  adopter consequences, which is why this is recorded as a candidate rather than started.
-- **Acceptance Criteria:** none yet; this item has not been scoped.
-- **Verification:** none yet.
-- **Dependencies:** [Standard 31](../../standards/31-whatsnext-compatibility.md)'s envelope contract,
-  and whatever [#1](#resolve-standard-31-r4s-comparability-gap) settles about comparability, since
-  both change what a consumer may conclude from two results it is joining.
+**Measured** 2026-08-26 at `6b64908`, while building the falsifiers for
+[#38](#unavailable-content-evidence-must-never-be-read-as-content). `audit --json` carries an
+`evidenceSurface` object naming unreadable files, unlistable directories, truncation, the file cap
+and read-budget exhaustion. `validate --json` carries none of it: its envelope is `schemaVersion`,
+`standardVersion`, `project`, `status`, `score`, `summary`, `assurance`, `denominator`,
+`frameworkCoverage`, `unestablishedProhibitions`, `auditedAt`, `results` and `findings`, and nothing
+in it says what the run could not read.
+
+**Why it matters.** `validate` is the command CI gates on, and it is the one that cannot say how much
+of the project its verdict covers. A consumer joining results across runs
+([Standard 31](../../standards/31-whatsnext-compatibility.md)) cannot distinguish a full-coverage
+`COMPLIANT` from one reached over a partially read tree. #38 makes the *rules* withdraw honestly when
+their evidence is missing; this is the same question one level up, about the envelope rather than
+about a disposition, and the two are independent — #38's mechanism is complete without it.
+
+The measurement is not hypothetical. `test/evidence-availability.test.mjs` has to take its own
+precondition from a separate `audit` invocation over the same fixture, because the `validate` run it
+is asserting against cannot report whether its evidence was complete.
+
+**Deliberately not designed here.** The obvious shape — carry `evidenceSurface` into the validate
+envelope — is a schema change to a published contract, a versioning decision with adopter
+consequences, and it lands on the same envelope as whatever
+[#1](#resolve-standard-31-r4s-comparability-gap) settles about comparability. Both change what a
+consumer may conclude from two results it is joining. Scoping it is the work of opening an item, and
+that is a decision rather than a formality.
 
 ### Make `architecture.project-manifest` check content, not presence
 
