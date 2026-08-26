@@ -784,11 +784,24 @@ function findRoot(start) {
  *
  * Returning a value a caller cannot accidentally use as text is the whole mechanism. There is no
  * `?? ""` to reach for, because there is no string to reach.
+ *
+ * A THIRD ANSWER, because a prefix is not the file. `readText` caps each individual read at
+ * MAX_READ_BYTES, so a large file is retained in part, and `contents.has(f)` says yes over content
+ * that stops in the middle. The distinction is not pedantic and its two directions are not
+ * symmetric: a violation FOUND in the prefix was genuinely found and stays found, while a clean
+ * result over the prefix says nothing about the bytes after it — a secret at offset 400,001 is
+ * invisible to a check that reports the file clean. `partial` is therefore reported beside
+ * `available` rather than folded into it, so a caller can keep the first and withhold the second.
  */
-function contentOf(contents, f) {
-  return contents.has(f)
-    ? { available: true, text: contents.get(f) }
-    : { available: false, text: null, reason: "collected but never searched" };
+function contentOf(contents, f, run) {
+  if (!contents.has(f)) return { available: false, partial: false, text: null, reason: "collected but never searched" };
+  const partial = run?.partial?.has(f) ?? false;
+  return {
+    available: true,
+    partial,
+    text: contents.get(f),
+    reason: partial ? `read in part; only the first ${MAX_READ_BYTES} bytes were retained` : null,
+  };
 }
 
 function createRun({ root, strict, json }) {
@@ -807,6 +820,9 @@ function createRun({ root, strict, json }) {
    */
   const unknownChecks = new Map();
 
+  /** Files retained in part, so `contentOf` can answer with a prefix without calling it the file. */
+  const partial = new Set();
+
   return {
     root,
     strict,
@@ -814,6 +830,7 @@ function createRun({ root, strict, json }) {
     findings,
     sources,
     unknownChecks,
+    partial,
 
     /**
      * Record that a check could not be performed, and emit nothing.
@@ -1337,7 +1354,7 @@ function detectMissingDocs(files, contents, run) {
     // The presence check above is structural and always valid. Only the length test needs content,
     // so only the length test is withdrawn — the missing `docs/architecture.md` beside it still
     // fails the rule, because that was established.
-    const c = contentOf(contents, readme);
+    const c = contentOf(contents, readme, run);
     if (!c.available) run.unknown("documentation.architecture", rel(readme), c.reason);
     else if (c.text.trim().length < 400) missing.push(`${rel(readme)} (under 400 characters)`);
   }
@@ -1445,7 +1462,7 @@ function detectMissingPlanningArtifacts(files, contents, run) {
     return;
   }
 
-  const overviewContent = contentOf(contents, overview);
+  const overviewContent = contentOf(contents, overview, run);
   if (!overviewContent.available) {
     // "A plan directory is evidence of a plan only when it has content" is a claim about the file's
     // body. Over a body nobody read it is a claim about the run.
@@ -1609,13 +1626,17 @@ function detectOpenQuestions(files, contents, run) {
   const { rel, addFinding } = run;
   const qFile = files.find((f) => rel(f) === "artifacts/project-baseline/open-questions.md");
   if (!qFile) return;
-  const questions = contentOf(contents, qFile);
+  const questions = contentOf(contents, qFile, run);
   if (!questions.available) {
     // The quiet polarity. Both counts below come from matching this text, so an unread file scores
     // zero on each and the rule passes — silence indistinguishable from a clean document.
     run.unknown("reconstruction.open-questions", rel(qFile), questions.reason);
     return;
   }
+  // A prefix establishes a violation it contains and cannot establish the absence of one after it,
+  // so the check still runs and the unknown is recorded beside it: a match in the retained bytes is
+  // a real match, and aggregation keeps it while withholding the clean result.
+  if (questions.partial) run.unknown("reconstruction.open-questions", rel(qFile), questions.reason);
   const text = questions.text;
   // Fixed, greppable marker written by the project-reconstruction skill's questions template.
   const open = (text.match(/^\s*-?\s*\*\*Status:\*\*\s*open\s*$/gim) ?? []).length;
@@ -1702,14 +1723,21 @@ async function detectPlanDiscrepancies(files, contents, run) {
   //
   // Files that WERE read are still parsed: a violation found in one plan file is established
   // regardless of another going unread, and aggregation keeps it.
-  for (const f of planFiles.filter((f) => !contentOf(contents, f).available)) {
-    const reason = contentOf(contents, f).reason;
+  for (const f of planFiles.filter((f) => !contentOf(contents, f, run).available)) {
+    const reason = contentOf(contents, f, run).reason;
+    run.unknown("planning.item-fields", rel(f), reason);
+    run.unknown("planning.plan-code-consistency", rel(f), reason);
+  }
+  // The same asymmetry one detector along: items parsed out of a prefix are real, but the absence of
+  // an incomplete one says nothing about the bytes that were never retained.
+  for (const f of planFiles.filter((f) => contentOf(contents, f, run).partial)) {
+    const reason = contentOf(contents, f, run).reason;
     run.unknown("planning.item-fields", rel(f), reason);
     run.unknown("planning.plan-code-consistency", rel(f), reason);
   }
   const items = planFiles
-    .filter((f) => contentOf(contents, f).available)
-    .flatMap((f) => parsePlanItems(contentOf(contents, f).text, rel(f)));
+    .filter((f) => contentOf(contents, f, run).available)
+    .flatMap((f) => parsePlanItems(contentOf(contents, f, run).text, rel(f)));
   const executable = items.filter((i) => i.fields.has("Status"));
   if (executable.length === 0) return;
 
@@ -1927,8 +1955,13 @@ function detectStandardsViolations(files, contents, run) {
       // The mixed case in one detector. R4 above is structural and may already have failed; R6 here
       // needs the prompt's text. Withdrawing both because this one is unknown would erase R4's
       // established violation, which is precisely why the check rather than the rule is the unit.
-      const prompt = contentOf(contents, promptFile);
+      const prompt = contentOf(contents, promptFile, run);
       if (!prompt.available) {
+        run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
+      } else if (prompt.partial && !/reconstructed from the existing codebase/i.test(prompt.text)) {
+        // R6's declaration may sit past the per-file cap, so its absence from a prefix establishes
+        // nothing. The two length checks in this file's siblings do not need this: truncation implies
+        // a file far above their thresholds, so a prefix can only satisfy them.
         run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
       } else if (!/reconstructed from the existing codebase/i.test(prompt.text)) {
         violations.push([rel(promptFile), "R6: reconstructed prompt does not declare itself reconstructed", R.prompt]);
@@ -2559,7 +2592,12 @@ export async function main(args) {
       unreadableFiles.push(f);
       continue;
     }
-    if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+    if (read.truncated) {
+      truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+      // Recorded per file, not just as a surface total, because the caller that matters is a CHECK
+      // asking whether it has this file — and a prefix is a different answer from the file.
+      run.partial.add(f);
+    }
     contents.set(f, read.text);
     if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
 
@@ -2899,7 +2937,40 @@ export async function main(args) {
   // scan resolve it through `sources.get(f)?.code ?? ""` — the same coercion, one indirection away.
   // The trigger is corrected rather than the table extended: the table's membership is not what was
   // wrong, the question it was being asked was.
-  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted || unreadableFiles.length > 0;
+  //
+  // `frameworkExcluded` is the fourth term and the one the read seam structurally cannot reach. A
+  // file this tool excluded never enters the walk, never enters `contents`, and no accessor is ever
+  // called for it — so no check ever asks, and `unknownChecks` records nothing. The other three
+  // terms describe content that was collected and then lost; this one describes content that was
+  // never collected, and the two need separate observation points because there is no moment in a
+  // detector's execution where the second is visible. Measured: a detector whose candidates are all
+  // excluded simply iterates zero times and reports clean.
+  //
+  // THE FILTER IS THE WHOLE CONTROL, and it is `authorizedBy`, not "was something excluded". A
+  // repository that declares its own ignore set has NARROWED WHAT ITS PROJECT IS, which is a
+  // legitimate answer and leaves the run complete; a framework that removes tracked project code by
+  // matching a directory name has LOST EVIDENCE and must not report a clean forbidden rule over it.
+  // `.git` is neither — it is `not-project-evidence` — and if it counted here, every run in every
+  // repository would withdraw nine rules forever. That distinction is PR #42's, and this term is the
+  // second consumer of it rather than a new judgement.
+  //
+  // This repository is its own specimen, which is why the verdict moves when this lands: it excludes
+  // `test/fixtures` by name, 71 tracked committed files, two of which carry deliberate SQL-concat
+  // and cert-bypass bait. `security.no-sql-concat: passed` was never true here. Nine rules go to
+  // not-evaluated and that is the honest state, not a regression to be tuned away.
+  //
+  // A directory that could not be LISTED belongs here for the reason the others make obvious once
+  // stated: nothing beneath it was ever collected, so an absence-based rule reports "found nothing"
+  // over files it never had the chance to see. Truncation belongs for the same reason one
+  // indirection in -- a retained prefix is not the file, and a secret past the per-file cap is
+  // invisible to a check that calls the file clean.
+  const filesWentUnsearched =
+    surfaceLoss.capped ||
+    surfaceLoss.budget.exhausted ||
+    unreadableFiles.length > 0 ||
+    frameworkExcluded.length > 0 ||
+    surfaceLoss.dirs.length > 0 ||
+    truncatedFiles.length > 0;
 
   // Aggregation from checks, which is the part the two mechanisms above cannot do.
   //
@@ -2912,14 +2983,20 @@ export async function main(args) {
   // that ran, and withdrawing the rule would discard a real finding because a DIFFERENT check went
   // unread. `reconstruction.baseline-artifacts` is exactly that shape — structural R4, content R6 —
   // and it is why no table over rule ids can express this.
+  // AND A CONFIRMED VIOLATION OUTRANKS EVERY WITHDRAWAL, the coarse one included. That was stated
+  // above and then honoured in only one of the two branches: the surface-level branch withdrew all
+  // nine table rules whenever anything went unsearched, so a secret found in a file that WAS read
+  // came back `skipped / not-evaluated`. Evidence loss bounds what a run may conclude from silence.
+  // It cannot unfind what the run already found, and the two branches now say so with one sentence
+  // rather than disagreeing.
   const confirmed = new Set(findings.filter((f) => f.rule).map((f) => f.rule));
-  const unknownAndUnestablished = (id) => run.unknownChecks.has(id) && !confirmed.has(id);
+  const lostEvidenceFor = (id) =>
+    (filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)) || run.unknownChecks.has(id);
 
   const evaluatedThisRun = EVALUATED_RULES.filter(
     (id) =>
       !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
-      !(filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)) &&
-      !unknownAndUnestablished(id),
+      !(lostEvidenceFor(id) && !confirmed.has(id)),
   );
 
   const verdict = evaluate({
