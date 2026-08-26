@@ -351,6 +351,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "5845621ec613f5a84fb7edeb4765a434"
+      - id: "review-meta-standards-not-weakened-005"
+        supersedes: "review-meta-standards-not-weakened-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-26"
+        evidence: "RE-REVIEWED 2026-08-26 against committed repository content at d91fb4a by Michael Davis as project owner, inheriting nothing from event 004. EXACTLY ONE REVIEWED PATH CHANGED: test/audit.test.mjs. scripts/compliance.mjs, test/compliance.test.mjs and test/instructions.test.mjs are byte-identical to a72f302, so the verdict engine, its own guards and the instruction surface are undisturbed: summarise, the verdict ordering, the Standard 45 R6 cap, exception precedence and every threshold are untouched, and no rule, schema or detector was edited. THE ONE CHANGE HAS THE SHAPE A WEAKENING WOULD TAKE AND WAS EXAMINED RATHER THAN ACCEPTED: a test was removed and an assertion with it. The removed assertion was complete === true for this repository, and it was FALSE-PASSING. This repository excludes test/fixtures because SKIP_DIRS contains the name fixtures, and the completeness flag did not account for exclusion at all, so the repository was the defect's own specimen while asserting it was not. The replacement is strictly stronger: seven assertions where there was one, covering unreadable files, unlistable directories, truncation, the file cap and budget exhaustion as separate claims, pinning the single intentional loss to the exact path test/fixtures, and asserting complete === false honestly rather than flipping the old assertion to accept the loss and check nothing. A second directory leaving this repository's evidence surface now fails the suite until someone writes down why. That is the same pattern event 002 approved: a rewrite made stricter after the original was shown to be passing over a live defect. MATERIAL SCOPE LIMITATION, AND THE ONE THAT MATTERS MOST HERE: this rule's reviewed path set contains no standards/ file at all, and this branch AMENDS standards/44-existing-project-reconstruction.md. A digest over the declared paths is structurally incapable of seeing a standard being weakened, which is the rule's own subject. The amendment was therefore examined explicitly, and this approval of it rests on this sentence rather than on the digest: it ADDS R12 point four, a new requirement that unavailable evidence produces no result in either direction; it narrows the not-mechanically-checked disclaimer from all of R11 and R12 to R11 and the rest of R12; and it records R12 point four as mechanically enforced against this framework's own evaluator, claiming no rule ID for it and naming the enforcement as structural. Nothing was removed, no threshold moved, no detector loosened, and the new coverage claim is backed by sixteen falsifiers in test/evidence-availability.test.mjs with four boundaries each caught by a different mutation, so it is not a capability asserted ahead of its evidence. npm run fidelity passes at 104 verbatim claims and npm run inventory reports no unclaimed standard file, so the amendment did not disturb a verbatim source block. RECOMMENDED AS A SEPARATE OWNER DECISION, deliberately not taken here: this rule's reviewed path set should include the standards it governs. Until it does, every future amendment to a standard will leave this attestation fresh by digest while being invisible to it."
+        reference: "standards/46-source-control-safety.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+          revision: "d91fb4a"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "b97219a7968322edd413c7477d03c1bd"
 
   testing.no-weakening-to-pass:
     reviews:
@@ -420,6 +437,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "2cbf12cb90de3093c9e2d4ff2a04855a"
+      - id: "review-testing-no-weakening-to-pass-005"
+        supersedes: "review-testing-no-weakening-to-pass-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-26"
+        evidence: "RE-REVIEWED 2026-08-26 against committed repository content at d91fb4a by Michael Davis as project owner, inheriting nothing from event 004. EXACTLY ONE REVIEWED PATH CHANGED: test/audit.test.mjs. test/compliance.test.mjs, test/instructions.test.mjs and test/init.test.mjs are byte-identical to a72f302 by blob comparison. NO TEST WAS DELETED, DISABLED, SKIPPED OR RELAXED. One test was rewritten in place, which is the case this rule exists to catch, so it was read in full rather than counted: the prior assertion complete === true was passing over a live defect, because this repository loses test/fixtures to SKIP_DIRS and the completeness flag did not account for exclusion. The rewrite removes that one assertion and adds seven, separating unreadable files, unlistable directories, truncation, the file cap and budget exhaustion into independent claims and pinning the single intentional loss to an exact path. The suite is otherwise additive: sixteen new falsifiers in test/evidence-availability.test.mjs, none of which touches an existing test. NOTHING WAS MADE EASIER TO PASS. The mechanism those falsifiers pin was mutation-tested at four boundaries before being treated as the fix, and each boundary is caught by a DIFFERENT test rather than by one assertion counted four times, which is the evidence that the suite's sensitivity is real rather than asserted. DELIBERATELY NOT ADDED TO THE REVIEWED PATHS: test/evidence-availability.test.mjs. It exercises evidence availability rather than the weakening question, and widening the reviewed set would make this approval assert more than it examined, which is the objection event 007 raised in the same situation. LIMITATION RECORDED AT THIS EVENT: the suite could not be run to completion on the Windows host, where test/invocation-ownership.test.mjs fails on a newline-literal anchor under core.autocrlf. The full six-stage gate passed on this exact content in Docker, and that is what this approval rests on rather than a host run."
+        reference: "standards/46-source-control-safety.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+            - test/init.test.mjs
+          revision: "d91fb4a"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "0840ffece61a8abad65b636a75890e8e"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
@@ -544,6 +578,24 @@ attestations:
           revision: "79e8222"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "08fa730748da6365d30723a13aaff4fe"
+      - id: "review-architecture-no-hidden-global-state-008"
+        supersedes: "review-architecture-no-hidden-global-state-007"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-26"
+        evidence: "RE-REVIEWED 2026-08-26 against committed repository content at d91fb4a by Michael Davis as project owner. THIS IS A FRESH REVIEW OF THE CHANGED SURFACE AND INHERITS NOTHING FROM EVENT 007: the prior approval is superseded rather than extended, and its conclusion was re-derived from the code at this revision. The basis remains ADR 0014's model, lifetime rather than a binding table, and this event still does NOT approve ADR 0007's enumeration or its process-exit reset. Applicability and exception state are untouched: forbidden, manual-review, no exception declared and none sought. EXACTLY ONE REVIEWED PATH CHANGED. ADR 0014, scripts/inventory.mjs, scripts/fidelity.mjs and test/invocation-ownership.test.mjs are byte-identical to 79e8222 by blob comparison; scripts/standards.mjs is the whole of what was re-reviewed, and it carries both the issue #7 closure at 99952bd and this branch's issue #38 work. DECLARATION SCAN, EVENT 007's OWN METHOD, RE-RUN AT BOTH REVISIONS: exactly one top-level binding added since 79e8222, NOT_PROJECT_EVIDENCE at scripts/standards.mjs:326, and none removed; standards.mjs still has zero top-level let or var. NOT_PROJECT_EVIDENCE arrived with the #7 closure rather than with this branch. It is a Set, so const binds the reference while the object stays mutable, which is the distinction event 005 had to make for VENDOR_MARKERS, and the approval therefore rests on the absence of mutation sites: a search across scripts/ and test/ finds the declaration and a single .has read at scripts/standards.mjs:961, with no add, delete, clear, reassignment or index write anywhere. THIS BRANCH ADDS NO MODULE-SCOPED STATE, VERIFIED THREE WAYS. contentOf is a module-level function that is pure in its two arguments and captures nothing. unknownChecks is a const declared inside createRun at scripts/standards.mjs:808, so it is constructed once per invocation beside findings and sources, and the unknown method is its single writer, preserving the single-writer property this record has always rested on. THE ONE NEW CLOSURE WAS READ AS A CLOSURE, which is the case a declaration scan cannot see and the reason event 007 read rather than scanned: unknownAndUnestablished at scripts/standards.mjs:2916 is a const inside main capturing exactly two things, run.unknownChecks and the confirmed Set built from findings in the same invocation, both invocation-owned; it is not returned, exported, or stored anywhere reachable after main returns. The corrected read loop introduces no binding at all: it stops setting contents for a failed read and returns early. VERIFIED IN THE TESTS AT THIS REVISION rather than assumed: the full six-stage gate passed at this content in Docker, including test and audit, and test/invocation-ownership.test.mjs is byte-identical to the file event 007 ran. LIMITATION RECORDED AT THIS EVENT: that file could NOT be executed on the Windows host, because its negative control matches a newline-literal anchor against a working tree that core.autocrlf renders as CRLF. It was run on an LF checkout of the pristine baseline and passes, and it runs in the gate's Linux image; the failure is a host artifact and not a property of this revision, and it is recorded rather than hidden because a control that cannot run on the platform it ran on is exactly what this repository has refused to accept before. LIMITATIONS UNCHANGED AND CARRIED FORWARD: the declaration scan is not authoritative, because a binding mutated through an alias escapes it as surfaceLoss does through the loss parameter of collectFiles, so completeness remains a review obligation rather than a mechanical guarantee; and nothing in scripts/standards.mjs is Object.freeze'd, so the module tables are immutable by the absence of a mutation site and by convention rather than by enforcement. MATERIAL LIMITATION RESTATED: this approval does not assert that human review is a sufficient control against hidden global state. It asserts what was examined at this revision."
+        reference: "artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/invocation-ownership.test.mjs
+          revision: "d91fb4a"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "aeb4ba00434da087656782b56a4adb81"
 
   architecture.no-duplicate-implementations:
     reviews:
@@ -613,6 +665,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "5d46bae7662fdb18c23f695ff8643569"
+      - id: "review-architecture-no-duplicate-implementations-005"
+        supersedes: "review-architecture-no-duplicate-implementations-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-26"
+        evidence: "RE-REVIEWED 2026-08-26 against committed repository content at d91fb4a by Michael Davis as project owner, inheriting nothing from event 004. EXACTLY ONE REVIEWED PATH CHANGED: test/audit.test.mjs. scripts/sections.mjs, scripts/inventory.mjs and scripts/fidelity.mjs are byte-identical to a72f302 by blob comparison, so section-heading ownership, the property this rule was opened for, is outside this change's surface entirely and its two holding tests are undisturbed. The one changed file replaces a single test with a stricter one and introduces no implementation of anything, so it cannot introduce a second one. MATERIAL SCOPE LIMITATION, RECORDED RATHER THAN RESOLVED: scripts/standards.mjs is NOT among this rule's reviewed paths, and this branch adds contentOf to it. The digest therefore cannot see the file most likely to carry a duplicate, and this approval does not rest on it. Examined anyway rather than left unstated: contentOf is the only availability lookup in scripts/, with no second definition of the concept under other words. What was found instead is an UNCONVERTED SITE rather than a duplicate implementation: sourceOf, structureOf and commentsOf still resolve through the sources map with an empty-string fallback, which is the same coercion one indirection away. This branch handles them by widening the surface-level withdrawal trigger rather than by giving them an availability answer of their own, so there is one concept with one implementation and three call sites that do not yet use it. That is a follow-on and is named here as one. RECOMMENDED AS A SEPARATE OWNER DECISION, deliberately not taken here: whether this rule's reviewed path set should include scripts/standards.mjs. Widening it inside this event would make the approval assert more than the digest covers, which is the objection event 007 raised when it declined to widen a reviewed set."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/sections.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/audit.test.mjs
+          revision: "d91fb4a"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "2507b57299c98a79ab06c33abb16f306"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
   # not an exception: the schema defines it as recording that a human looked and found the rule
