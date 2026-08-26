@@ -1087,6 +1087,32 @@ that approval deliberately does not cover.
   **Red-first, verified rather than asserted.** Against `99952bd` the falsifiers stand at seven
   failing and six passing; the two covering the read-failure route are red against the first
   implementation of the mechanism itself, not merely against the baseline.
+
+  **Bound to an exact head, 2026-08-26.** The full six-stage gate passed on committed content at
+  `6b64908` — `inventory`, `fidelity`, `policy`, `diagrams`, `test`, `audit` — and separately at
+  `d91fb4a` before the attestations were recorded, so the mechanism and the human review are
+  evidenced at two distinct revisions rather than one combined claim.
+
+  **Criterion 5 established by comparison rather than by inspection.** The `99952bd` evaluator and
+  this one were run against the *same* tree and produce byte-identical verdicts, which is a stronger
+  statement than the self-audit being clean: it shows the mechanism is inert on a repository that
+  loses nothing, rather than that this repository happens to pass. `validate` here is 24 passed, 4
+  failed, 0 warnings, 22 skipped, the four failures being the four standing recorded human
+  rejections and no rule changing status or assurance because of this work.
+
+  **Four attestations were refreshed at this head, and two of them could not cover what they were
+  asked to.** `architecture.no-hidden-global-state`, `architecture.no-duplicate-implementations`,
+  `meta.standards-not-weakened` and `testing.no-weakening-to-pass` were stale on `99952bd` *before*
+  this branch existed, and each was re-reviewed fresh at `d91fb4a` with no digest inherited. The
+  review reduced to two files: exactly one reviewed path changed per rule, `scripts/standards.mjs`
+  for the first and `test/audit.test.mjs` for the other three, with every other reviewed path
+  byte-identical by blob comparison. Two scope limitations are recorded in the attestations rather
+  than resolved inside them, and both are owner decisions this item does not take:
+  `meta.standards-not-weakened` has no `standards/` file among its reviewed paths, so a digest over
+  its declared set is structurally incapable of seeing a standard being weakened — which is that
+  rule's own subject, and this branch amends Standard 44; and
+  `architecture.no-duplicate-implementations` does not review `scripts/standards.mjs`, the file most
+  likely to carry a duplicate.
 - **Dependencies:** none blocking. It shares code with
   [the exclusion boundary](#fix-the-audits-project-level-exclusions), whose seventh criterion repairs
   the global completeness claim; that repair does not close this item and this item does not close
@@ -1094,6 +1120,36 @@ that approval deliberately does not cover.
   [#6/#8](#make-architectureproject-manifest-check-content-not-presence), which must not land first:
   making `architecture.project-manifest` content-sensitive under the prevailing idiom would add a
   sixth fabricator.
+
+### `validate` reports a verdict without reporting what it could not read
+
+- **Status:** CANDIDATE — measured, not yet triaged into a tracked item.
+- **Tracked by:** nothing yet. Recorded here so it is not rediscovered later from the same symptom.
+- **Evidence:** measured 2026-08-26 at `6b64908` while building the falsifiers for
+  [#38](#unavailable-content-evidence-must-never-be-read-as-content). `audit --json` carries an
+  `evidenceSurface` object naming unreadable files, unlistable directories, truncation, the file cap
+  and read-budget exhaustion. `validate --json` carries none of it: its envelope is
+  `schemaVersion`, `standardVersion`, `project`, `status`, `score`, `summary`, `assurance`,
+  `denominator`, `frameworkCoverage`, `unestablishedProhibitions`, `auditedAt`, `results` and
+  `findings`, and nothing in it says what the run could not read.
+- **Purpose:** `validate` is the command CI gates on, and it is the one that cannot say how much of
+  the project its verdict covers. A consumer joining results across runs (Standard 31) cannot
+  distinguish a full-coverage `COMPLIANT` from one reached over a partially read tree. #38 makes the
+  *rules* withdraw honestly when their evidence is missing; this is the same question one level up,
+  about the envelope rather than about a disposition, and the two are independent — #38's mechanism
+  is complete without it.
+
+  The measurement is not hypothetical: `test/evidence-availability.test.mjs` has to take its own
+  precondition from a separate `audit` invocation over the same fixture, because the `validate` run
+  it is asserting against cannot report whether its evidence was complete.
+- **Deliverables:** not designed. The obvious shape — carry `evidenceSurface` into the validate
+  envelope — is a **schema change to a published contract** and is a versioning decision with
+  adopter consequences, which is why this is recorded as a candidate rather than started.
+- **Acceptance Criteria:** none yet; this item has not been scoped.
+- **Verification:** none yet.
+- **Dependencies:** [Standard 31](../../standards/31-whatsnext-compatibility.md)'s envelope contract,
+  and whatever [#1](#resolve-standard-31-r4s-comparability-gap) settles about comparability, since
+  both change what a consumer may conclude from two results it is joining.
 
 ### Make `architecture.project-manifest` check content, not presence
 
