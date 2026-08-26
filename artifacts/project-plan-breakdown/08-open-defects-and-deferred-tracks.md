@@ -931,7 +931,46 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** READY
+- **Status:** IN_REVIEW — **the mechanism is built and every acceptance criterion but one is met;
+  the remaining one is met in substance and not in the letter it was written in, which is a
+  distinction the owner should rule on rather than this item.** `IN_REVIEW` is nonterminal, so
+  release closure stays blocked while the disposition is open.
+
+  **What landed.** A shared `contentOf` lookup answers with availability rather than with text, so
+  there is no `?? ""` to reach for at a converted site because there is no string to reach. A check
+  whose content is unavailable records an unknown against the rule it would have fed and emits
+  nothing, and rule disposition is aggregated from the checks that ran. Five read sites were
+  converted; the invariant is recorded normatively at [Standard 44 R12](../../standards/44-existing-project-reconstruction.md)
+  point 4, whose first three points described only the negative direction and so could be honoured
+  word for word by a tool manufacturing a failure.
+
+  **Where the letter is not met, stated plainly rather than reported as done.** The first acceptance
+  criterion says *no call site can reach `""` or `"{}"` for unread content, and the mechanism
+  enforces this rather than a comment asserting it.* Seven raw read sites remain, and `contents` is
+  still passed to every detector, so the seam is opt-in at the call site rather than enforced by
+  construction. What is established instead is the weaker claim that no remaining site can fabricate
+  a **verdict**: two of the seven bind no rule at all and produce descriptive findings only
+  (`detectCapabilities`, `detectJobs`), and the other five feed rules that are already withdrawn
+  wholesale by `CONTENT_DERIVED_RULES`. Enforcing the criterion literally means withholding
+  `contents` from detectors entirely, which converts every remaining site including the descriptive
+  ones and changes audit output well beyond this defect. That is a larger change than the evidence
+  here justifies, and it is recorded as unmet rather than reinterpreted into met.
+
+  **Two loss modes, not one.** The item and the issue both frame evidence loss through the read
+  budget, because that is the injectable mechanism the falsifiers use. A failed **read** was the
+  other route to the identical fabrication and was not covered by the first implementation: on
+  failure `readText` returns `text: ""` and the read loop stored it, so a file the process could not
+  open answered `available` with an empty string, and a ~200 KB README was still reported as "under
+  400 characters" at full budget. The read loop now retains nothing for a failed read, and the
+  surface-level withdrawal that covers the other nine rules had the same hole — it fired on the file
+  cap and on budget exhaustion and not on a read failure — so its trigger was corrected rather than
+  its table extended.
+
+  **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
+  this item does not close itself, and the specific thing needing a second party here is not whether
+  the tests pass but whether the unmet first criterion is acceptable as scoped or is work still owed.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)
 - **Evidence:** opened 2026-08-23, measured before it was filed and enumerated afterwards. The
   prevailing idiom at the twelve content-read sites in
@@ -1036,6 +1075,18 @@ that approval deliberately does not cover.
   **mutation-tested before it is treated as the fix** — disabling the tri-state at the aggregation
   boundary, and separately at the lookup boundary, must each be caught by a test, and by a different
   test, or the mechanism is not established.
+
+  **Mutation result.** Five mutants, all killed. Coercing `contentOf` back to `?? ""` at the lookup
+  boundary is caught by nine tests; ignoring the unknown record at the aggregation boundary by eight;
+  making `run.unknown()` a no-op by eight. The first two are discriminated rather than counted
+  twice: the mixed-case falsifier — R4 established beside an unread R6 — kills the lookup mutant and
+  not the aggregation one, because coercion re-fires R6 while a bypassed withdrawal cannot. Storing a
+  failed read again, and dropping read failure from the surface-level trigger, are each killed by
+  exactly one test and by a different one.
+
+  **Red-first, verified rather than asserted.** Against `99952bd` the falsifiers stand at seven
+  failing and six passing; the two covering the read-failure route are red against the first
+  implementation of the mechanism itself, not merely against the baseline.
 - **Dependencies:** none blocking. It shares code with
   [the exclusion boundary](#fix-the-audits-project-level-exclusions), whose seventh criterion repairs
   the global completeness claim; that repair does not close this item and this item does not close
