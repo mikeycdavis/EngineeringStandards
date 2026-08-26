@@ -34,7 +34,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -735,6 +735,145 @@ test("GUARD: governed content still reaches its real verdict, and .git never cou
       baitedVerdicts(root),
       ["failed/evaluated", "failed/evaluated", "warning/evaluated"],
       "governed first-party code did not reach its real verdict",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/** Prove a directory really cannot be listed, for the same reason `reallyUnreadable` exists. */
+function reallyUnlistable(dir) {
+  try {
+    readdirSync(dir);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+// --- Evidence loss bounds silence; it does not unfind what was found -----------------------------
+//
+// Three boundaries raised in review of this branch. Each is a way for the withdrawal machinery to
+// give a wrong answer, and the first two point in opposite directions: one withdraws a rule that was
+// established, the other keeps a rule that was not.
+
+/** A committed repository carrying the bait, plus whatever else the caller needs. */
+async function baitedFixture(extra = {}) {
+  const root = await tmp();
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  };
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  await writeFile(path.join(root, "README.md"), `# Specimen\n\n${"substantive prose ".repeat(60)}\n`);
+  await writeFile(path.join(root, "project-policy.yml"), CONTENT_POLICY);
+  for (const [rel, body] of Object.entries(extra)) {
+    const full = path.join(root, rel);
+    await mkdir(path.dirname(full), { recursive: true });
+    await writeFile(full, body);
+  }
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "specimen");
+  return root;
+}
+
+const statusOf = (json, id) => {
+  const r = resultFor(json, id);
+  return `${r.status}/${r.disposition}`;
+};
+
+test("a confirmed violation survives an unrelated file going unreadable", async () => {
+  // Evidence loss bounds what a run may conclude from SILENCE. It cannot unfind what the run already
+  // found, and the surface-level branch did not honour that: one unreadable file anywhere withdrew
+  // every rule in CONTENT_DERIVED_RULES, so a violation detected in a file that WAS read came back
+  // `skipped / not-evaluated`. The finding stayed in the report while the rule reported nothing —
+  // the two halves of one run disagreeing about whether a secret had been found.
+  const root = await baitedFixture({ "src/bait.js": CONTENT_BAIT });
+  const spare = path.join(root, "docs", "spare.md");
+  try {
+    await mkdir(path.join(root, "docs"), { recursive: true });
+    await writeFile(spare, "# Spare\n\nUnrelated to the bait.\n");
+    await denyRead(spare);
+    assert.ok(reallyUnreadable(spare), "could not make the spare file unreadable; fix the harness rather than skipping");
+
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.unreadableFiles.length > 0, "the fixture stopped producing a read failure");
+
+    const json = run("validate", root, AMPLE);
+    assert.ok(
+      findingsFor(json, "security.no-sql-concat").length > 0,
+      "the bait stopped producing a finding, so this test would prove nothing",
+    );
+    assert.equal(
+      statusOf(json, "security.no-sql-concat"),
+      "failed/evaluated",
+      "a violation found in a file that was read must survive an unrelated file being unreadable",
+    );
+  } finally {
+    await restoreRead(spare);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a directory that could not be listed withdraws the rules its contents would have fed", async (t) => {
+  // Nothing beneath an unlistable directory is ever collected, so an absence-based rule reports
+  // "found nothing" over files it never had the chance to see. The surface recorded the loss as an
+  // `evidence-unreadable-dir` finding and the trigger ignored it, so the verdict stayed clean beside
+  // a finding saying the run could not look.
+  const root = await baitedFixture();
+  const hidden = path.join(root, "src");
+  try {
+    await mkdir(hidden, { recursive: true });
+    await writeFile(path.join(hidden, "inner.js"), "const x = 1;\n");
+    await denyRead(hidden);
+    if (!reallyUnlistable(hidden)) {
+      t.skip("this host refuses to make a directory unlistable; the boundary runs on the Linux image");
+      return;
+    }
+
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.unreadableDirectories.length > 0, "the fixture stopped producing an unlistable directory");
+    assert.equal(surface.readBudget.exhausted, false, "the budget was spent, so this is not the loss mode under test");
+
+    const json = run("validate", root, AMPLE);
+    assert.equal(
+      statusOf(json, "security.no-sql-concat"),
+      "skipped/not-evaluated",
+      "an absence-based rule must not pass over a directory the run could not list",
+    );
+  } finally {
+    await restoreRead(hidden);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a retained prefix is not the file, and cannot establish a clean result", async () => {
+  // The third loss mode the item names and the first implementation ignored. `readText` caps each
+  // read at MAX_READ_BYTES, so a large file is retained IN PART while `contents.has(f)` answers yes.
+  // The bait here sits after the cap: every byte of the violation is outside what the run holds, so
+  // the rule reported `passed` over a file it had read four hundred kilobytes of.
+  const CAP = 400_000;
+  const padded = `${"// padding\n".repeat(Math.ceil(CAP / 10) + 1000)}\n${CONTENT_BAIT}`;
+  const root = await baitedFixture({ "src/big.js": padded });
+  try {
+    assert.ok(Buffer.byteLength(padded, "utf8") > CAP, "the specimen must exceed the per-file cap");
+
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.truncatedFiles.length > 0, "the fixture stopped producing a truncated read");
+    assert.equal(surface.readBudget.exhausted, false, "the budget was spent, so this is not the loss mode under test");
+
+    const json = run("validate", root, AMPLE);
+    assert.deepEqual(
+      findingsFor(json, "security.no-sql-concat"),
+      [],
+      "the bait was supposed to be past the cap; if it is visible this test proves nothing",
+    );
+    assert.equal(
+      statusOf(json, "security.no-sql-concat"),
+      "skipped/not-evaluated",
+      "a clean result over a prefix is a statement about the prefix, not about the file",
     );
   } finally {
     await rm(root, { recursive: true, force: true });
