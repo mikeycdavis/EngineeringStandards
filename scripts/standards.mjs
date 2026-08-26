@@ -773,7 +773,11 @@ function findRoot(start) {
  *
  * `contents` holds an entry for every file the run opened and retained. A file that is in `files`
  * and absent from `contents` was collected and never searched — the read budget was spent, or the
- * read failed. The prevailing idiom `contents.get(f) ?? ""` erased exactly that distinction, and
+ * read failed. The second of those was not true when this comment was first written: a failed read
+ * stored `readText`'s empty-string fallback, so `available` came back true over content nobody had.
+ * The read loop was corrected to match; the sentence is load-bearing, not descriptive.
+ *
+ * The prevailing idiom `contents.get(f) ?? ""` erased exactly that distinction, and
  * because empty is meaningful evidence in BOTH polarities the erasure did not merely lose coverage,
  * it manufactured a verdict: a README nobody opened is "under 400 characters", and a plan file
  * nobody opened has no incomplete items.
@@ -2542,8 +2546,20 @@ export async function main(args) {
       continue;
     }
 
-    if (!read.ok) unreadableFiles.push(f);
-    else if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+    if (!read.ok) {
+      // Opened, and the content NOT obtained. No entry is set, and that is the whole point: on
+      // failure `readText` returns `text: ""`, so storing it would hand `contentOf` an empty string
+      // to call available — the identical coercion this seam exists to remove, arriving through the
+      // other door. It read as safe because the two halves are eighteen hundred lines apart: the
+      // lookup asks `contents.has(f)`, and only the reader of THIS line knows that a file which
+      // could not be read still answers yes.
+      //
+      // Nothing is retained, so nothing is charged to the budget either; the `continue` skips the
+      // accounting below deliberately rather than incidentally.
+      unreadableFiles.push(f);
+      continue;
+    }
+    if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
     contents.set(f, read.text);
     if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
 
@@ -2877,7 +2893,13 @@ export async function main(args) {
   // — every rule whose evidence is file contents is in the position `scm.no-committed-env-files` is
   // in when the repository cannot be read: it can report only that it found nothing, which over an
   // unsearched file is a statement about the run rather than about the project.
-  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted;
+  //
+  // A file that could not be READ belongs in this condition for exactly the same reason as one the
+  // budget never opened: its content was not obtained, and the derived views the nine rules below
+  // scan resolve it through `sources.get(f)?.code ?? ""` — the same coercion, one indirection away.
+  // The trigger is corrected rather than the table extended: the table's membership is not what was
+  // wrong, the question it was being asked was.
+  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted || unreadableFiles.length > 0;
 
   // Aggregation from checks, which is the part the two mechanisms above cannot do.
   //

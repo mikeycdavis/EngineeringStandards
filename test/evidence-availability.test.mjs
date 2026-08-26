@@ -33,7 +33,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -417,6 +418,160 @@ test("the mechanism is inert when nothing is lost", async () => {
       .filter((r) => r.disposition === "not-evaluated" && POLICY.includes(r.ruleId))
       .map((r) => r.ruleId);
     assert.deepEqual(withdrawn, [], "a declared rule was withdrawn on a run that read everything");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// --- The other way content goes unobtained -------------------------------------------------------
+//
+// Everything above makes evidence unavailable through the read BUDGET, which is the injectable and
+// deterministic mechanism. It is not the only one, and the seam covered only that one: on a failed
+// read, `readText` returns `{ ok: false, text: "" }` and the loop stored that empty string, so
+// `contents.has(f)` answered yes and `contentOf` called it available. A file the process could not
+// open produced the identical fabrication — a ~200 KB README reported as "under 400 characters" —
+// by a different route, and no falsifier above could see it, because they all vary the budget.
+//
+// The permission manipulation is real and is VERIFIED to have bitten before anything is asserted,
+// following test/audit.test.mjs; a test that quietly skipped when it could not restrict a path
+// would be exactly the false green this item is about.
+
+const IS_WINDOWS = process.platform === "win32";
+
+async function denyRead(file) {
+  if (IS_WINDOWS) spawnSync("icacls", [file, "/deny", `${process.env.USERNAME}:R`], { encoding: "utf8" });
+  else await chmod(file, 0o000);
+}
+
+async function restoreRead(file) {
+  if (IS_WINDOWS) spawnSync("icacls", [file, "/remove:d", process.env.USERNAME], { encoding: "utf8" });
+  else await chmod(file, 0o644);
+}
+
+/** Prove the denial actually took effect. Returns true only if the read really fails. */
+function reallyUnreadable(file) {
+  try {
+    readFileSync(file);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+test("an unreadable file is not content either", async () => {
+  const root = await tmp();
+  const readme = path.join(root, "README.md");
+  try {
+    await fixture(root, {
+      "README.md": README_PROSE,
+      "docs/architecture.md": "# Architecture\n\nReal content.\n",
+    });
+    await denyRead(readme);
+    assert.ok(
+      reallyUnreadable(readme),
+      "could not make the README unreadable, so this test would prove nothing — fix the harness rather than skipping",
+    );
+
+    // Full budget on purpose: the loss here is the read failing, not the budget being spent, and
+    // pinning that separately is what keeps this from being a second copy of the falsifiers above.
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.deepEqual(surface.unreadableFiles, ["README.md"], "the fixture stopped producing a read failure");
+    assert.equal(surface.readBudget.exhausted, false, "the budget was spent, so this is not the loss mode under test");
+
+    const json = run("validate", root, AMPLE);
+    assert.deepEqual(
+      findingsFor(json, "documentation.architecture"),
+      [],
+      "a finding was emitted about the length of a file the process could not open",
+    );
+    assertNotEvaluated(json, "documentation.architecture");
+  } finally {
+    await restoreRead(readme);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a rule reading a derived view is withdrawn when a file could not be read", async () => {
+  // The nine rules already covered by the coarse surface-level withdrawal reach content through
+  // `sourceOf`/`structureOf`, which resolve `sources.get(f)?.code ?? ""` — the same coercion one
+  // indirection away. That withdrawal fired on the file cap and on budget exhaustion and not on a
+  // read failure, so those nine kept scanning a blank derived view of a file nobody could open and
+  // reporting the clean result as evidence.
+  const root = await tmp();
+  const locked = path.join(root, "src", "app.js");
+  try {
+    await fixture(root, {
+      "README.md": "# Small\n\nDeliberately short, and irrelevant to this test.\n",
+      "src/app.js": "export function go() {\n  return 1;\n}\n",
+    });
+    await denyRead(locked);
+    assert.ok(reallyUnreadable(locked), "could not make the source file unreadable");
+
+    const json = run("validate", root, AMPLE);
+    for (const id of ["quality.dead-code", "security.no-secrets-in-artifacts", "errors.no-swallowed-exceptions"]) {
+      const r = (json.results ?? []).find((x) => x.ruleId === id);
+      if (!r) continue; // not declared by this fixture's policy; the assertion below is what matters
+      assert.notEqual(
+        r.status,
+        "passed",
+        `${id} reported a clean result over a file the process could not open`,
+      );
+    }
+  } finally {
+    await restoreRead(locked);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a starved run reaches no verdict that needed content, in either polarity", async () => {
+  // Acceptance criterion 3 stated over the whole result set rather than per rule. The falsifiers
+  // above can only catch a fabrication somebody wrote them to name; this catches any rule that
+  // still reaches a verdict when the run read nothing, including one added by work not yet written.
+  //
+  // THE CRITERION IS NARROWED HERE, AND THE NARROWING IS THE POINT. #38 asks for an assertion that
+  // the starved run "reports no rule at disposition: evaluated in either polarity". Taken literally
+  // that is wrong, and this test failed against it before the wording was corrected: this fixture
+  // omits reconstructed-baseline.md, so reconstruction.baseline-artifacts fails R4 — a structural
+  // check over a directory listing, needing no file content at all. It is established, and a
+  // criterion that withdrew it would be demanding the mirror-image fabrication: discarding a real
+  // violation because a DIFFERENT check went unread. What the invariant actually forbids is a
+  // verdict that needed content, so that is what is asserted — no rule reaches passed at all, and
+  // the one rule that stays evaluated carries only its content-free finding.
+  const root = await tmp();
+  try {
+    await fixture(root, {
+      "README.md": README_PROSE,
+      "docs/architecture.md": `# Architecture\n\n${bulk("Real architecture prose.")}`,
+      "artifacts/project-plan-breakdown/00-overview.md": `# Overview\n\n${OVERVIEW}`,
+      "artifacts/project-plan-breakdown/01-plan.md": PLAN_BAD,
+      "artifacts/project-baseline/open-questions.md": QUESTIONS_BAD,
+      "artifacts/project-baseline/RECONSTRUCTED-PROMPT.md": PROMPT_OK,
+    });
+
+    // A budget of 1 byte: nothing is retained at all, so no content evidence exists for anything.
+    const surface = run("audit", root, 1).evidenceSurface;
+    assert.equal(surface.readBudget.exhausted, true, "a one-byte budget did not exhaust");
+    assert.equal(surface.readBudget.retainedBytes, 0, "something was retained under a one-byte budget");
+
+    const json = run("validate", root, 1);
+    const declared = (json.results ?? []).filter((r) => POLICY.includes(r.ruleId));
+
+    // The fabricated-pass direction, wholesale. Nothing was read, so nothing is clean.
+    assert.deepEqual(
+      declared.filter((r) => r.status === "passed").map((r) => r.ruleId),
+      [],
+      "a rule reported a clean result on a run that read nothing",
+    );
+
+    // The fabricated-failure direction, allowing exactly what a content-free check established.
+    assert.deepEqual(
+      declared.filter((r) => r.disposition === "evaluated").map((r) => r.ruleId),
+      ["reconstruction.baseline-artifacts"],
+      "a rule reached a verdict that required content the run never obtained",
+    );
+    const survived = findingsFor(json, "reconstruction.baseline-artifacts");
+    assert.equal(survived.length, 1, `expected only the structural R4 finding, got ${JSON.stringify(survived.map((f) => f.message))}`);
+    assert.match(survived[0].message, /R4/, "the surviving finding must be the one that needed no content");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
