@@ -768,9 +768,40 @@ function findRoot(start) {
  * `sources` is here because it is execution-specific: its values are the audited project's file
  * contents, so the same key yields a different correct value for a different target.
  */
+/**
+ * One content lookup, answered with whether the run actually has the content.
+ *
+ * `contents` holds an entry for every file the run opened and retained. A file that is in `files`
+ * and absent from `contents` was collected and never searched — the read budget was spent, or the
+ * read failed. The prevailing idiom `contents.get(f) ?? ""` erased exactly that distinction, and
+ * because empty is meaningful evidence in BOTH polarities the erasure did not merely lose coverage,
+ * it manufactured a verdict: a README nobody opened is "under 400 characters", and a plan file
+ * nobody opened has no incomplete items.
+ *
+ * Returning a value a caller cannot accidentally use as text is the whole mechanism. There is no
+ * `?? ""` to reach for, because there is no string to reach.
+ */
+function contentOf(contents, f) {
+  return contents.has(f)
+    ? { available: true, text: contents.get(f) }
+    : { available: false, text: null, reason: "collected but never searched" };
+}
+
 function createRun({ root, strict, json }) {
   const findings = [];
   const sources = new Map();
+
+  /**
+   * Checks that could not run, by the rule they would have fed.
+   *
+   * The CHECK is the unit, not the rule, and that is load-bearing rather than tidy. A rule can be
+   * established by one check and unknown in another — `reconstruction.baseline-artifacts` fails R4
+   * structurally, needing no content at all, while its R6 content test reads a file this run may not
+   * have. Withdrawing the whole rule would erase a violation that was genuinely established; leaving
+   * it evaluated would report one that was not. Recording per check lets aggregation keep the first
+   * and drop the second.
+   */
+  const unknownChecks = new Map();
 
   return {
     root,
@@ -778,6 +809,20 @@ function createRun({ root, strict, json }) {
     json,
     findings,
     sources,
+    unknownChecks,
+
+    /**
+     * Record that a check could not be performed, and emit nothing.
+     *
+     * Deliberately not a finding. A finding is a claim about the project; this is a fact about the
+     * run, and Standard 44 R12's whole point is that the two must not be confused. The evidence
+     * surface already reports what went unread; this records which conclusions therefore cannot be
+     * drawn from it.
+     */
+    unknown(rule, file, reason) {
+      if (!unknownChecks.has(rule)) unknownChecks.set(rule, []);
+      unknownChecks.get(rule).push({ file, reason });
+    },
 
     /** Repo-relative path with forward slashes, so output is stable across platforms. */
     rel: (p) => path.relative(root, p).split(path.sep).join("/"),
@@ -1284,7 +1329,14 @@ function detectMissingDocs(files, contents, run) {
   if (!files.some((f) => rel(f).toLowerCase() === "docs/architecture.md")) missing.push("docs/architecture.md");
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
   if (!readme) missing.push("README.md");
-  else if ((contents.get(readme) ?? "").trim().length < 400) missing.push(`${rel(readme)} (under 400 characters)`);
+  else {
+    // The presence check above is structural and always valid. Only the length test needs content,
+    // so only the length test is withdrawn — the missing `docs/architecture.md` beside it still
+    // fails the rule, because that was established.
+    const c = contentOf(contents, readme);
+    if (!c.available) run.unknown("documentation.architecture", rel(readme), c.reason);
+    else if (c.text.trim().length < 400) missing.push(`${rel(readme)} (under 400 characters)`);
+  }
   if (missing.length === 0) return;
 
   addFinding({
@@ -1389,7 +1441,14 @@ function detectMissingPlanningArtifacts(files, contents, run) {
     return;
   }
 
-  const body = (contents.get(overview) ?? "")
+  const overviewContent = contentOf(contents, overview);
+  if (!overviewContent.available) {
+    // "A plan directory is evidence of a plan only when it has content" is a claim about the file's
+    // body. Over a body nobody read it is a claim about the run.
+    run.unknown("planning.breakdown-directory", rel(overview), overviewContent.reason);
+    return;
+  }
+  const body = overviewContent.text
     .split("\n")
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"));
   if (body.length === 0) {
@@ -1546,7 +1605,14 @@ function detectOpenQuestions(files, contents, run) {
   const { rel, addFinding } = run;
   const qFile = files.find((f) => rel(f) === "artifacts/project-baseline/open-questions.md");
   if (!qFile) return;
-  const text = contents.get(qFile) ?? "";
+  const questions = contentOf(contents, qFile);
+  if (!questions.available) {
+    // The quiet polarity. Both counts below come from matching this text, so an unread file scores
+    // zero on each and the rule passes — silence indistinguishable from a clean document.
+    run.unknown("reconstruction.open-questions", rel(qFile), questions.reason);
+    return;
+  }
+  const text = questions.text;
   // Fixed, greppable marker written by the project-reconstruction skill's questions template.
   const open = (text.match(/^\s*-?\s*\*\*Status:\*\*\s*open\s*$/gim) ?? []).length;
 
@@ -1624,7 +1690,22 @@ async function detectPlanDiscrepancies(files, contents, run) {
   const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
   if (planFiles.length === 0) return;
 
-  const items = planFiles.flatMap((f) => parsePlanItems(contents.get(f) ?? "", rel(f)));
+  // One read, two rules, and they must move together. `planning.item-fields` and
+  // `planning.plan-code-consistency` are both derived from these bytes, and today one is withdrawn
+  // by CONTENT_DERIVED_RULES while the other is not — byte-identical evidence classified two ways by
+  // a table that is not addressing the thing that varies. Recording the unknown against both is what
+  // makes the read site, rather than the table, the thing that decides.
+  //
+  // Files that WERE read are still parsed: a violation found in one plan file is established
+  // regardless of another going unread, and aggregation keeps it.
+  for (const f of planFiles.filter((f) => !contentOf(contents, f).available)) {
+    const reason = contentOf(contents, f).reason;
+    run.unknown("planning.item-fields", rel(f), reason);
+    run.unknown("planning.plan-code-consistency", rel(f), reason);
+  }
+  const items = planFiles
+    .filter((f) => contentOf(contents, f).available)
+    .flatMap((f) => parsePlanItems(contentOf(contents, f).text, rel(f)));
   const executable = items.filter((i) => i.fields.has("Status"));
   if (executable.length === 0) return;
 
@@ -1839,8 +1920,13 @@ function detectStandardsViolations(files, contents, run) {
     }
     const promptFile = files.find((f) => rel(f) === "artifacts/project-baseline/RECONSTRUCTED-PROMPT.md");
     if (promptFile) {
-      const t = contents.get(promptFile) ?? "";
-      if (!/reconstructed from the existing codebase/i.test(t)) {
+      // The mixed case in one detector. R4 above is structural and may already have failed; R6 here
+      // needs the prompt's text. Withdrawing both because this one is unknown would erase R4's
+      // established violation, which is precisely why the check rather than the rule is the unit.
+      const prompt = contentOf(contents, promptFile);
+      if (!prompt.available) {
+        run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
+      } else if (!/reconstructed from the existing codebase/i.test(prompt.text)) {
         violations.push([rel(promptFile), "R6: reconstructed prompt does not declare itself reconstructed", R.prompt]);
       }
     }
@@ -2792,10 +2878,26 @@ export async function main(args) {
   // in when the repository cannot be read: it can report only that it found nothing, which over an
   // unsearched file is a statement about the run rather than about the project.
   const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted;
+
+  // Aggregation from checks, which is the part the two mechanisms above cannot do.
+  //
+  //   any confirmed violation      -> failed, carrying only the checks that confirmed it
+  //   no violation + any unknown   -> not-evaluated
+  //   all known and no violation   -> passed
+  //
+  // The first line is the one that needs the check-level record. A rule with an unknown check AND a
+  // confirmed violation stays evaluated and stays failed: the violation was established by a check
+  // that ran, and withdrawing the rule would discard a real finding because a DIFFERENT check went
+  // unread. `reconstruction.baseline-artifacts` is exactly that shape — structural R4, content R6 —
+  // and it is why no table over rule ids can express this.
+  const confirmed = new Set(findings.filter((f) => f.rule).map((f) => f.rule));
+  const unknownAndUnestablished = (id) => run.unknownChecks.has(id) && !confirmed.has(id);
+
   const evaluatedThisRun = EVALUATED_RULES.filter(
     (id) =>
       !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
-      !(filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)),
+      !(filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)) &&
+      !unknownAndUnestablished(id),
   );
 
   const verdict = evaluate({
