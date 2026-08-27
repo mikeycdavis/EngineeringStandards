@@ -1070,7 +1070,18 @@ that approval deliberately does not cover.
   - `planning.item-fields` and `planning.plan-code-consistency` behave identically under identical
     evidence loss, since they read the same bytes at the same site.
   - This repository's own self-audit is unchanged at zero error findings, and `validate` on it is
-    unchanged at full coverage — the mechanism must be inert when nothing is lost.
+    unchanged **on a run that loses nothing**. **Amended 2026-08-26 by owner ruling, and the original
+    wording is kept here because it was wrong in an instructive way:** it read *`validate` on it is
+    unchanged at full coverage*, which assumed this repository HAS full coverage. It does not. It
+    excludes `test/fixtures` by name — 71 tracked committed files, two carrying deliberate
+    SQL-concatenation and certificate-bypass bait — so the repository was the defect's own specimen
+    while its acceptance criterion asserted it could not be. Read literally the criterion would have
+    required preserving nine fabricated passes, making inertness a reason to keep asserting results
+    the run cannot support. The movement is an honesty correction and explicitly not a regression to
+    be eliminated, and it must not be used as grounds to weaken withdrawal or redefine `complete`.
+    Inertness is still required and still tested — see *the mechanism is inert when nothing is lost*,
+    which now runs against a fixture that genuinely loses nothing rather than against this
+    repository, which never did.
 - **Verification:** `npm test`; the constrained-budget fixtures above; and the mechanism is
   **mutation-tested before it is treated as the fix** — disabling the tri-state at the aggregation
   boundary, and separately at the lookup boundary, must each be caught by a test, and by a different
@@ -1088,6 +1099,65 @@ that approval deliberately does not cover.
   failing and six passing; the two covering the read-failure route are red against the first
   implementation of the mechanism itself, not merely against the baseline.
 
+  **The fourth term, and the class the read seam structurally cannot reach.** `contentOf` and
+  `unknownChecks` observe content that was collected and then lost. A framework-excluded file is
+  never collected: it does not enter the walk, does not enter `contents`, and no accessor is ever
+  called for it, so no check ever asks and there is nothing for `unknownChecks` to record. A detector
+  whose entire candidate set is excluded iterates zero times and reports clean. Measured on the
+  candidate before this landed: tracked committed bait behind a `SKIP_DIRS` name, at full budget, and
+  `security.no-sql-concat` and `security.no-cert-bypass` — two **forbidden** rules — both reported
+  `passed / evaluated`. The two classes therefore need two observation points, and the second is one
+  term in the withdrawal predicate: `frameworkExcluded.length > 0`. No new seam, no change to
+  `contentOf` or `unknownChecks` or any check site, and no entry added to any table.
+
+  **The filter is `authorizedBy`, and it is the whole control.** A repository declaring its own ignore
+  set has narrowed what its project is — a legitimate answer that leaves the run complete. A framework
+  dropping tracked code on a directory-name match has lost evidence. `.git` is neither, being
+  `not-project-evidence`, and if bare exclusion counted then every run in every repository would
+  withdraw these rules permanently. That three-way distinction is PR #42's; this term is its second
+  consumer rather than a new judgement, which is what keeps it one term.
+
+  **Four specimens, two of them guards.** Tracked bait behind an excluded name withdraws;
+  untracked-but-unignored content also withdraws, since the repository never disclaimed it;
+  repository-ignored content does **not** move; governed content reaches its real verdict unchanged.
+
+  **The precedence, ruled by the owner 2026-08-26 and implemented deliberately rather than
+  inherited.** A confirmed violation survives unknown evidence elsewhere in the same rule. That
+  follows from the check-level tri-state this item already established, but it had been applied to
+  only one of the two mechanisms: `unknownChecks` consulted the confirmed findings and the coarse
+  surface term did not, so a rule with a real violation still withdrew wholesale whenever a file went
+  unread. Both mechanisms now answer one question — *did some check of this rule fail to obtain its
+  evidence* — and the confirmed set is consulted once, over both. The same ruling reached this branch
+  a second way, bundled without review into a commit of this item's own work; it is implemented here
+  from the ruling and carries no inheritance from that commit.
+
+  **The pre-existing regression this reconciled, and why refining it is not weakening it.**
+  `a content rule cannot pass over files nothing searched` required all three governed rules to leave
+  `disposition: evaluated` under a starved budget — the rule-level withdrawal model, which the ruling
+  supersedes. Two of those three are violated by files the budget **did** read. Its load-bearing half
+  is kept verbatim: no rule may reach `passed`. Its superseded half is replaced by the four
+  properties the tri-state actually claims — unknown evidence alone yields neither `passed` nor a
+  fabricated finding; a separately confirmed violation still yields `failed` and stays evaluated; and
+  every finding the starved run emits must also have been emitted over the complete surface, so none
+  was manufactured by the loss. The partition between the two classes is **measured from the control
+  run rather than named**, and both classes are asserted non-empty, so a fixture drifting into one
+  class cannot satisfy the test vacuously.
+
+  **Seven mutants, all killed, and the discrimination is the evidence.** Dropping the fourth term is
+  caught only by the two loss specimens. Treating every exclusion as loss is caught by both guards.
+  Treating every exclusion but `.git` as loss is caught by the repository-ignored guard **alone**,
+  which is what establishes the two authority distinctions as separately load-bearing rather than one
+  assertion doing both jobs. Restoring the superseded rule-level withdrawal is caught **only** by the
+  refined regression above — the direct evidence that it now defends a stronger contract than the one
+  it replaced. Letting a confirmed violation anywhere suppress withdrawal everywhere, coercing
+  `UNAVAILABLE` back to empty content at the seam, and bypassing the surface term entirely are each
+  caught broadly across the falsifiers.
+
+  **What this does not do.** It does not close the item. The first acceptance criterion remains unmet
+  in its letter: seven raw `?? ""` content reads survive, two binding no rule and five feeding rules
+  that are already withdrawn wholesale, so the mechanism forces acknowledgement without yet making
+  the coercion unreachable.
+
   **Bound to an exact head, 2026-08-26.** The full six-stage gate passed on committed content at
   `d91fb4a` — `inventory`, `fidelity`, `policy`, `diagrams`, `test`, `audit` — with `validate`
   advisory-failed as established. That is a machine result about a revision and it is the only kind
@@ -1096,12 +1166,26 @@ that approval deliberately does not cover.
   **Criterion 5 established by comparison rather than by inspection.** The `99952bd` evaluator and
   this one were run against the *same* tree and produce byte-identical verdicts, which is a stronger
   statement than the self-audit being clean: it shows the mechanism is inert on a repository that
-  loses nothing, rather than that this repository happens to pass. `validate` here is 20 passed, 4
-  failed, 0 warnings, 26 skipped, the four failures being the four standing recorded human
-  rejections and no rule changing status or assurance because of this work. That figure was briefly
-  recorded as 24 passed and 22 skipped, measured while the four unauthorised attestation events
-  removed above were still present in `project-policy.yml`; four rules were passing on fabricated
-  review evidence, and this is what the repository actually reports without them.
+  loses nothing, rather than that this repository happens to pass.
+
+  **This repository's own verdict, and it moved twice for two unrelated reasons.** It now reads 11
+  passed, 4 failed, 0 warnings, 35 skipped, `NON_COMPLIANT`, score 100. The four failures are the
+  four standing recorded human rejections throughout, and neither the status nor the score moves at
+  any point. The intermediate figures are kept because each was true of a different repository state,
+  and a reader comparing runs will otherwise find three numbers and no account of them:
+
+  | Recorded | Cause |
+  |---|---|
+  | 24 passed / 22 skipped | Measured while four **unauthorised** attestation events were present in `project-policy.yml`. Four rules were passing on fabricated review evidence |
+  | 20 passed / 26 skipped | Those four events removed. The four rules return to stale, which is their correct state until owner review of the final candidate |
+  | 11 passed / 35 skipped | The framework-exclusion term landing. Nine further rules withdraw because `test/fixtures` is excluded by name |
+
+  The nine are `documentation.code-consistency`, `errors.no-swallowed-exceptions`,
+  `planning.plan-code-consistency`, `security.no-secrets-in-artifacts`, `security.no-cert-bypass`,
+  `security.no-sql-concat`, `verification.before-completion`, `quality.unfinished-work` and
+  `quality.dead-code`. `security.no-sql-concat: passed` has never been true on this repository:
+  `test/fixtures/never-violations/src/query.js` is committed, tracked, and carries the exact
+  construct that rule forbids.
 
   **Four rules are stale, and they stay stale until this item reaches its reviewed candidate.**
   `architecture.no-hidden-global-state`, `architecture.no-duplicate-implementations`,

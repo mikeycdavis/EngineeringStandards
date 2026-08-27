@@ -317,14 +317,39 @@ function validate(dir, { budget = null } = {}) {
 const CONTENT_RULES = ["errors.no-swallowed-exceptions", "security.no-sql-concat", "quality.dead-code"];
 
 const statusOf = (report, ruleId) => report.results.find((r) => r.ruleId === ruleId);
+const findingsFor = (report, ruleId) => (report.findings ?? []).filter((f) => f.rule === ruleId);
 
+/**
+ * The starved-surface contract, and it is a CHECK-level contract rather than a rule-level one.
+ *
+ * THIS TEST PREVIOUSLY ASSERTED SOMETHING STRONGER AND WRONG. It required all three rules to leave
+ * `disposition: evaluated` under a starved budget — every rule whose evidence is file contents
+ * withdrawing wholesale the moment ANY file went unread. That is the rule-level withdrawal model,
+ * and it discards established violations: two of the three rules below are violated by files the
+ * budget DID read, in constructs no unread file could retract. Withdrawing them erases a finding
+ * that a check actually made, because a DIFFERENT check of the same rule went unread — which is the
+ * same manufacture of a verdict from missing evidence this file exists to refuse, pointed the other
+ * way. The assertion was not weakened to make an implementation pass: the half that was doing the
+ * work is kept verbatim (no rule may reach `passed`), and the half that encoded the superseded
+ * model is replaced by the four properties the tri-state contract actually claims.
+ *
+ *   unknown evidence alone            -> not `passed`, and not evaluated either
+ *   unknown evidence alone            -> no finding, so no fabricated `failed` either
+ *   a separately confirmed violation  -> still `failed`, still evaluated
+ *   the emitted finding list          -> only what a check confirmed, never a synthesis
+ *
+ * THE PARTITION IS MEASURED, NOT NAMED. Which rules carry a confirmed violation is read from the
+ * full-coverage control run rather than hardcoded, and both classes are asserted non-empty. A
+ * fixture that drifted into having no violated rule, or no clean one, would otherwise satisfy this
+ * test vacuously in exactly the direction that matters.
+ */
 test("a content rule cannot pass over files nothing searched", async () => {
   const root = await tmp();
   try {
     await buildGovernedTree(root, TREE);
 
     // The control: with the whole surface read, these rules really are evaluated. Without this the
-    // assertion below would also hold for a run in which they were never evaluated at all, and would
+    // assertions below would also hold for a run in which they were never evaluated at all, and would
     // establish nothing.
     const whole = validate(root);
     for (const id of CONTENT_RULES) {
@@ -343,6 +368,9 @@ test("a content rule cannot pass over files nothing searched", async () => {
       (partial.findings ?? []).some((f) => f.id === "evidence-read-budget"),
       "the run did not report an exhausted budget, so the assertions below prove nothing",
     );
+
+    // Neither polarity may be reached from missing evidence, so no rule may pass — the half of the
+    // original assertion that was always right, kept over the whole set rather than either class.
     for (const id of CONTENT_RULES) {
       const hit = statusOf(partial, id);
       assert.ok(hit, `${id} disappeared from the report entirely`);
@@ -351,7 +379,59 @@ test("a content rule cannot pass over files nothing searched", async () => {
         "passed",
         `${id} passed over a surface with unsearched files: ${JSON.stringify(hit)}`,
       );
-      assert.notEqual(hit.disposition, "evaluated", `${id} claimed evaluation over unsearched files`);
+    }
+
+    // Measured from the control, so the two classes are what this fixture actually produces.
+    const violated = CONTENT_RULES.filter((id) => findingsFor(whole, id).length > 0);
+    const clean = CONTENT_RULES.filter((id) => findingsFor(whole, id).length === 0);
+    assert.ok(
+      violated.length > 0 && clean.length > 0,
+      `the fixture no longer produces both classes (violated: ${violated}, clean: ${clean}), so the ` +
+        `mixed case below is untested`,
+    );
+
+    // Unknown evidence alone establishes NEITHER polarity: no pass, no evaluation, and no finding.
+    for (const id of clean) {
+      const hit = statusOf(partial, id);
+      assert.equal(
+        hit.disposition,
+        "not-evaluated",
+        `${id} claimed evaluation with no confirmed violation and unsearched files: ${JSON.stringify(hit)}`,
+      );
+      assert.deepEqual(
+        findingsFor(partial, id),
+        [],
+        `${id} emitted a finding it could only have synthesized from evidence nothing read`,
+      );
+    }
+
+    // A violation a check DID confirm outranks a sibling check that went unread. The policy this
+    // fixture writes puts these rules at forbidden and required, so a confirmed violation is `failed`
+    // rather than a warning.
+    for (const id of violated) {
+      const hit = statusOf(partial, id);
+      assert.equal(
+        hit.disposition,
+        "evaluated",
+        `${id} withdrew a violation a check established, because a different check went unread`,
+      );
+      assert.equal(hit.status, "failed", `${id} confirmed a violation and did not fail: ${JSON.stringify(hit)}`);
+      assert.ok(
+        findingsFor(partial, id).length > 0,
+        `${id} is failed with no finding, so a reader cannot see what it failed on`,
+      );
+    }
+
+    // And the emitted list carries ONLY what a check confirmed. Every finding the starved run makes
+    // must also have been made over the complete surface; anything else was manufactured by the loss.
+    for (const id of CONTENT_RULES) {
+      const established = new Set(findingsFor(whole, id).map((f) => f.id));
+      for (const f of findingsFor(partial, id)) {
+        assert.ok(
+          established.has(f.id),
+          `${id} emitted ${f.id} only under evidence loss, so the loss manufactured it`,
+        );
+      }
     }
   } finally {
     await rm(root, { recursive: true, force: true });

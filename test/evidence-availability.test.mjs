@@ -576,3 +576,165 @@ test("a starved run reaches no verdict that needed content, in either polarity",
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// --- The class the read seam structurally cannot reach --------------------------------------------
+//
+// Everything above loses content that WAS collected: the budget spent it, or the read failed. A
+// framework-excluded file is never collected at all, so it never enters `contents`, no accessor is
+// ever called for it, and no check ever asks — `unknownChecks` cannot record what nobody looked up.
+// Measured before these were written: with tracked committed bait behind a SKIP_DIRS name and a full
+// budget, security.no-sql-concat and security.no-cert-bypass both reported passed/evaluated. Two
+// FORBIDDEN rules reporting clean over tracked first-party code the tool refused to read.
+//
+// THE CONTROL IS THE AUTHORITY OF THE EXCLUSION, NOT ITS EXISTENCE. A repository that declares its
+// own ignore set has narrowed what its project is, which is a legitimate answer and leaves the run
+// complete. A framework that drops tracked code by matching a directory name has lost evidence. And
+// `.git` is neither — `not-project-evidence` — so if mere exclusion counted, every run in every
+// repository would withdraw these rules forever. Specimens 2 and 4 are the guards that make that
+// distinction load-bearing rather than decorative: the blanket fix passes specimen 1 and fails both.
+
+/**
+ * One file tripping three content-derived rules at once, so one specimen covers all three.
+ *
+ * Read from `test/fixtures/` rather than written inline, and the reason is this suite's own
+ * subject: that directory is excluded by name, so nothing inside it is ever scanned. Inline, the
+ * SQL interpolation in it is a real finding against THIS repository — `security.no-sql-concat`
+ * reads `sourceOf`, where string contents stay intact, so bait sitting in a test file is
+ * indistinguishable from the construct it imitates. That is not a use/mention question, and
+ * blanking it would be evading the detector rather than satisfying it. It cost a red self-audit to
+ * learn, which is the right way to learn it: the detector was correct and the test was wrong.
+ */
+const CONTENT_BAIT = readFileSync(
+  path.join(HERE, "fixtures", "evidence-availability-bait", "bait.js"),
+  "utf8",
+);
+
+const CONTENT_POLICY = [
+  'standardVersion: "2.0.0"',
+  'project: "Framework exclusion specimen"',
+  "rules:",
+  "  security.no-sql-concat:",
+  "    level: forbidden",
+  "  security.no-cert-bypass:",
+  "    level: forbidden",
+  "  quality.dead-code:",
+  "    level: recommended",
+  "",
+].join("\n");
+
+const BAITED_RULES = ["security.no-sql-concat", "security.no-cert-bypass", "quality.dead-code"];
+
+/**
+ * A committed repository with the bait in `dir`, optionally ignored, optionally left untracked.
+ *
+ * `untracked` writes the bait AFTER the commit, so it is present on disk, absent from the index and
+ * matched by no ignore rule — the state a build directory is in, and the one that separates "the
+ * repository disclaimed this" from "this tool dropped it".
+ */
+async function excludedFixture({ dir, ignore = null, untracked = false }) {
+  const root = await tmp();
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  };
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+
+  await mkdir(path.join(root, dir), { recursive: true });
+  await writeFile(path.join(root, "README.md"), `# Specimen\n\n${"substantive prose ".repeat(60)}\n`);
+  await writeFile(path.join(root, "project-policy.yml"), CONTENT_POLICY);
+  if (ignore) await writeFile(path.join(root, ".gitignore"), `${ignore}\n`);
+  if (!untracked) await writeFile(path.join(root, dir, "bait.js"), CONTENT_BAIT);
+
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "specimen");
+  if (untracked) await writeFile(path.join(root, dir, "bait.js"), CONTENT_BAIT);
+  return root;
+}
+
+/** Each baited rule as "status/disposition", at full budget so nothing is lost to capacity. */
+function baitedVerdicts(root) {
+  const json = run("validate", root, AMPLE);
+  return BAITED_RULES.map((id) => {
+    const r = (json.results ?? []).find((x) => x.ruleId === id);
+    assert.ok(r, `no result for ${id}`);
+    return `${r.status}/${r.disposition}`;
+  });
+}
+
+test("framework-excluded tracked content withdraws the rules it would have fed", async () => {
+  const root = await excludedFixture({ dir: "fixtures" });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["fixtures"], "the fixture stopped being framework-excluded");
+    assert.equal(surface.complete, false);
+    assert.equal(surface.readBudget.exhausted, false, "budget loss would make this a duplicate of the falsifiers above");
+
+    assert.deepEqual(
+      baitedVerdicts(root),
+      ["skipped/not-evaluated", "skipped/not-evaluated", "skipped/not-evaluated"],
+      "a rule reported a verdict over tracked committed code this tool refused to read",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GUARD: repository-ignored content is a narrowing, not a loss", async () => {
+  // The repository was asked and answered. Withdrawing here would make every project with a
+  // .gitignore permanently unable to establish a content rule, which is the blanket fix.
+  const root = await excludedFixture({ dir: "thirdparty", ignore: "thirdparty/" });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.equal(surface.complete, true, "a repository-authorized exclusion made the surface incomplete");
+    assert.deepEqual(surface.frameworkExcludedDirectories, []);
+
+    assert.deepEqual(
+      baitedVerdicts(root),
+      ["passed/evaluated", "passed/evaluated", "passed/evaluated"],
+      "a repository's own ignore declaration withdrew rules it should not have",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("untracked content the repository does not disclaim is still a framework loss", async () => {
+  // No ignore rule covers it, so the repository never said this was not its code; the tool dropped
+  // it on a name match. That is the same loss as specimen one, reached without the index.
+  const root = await excludedFixture({ dir: "coverage", untracked: true });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["coverage"]);
+    assert.equal(surface.complete, false);
+
+    assert.deepEqual(
+      baitedVerdicts(root),
+      ["skipped/not-evaluated", "skipped/not-evaluated", "skipped/not-evaluated"],
+      "unignored content dropped by this tool was treated as evidence of a clean result",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GUARD: governed content still reaches its real verdict, and .git never counts", async () => {
+  // Nothing is excluded here but `.git`, which is `not-project-evidence` and present in every
+  // repository. If it counted as loss, no run anywhere could ever establish these rules again — so
+  // this specimen failing means the authority filter has collapsed into "was anything excluded".
+  const root = await excludedFixture({ dir: "src" });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.equal(surface.complete, true, ".git or another benign exclusion is being counted as evidence loss");
+    assert.deepEqual(surface.frameworkExcludedDirectories, []);
+
+    assert.deepEqual(
+      baitedVerdicts(root),
+      ["failed/evaluated", "failed/evaluated", "warning/evaluated"],
+      "governed first-party code did not reach its real verdict",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

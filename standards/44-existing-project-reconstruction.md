@@ -515,10 +515,29 @@ because their limits matter:
 on any tool that reports results, this one included, and it is the one part of R11/R12 that is not
 purely discipline. `standards audit` answers every content lookup with availability rather than with
 text, records a check whose evidence was unavailable as unknown, and aggregates rule disposition from
-the checks that ran — so a rule with an unread check and no confirmed violation reports
-`not-evaluated`, while one whose violation was established by a check needing no content stays
-`failed` and carries only that finding. No rule ID is claimed for R12 itself; the enforcement is
-structural, in `scripts/standards.mjs`, and is pinned by `test/evidence-availability.test.mjs`.
+the checks that ran. No rule ID is claimed for R12 itself; the enforcement is structural, in
+`scripts/standards.mjs`, and is pinned by `test/evidence-availability.test.mjs` and
+`test/audit-read-budget.test.mjs`.
+
+**The unit is the check, and that is what makes the mixed case expressible.** A rule with an unknown
+check and no confirmed violation reports `not-evaluated`. A rule whose violation was established by a
+check that ran stays `failed` and carries only that finding — and *whether the surviving check needed
+content is irrelevant*. A content check over a file that was read establishes its violation just as
+firmly as a structural one, and a sibling check that went unread does not retract it. Withdrawing the
+whole rule there would discard a finding the run actually made, which is this same invariant broken
+in the opposite direction: a verdict decided by evidence nobody has. Because that distinction lives
+between two checks of one rule, no table over rule IDs can express it, and any mechanism that
+withdraws by rule ID must consult the confirmed findings before it fires.
+
+**Two loss classes, and they need two observation points.** Content that was collected and then lost —
+spent by a read budget, cut by a cap, or unreadable — is visible at the lookup: a check asks and is
+told the content is unavailable. Content that was **never collected** is not: a file the tool excluded
+never enters the walk, so no lookup is ever made for it, and a detector whose whole candidate set was
+excluded iterates zero times and reports clean. A tool that observes only the first class satisfies
+R12 at every call site and still reports a forbidden rule as satisfied over code it refused to read.
+The second class is answered from the evidence surface instead, and only where the exclusion was the
+*tool's* decision: a repository that declares its own ignore set has narrowed what its project is,
+which is an answer rather than a loss.
 
 **Not mechanically checked, and honestly so.** R11 and the rest of R12 are discipline, not structure,
 and no rule ID is claimed for them:

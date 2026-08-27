@@ -2899,7 +2899,32 @@ export async function main(args) {
   // scan resolve it through `sources.get(f)?.code ?? ""` — the same coercion, one indirection away.
   // The trigger is corrected rather than the table extended: the table's membership is not what was
   // wrong, the question it was being asked was.
-  const filesWentUnsearched = surfaceLoss.capped || surfaceLoss.budget.exhausted || unreadableFiles.length > 0;
+  //
+  // `frameworkExcluded` is the fourth term and the one the read seam structurally cannot reach. A
+  // file this tool excluded never enters the walk, never enters `contents`, and no accessor is ever
+  // called for it — so no check ever asks, and `unknownChecks` records nothing. The other three
+  // terms describe content that was collected and then lost; this one describes content that was
+  // never collected, and the two need separate observation points because there is no moment in a
+  // detector's execution where the second is visible. Measured: a detector whose candidates are all
+  // excluded simply iterates zero times and reports clean.
+  //
+  // THE FILTER IS THE WHOLE CONTROL, and it is `authorizedBy`, not "was something excluded". A
+  // repository that declares its own ignore set has NARROWED WHAT ITS PROJECT IS, which is a
+  // legitimate answer and leaves the run complete; a framework that removes tracked project code by
+  // matching a directory name has LOST EVIDENCE and must not report a clean forbidden rule over it.
+  // `.git` is neither — it is `not-project-evidence` — and if it counted here, every run in every
+  // repository would withdraw nine rules forever. That distinction is PR #42's, and this term is the
+  // second consumer of it rather than a new judgement.
+  //
+  // This repository is its own specimen, which is why its verdict moves when this lands: it excludes
+  // `test/fixtures` by name, 71 tracked committed files, two of which carry deliberate SQL-concat
+  // and cert-bypass bait. `security.no-sql-concat: passed` was never true here. Nine rules go to
+  // not-evaluated and that is the honest state, not a regression to be tuned away.
+  const filesWentUnsearched =
+    surfaceLoss.capped ||
+    surfaceLoss.budget.exhausted ||
+    unreadableFiles.length > 0 ||
+    frameworkExcluded.length > 0;
 
   // Aggregation from checks, which is the part the two mechanisms above cannot do.
   //
@@ -2913,13 +2938,31 @@ export async function main(args) {
   // unread. `reconstruction.baseline-artifacts` is exactly that shape — structural R4, content R6 —
   // and it is why no table over rule ids can express this.
   const confirmed = new Set(findings.filter((f) => f.rule).map((f) => f.rule));
-  const unknownAndUnestablished = (id) => run.unknownChecks.has(id) && !confirmed.has(id);
+
+  // TWO OBSERVATION POINTS, ONE QUESTION, and the question is asked of the RULE's checks rather than
+  // of the rule. `unknownChecks` carries the checks that asked `contentOf` for content and were told
+  // it was unavailable. The surface term carries the class no check can report, because nothing was
+  // collected for it to ask about — the coarse mechanism is coarse precisely because it stands in for
+  // checks that never got to run. Either way the answer is the same shape: at least one check of this
+  // rule did not obtain its evidence.
+  const someCheckWentUnknown = (id) =>
+    run.unknownChecks.has(id) || (filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id));
+
+  // PRECEDENCE, AND IT APPLIES TO BOTH MECHANISMS OR IT IS NOT THE CONTRACT. `confirmed` was
+  // previously consulted only for the fine-grained record, so a rule with a real violation still
+  // withdrew wholesale whenever the surface term fired — the same erasure the check-level record was
+  // built to prevent, arriving through the other door. The coarse term is a statement about SOME of a
+  // rule's evidence, never about all of it: a violation established by a check that DID run is not
+  // unestablished by a file that went unread, whichever way the loss was observed. Applying it once,
+  // here, is what makes the truth table a property of the aggregation rather than of one mechanism.
+  //
+  //   confirmed violation + unknown check   -> failed, evaluated, carrying ONLY the confirmed finding
+  //   no violation + unknown check          -> not-evaluated
+  //   no violation + everything known       -> passed
+  const unestablished = (id) => someCheckWentUnknown(id) && !confirmed.has(id);
 
   const evaluatedThisRun = EVALUATED_RULES.filter(
-    (id) =>
-      !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
-      !(filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id)) &&
-      !unknownAndUnestablished(id),
+    (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) && !unestablished(id),
   );
 
   const verdict = evaluate({
