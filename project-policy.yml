@@ -351,6 +351,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "5845621ec613f5a84fb7edeb4765a434"
+      - id: "review-meta-standards-not-weakened-005"
+        supersedes: "review-meta-standards-not-weakened-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-27"
+        evidence: "OWNER REVIEW OF THE FINAL ISSUE 38 CANDIDATE, 2026-08-27, against committed repository content at dde2e85. FRESH REVIEW INHERITING NOTHING FROM EVENT 004. WITHIN THE DECLARED REVIEWED SURFACE, EXACTLY ONE PATH CHANGED, AND ISSUE 38 DID NOT CHANGE IT. scripts/compliance.mjs, test/compliance.test.mjs and test/instructions.test.mjs are byte-identical to a72f302 by blob comparison. test/audit.test.mjs changed by 31 added and 4 removed lines, that delta landed on develop, and the file is blob-identical between 99952bd and dde2e85. THE ONE CHANGE STRENGTHENS RATHER THAN WEAKENS. The removed assertion held that this repository's own evidence surface was complete, and it was false over the repository it was asserting about: the run does not read test/fixtures, which is tracked, committed and first-party, and the completeness field did not account for exclusion at all. It was not inverted into an assertion accepting incompleteness, which would have checked nothing. It was replaced by five independent unintended-loss assertions -- nothing unreadable, no unreadable directory, nothing truncated, no file cap reached, no exhausted read budget -- plus the single intentional loss pinned by exact path, so a second directory leaving the evidence surface now fails the test until someone writes down why. No standard, rule semantic, threshold or failure condition inside the reviewed surface moved. EXAMINED FOR THIS JUDGMENT, OUTSIDE THE DECLARED SURFACE: issue 38 amends standards/44-existing-project-reconstruction.md by 67 added and 2 removed lines. The amendment strengthens the normative requirement rather than relaxing it. It states that a check whose evidence was unavailable is unknown whether or not the surviving check needed content, that evidence absent for two unrelated reasons must not be answered alike, and that the lookup rather than a maintained list of rule identities is the mechanism. Nothing in it removes a requirement, lowers a threshold, or reclassifies a rule to permit an implementation that would otherwise violate it. SCOPE LIMITATION, STATED RATHER THAN DISSOLVED: no standards/ path appears in this rule's declared reviewed set. The Standard 44 amendment was substantively examined for this review and its bytes are NOT represented by the digest recorded here. The reviewed set was deliberately not widened; changing what this rule reviews is separate governance work, and doing it inside an approval would make the event assert coverage the digest cannot support."
+        reference: "standards/45-engineering-invariants.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+          revision: "dde2e85"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "b97219a7968322edd413c7477d03c1bd"
 
   testing.no-weakening-to-pass:
     reviews:
@@ -420,6 +437,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "2cbf12cb90de3093c9e2d4ff2a04855a"
+      - id: "review-testing-no-weakening-to-pass-005"
+        supersedes: "review-testing-no-weakening-to-pass-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-27"
+        evidence: "OWNER REVIEW OF THE FINAL ISSUE 38 CANDIDATE, 2026-08-27, against committed repository content at dde2e85. FRESH REVIEW INHERITING NOTHING FROM EVENT 004. EXACTLY ONE DECLARED REVIEWED PATH CHANGED, AND ISSUE 38 DID NOT CHANGE IT. test/compliance.test.mjs, test/instructions.test.mjs and test/init.test.mjs are byte-identical to a72f302 by blob comparison. test/audit.test.mjs changed by 31 added and 4 removed lines; that delta landed on develop and the file is blob-identical between 99952bd and dde2e85, so this branch never touches it. THE CHANGE IS A STRENGTHENING, WHICH IS THE QUESTION THIS RULE ASKS. The removed assertion held that this repository's own evidence surface was complete, and that assertion was FALSE over the repository it was asserting about: the run does not read test/fixtures, which is tracked, committed and first-party, and the completeness field did not account for exclusion at all. It was not inverted into an assertion accepting incompleteness, which would have checked nothing at all. It was replaced by five independent unintended-loss assertions plus the one intentional loss pinned by exact path. A test that was passing over a live defect became a test that fails on it. EXAMINED OUTSIDE THE DECLARED SURFACE, AND DISCLOSED RATHER THAN CONCEALED: issue 38 refines one assertion in test/audit-read-budget.test.mjs. The half forbidding any rule from reaching passed over files nothing searched is kept verbatim; the half replaced encoded the superseded rule-level withdrawal model, under which a whole rule went not-evaluated even where another check had established a confirmed violation. The refined form defends more rather than less, and that is demonstrated rather than claimed: restoring rule-level withdrawal is a mutation killed by this test alone and by nothing else in the suite. That is the substantive basis for judging that the branch did not make a test easier in order to accommodate its implementation. SCOPE LIMITATION, STATED PLAINLY: test/audit-read-budget.test.mjs is NOT among this rule's declared reviewed paths, and it is the only file in which this branch refined an assertion. Its examination informs this owner judgment; the digest recorded in this event does not cover it. The reviewed set was deliberately not widened, because a reviewed set widened inside a review makes the event assert more than its digest can carry."
+        reference: "standards/47-test-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - test/compliance.test.mjs
+            - test/audit.test.mjs
+            - test/instructions.test.mjs
+            - test/init.test.mjs
+          revision: "dde2e85"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "0840ffece61a8abad65b636a75890e8e"
 
   # Checkpoint items 7 and 9. Both were REMEDIATED before review rather than attested as found:
   # the review turned up a real violation in each, and the attestation records the corrected state.
@@ -544,6 +578,24 @@ attestations:
           revision: "79e8222"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "08fa730748da6365d30723a13aaff4fe"
+      - id: "review-architecture-no-hidden-global-state-008"
+        supersedes: "review-architecture-no-hidden-global-state-007"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-27"
+        evidence: "OWNER REVIEW OF THE FINAL ISSUE 38 CANDIDATE, 2026-08-27, against committed repository content at dde2e85 on fix/38-check-level-availability. FRESH REVIEW INHERITING NOTHING FROM EVENT 007: the prior approval is superseded rather than extended, and its conclusion was re-derived at this revision rather than carried across. TWO OF FIVE REVIEWED PATHS CHANGED, AND THE HALVES ARE RECORDED SEPARATELY BECAUSE THEY WERE REVIEWED SEPARATELY. ADR 0014, scripts/inventory.mjs and scripts/fidelity.mjs are byte-identical to 79e8222 by blob comparison and are outside this change's surface. scripts/standards.mjs changed twice: develop contributed 157 added and 16 removed lines between 79e8222 and 99952bd, issue 38 contributes 337 added and 47 removed between 99952bd and dde2e85, and the total since the reviewed revision is 494 added and 63 removed. test/invocation-ownership.test.mjs is the second changed reviewed path and is entirely issue 38's work at 71 added and 38 removed; it is byte-identical between 79e8222 and develop. THE BASIS OF APPROVAL. Issue 38 moved contents from main's function scope onto the invocation-owned run object, because distinguishing never obtained from not a code file requires both maps at the accessor. That direction strengthens ADR 0014's model rather than straining it: a top-level declaration scan of scripts/standards.mjs at this revision finds no let and no var at module scope at all, and the only mutable run bindings remain let run = null and let surface = null at scripts/standards.mjs:2581-2582, inside main and re-bound on every call. ISOLATION OF THE NEW STATE IS NOW LOAD-BEARING RATHER THAN ASSERTED, which is the evidence this review required and which event 007 could not have had. Four properties are pinned in test/invocation-ownership.test.mjs. Two concurrent invocations do not share contents, asserted on the run where the state is owned rather than only through the surface that aliases it. Poisoning a completed invocation's contents cannot influence a later run, seeded two ways: a key no file has, and every real entry emptied -- the second being the seed a read-skip optimisation would betray, since an empty string is available content and a run reusing those entries would report a repository of blank files. Deliberately sharing contents at module scope SURVIVES every behavioural comparison in the file and is killed by the identity assertion alone. And the negative control establishing this is parameterised across both caches from one list rather than duplicated, so a control that shares one map can no longer be mistaken for evidence about the other. MEASURED RATHER THAN ARGUED: the shared-contents mutation was applied to the evaluator and the suite run against it; every behavioural test passed and only the identity assertions failed. Adding a read-skip on top of it is the defect the poison seeds catch, and they do. GATE AT THIS REVISION: the authoritative Docker pipeline ran on a clean clone at dde2e85 with six gating stages passed, 395 tests of which 395 passed and none failed, and validate advisory-failed as established. LIMITATION UNCHANGED AND CARRIED FORWARD: the declaration scan is not authoritative, because a binding mutated through an alias escapes it, and completeness remains a review obligation rather than a mechanical guarantee. LIMITATION CARRIED FORWARD FROM EVENT 007: nothing in scripts/standards.mjs is frozen, so the module tables are immutable by the absence of a mutation site and by convention rather than by enforcement. MATERIAL LIMITATION RESTATED: the identity, poison and declaration evidence does NOT prove the arbitrary absence of hidden global state. It establishes what was examined at this revision, and this approval asserts nothing wider."
+        reference: "artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md
+            - scripts/standards.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/invocation-ownership.test.mjs
+          revision: "dde2e85"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "91075afb66b87a9eb24c6ff0b8f0a032"
 
   architecture.no-duplicate-implementations:
     reviews:
@@ -613,6 +665,23 @@ attestations:
           revision: "a72f302"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "5d46bae7662fdb18c23f695ff8643569"
+      - id: "review-architecture-no-duplicate-implementations-005"
+        supersedes: "review-architecture-no-duplicate-implementations-004"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-08-27"
+        evidence: "OWNER REVIEW OF THE FINAL ISSUE 38 CANDIDATE, 2026-08-27, against committed repository content at dde2e85 on fix/38-check-level-availability. FRESH REVIEW INHERITING NOTHING FROM EVENT 004: the prior approval is superseded rather than extended, and nothing is carried across merely because a predecessor was approved. ONE DECLARED REVIEWED PATH CHANGED, AND IT CHANGED ON DEVELOP. scripts/sections.mjs, scripts/inventory.mjs and scripts/fidelity.mjs are byte-identical to a72f302 by blob comparison, so the section-heading single-owner basis is undisturbed. test/audit.test.mjs changed by 31 added and 4 removed lines since a72f302 and is blob-identical between 99952bd and dde2e85, so this branch never touches it. No implementation lives in that file, and the delta replaces one evidence-surface assertion with several stricter ones, so it cannot introduce a second implementation of anything. EXAMINED FOR THE RELEVANT RISK, OUTSIDE THE DECLARED SURFACE. Issue 38 could plausibly have created a second way to read repository content beside the existing one, which is precisely this rule's subject. It did the opposite. Raw map access is centralised behind two availability primitives, and the postcondition is measured rather than asserted: zero raw contents.get outside contentOf, zero raw sources.get outside viewOf, and zero coercions of an unavailable answer into text. A source-level guard in test/read-seam.test.mjs holds those counts, which is the only kind of check that can fail on a call site that does not exist yet. The three run accessors sourceOf, structureOf and commentsOf all resolve through the single viewOf, and a test asserts that no second accessor hands back a bare string -- which is the exact shape a duplicate would take here, a safe primitive standing beside a shorter unsafe one that reads identically at the call site. That is evidence against a duplicate implementation rather than of one. SCOPE LIMITATION, RECORDED RATHER THAN REPAIRED INSIDE THIS EVENT: scripts/standards.mjs is NOT among this rule's declared reviewed paths. The examination above supports the owner judgment; the digest recorded here does not cover that file, and the reviewed set was deliberately not widened, because widening a reviewed set inside an approval makes the event claim coverage its digest cannot carry. LIMITATION CARRIED FORWARD UNCHANGED: a search by concept vocabulary would not find a duplicate implemented in different words."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/sections.mjs
+            - scripts/inventory.mjs
+            - scripts/fidelity.mjs
+            - test/audit.test.mjs
+          revision: "dde2e85"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "2507b57299c98a79ab06c33abb16f306"
 
   # Checkpoint item 11, and the only REJECTED entry here. `status: rejected` is not an approval and
   # not an exception: the schema defines it as recording that a human looked and found the rule
