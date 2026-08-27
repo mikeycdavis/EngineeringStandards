@@ -1028,13 +1028,37 @@ that approval deliberately does not cover.
   work it was written to do, and the defect is closed by the new falsifier rather than by relaxing the
   condition.
 
-  **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
-  this item does not close itself. What needs a second party is no longer whether an unmet criterion
-  is acceptable as scoped — every criterion is met — but whether the two judgements this item made on
-  the owner's behalf stand: that `quality.dead-code` becoming `not-evaluated` in nearly every
-  repository is the honest price of its own proposition, and that the three surviving mutants are
-  acceptable as redundancy rather than as a gap. Both are recorded above with their measurements, and
-  neither is the kind of call an item takes for itself.
+  **The disposition was reserved, and is now given.** Under
+  [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md) this item does not close itself,
+  and what needed a second party was never whether an unmet criterion is acceptable as scoped — every
+  criterion is met — but whether the two judgements this item made on the owner's behalf stand. Both
+  were put to the owner and both came back on 2026-08-27, recorded above: the `quality.dead-code`
+  disposition accepted outright, the mutants accepted only conditionally. The second ruling is why
+  this item did not close a day earlier, and the condition is the reason the third door was found at
+  all.
+
+  **Confirmation run at `752c763`.** The rulings were re-measured against the candidate head rather
+  than against the working tree they were discovered in, because a fix and its evidence taken from
+  the same dirty tree prove less than either does alone.
+
+  | Measurement | Result at `752c763` |
+  | --- | --- |
+  | Full Docker pipeline, exact committed HEAD | `inventory fidelity policy diagrams test audit` all passed; `validate` advisory-failed; `result: PASSED` |
+  | Suite, unmutated | 399 tests, 395 pass, 0 fail, 4 skipped |
+  | Mutant 1 — `isPartial` forced false | Killed. 31 pass, 1 fail, and the one failure is the new falsifier |
+  | Mutants 2 and 3 — unavailable-branch loss record deleted | Survive the whole suite: 395 pass, 0 fail |
+  | `scripts/standards.mjs` after every mutation | Restored byte-for-byte, blob `42a6d43`, tree clean |
+  | `validate` failures | Four, all `attested-rejected`: `ai.no-fabricated-capabilities`, `ai.no-safety-bypass`, `errors.no-false-success`, `scm.no-shared-history-rewrite` |
+  | `quality.dead-code` on this repository | `not-evaluated`, assurance `none` — the accepted disposition, observed rather than assumed |
+
+  Two of those rows are worth more than their pass mark. Mutant 1 is killed by **exactly one** test and
+  31 others do not notice it, which is the measurement that says the guard was genuinely absent before
+  rather than merely thin. And mutants 2 and 3 surviving all 395 is not a gap here but the redundancy
+  argument itself, because the boundary that catches them — *a rule reading a derived view is
+  withdrawn when a file could not be read* — names both rule ids explicitly and asserts neither
+  reports `passed` over a file the process could not open. It passes with the loss records deleted.
+  A survivor that leaves an independent boundary standing is redundant; a survivor that defeats one,
+  as mutant 1 did, is a defect.
 
   **Previously: READY.**
 - **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)
