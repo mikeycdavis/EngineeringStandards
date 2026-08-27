@@ -448,6 +448,19 @@ async function restoreRead(file) {
   else await chmod(file, 0o644);
 }
 
+/**
+ * Restore a DIRECTORY, which is not the same call.
+ *
+ * `0o644` on a directory leaves it without the execute bit, so nothing can traverse it and the
+ * recursive cleanup fails with EACCES -- the test then fails in its own `finally`, having already
+ * proved what it set out to prove. Found in the gate's Linux image, where the permission bits are
+ * real; on Windows the icacls path made it invisible.
+ */
+async function restoreListing(dir) {
+  if (IS_WINDOWS) spawnSync("icacls", [dir, "/remove:d", process.env.USERNAME], { encoding: "utf8" });
+  else await chmod(dir, 0o755);
+}
+
 /** Prove the denial actually took effect. Returns true only if the read really fails. */
 function reallyUnreadable(file) {
   try {
@@ -844,7 +857,7 @@ test("a directory that could not be listed withdraws the rules its contents woul
       "an absence-based rule must not pass over a directory the run could not list",
     );
   } finally {
-    await restoreRead(hidden);
+    await restoreListing(hidden);
     await rm(root, { recursive: true, force: true });
   }
 });
