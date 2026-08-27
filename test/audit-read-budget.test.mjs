@@ -343,6 +343,19 @@ test("a content rule cannot pass over files nothing searched", async () => {
       (partial.findings ?? []).some((f) => f.id === "evidence-read-budget"),
       "the run did not report an exhausted budget, so the assertions below prove nothing",
     );
+    // SPLIT BY WHETHER THE RULE WAS ESTABLISHED, which this originally did not distinguish.
+    //
+    // The blanket assertion was `disposition !== "evaluated"` for all three, and it collided with
+    // issue #38's truth table: `any confirmed violation -> FAILED`. This tree writes a swallowed
+    // exception into EVERY file, so the files read before the budget ran out genuinely establish
+    // `errors.no-swallowed-exceptions`. Withdrawing it would discard a violation the run actually
+    // found, and report `skipped / not-evaluated` over a defect sitting in its own findings list.
+    //
+    // What this test exists for is unchanged and is still asserted for every rule: none may report a
+    // CLEAN result over unsearched files. The split makes that stricter rather than weaker, because
+    // each rule now has to land in the right one of two states instead of any state that is not one
+    // named value.
+    let established = 0;
     for (const id of CONTENT_RULES) {
       const hit = statusOf(partial, id);
       assert.ok(hit, `${id} disappeared from the report entirely`);
@@ -351,8 +364,22 @@ test("a content rule cannot pass over files nothing searched", async () => {
         "passed",
         `${id} passed over a surface with unsearched files: ${JSON.stringify(hit)}`,
       );
-      assert.notEqual(hit.disposition, "evaluated", `${id} claimed evaluation over unsearched files`);
+
+      if ((partial.findings ?? []).some((f) => f.rule === id)) {
+        established += 1;
+        assert.equal(
+          hit.status,
+          "failed",
+          `${id} had a violation confirmed by a file that WAS read and was withdrawn anyway: ${JSON.stringify(hit)}`,
+        );
+      } else {
+        assert.notEqual(hit.disposition, "evaluated", `${id} claimed evaluation over unsearched files`);
+      }
     }
+    assert.ok(
+      established > 0,
+      "no rule was established by a read file, so the confirmed-violation branch above is vacuous",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
