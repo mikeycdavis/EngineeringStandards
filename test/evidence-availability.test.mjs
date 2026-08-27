@@ -705,9 +705,17 @@ test("GUARD: repository-ignored content is a narrowing, not a loss", async () =>
     assert.equal(surface.complete, true, "a repository-authorized exclusion made the surface incomplete");
     assert.deepEqual(surface.frameworkExcludedDirectories, []);
 
+    // The two security rules are the load-bearing entries: they are the ones the ignore declaration
+    // would withdraw if a narrowing were being counted as a loss, and they stay evaluated.
+    //
+    // `quality.dead-code` moved to withdrawn for an unrelated and correct reason, and this fixture
+    // is where that first shows. Its proposition is repository-wide absence, so its reference space
+    // is every collected file — and `.gitignore` is extensionless, so `TEXT_EXT` skips it and it is
+    // never searched. The ignore declaration is not the cause: the specimen below with no
+    // `.gitignore` at all reaches `warning/evaluated` on the same rule.
     assert.deepEqual(
       baitedVerdicts(root),
-      ["passed/evaluated", "passed/evaluated", "passed/evaluated"],
+      ["passed/evaluated", "passed/evaluated", "skipped/not-evaluated"],
       "a repository's own ignore declaration withdrew rules it should not have",
     );
   } finally {
@@ -888,6 +896,144 @@ test("a retained prefix is not the file, and cannot establish a clean result", a
       "skipped/not-evaluated",
       "a clean result over a prefix is a statement about the prefix, not about the file",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// --- The reference space of an absence claim ------------------------------------------------------
+//
+// `quality.dead-code` is the one detector whose SEARCH spans every file rather than a filtered
+// subset: its candidates are code files, but `files.some((other) => ...)` looks for a reference in
+// anything. That makes it the only site where a file the run never opened can decide a verdict, and
+// it reaches a mode none of the six recorded loss conditions cover.
+//
+// A file outside `TEXT_EXT` is collected into `files` and skipped by the read loop with a bare
+// `continue`. It is absent from `contents` exactly as an unread file is, but nothing was lost —
+// nothing was ever going to be read — so `filesWentUnsearched` is false and no withdrawal fires.
+//
+// WHAT THE RULE CLAIMS, MEASURED RATHER THAN ASSUMED. `rules/verification.json` says *"Code no
+// longer reachable from any entry point"*, and the finding says *"referenced nowhere else in the
+// repository"*. Both are repository-wide absence claims. Nothing in the catalogue defines a narrower
+// searchable-text universe, so "anywhere" may not be quietly read as "in the files we happened to
+// open": when the reference space is incomplete the proposition is not evaluable, and the rule is
+// withdrawn rather than restated.
+
+/** The orphan candidate, plus a reference to it placed where the caller chooses. */
+async function deadCodeFixture(extra) {
+  const root = await tmp();
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  };
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  await mkdir(path.join(root, "src"), { recursive: true });
+  await writeFile(path.join(root, "README.md"), `# Specimen\n\n${"substantive prose ".repeat(60)}\n`);
+  await writeFile(path.join(root, "project-policy.yml"), DEAD_CODE_POLICY);
+  // Named so no other file mentions the stem by accident, and not ENTRYISH.
+  await writeFile(path.join(root, "src", "widgetrenderer.js"), "export function render() { return 1; }\n");
+  for (const [rel, body] of Object.entries(extra)) {
+    const full = path.join(root, rel);
+    await mkdir(path.dirname(full), { recursive: true });
+    await writeFile(full, body);
+  }
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "specimen");
+  return root;
+}
+
+const DEAD_CODE_POLICY = [
+  'standardVersion: "2.0.0"',
+  'project: "Dead code reference space specimen"',
+  "rules:",
+  "  quality.dead-code:",
+  "    level: required",
+  "",
+].join("\n");
+
+/** The reference itself, in whatever syntax the host file takes. */
+const REFERENCE = "widgetrenderer is used here";
+
+const orphanNames = (json) =>
+  findingsFor(json, "quality.dead-code").flatMap((f) => f.evidence ?? []);
+
+test("GUARD: a genuine orphan is still established when the reference space is complete", async () => {
+  // The anti-vacuity control, and the one that stops "withdraw whenever anything is missing" from
+  // being a passing answer to the falsifiers below. Every file here is TEXT_EXT, every one is read,
+  // and nothing references the candidate: the absence claim has its whole reference space, so the
+  // rule must reach a scored verdict and name the file.
+  const root = await deadCodeFixture({ "src/other.js": "export const other = 2;\n" });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.equal(surface.complete, true, "the fixture stopped presenting a complete surface");
+
+    const json = run("validate", root, AMPLE);
+    assert.equal(
+      statusOf(json, "quality.dead-code"),
+      "failed/evaluated",
+      "a complete search that found no reference must still be able to say so",
+    );
+    assert.ok(
+      orphanNames(json).includes("src/widgetrenderer.js"),
+      `the orphan was not named; findings were ${JSON.stringify(orphanNames(json))}`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("CONTROL: a reference the run can read produces no orphan", async () => {
+  // The same specimen, differing in one respect: the reference lives in a file the run opens. This
+  // is the polarity the falsifier is measured against — a mechanism that suppressed everything
+  // would pass the falsifier and the GUARD above would catch it, and a mechanism that did nothing
+  // would pass this and fail the falsifier.
+  const root = await deadCodeFixture({ "src/uses.js": `// ${REFERENCE}\n` });
+  try {
+    // Only the candidate under test is asserted about: `src/uses.js` is itself a candidate whose
+    // own stem nothing references, so it is a legitimate orphan and its presence here is correct.
+    assert.ok(
+      !orphanNames(run("validate", root, AMPLE)).includes("src/widgetrenderer.js"),
+      "a reference in a readable file must not leave the candidate looking orphaned",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a reference living outside the searched extensions cannot establish dead code", async () => {
+  // THE DEFECT. `docs.svg` is committed, first-party, matched by no ignore rule and excluded by no
+  // framework directory name. It is simply not in `TEXT_EXT`, so the read loop skips it without
+  // recording anything, and the absence of its text is read as the absence of a reference. The rule
+  // reached `failed / evaluated` naming a file that is not dead — over content the run never
+  // obtained, with no budget spent, no read failed, no directory unlisted, nothing truncated.
+  const root = await deadCodeFixture({ "docs.svg": `<svg><title>${REFERENCE}</title></svg>\n` });
+  try {
+    const json = run("validate", root, AMPLE);
+    assert.ok(
+      !orphanNames(json).includes("src/widgetrenderer.js"),
+      "a file whose only reference sits in an unsearched file was named as dead code",
+    );
+    assertNotEvaluated(json, "quality.dead-code");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a reference in a file the budget could not reach cannot establish dead code either", async () => {
+  // The same proposition losing its reference space through a DIFFERENT door, and the reason this
+  // is a separate test: a fix that special-cased the extension check would pass the falsifier above
+  // and fail here. What matters is not which mechanism dropped the file but that the search did not
+  // cover it, so the predicate has to be measured over the reference space itself.
+  const root = await deadCodeFixture({ "src/uses.js": `// ${REFERENCE}\n${bulk("padding")}` });
+  try {
+    const json = unreadRun("validate", root, "src/uses.js");
+    assert.ok(
+      !orphanNames(json).includes("src/widgetrenderer.js"),
+      "a file whose only reference sits in an unread file was named as dead code",
+    );
+    assertNotEvaluated(json, "quality.dead-code");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

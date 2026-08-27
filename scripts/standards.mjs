@@ -1587,8 +1587,48 @@ function detectUnfinished(files, run) {
 
 const ENTRYISH = /(^|\/)(index|main|app|Program|Startup|__init__|__main__|setup|conftest)\.[a-z]+$/i;
 
+/**
+ * The one detector whose SEARCH spans every file rather than a filtered subset.
+ *
+ * Its candidates are code files, but the reference lookup below asks whether a stem appears in
+ * ANYTHING. `rules/verification.json` states the proposition as *"Code no longer reachable from any
+ * entry point"* and the finding says *"referenced nowhere else in the repository"* — both
+ * repository-wide absence claims, and nothing in the catalogue defines a narrower searchable-text
+ * universe. So "anywhere" may not be quietly reread as "in the files we happened to open".
+ *
+ * That makes the reference space part of the evidence, and it can be incomplete in a way none of the
+ * recorded loss conditions describes: a file outside `TEXT_EXT` is collected into `files` and skipped
+ * by the read loop with a bare `continue`, so nothing was lost — nothing was ever going to be read —
+ * and `filesWentUnsearched` stays false. The absence of its text was then read as the absence of a
+ * reference, and the rule reached `failed / evaluated` naming a file that is not dead.
+ *
+ * Checked before any candidate is judged, rather than beside the finding, and that ordering is the
+ * fix. An orphan is established by NOT finding something, so it cannot be treated as a confirmed
+ * violation that survives evidence loss the way a match in a file that WAS read does: the missing
+ * evidence is exactly what would refute it. Emitting the finding first and withdrawing after would
+ * hit the `confirmed` exemption in aggregation and keep the verdict.
+ */
 function detectDeadCode(files, contents, run) {
   const { rel, addFinding } = run;
+
+  // Measured over the reference space itself rather than by enumerating the ways a file can go
+  // missing, because the extension skip is not one of them and a sixth would not be either. A
+  // retained prefix counts as incomplete for the same reason it does everywhere else: a stem absent
+  // from the first bytes of a file is not absent from the file.
+  const unsearchable = files.filter((other) => {
+    const c = contentOf(contents, other, run);
+    return !c.available || c.partial;
+  });
+  if (unsearchable.length > 0) {
+    run.unknown(
+      "quality.dead-code",
+      rel(unsearchable[0]),
+      `${unsearchable.length} file(s) went unsearched, so "referenced nowhere" is not established` +
+        (unsearchable.length > 1 ? ` (${rel(unsearchable[0])} and ${unsearchable.length - 1} more)` : ""),
+    );
+    return;
+  }
+
   const candidates = files.filter((f) => {
     const r = rel(f);
     if (!/\.(m?[jt]sx?|py|cs|go|rb)$/.test(r)) return false;
