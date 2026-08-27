@@ -1153,10 +1153,70 @@ that approval deliberately does not cover.
   `UNAVAILABLE` back to empty content at the seam, and bypassing the surface term entirely are each
   caught broadly across the falsifiers.
 
-  **What this does not do.** It does not close the item. The first acceptance criterion remains unmet
-  in its letter: seven raw `?? ""` content reads survive, two binding no rule and five feeding rules
-  that are already withdrawn wholesale, so the mechanism forces acknowledgement without yet making
-  the coercion unreachable.
+  **Criterion 1, finished rather than superseded, by owner ruling 2026-08-26.** The seven surviving
+  raw reads were briefly proposed for supersession on the grounds that whole-rule withdrawal already
+  protected five of them and the other two bound no rule. The owner declined: whole-rule withdrawal
+  is a second mechanism compensating for an unsafe read primitive, which is the recognition-table
+  problem one layer higher, and the decision behind this item was to move the safety property to the
+  read seam. The default was set to REMOVING the coercion rather than justifying it. That is the
+  right call and the measurements below are what convinced me of it — three of the mutations that
+  establish the seam are invisible to every behavioural test in the repository, because the coarse
+  withdrawal fires on precisely the runs that would expose them.
+
+  **The measured postcondition.**
+
+  | | Before | After |
+  |---|---|---|
+  | Raw `contents.get` outside the primitive | 6 | **0** |
+  | Raw `sources.get` outside the primitive | 3 | **0** |
+  | `UNAVAILABLE` coerced to text | 4 | **0** |
+  | Rule-id recognition needed for read correctness | yes | **no**, see below |
+
+  Three `?? ""` remain in the evaluator and none is a content read: they default a missing FIELD of a
+  parsed plan item — `item.fields.get("Deliverables")` and two siblings — on a document the run
+  already has. An absent field of an available document is genuinely absent, which is the distinction
+  this whole item rests on, pointed the right way.
+
+  **The derived views were the larger half, and were nearly missed.** `sourceOf`/`structureOf`/
+  `commentsOf` resolved `sources.get(f)?.code ?? ""` — one indirection from the idiom, and the one
+  every code-scanning check actually reads, so a file the run never obtained reported no import, no
+  catch block and no SQL. All three now answer with availability, and `contents` moved onto the run
+  because telling *never obtained* apart from *not a code file* needs both maps and an accessor that
+  had to be handed one at every call site is a seam with a hole in it.
+
+  **Independence, measured by removal rather than asserted.** With the three read-loss terms stripped
+  out of the coarse trigger — leaving `CONTENT_DERIVED_RULES` serving only the never-collected class —
+  every read-loss falsifier stays green. The per-check seam carries read correctness on its own.
+  **Two things the table is still load-bearing for, and the second is a real limitation:** the
+  never-collected class, where no check is ever reached and only a table can answer; and
+  `verification.before-completion`, the one rule of the nine with no per-check record, because its
+  evidence is other detectors' findings rather than a content read of its own — there is no read site
+  at which to record its unknown. The other eight are covered per check. The coarse terms are
+  therefore kept rather than removed: they are no longer what makes the read correct, and dropping
+  them would still change that ninth rule's behaviour with no test to catch it.
+
+  **Twelve mutants, all killed, and three of them prove why the structural guard had to exist.**
+  Restoring a raw read at one detector, coercing an unavailable derived view back to `""`, and
+  collapsing `viewOf`'s three states into two ALL SURVIVED the entire behavioural suite on the first
+  run. Each is masked by the coarse withdrawal firing on the same runs for a different reason — the
+  compensation measuring itself. They are killed by `test/read-seam.test.mjs`: a source-level count
+  that no site outside the two primitives reads the maps raw, plus a direct contract test on the
+  primitives, for which they are exported.
+
+  **A guard that measured nothing, found by a mutation that lived.** The structural check's first
+  draft stripped string literals by scanning to the next backtick, which desynchronises on the first
+  `${...}` containing one; this file is full of them, so it swallowed whole regions of real code and
+  compared two numbers derived from the same corruption. It passed exactly as loudly as a working
+  guard. It was caught only because a restored raw read survived it, which is the general lesson: a
+  structural assertion needs a mutation aimed at the thing it claims to see, or it is a green light
+  wired to nothing.
+
+  **One repair outside the seam, disclosed rather than folded in.** The negative control in
+  `test/invocation-ownership.test.mjs` patches the evaluator by anchoring on two adjacent lines of
+  `createRun`; `contents` moving onto the run put a line between them. The anchor was updated, as its
+  own failure message instructs, and its `readFileSync` now normalises line endings — it had been
+  matching an LF anchor against a CRLF checkout, so it passed in the container and silently failed on
+  a Windows host, which is where a developer would run it by hand.
 
   **Bound to an exact head, 2026-08-26.** The full six-stage gate passed on committed content at
   `d91fb4a` — `inventory`, `fidelity`, `policy`, `diagrams`, `test`, `audit` — with `validate`

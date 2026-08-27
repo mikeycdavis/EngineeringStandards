@@ -516,8 +516,26 @@ on any tool that reports results, this one included, and it is the one part of R
 purely discipline. `standards audit` answers every content lookup with availability rather than with
 text, records a check whose evidence was unavailable as unknown, and aggregates rule disposition from
 the checks that ran. No rule ID is claimed for R12 itself; the enforcement is structural, in
-`scripts/standards.mjs`, and is pinned by `test/evidence-availability.test.mjs` and
-`test/audit-read-budget.test.mjs`.
+`scripts/standards.mjs`, and is pinned by `test/evidence-availability.test.mjs`,
+`test/audit-read-budget.test.mjs` and `test/read-seam.test.mjs`.
+
+**The lookup is the mechanism, and "every" is enforced rather than intended.** Two primitives answer
+every content read in the evaluator — one for raw text, one for the derived views the code-scanning
+checks actually read — and each returns availability instead of a string, so there is no `?? ""` for
+a caller to reach for. What makes that a mechanism and not a convention is that the count is
+asserted: no raw map read survives outside the two primitives, and neither primitive returns text on
+a branch where it has none. A tool may instead withdraw whole rules whenever anything went unread,
+and that is a real safety net, but it is a maintained list of rule identities compensating for an
+unsafe read — correct until the next check is added, and correct for reasons no one is checking. The
+list is not what makes the result honest; the lookup is.
+
+**Three states, not two, on both sides of the seam.** Evidence that is absent is absent for two
+unrelated reasons, and answering them alike breaks the invariant from the other direction. Content
+that was eligible and not obtained is a LOSS and a check must say so. Content that was never
+eligible — a file with no text to read, a document with no code view — is simply not that check's
+subject, and reporting it as loss withdraws a rule for every ordinary file in the repository. Both
+collapses were tried during implementation and both were caught: the first by a specimen, the second
+by the primitive's own contract test.
 
 **The unit is the check, and that is what makes the mixed case expressible.** A rule with an unknown
 check and no confirmed violation reports `not-evaluated`. A rule whose violation was established by a

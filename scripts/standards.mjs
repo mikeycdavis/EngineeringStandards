@@ -765,8 +765,11 @@ function findRoot(start) {
  * mutation sites; the invariant is that no *execution-specific* mutable state outlives its
  * invocation, not that module scope is empty.
  *
- * `sources` is here because it is execution-specific: its values are the audited project's file
- * contents, so the same key yields a different correct value for a different target.
+ * `contents` and `sources` are here because they are execution-specific: their values are the
+ * audited project's file contents, so the same key yields a different correct value for a different
+ * target. `contents` moved onto the run when the derived-view accessors began answering with
+ * availability — telling "never obtained" apart from "not a code file" needs both maps, and an
+ * accessor that had to be handed one of them at every call site would be a seam with a hole in it.
  */
 /**
  * One content lookup, answered with whether the run actually has the content.
@@ -784,15 +787,67 @@ function findRoot(start) {
  *
  * Returning a value a caller cannot accidentally use as text is the whole mechanism. There is no
  * `?? ""` to reach for, because there is no string to reach.
+ *
+ * EXPORTED, and only for its own contract test. This function and `viewOf` are the safety property
+ * that Standard 44 R12 makes normative, and every other test in the repository reaches them through a
+ * whole audit — where the coarse surface withdrawal fires on the same runs and masks whatever they
+ * return. Two mutations proved that: coercing an unavailable derived view back to `""`, and
+ * collapsing its three states into two, both survived the entire behavioural suite. A safety property
+ * whose every observation is confounded by a second mechanism has not been tested, and criterion 1 is
+ * specifically about the mechanism rather than about today's verdicts.
  */
-function contentOf(contents, f) {
+export function contentOf(contents, f) {
+  if (contents.has(f)) return { available: true, text: contents.get(f) };
+  // THREE STATES, and the third was found by a guard rather than reasoned out in advance. Absence
+  // from `contents` has two causes: a file that was ELIGIBLE to be read and was not — the loss this
+  // seam exists for — and a file the read loop never offered to open at all, because its extension is
+  // not a recognised text type. A repository's `.gitignore` has no extension and is in every file
+  // list; answering "lost" for it would report evidence loss in every repository on earth, which is
+  // the blanket failure the exclusion-authority filter refuses one layer up. Eligibility is asked
+  // here rather than at the call site because a caller that had to know the read loop's extension
+  // policy to interpret the answer is a caller that can get it wrong.
+  return TEXT_EXT.has(path.extname(f))
+    ? { available: false, text: null, lost: true, reason: "collected but never searched" }
+    : { available: false, text: null, lost: false, reason: "no text content: not a recognised text file" };
+}
+
+/**
+ * One DERIVED-view lookup, answered the same way, because the coercion was here too.
+ *
+ * `sourceOf`/`structureOf`/`commentsOf` used to resolve `sources.get(f)?.code ?? ""` — the identical
+ * substitution one indirection away, and the one that fed most of the rules that matter, since every
+ * code-scanning detector reads a view rather than the raw text. A file the run never obtained has no
+ * derived view, so the fallback said "this file contains no import, no catch block, no SQL" about a
+ * file nobody opened.
+ *
+ * THREE STATES, not two, and the third is why this is not just `contentOf` again. A view is absent
+ * for two unrelated reasons and they must not be answered alike:
+ *
+ *   available            the view exists and `text` is it
+ *   unavailable, lost    the content was never obtained — evidence loss, and a check must say so
+ *   unavailable, kept    the file is not code, so no view was ever derivable — nothing was lost
+ *
+ * Collapsing the last two would withdraw a rule for every Markdown file in the repository, which is
+ * the blanket failure this seam exists to avoid, arrived at from the inside. That collapse is
+ * currently unobservable through the CLI — every rule-binding caller guards with `isCode(f)` first,
+ * so the third state is reached only by detectors that bind no rule — which is exactly why the
+ * contract is pinned directly rather than through behaviour. Defensive today, load-bearing the moment
+ * a detector scans without that guard, and the point of a primitive is that it is right before it
+ * has to be.
+ *
+ * Exported for the same reason as `contentOf`; see there.
+ */
+export function viewOf(sources, contents, f, which) {
+  const derived = sources.get(f);
+  if (derived) return { available: true, text: derived[which] };
   return contents.has(f)
-    ? { available: true, text: contents.get(f) }
-    : { available: false, text: null, reason: "collected but never searched" };
+    ? { available: false, text: null, lost: false, reason: "no derived view: not a recognised code file" }
+    : { available: false, text: null, lost: true, reason: "collected but never searched" };
 }
 
 function createRun({ root, strict, json }) {
   const findings = [];
+  const contents = new Map();
   const sources = new Map();
 
   /**
@@ -812,6 +867,7 @@ function createRun({ root, strict, json }) {
     strict,
     json,
     findings,
+    contents,
     sources,
     unknownChecks,
 
@@ -833,9 +889,12 @@ function createRun({ root, strict, json }) {
 
     has: (p) => existsSync(path.join(root, p)),
 
-    sourceOf: (f) => sources.get(f)?.code ?? "",
-    structureOf: (f) => sources.get(f)?.structure ?? "",
-    commentsOf: (f) => sources.get(f)?.comments ?? "",
+    // Availability-returning, exactly like `contentOf`. There is deliberately no accessor on this
+    // run that hands back a bare string: a caller cannot forget to branch on evidence it was never
+    // given, and `test/read-seam.test.mjs` holds the boundary shut against the next raw `.get`.
+    sourceOf: (f) => viewOf(sources, contents, f, "code"),
+    structureOf: (f) => viewOf(sources, contents, f, "structure"),
+    commentsOf: (f) => viewOf(sources, contents, f, "comments"),
 
     /**
      * `label` is the Standard 44 evidence label and is not decorative. A detection that rests on a
@@ -1069,9 +1128,13 @@ function detectCapabilities(files, contents, run) {
   const notes = [];
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
-  if (pkgPath) {
+  const manifest = pkgPath ? contentOf(contents, pkgPath) : null;
+  // `?? "{}"` parsed a manifest nobody read into an empty object, and an empty object has no bin and
+  // no scripts — so an unread package.json reported a project with no CLI entry point. This detector
+  // binds no rule, so nothing is withdrawn; it simply declines to describe what it did not read.
+  if (manifest?.available) {
     try {
-      const pkg = JSON.parse(contents.get(pkgPath) ?? "{}");
+      const pkg = JSON.parse(manifest.text);
       const bins = pkg.bin ? Object.keys(pkg.bin) : [];
       const scripts = pkg.scripts ? Object.keys(pkg.scripts) : [];
       if (bins.length) {
@@ -1139,7 +1202,8 @@ function detectApis(files, contents, run) {
     if (/(^|\/)(routes?|controllers?|api|endpoints?)\//i.test(r) && isCode(f)) return true;
     if (!isCode(f)) return false; // prose describing a route table is not a route
     const code = structureOf(f); // a commented-out or quoted route is not a route
-    return code ? API_CONTENT.some((re) => re.test(code)) : false;
+    if (!code.available) return false; // unread: not a route handler this run can name, and it says so below
+    return API_CONTENT.some((re) => re.test(code.text));
   });
   if (handlers.length === 0) return;
 
@@ -1174,8 +1238,9 @@ function detectJobs(files, contents, run) {
   const { rel, addFinding, structureOf, sourceOf } = run;
   const workflowCron = files.filter((f) => {
     if (!/\.github\/workflows\/.*\.ya?ml$/.test(rel(f))) return false;
-    const text = contents.get(f) ?? "";
-    return /^\s*schedule:/m.test(text);
+    const workflow = contentOf(contents, f);
+    if (!workflow.available) return false; // unread: no schedule found is not "no schedule declared"
+    return /^\s*schedule:/m.test(workflow.text);
   });
   if (workflowCron.length) {
     addFinding({
@@ -1190,8 +1255,11 @@ function detectJobs(files, contents, run) {
   const jobs = files.filter((f) => {
     if (JOB_NAME.test(path.basename(f))) return true;
     if (!isCode(f)) return false; // prose naming Celery or BullMQ is not a scheduler
-    if (JOB_CONTENT.some((re) => re.test(structureOf(f)))) return true;
-    return importPattern(JOB_PACKAGES).test(sourceOf(f)); // imports live in strings
+    const structure = structureOf(f);
+    const code = sourceOf(f);
+    if (!structure.available || !code.available) return false; // unread: no claim either way
+    if (JOB_CONTENT.some((re) => re.test(structure.text))) return true;
+    return importPattern(JOB_PACKAGES).test(code.text); // imports live in strings
   });
   if (jobs.length === 0) return;
 
@@ -1248,7 +1316,8 @@ function detectIntegrations(files, contents, run) {
     const re = importPattern(pattern);
     for (const f of files) {
       const code = sourceOf(f);
-      if (code && re.test(code)) {
+      if (!code.available) continue; // not code, or never read; neither is an integration
+      if (re.test(code.text)) {
         if (!found.has(name)) found.set(name, []);
         found.get(name).push(rel(f));
       }
@@ -1300,7 +1369,8 @@ function detectAiInterfaces(files, contents, run) {
     const re = importPattern(pattern);
     for (const f of files) {
       const code = sourceOf(f);
-      if (code && re.test(code)) {
+      if (!code.available) continue; // not code, or never read; neither is a provider SDK
+      if (re.test(code.text)) {
         if (!providers.has(name)) providers.set(name, []);
         providers.get(name).push(rel(f));
       }
@@ -1551,8 +1621,13 @@ function detectUnfinished(files, run) {
     if (!isCode(f)) continue; // a TODO in a Markdown file is a note, not an unfinished code path
     const comments = commentsOf(f);
     const code = structureOf(f);
-    for (const [re, kind] of UNFINISHED_COMMENTS) if (comments && re.test(comments)) record(kind, f);
-    for (const [re, kind] of UNFINISHED_CODE) if (code && re.test(code)) record(kind, f);
+    if (comments.lost || code.lost) {
+      run.unknown("quality.unfinished-work", rel(f), comments.reason ?? code.reason);
+      continue; // a file nobody read holds no markers only in the sense that nobody looked
+    }
+    if (!comments.available || !code.available) continue;
+    for (const [re, kind] of UNFINISHED_COMMENTS) if (re.test(comments.text)) record(kind, f);
+    for (const [re, kind] of UNFINISHED_CODE) if (re.test(code.text)) record(kind, f);
   }
   if (byKind.size === 0) return;
 
@@ -1578,14 +1653,29 @@ function detectDeadCode(files, contents, run) {
     if (TEST_RE.test(r) || ENTRYISH.test(r)) return false;
     return true;
   });
+  // THE SEARCH IS THE EVIDENCE HERE, and that makes this the sharpest case in the file. "Nothing
+  // references this name" is established by reading every OTHER file, so a single unread file is
+  // enough to make the conclusion unsupported — the reference that would have cleared the orphan may
+  // be sitting in exactly the file nobody opened. The raw `.get` treated absent as "does not contain
+  // the stem", which is the fabricated-failure polarity: an orphan reported over a search that did
+  // not happen. A rule cannot be established file by file when the check ranges over all of them, so
+  // the unknown is recorded once for the run rather than per candidate.
+  const unsearchedRef = files.find((other) => contentOf(contents, other).lost);
+  if (unsearchedRef) {
+    run.unknown("quality.dead-code", rel(unsearchedRef), "a reference search cannot conclude over a file nothing read");
+    return;
+  }
+
   const orphans = [];
   for (const f of candidates) {
     const stem = path.basename(rel(f)).replace(/\.[^.]+$/, "");
     if (stem.length < 3) continue;
     const referenced = files.some((other) => {
       if (other === f) return false;
-      const text = contents.get(other);
-      return text ? text.includes(stem) : false;
+      const candidate = contentOf(contents, other);
+      // Every LOST file already returned above, so an unavailable answer here is a file with no text
+      // content to search at all — a binary, an image. Not evidence loss, and not a reference either.
+      return candidate.available ? candidate.text.includes(stem) : false;
     });
     if (!referenced) orphans.push(rel(f));
   }
@@ -1879,7 +1969,14 @@ function detectDocDiscrepancies(files, contents, run) {
   const { rel, root, addFinding } = run;
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
   if (!readme) return;
-  const text = contents.get(readme) ?? "";
+  const doc = contentOf(contents, readme);
+  if (!doc.available) {
+    // A README nobody opened names no broken path. Both polarities were reachable from `?? ""`: this
+    // one reported clean, and the length check in another detector reported the same file as short.
+    run.unknown("documentation.code-consistency", rel(readme), doc.reason);
+    return;
+  }
+  const text = doc.text;
   const broken = [];
 
   for (const token of text.match(/`([^`\n]+)`/g) ?? []) {
@@ -1890,9 +1987,16 @@ function detectDocDiscrepancies(files, contents, run) {
   }
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
-  if (pkgPath) {
+  const manifest = pkgPath ? contentOf(contents, pkgPath) : null;
+  if (manifest && !manifest.available) {
+    // The opposite polarity of the same coercion: an unread manifest parsed to `{}`, which has no
+    // scripts, so EVERY `npm run` in the README became a broken command. A fabricated failure.
+    run.unknown("documentation.code-consistency", rel(pkgPath), manifest.reason);
+    return;
+  }
+  if (manifest) {
     try {
-      const scripts = Object.keys(JSON.parse(contents.get(pkgPath) ?? "{}").scripts ?? {});
+      const scripts = Object.keys(JSON.parse(manifest.text).scripts ?? {});
       for (const m of text.match(/npm run ([\w:-]+)/g) ?? []) {
         const name = m.replace("npm run ", "");
         if (!scripts.includes(name)) broken.push(`${rel(readme)} -> npm run ${name}`);
@@ -2091,13 +2195,18 @@ function detectSecretsInArtifacts(files, contents, run) {
     const p = rel(f);
     if (ENV_FILE_RE.test(p)) continue; // Single owner: scm.no-committed-env-files.
     const ext = path.extname(f);
-    let text = null;
-    if (isCode(f)) text = sourceOf(f);
-    else if (CONFIG_EXT.has(ext)) text = contents.get(f) ?? "";
-    if (!text) continue;
+    let evidence = null;
+    if (isCode(f)) evidence = sourceOf(f);
+    else if (CONFIG_EXT.has(ext)) evidence = contentOf(contents, f);
+    if (!evidence) continue; // neither code nor config: not this detector's subject at all
+    if (evidence.lost) {
+      run.unknown("security.no-secrets-in-artifacts", p, evidence.reason);
+      continue;
+    }
+    if (!evidence.available) continue;
 
     for (const [re, what] of SECRET_PATTERNS) {
-      if (re.test(text)) hits.push(`${p} (${what})`);
+      if (re.test(evidence.text)) hits.push(`${p} (${what})`);
     }
   }
   if (hits.length === 0) return;
@@ -2192,9 +2301,15 @@ function detectSwallowedExceptions(files, contents, run) {
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
-    const structure = structureOf(f);
-    if (!structure) continue;
-    const raw = contents.get(f) ?? "";
+    const view = structureOf(f);
+    const source = contentOf(contents, f);
+    if (view.lost || source.lost) {
+      run.unknown("errors.no-swallowed-exceptions", rel(f), view.reason ?? source.reason);
+      continue;
+    }
+    if (!view.available || !source.available) continue;
+    const structure = view.text;
+    const raw = source.text;
     if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
 
     // Constructed here, so their `lastIndex` cannot outlive this file's turn through the loop.
@@ -2255,9 +2370,13 @@ function detectCertBypass(files, run) {
   for (const f of files) {
     if (!isCode(f)) continue;
     const code = structureOf(f);
-    if (!code) continue;
-    if (CERT_BYPASS.some((re) => re.test(code))) hits.push(rel(f));
-    else if (path.extname(f) === ".sh" && /\bcurl\b[^\n|]*\s-[a-zA-Z]*k\b/.test(code)) hits.push(rel(f));
+    if (code.lost) {
+      run.unknown("security.no-cert-bypass", rel(f), code.reason);
+      continue; // a forbidden rule reporting clean over a file nobody opened is the whole defect
+    }
+    if (!code.available) continue;
+    if (CERT_BYPASS.some((re) => re.test(code.text))) hits.push(rel(f));
+    else if (path.extname(f) === ".sh" && /\bcurl\b[^\n|]*\s-[a-zA-Z]*k\b/.test(code.text)) hits.push(rel(f));
   }
   if (hits.length === 0) return;
 
@@ -2301,8 +2420,12 @@ function detectSqlConcat(files, run) {
   for (const f of files) {
     if (!isCode(f)) continue;
     const code = sourceOf(f);
-    if (!code) continue;
-    if (SQL_TEMPLATE.test(code) || SQL_FSTRING.test(code)) hits.push(rel(f));
+    if (code.lost) {
+      run.unknown("security.no-sql-concat", rel(f), code.reason);
+      continue;
+    }
+    if (!code.available) continue;
+    if (SQL_TEMPLATE.test(code.text) || SQL_FSTRING.test(code.text)) hits.push(rel(f));
   }
   if (hits.length === 0) return;
 
@@ -2501,7 +2624,7 @@ export async function main(args) {
     files: new Set(ignored.ok ? ignored.files : []),
   };
   const files = await collectFiles(root, [], surfaceLoss, exclusions, run);
-  const contents = new Map();
+  const contents = run.contents;
   // The repository surface this invocation measured. Named so two runs can be compared by identity.
   surface = { files, contents, surfaceLoss };
   const unreadableFiles = [];

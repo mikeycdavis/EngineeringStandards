@@ -265,8 +265,14 @@ test("importing the module still runs nothing, by either of its two paths", (t) 
  * fails. A suite that tested output alone would have reported this defect as absent.
  */
 test("the identity assertion detects a shared cache that output comparison cannot", async () => {
-  const src = readFileSync(CLI, "utf8");
-  const anchor = "  const findings = [];\n  const sources = new Map();";
+  // Normalised, because the anchor is written with LF and a Windows checkout holds CRLF. The
+  // container reads an LF blob and matched; a developer running the suite on the host did not, so
+  // this control silently failed on the one platform where running it by hand is most useful.
+  const src = readFileSync(CLI, "utf8").split("\r\n").join("\n");
+  // `contents` joined `sources` on the run when the derived-view accessors began answering with
+  // availability: telling "never obtained" apart from "not a code file" needs both maps. The anchor
+  // follows the construction code rather than the construction code being held still for it.
+  const anchor = "  const contents = new Map();\n  const sources = new Map();";
   assert.ok(
     src.includes(anchor),
     "the control must patch real construction code; if this anchor moves, fix the control rather than deleting it",
@@ -274,7 +280,7 @@ test("the identity assertion detects a shared cache that output comparison canno
 
   const patched = src
     .replace("function createRun({ root, strict, json }) {", "const SHARED = new Map();\nfunction createRun({ root, strict, json }) {")
-    .replace(anchor, "  const findings = [];\n  const sources = SHARED;");
+    .replace(anchor, "  const contents = new Map();\n  const sources = SHARED;");
 
   // Beside the real module, because it imports its siblings by relative path. Dot-prefixed and
   // removed in `finally`, so it is never a file the repository audits.
