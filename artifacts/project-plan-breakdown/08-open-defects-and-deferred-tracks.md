@@ -948,13 +948,37 @@ that approval deliberately does not cover.
   criterion says *no call site can reach `""` or `"{}"` for unread content, and the mechanism
   enforces this rather than a comment asserting it.* Seven raw read sites remain, and `contents` is
   still passed to every detector, so the seam is opt-in at the call site rather than enforced by
-  construction. What is established instead is the weaker claim that no remaining site can fabricate
-  a **verdict**: two of the seven bind no rule at all and produce descriptive findings only
-  (`detectCapabilities`, `detectJobs`), and the other five feed rules that are already withdrawn
-  wholesale by `CONTENT_DERIVED_RULES`. Enforcing the criterion literally means withholding
-  `contents` from detectors entirely, which converts every remaining site including the descriptive
-  ones and changes audit output well beyond this defect. That is a larger change than the evidence
-  here justifies, and it is recorded as unmet rather than reinterpreted into met.
+  construction.
+
+  **And the weaker claim this row previously fell back on is false, measured 2026-08-26.** It read:
+  *no remaining site can fabricate a verdict — two bind no rule, the other five feed rules already
+  withdrawn wholesale.* That reasoning enumerated the recorded loss modes and missed one that is not
+  recorded at all. A file outside `TEXT_EXT` is collected into `files` and never read, so it is
+  absent from `contents` exactly as an unread file is — and it is **not** any of the six conditions
+  in `filesWentUnsearched`, because nothing was lost. Nothing was ever going to be read.
+
+  `detectDeadCode` is exposed to it, and it is the one site whose search spans every file rather than
+  a filtered subset: its candidates are code files, but `files.some((other) => ...)` looks for a
+  reference in *anything*. Demonstrated on a specimen differing in one respect — where the reference
+  to `src/widgetrenderer.js` lives:
+
+  ```text
+  reference in src/uses.js   quality.dead-code -> failed, naming src/uses.js
+  reference in docs.svg      quality.dead-code -> failed, naming src/widgetrenderer.js
+  ```
+
+  The second names a file that is not dead. Its reference sits in a `.svg` the run never opens, the
+  absence of that text is read as the absence of a reference, and the rule reaches `failed /
+  evaluated` on content the run never obtained — no budget spent, no read failed, no directory
+  unlisted, nothing truncated or excluded. **So the verdict-level invariant is not satisfied either**,
+  and the adjudication between a literal and a verdict-level reading of criterion 1 does not have to
+  be settled to know that this site is unfinished under both.
+
+  The other six are unaffected, and for reasons rather than by luck: `detectCapabilities` and
+  `detectJobs` bind no rule and can move no verdict; `detectDocDiscrepancies`, `detectSecretsInArtifacts`
+  and `detectSwallowedExceptions` reach only `TEXT_EXT` paths — `README.md`, `package.json`,
+  `CONFIG_EXT`, `isCode` — so their absent case is always a recorded loss and always withdrawn, and
+  the last of them additionally skips on an empty `structureOf`.
 
   **Two loss modes, not one.** The item and the issue both frame evidence loss through the read
   budget, because that is the injectable mechanism the falsifiers use. A failed **read** was the
@@ -1129,6 +1153,20 @@ that approval deliberately does not cover.
   **What this does not do.** It does not close the item. The read-seam behaviour, the mixed
   known/unknown aggregation, the starved-budget differential and the mutation coverage recorded above
   are the rest of the contract, and the first acceptance criterion remains unmet in its letter.
+
+  **The verdict movement is acceptance evidence, recorded with its figures.** `validate` on this
+  repository goes from **20 passed / 4 failed / 26 skipped** to **11 passed / 4 failed / 35 skipped**.
+  The four failures are the four standing recorded human rejections at both ends and are untouched.
+  Nine rules move from `passed` to `not-evaluated` — the `CONTENT_DERIVED_RULES` set — because this
+  repository excludes `test/fixtures` by name, 71 tracked committed files, two of which carry
+  deliberate SQL-concatenation and certificate-bypass bait. Those nine passes were never supported by
+  evidence this run held. `security.no-sql-concat: passed` asserted the absence of a construct sitting
+  in the repository being audited.
+
+  This is the item's result rather than a cost of it: the movement IS the correction, and a run that
+  kept those nine would be preserving exactly the false confidence #38 exists to remove. Per the owner
+  ruling recorded in criterion 5 below, it must not be used as grounds to weaken withdrawal, redefine
+  `complete`, or restore the nine.
 
   **Bound to an exact head, 2026-08-26.** The full six-stage gate passed on committed content at
   `d91fb4a` — `inventory`, `fidelity`, `policy`, `diagrams`, `test`, `audit` — with `validate`
