@@ -1021,6 +1021,35 @@ test("a reference living outside the searched extensions cannot establish dead c
   }
 });
 
+test("a reference past the per-file read cap cannot establish dead code either", async () => {
+  // The THIRD door, and the one the other two do not cover. The file is TEXT_EXT, it is opened, and
+  // the budget is ample -- it is simply larger than MAX_READ_BYTES, so only its first 400 KB are
+  // retained and the reference sits past that boundary. `available` is true and `partial` is what
+  // says the search did not cover the file.
+  //
+  // Written because mutation testing found `partial` folded into `available` survived the suite.
+  // The route it reopens is precise: the completeness guard stops flagging the file, the detector
+  // judges a candidate over a reference space it did not finish reading, emits an orphan, and the
+  // `confirmed` exemption in aggregation then KEEPS that verdict -- the coarse `truncatedFiles`
+  // trigger cannot withdraw a rule that already has a confirmed violation. A retained prefix is not
+  // the file, and a clean result over the first bytes is a statement about those bytes.
+  const padding = `// ${"padding ".repeat(9)}
+`;
+  const overCap = padding.repeat(Math.ceil(420_000 / padding.length)) + `// ${REFERENCE}
+`;
+  const root = await deadCodeFixture({ "src/uses.js": overCap });
+  try {
+    const json = run("validate", root, AMPLE);
+    assert.ok(
+      !orphanNames(json).includes("src/widgetrenderer.js"),
+      "a file whose only reference sits past the read cap was named as dead code",
+    );
+    assertNotEvaluated(json, "quality.dead-code");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a reference in a file the budget could not reach cannot establish dead code either", async () => {
   // The same proposition losing its reference space through a DIFFERENT door, and the reason this
   // is a separate test: a fix that special-cased the extension check would pass the falsifier above

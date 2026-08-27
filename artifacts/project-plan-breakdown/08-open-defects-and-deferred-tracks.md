@@ -1014,6 +1014,20 @@ that approval deliberately does not cover.
   cap and on budget exhaustion and not on a read failure — so its trigger was corrected rather than
   its table extended.
 
+  **Owner ruling on `quality.dead-code`, 2026-08-27: accepted.** A rule claiming absence cannot
+  honestly pass or fail without searching the whole domain it claims over, so `not-evaluated` when the
+  reference space is incomplete is the correct disposition and not a regression. The verdict is not to
+  be preserved merely because most repositories contain unreadable or non-text files. The first of the
+  two reserved judgements is therefore settled, and the cost recorded above is the accepted price
+  rather than an open question.
+
+  **Owner ruling on the three mutants, 2026-08-27: conditional, and the condition caught one.** The
+  ruling was to accept a survivor only where it is redundant with an independently established
+  boundary and restores no path from unavailable content to a verdict. Measured against that test,
+  mutants 2 and 3 pass it and mutant 1 fails it — it restores a false `failed`. The condition did the
+  work it was written to do, and the defect is closed by the new falsifier rather than by relaxing the
+  condition.
+
   **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
   this item does not close itself. What needs a second party is no longer whether an unmet criterion
   is acceptable as scoped — every criterion is met — but whether the two judgements this item made on
@@ -1151,16 +1165,41 @@ that approval deliberately does not cover.
   both new falsifiers), answering the doc-consistency README half from an unread file (3), coercing a
   missing split-source entry into an empty string (1), and destructuring the raw map off `run` (1).
 
-  **The three survivors share one cause, and it is measured.** Folding `partial` into `available`,
-  and deleting the per-detector loss record from `detectSecretsInArtifacts` or
-  `detectSwallowedExceptions`, change no verdict this suite can observe — because `CODE_EXT` and
-  `CONFIG_EXT` are strict subsets of `TEXT_EXT`, so every file those detectors read is one the read
-  loop attempts, so any unavailability is already a recorded loss, so the coarse `filesWentUnsearched`
-  trigger withdraws the rule regardless. The per-detector call is redundant **today, and only today**.
-  `quality.dead-code` is the proof of what that costs: its reference space reached outside `TEXT_EXT`,
-  the coarse trigger did not cover it, and it fabricated a verdict for as long as nobody looked. The
-  requirement is therefore asserted where it is made — *a rule-bound detector records its own evidence
-  loss, against its own rule* — while the behavioural gap is stated here rather than claimed closed.
+  **The claim that all three shared one cause was wrong, and adjudicating them separately is what
+  found it.** The reading recorded here was that all three change no verdict the suite can observe,
+  because `CODE_EXT` and `CONFIG_EXT` are strict subsets of `TEXT_EXT`, so every file those detectors
+  read is one the read loop attempts, so any unavailability is already a recorded loss and the coarse
+  `filesWentUnsearched` trigger withdraws the rule regardless. That holds for two of the three. It
+  does not hold for the first, and the difference was measured on 2026-08-27.
+
+  **Mutant 1 restored a false `failed` verdict.** Folding `partial` into `available` disables the
+  `c.partial` half of `detectDeadCode`'s completeness guard. The detector then judges a candidate
+  over a reference space it did not finish reading, emits an orphan — and the `confirmed` exemption
+  in aggregation *keeps* that verdict, because the coarse trigger cannot withdraw a rule that already
+  carries a confirmed violation. So the coarse trigger is not a redundant second boundary here; it is
+  defeated by the very finding the missing guard allows. Reproduced: a specimen whose only reference
+  to `src/widgetrenderer.js` sits past `MAX_READ_BYTES` reports it as dead code.
+
+  This is the same defect as the `.svg` specimen arriving through a **third door**. The extension
+  skip and the unread file were both covered; truncation was not, and `partial` was the only signal
+  that said so. The guard that kills it is now
+  `test/evidence-availability.test.mjs` — *a reference past the per-file read cap cannot establish
+  dead code either* — which fails on mutant 1 and passes on the restored source.
+
+  **Mutants 2 and 3 are genuinely redundant, and that is now measured rather than argued.** Deleting
+  the unavailable-branch loss record from `detectSecretsInArtifacts` or `detectSwallowedExceptions`
+  leaves every other test passing, including *a rule reading a derived view is withdrawn when a file
+  could not be read*, which independently asserts neither rule reports `passed` over a file the
+  process could not open. The asymmetry with dead-code is the whole explanation: these two detectors
+  emit findings established by **presence** — a match in bytes actually read — so they never enter
+  `confirmed` and never defeat the coarse withdrawal. An absence-based finding does.
+
+  **A measured limitation of the source-level requirement, recorded rather than papered over.** Each
+  of those two detectors records loss in two branches, unavailable and partial. Deleting one branch
+  leaves the other, and *a rule-bound detector records its own evidence loss, against its own rule*
+  matches on either — so it does not distinguish them and did not fail on mutants 2 and 3. Deleting
+  **both** branches does fail it. The assertion is therefore weaker than its name suggests, and is
+  load-bearing only against total removal.
 
   **One mutant found a test that could not fail.** Destructuring `contents` off `run` survived a
   structural assertion written to catch exactly it. The loop had taken the third capture group of the
