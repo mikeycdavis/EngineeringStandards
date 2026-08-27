@@ -1038,3 +1038,160 @@ test("a reference in a file the budget could not reach cannot establish dead cod
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+// --- The boundary is the mechanism ----------------------------------------------------------------
+//
+// Criterion 1 of #38 is typed, and it is deliberately not the same requirement as the verdict-level
+// invariant every falsifier above measures: *a content lookup for a file the run did not obtain
+// cannot return a string. No call site can reach `""` or `"{}"` for unread content, and THE
+// MECHANISM ENFORCES THIS RATHER THAN A COMMENT ASSERTING IT.*
+//
+// The behavioural tests above cannot establish that clause. They prove that the sites which exist
+// today behave, one site at a time, which is exactly the property that decays: the seam was opt-in
+// at the call site, so a new detector inherited nothing and the next `contents.get(f) ?? ""` was one
+// line of ordinary-looking code away. This test is the enforcement, and it is a source-level
+// assertion on purpose — the criterion asks for a mechanism, and the mechanism is that the raw map
+// is not reachable from a detector at all.
+//
+// It is written to fail on the parent commit, where every detector took `contents` as a parameter.
+
+const SOURCE = readFileSync(CLI, "utf8");
+
+/**
+ * The source with comment lines dropped, because this file scans for a coercion by shape.
+ *
+ * Written after the first run of the last test below failed on a sentence in a comment describing
+ * the coercion it was looking for. That is the criterion's own distinction arriving as a bug: a
+ * comment naming `?? ""` is not a call site reaching for it, and a test that cannot tell them apart
+ * is asserting about prose. It is also the fifth time this repository has confused a mention for a
+ * use, which is why the split is a named helper rather than an inline filter.
+ */
+const codeOnly = (text) =>
+  text
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+
+/** Each detector's parameter list and body, taken from the source rather than by calling it. */
+const detectorBodies = () => {
+  const found = [...SOURCE.matchAll(/^(?:async )?function (detect[A-Za-z]+)\(([^)]*)\)\s*\{([\s\S]*?)^\}/gm)];
+  assert.ok(
+    found.length >= 15,
+    `only ${found.length} detectors were parsed out of the source; the matcher has drifted from the code`,
+  );
+  return found;
+};
+
+test("no detector can be handed the raw content map", () => {
+  // The structural half. A detector receives `run`, and `run` exposes views; there is no parameter
+  // through which the map arrives, so the expression that caused this defect cannot be written.
+  for (const [, name, params] of detectorBodies()) {
+    assert.ok(
+      !/\bcontents\b/.test(params),
+      `${name} still takes the raw contents map as a parameter, so the seam is opt-in again`,
+    );
+  }
+});
+
+test("no detector reads the raw content map, and no lookup is coerced to a string", () => {
+  // The reachability half, for the map arriving by some route other than a parameter — a closure, a
+  // property off `run`, a module-level binding. And the coercion itself: a view returns a record, so
+  // `?? ""` after one is not a fallback, it is a type error waiting to read as an empty file.
+  // `[, name, , rawBody]`: the third capture is the parameter list and the fourth is the body. The
+  // first version of this loop took the third, so every assertion below was scanning a parameter
+  // list and passing vacuously — found by mutating a detector to destructure `contents` off `run`
+  // and watching nothing fail. A test that cannot fail is the same defect as a rule that cannot.
+  for (const [, name, , rawBody] of detectorBodies()) {
+    const body = codeOnly(rawBody);
+    // The identifier at all, not just `.get`/`.has`: a detector that destructures `contents` off
+    // `run`, or closes over it, has reopened the same door by a route a method-name check misses.
+    assert.ok(
+      !/\bcontents\b/.test(body),
+      `${name} reaches the raw contents map`,
+    );
+    assert.ok(
+      !/\w+Of\([^)]*\)\s*\?\?/.test(body),
+      `${name} coerces the result of a content view, which is the defect one indirection away`,
+    );
+    assert.ok(
+      !/\?\?\s*"\{\}"/.test(body),
+      `${name} falls back to "{}" — an unread manifest is not an empty manifest`,
+    );
+  }
+});
+
+test("every content view answers with a record, and the four are the only route", () => {
+  // The type itself, asserted where it is defined. `available` and `partial` are separate fields
+  // because their two directions are not symmetric: a violation found in a retained prefix was
+  // genuinely found, while a clean result over that prefix says nothing about the bytes after it.
+  const views = ["textOf", "sourceOf", "structureOf", "commentsOf"];
+  for (const v of views) {
+    assert.match(
+      SOURCE,
+      new RegExp(`${v}: \\(f\\) => viewOf\\(f, (null|"code"|"structure"|"comments")\\)`),
+      `${v} is not defined as a view over the shared lookup, so it may answer with something else`,
+    );
+  }
+  for (const field of ["available", "partial", "text", "reason"]) {
+    assert.ok(SOURCE.includes(`${field}:`), `the content record no longer carries ${field}`);
+  }
+  // Any coercion of a missing split-source entry, not one spelling of it. The first version of
+  // this assertion pinned the exact `?? ""` the defect had been written as, and a mutant supplying
+  // `?? { code: "", structure: "", comments: "" }` walked straight through it -- the same shape of
+  // hole as the criterion itself, in the test meant to hold the criterion.
+  assert.ok(
+    !/sources\.get\([^)]*\)[^;\n]*\?\?/.test(codeOnly(SOURCE)),
+    "a derived view coerces a missing split-source entry into a value a caller can read as text",
+  );
+});
+
+/**
+ * Rule-bound content detectors, and the rule each must record its own losses against.
+ *
+ * WHY THIS IS A SOURCE-LEVEL ASSERTION AND NOT A BEHAVIOURAL ONE. Mutation testing found that
+ * deleting the `run.unknown(...)` call from these detectors changes no verdict this suite can
+ * observe, and the reason is measured rather than assumed: `CONFIG_EXT` and `CODE_EXT` are both
+ * subsets of `TEXT_EXT`, so every file these detectors read is one the read loop attempts, so any
+ * unavailability is already one of the recorded loss conditions, so the coarse
+ * `filesWentUnsearched` trigger withdraws the rule regardless. The per-detector call is redundant
+ * TODAY, and only today.
+ *
+ * That is exactly the situation where a boundary rots. `quality.dead-code` is the proof: its
+ * reference space reaches files outside `TEXT_EXT`, the coarse trigger does not cover it, and the
+ * rule fabricated a verdict for as long as nobody looked. Leaving these detectors depending on a
+ * condition that happens to subsume them means the next detector to read outside that set fails the
+ * same way — silently, and with a green suite.
+ *
+ * So the requirement is asserted where it is actually made: a detector that binds a rule and reads
+ * content must record its own loss against its own rule, and must treat a retained prefix as one.
+ */
+const RULE_BOUND_CONTENT_DETECTORS = [
+  ["detectDeadCode", "quality.dead-code"],
+  ["detectDocDiscrepancies", "documentation.code-consistency"],
+  ["detectSecretsInArtifacts", "security.no-secrets-in-artifacts"],
+  ["detectSwallowedExceptions", "errors.no-swallowed-exceptions"],
+  ["detectUnfinished", "quality.unfinished-work"],
+  ["detectCertBypass", "security.no-cert-bypass"],
+  ["detectSqlConcat", "security.no-sql-concat"],
+  ["detectOpenQuestions", "reconstruction.open-questions"],
+];
+
+test("a rule-bound detector records its own evidence loss, against its own rule", () => {
+  const bodies = new Map(detectorBodies().map(([, name, , body]) => [name, codeOnly(body)]));
+  for (const [name, rule] of RULE_BOUND_CONTENT_DETECTORS) {
+    const body = bodies.get(name);
+    assert.ok(body, `${name} was not found in the source; the table has drifted from the code`);
+    // Whitespace-tolerant: the call is wrapped across lines wherever the reason is composed.
+    assert.ok(
+      new RegExp(`run\\.unknown\\(\\s*"${rule}"`).test(body),
+      `${name} reads content and binds ${rule}, but records no loss against it — it is relying on ` +
+        "the coarse surface trigger, which is exactly what quality.dead-code fell out of",
+    );
+    assert.ok(
+      /\.partial\b/.test(body),
+      `${name} does not distinguish a retained prefix from the file; a clean result over the first ` +
+        "bytes is a statement about those bytes",
+    );
+  }
+});

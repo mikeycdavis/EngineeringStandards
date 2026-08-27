@@ -931,31 +931,35 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** IN_REVIEW — **the mechanism is built and every acceptance criterion but one is met;
-  the remaining one is met in substance and not in the letter it was written in, which is a
-  distinction the owner should rule on rather than this item.** `IN_REVIEW` is nonterminal, so
-  release closure stays blocked while the disposition is open.
+- **Status:** IN_REVIEW — **every acceptance criterion is now met, criterion 1 in its letter, and
+  what remains is a second party rather than more work.** `IN_REVIEW` is nonterminal, so release
+  closure stays blocked while the disposition is open. Under
+  [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md) this item does not close
+  itself, and it has twice had a defect found after it looked finished.
 
-  **What landed.** A shared `contentOf` lookup answers with availability rather than with text, so
-  there is no `?? ""` to reach for at a converted site because there is no string to reach. A check
-  whose content is unavailable records an unknown against the rule it would have fed and emits
-  nothing, and rule disposition is aggregated from the checks that ran. Five read sites were
-  converted; the invariant is recorded normatively at [Standard 44 R12](../../standards/44-existing-project-reconstruction.md)
+  **What landed.** The raw content map is no longer a parameter of any detector. `createRun` owns it
+  and exposes four views — `textOf`, `sourceOf`, `structureOf`, `commentsOf` — each answering with a
+  record rather than a string, so `contents.get(f) ?? ""` is not an expression a call site can
+  write. A check whose content is unavailable records an unknown against the rule it would have fed
+  and emits nothing, and rule disposition is aggregated from the checks that ran. The invariant is
+  recorded normatively at [Standard 44 R12](../../standards/44-existing-project-reconstruction.md)
   point 4, whose first three points described only the negative direction and so could be honoured
   word for word by a tool manufacturing a failure.
 
-  **Where the letter is not met, stated plainly rather than reported as done.** The first acceptance
-  criterion says *no call site can reach `""` or `"{}"` for unread content, and the mechanism
-  enforces this rather than a comment asserting it.* Seven raw read sites remain, and `contents` is
-  still passed to every detector, so the seam is opt-in at the call site rather than enforced by
-  construction.
+  **The seam is inherited rather than remembered, which is the half that had been missing.** Every
+  earlier version of this fix converted sites one at a time, so a new detector inherited nothing and
+  the next coercion was one line of ordinary-looking code away. Three source-level tests hold the
+  boundary now: no detector takes the map as a parameter, no detector body reaches the identifier at
+  all, and the four views are defined over one shared lookup. All three fail on the parent commit,
+  where fifteen detectors took the map, six read it directly and two coerced a lookup to a string.
 
-  **And the weaker claim this row previously fell back on is false, measured 2026-08-26.** It read:
-  *no remaining site can fabricate a verdict — two bind no rule, the other five feed rules already
-  withdrawn wholesale.* That reasoning enumerated the recorded loss modes and missed one that is not
-  recorded at all. A file outside `TEXT_EXT` is collected into `files` and never read, so it is
-  absent from `contents` exactly as an unread file is — and it is **not** any of the six conditions
-  in `filesWentUnsearched`, because nothing was lost. Nothing was ever going to be read.
+  **Criterion 1 was unmet in its letter until 2026-08-27, and the fallback this row rested on
+  instead was false.** The fallback read: *no remaining site can fabricate a verdict — two bind no
+  rule, the other five feed rules already withdrawn wholesale.* That reasoning enumerated the
+  recorded loss modes and missed one that is not recorded at all. A file outside `TEXT_EXT` is
+  collected into `files` and never read, so it is absent from `contents` exactly as an unread file
+  is — and it is **not** any of the six conditions in `filesWentUnsearched`, because nothing was
+  lost. Nothing was ever going to be read.
 
   `detectDeadCode` is exposed to it, and it is the one site whose search spans every file rather than
   a filtered subset: its candidates are code files, but `files.some((other) => ...)` looks for a
@@ -968,17 +972,37 @@ that approval deliberately does not cover.
   ```
 
   The second names a file that is not dead. Its reference sits in a `.svg` the run never opens, the
-  absence of that text is read as the absence of a reference, and the rule reaches `failed /
+  absence of that text is read as the absence of a reference, and the rule reached `failed /
   evaluated` on content the run never obtained — no budget spent, no read failed, no directory
-  unlisted, nothing truncated or excluded. **So the verdict-level invariant is not satisfied either**,
-  and the adjudication between a literal and a verdict-level reading of criterion 1 does not have to
-  be settled to know that this site is unfinished under both.
+  unlisted, nothing truncated or excluded. **So the verdict-level invariant was not satisfied
+  either**, and the adjudication between a literal and a verdict-level reading of criterion 1 did not
+  have to be settled to know the site was unfinished under both.
 
-  The other six are unaffected, and for reasons rather than by luck: `detectCapabilities` and
-  `detectJobs` bind no rule and can move no verdict; `detectDocDiscrepancies`, `detectSecretsInArtifacts`
-  and `detectSwallowedExceptions` reach only `TEXT_EXT` paths — `README.md`, `package.json`,
-  `CONFIG_EXT`, `isCode` — so their absent case is always a recorded loss and always withdrawn, and
-  the last of them additionally skips on an empty `structureOf`.
+  **What the rule actually claims, measured rather than assumed.** `rules/verification.json` states
+  the proposition as *"Code no longer reachable from any entry point"*, and the finding says
+  *"referenced nowhere else in the repository"*. Both are repository-wide absence claims, and
+  Standard 38 has no dead-code clause at all, so nothing in the governing text defines a narrower
+  searchable-text universe that "anywhere" could be reread as. The reference space is therefore part
+  of the evidence: when it is incomplete the proposition is not evaluable, and the rule is withdrawn
+  rather than restated.
+
+  **No fifth evidence state was introduced.** A `NOT_TEXT` disposition separating *outside the
+  intended evidence domain* from *intended evidence unavailable* would have preserved the verdict,
+  and it would have been justified only if the standard drew that distinction. It does not. Inventing
+  one to keep a verdict the evidence no longer supports is the semantic form of the same defect.
+
+  **The cost is real and is the item's answer, not a side effect.** `.gitignore` and `LICENSE` are
+  extensionless, so `TEXT_EXT` skips them, so nearly every repository now reports `quality.dead-code`
+  as `not-evaluated`. That is what this rule's own proposition costs to establish honestly. The
+  legitimate route to a cheaper answer is to amend the rule's wording to a narrower claim and say so
+  in the finding — not to keep the wide claim and quietly narrow the evidence.
+
+  The other six raw sites were unaffected, for reasons rather than by luck, and were converted
+  anyway because criterion 1 is typed: `detectCapabilities` and `detectJobs` bind no rule and can
+  move no verdict; `detectDocDiscrepancies`, `detectSecretsInArtifacts` and
+  `detectSwallowedExceptions` reach only `TEXT_EXT` paths — `README.md`, `package.json`,
+  `CONFIG_EXT`, `isCode`. **Measured, not read off:** `CODE_EXT` and `CONFIG_EXT` are both strict
+  subsets of `TEXT_EXT`, 20 and 4 of 25, with no member outside it.
 
   **Two loss modes, not one.** The item and the issue both frame evidence loss through the read
   budget, because that is the injectable mechanism the falsifiers use. A failed **read** was the
@@ -991,8 +1015,12 @@ that approval deliberately does not cover.
   its table extended.
 
   **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
-  this item does not close itself, and the specific thing needing a second party here is not whether
-  the tests pass but whether the unmet first criterion is acceptable as scoped or is work still owed.
+  this item does not close itself. What needs a second party is no longer whether an unmet criterion
+  is acceptable as scoped — every criterion is met — but whether the two judgements this item made on
+  the owner's behalf stand: that `quality.dead-code` becoming `not-evaluated` in nearly every
+  repository is the honest price of its own proposition, and that the three surviving mutants are
+  acceptable as redundancy rather than as a gap. Both are recorded above with their measurements, and
+  neither is the kind of call an item takes for itself.
 
   **Previously: READY.**
 - **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)
@@ -1082,7 +1110,13 @@ that approval deliberately does not cover.
 - **Acceptance Criteria:**
   - A content lookup for a file the run did not obtain cannot return a string. No call site can
     reach `""` or `"{}"` for unread content, and the mechanism enforces this rather than a comment
-    asserting it.
+    asserting it. **Met 2026-08-27, in its letter and by construction.** The criterion is typed and is
+    deliberately not the same requirement as the verdict-level invariant the falsifiers measure; it
+    was read that way for three drafts, and each time the weaker reading was satisfied while the
+    stronger one decayed. Enforcement is now three source-level assertions rather than a comment, and
+    the raw map is not reachable from a detector: it is owned by `createRun`, and the four views are
+    the only route. The Deliverables' rejection of *"per-detector accessor binding"* is honoured —
+    the property is inherited by a detector that does not know about it.
   - **Known-negative tests in both directions.** Under a constrained budget, each of the five
     fabricators is shown to fabricate before the fix and to report `not-evaluated` after it, with a
     full-coverage control on the same fixture proving the rule still reaches its correct verdict when
@@ -1111,7 +1145,30 @@ that approval deliberately does not cover.
   boundary, and separately at the lookup boundary, must each be caught by a test, and by a different
   test, or the mechanism is not established.
 
-  **Mutation result.** Five mutants, all killed. Coercing `contentOf` back to `?? ""` at the lookup
+  **Mutation result, second pass, 2026-08-27.** Eight mutants over the new boundaries; five killed,
+  three survive, and the three are recorded rather than papered over. Killed: calling an unread file
+  available (46 tests), judging dead-code candidates over an incomplete reference space (3, including
+  both new falsifiers), answering the doc-consistency README half from an unread file (3), coercing a
+  missing split-source entry into an empty string (1), and destructuring the raw map off `run` (1).
+
+  **The three survivors share one cause, and it is measured.** Folding `partial` into `available`,
+  and deleting the per-detector loss record from `detectSecretsInArtifacts` or
+  `detectSwallowedExceptions`, change no verdict this suite can observe — because `CODE_EXT` and
+  `CONFIG_EXT` are strict subsets of `TEXT_EXT`, so every file those detectors read is one the read
+  loop attempts, so any unavailability is already a recorded loss, so the coarse `filesWentUnsearched`
+  trigger withdraws the rule regardless. The per-detector call is redundant **today, and only today**.
+  `quality.dead-code` is the proof of what that costs: its reference space reached outside `TEXT_EXT`,
+  the coarse trigger did not cover it, and it fabricated a verdict for as long as nobody looked. The
+  requirement is therefore asserted where it is made — *a rule-bound detector records its own evidence
+  loss, against its own rule* — while the behavioural gap is stated here rather than claimed closed.
+
+  **One mutant found a test that could not fail.** Destructuring `contents` off `run` survived a
+  structural assertion written to catch exactly it. The loop had taken the third capture group of the
+  detector matcher, which is the parameter list, not the fourth, which is the body — so every
+  assertion in it had been scanning parameter lists and passing vacuously. Found by mutation and by
+  nothing else; a test that cannot fail is the same defect as a rule that cannot.
+
+  **Mutation result, first pass.** Five mutants, all killed. Coercing `contentOf` back to `?? ""` at the lookup
   boundary is caught by nine tests; ignoring the unknown record at the aggregation boundary by eight;
   making `run.unknown()` a no-op by eight. The first two are discriminated rather than counted
   twice: the mixed-case falsifier — R4 established beside an unread R6 — kills the lookup mutant and
@@ -1226,6 +1283,30 @@ that approval deliberately does not cover.
   [#6/#8](#make-architectureproject-manifest-check-content-not-presence), which must not land first:
   making `architecture.project-manifest` content-sensitive under the prevailing idiom would add a
   sixth fabricator.
+
+### Candidate finding — a withdrawn rule reports that no check exists for it
+
+**A measured finding, not a plan item**, in the same grammar and for the same reason as the one
+below: no `Status`, no `Tracked by`, because nothing has scoped it and no authority tracks it.
+
+**Measured** 2026-08-27 at `ff27961`, while closing criterion 1 of
+[#38](#unavailable-content-evidence-must-never-be-read-as-content). A rule withdrawn for evidence
+loss reaches `skipped / not-evaluated`, which is correct, carrying the message *"No implemented check
+evaluates quality.dead-code."*, which is not. That message comes from
+[`scripts/compliance.mjs`](../../scripts/compliance.mjs), where `!examined.has(rule.id)` collapses two
+different facts: *this framework has no check for this rule* and *the check exists, ran, and could not
+get its evidence*. Every one of the nine rules #38 moves out of `passed` reports the first while the
+second is true.
+
+**Why it matters, and why it is not #38.** The disposition is right and the verdict is right, so no
+rule result is fabricated — this is the sentence a reader gets, not the answer a consumer gets. But it
+is a false statement about repository state made by a detector that has not measured it, which is the
+shape [ADR 0008](../adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+exists to forbid, and it points a reader at the wrong remediation: nothing about the framework needs
+implementing. #38's acceptance criteria do not reach the message text, and `unknownChecks` already
+holds the reason each withdrawal happened, so the repair is plumbing an existing value through rather
+than new measurement. Recorded here so the next reader of a `not-evaluated` result does not conclude
+the check was never written.
 
 ### Candidate finding — `validate` reports a verdict without saying what it could not read
 

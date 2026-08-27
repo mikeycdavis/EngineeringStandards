@@ -391,6 +391,13 @@ const isCode = (f) => CODE_EXT.has(path.extname(f));
  *                  import specifier *is* a string: `from "bullmq"`.
  *   commentsOf(f)  comment text only — TODO/FIXME markers, which are by definition a comment
  *                  convention, so a marker named in a string or in prose is correctly invisible.
+ *   textOf(f)      the file as read, for evidence that is not code at all — a Markdown body, a
+ *                  manifest, a workflow file. The use/mention split does not apply to prose.
+ *
+ * ALL FOUR ANSWER WITH A RECORD, NEVER A STRING, and that is the second property they carry. The
+ * first says WHERE in a file a signal may be looked for; the second says whether the run has the
+ * file at all. A detector receives `run` and no raw map, so `contents.get(f) ?? ""` is not an
+ * expression a call site can write — the seam is inherited rather than remembered.
  */
 
 /** Comment syntax by extension. Enabling the wrong one corrupts the split — `//` is floor division
@@ -768,45 +775,18 @@ function findRoot(start) {
  * `sources` is here because it is execution-specific: its values are the audited project's file
  * contents, so the same key yields a different correct value for a different target.
  */
-/**
- * One content lookup, answered with whether the run actually has the content.
- *
- * `contents` holds an entry for every file the run opened and retained. A file that is in `files`
- * and absent from `contents` was collected and never searched — the read budget was spent, or the
- * read failed. The second of those was not true when this comment was first written: a failed read
- * stored `readText`'s empty-string fallback, so `available` came back true over content nobody had.
- * The read loop was corrected to match; the sentence is load-bearing, not descriptive.
- *
- * The prevailing idiom `contents.get(f) ?? ""` erased exactly that distinction, and
- * because empty is meaningful evidence in BOTH polarities the erasure did not merely lose coverage,
- * it manufactured a verdict: a README nobody opened is "under 400 characters", and a plan file
- * nobody opened has no incomplete items.
- *
- * Returning a value a caller cannot accidentally use as text is the whole mechanism. There is no
- * `?? ""` to reach for, because there is no string to reach.
- *
- * A THIRD ANSWER, because a prefix is not the file. `readText` caps each individual read at
- * MAX_READ_BYTES, so a large file is retained in part, and `contents.has(f)` says yes over content
- * that stops in the middle. The distinction is not pedantic and its two directions are not
- * symmetric: a violation FOUND in the prefix was genuinely found and stays found, while a clean
- * result over the prefix says nothing about the bytes after it — a secret at offset 400,001 is
- * invisible to a check that reports the file clean. `partial` is therefore reported beside
- * `available` rather than folded into it, so a caller can keep the first and withhold the second.
- */
-function contentOf(contents, f, run) {
-  if (!contents.has(f)) return { available: false, partial: false, text: null, reason: "collected but never searched" };
-  const partial = run?.partial?.has(f) ?? false;
-  return {
-    available: true,
-    partial,
-    text: contents.get(f),
-    reason: partial ? `read in part; only the first ${MAX_READ_BYTES} bytes were retained` : null,
-  };
-}
-
 function createRun({ root, strict, json }) {
   const findings = [];
   const sources = new Map();
+
+  /**
+   * Every file this run opened and retained, and the only map any content view reads.
+   *
+   * Owned here rather than by the audit function so that no detector can be handed it. A detector
+   * receives `run`, and `run` exposes views; there is no parameter through which the raw map
+   * arrives, so `contents.get(f) ?? ""` is not a thing a call site can write.
+   */
+  const contents = new Map();
 
   /**
    * Checks that could not run, by the rule they would have fed.
@@ -820,8 +800,65 @@ function createRun({ root, strict, json }) {
    */
   const unknownChecks = new Map();
 
-  /** Files retained in part, so `contentOf` can answer with a prefix without calling it the file. */
+  /** Files retained in part, so a view can answer with a prefix without calling it the file. */
   const partial = new Set();
+
+  /**
+   * One content lookup, answered with whether the run actually has the content.
+   *
+   * `contents` holds an entry for every file the run opened and retained. A file that is in `files`
+   * and absent from it was collected and never searched — the read budget was spent, the read
+   * failed, or the extension is outside `TEXT_EXT` and the read loop skipped it. All three are the
+   * same answer to a check: nothing was searched in this file.
+   *
+   * The prevailing idiom `contents.get(f) ?? ""` erased exactly that distinction, and because empty
+   * is meaningful evidence in BOTH polarities the erasure did not merely lose coverage, it
+   * manufactured a verdict: a README nobody opened is "under 400 characters", and a plan file nobody
+   * opened has no incomplete items.
+   *
+   * **Returning a value a caller cannot accidentally use as text is the whole mechanism**, and the
+   * mechanism is the point rather than the discipline. There is no `?? ""` to reach for because
+   * there is no string to reach, and there is no second door: the raw map is not a parameter of any
+   * detector, so a new detector inherits this property instead of having to remember it.
+   *
+   * A THIRD ANSWER, because a prefix is not the file. `readText` caps each individual read at
+   * MAX_READ_BYTES, so a large file is retained in part and the map says yes over content that stops
+   * in the middle. The distinction is not pedantic and its two directions are not symmetric: a
+   * violation FOUND in the prefix was genuinely found and stays found, while a clean result over the
+   * prefix says nothing about the bytes after it — a secret at offset 400,001 is invisible to a
+   * check that reports the file clean. `partial` is therefore reported beside `available` rather
+   * than folded into it, so a caller can keep the first and withhold the second.
+   *
+   * A FOURTH, for the derived views only. `sources` is populated for code files alone, so a config
+   * file has no split-source view — not because evidence was lost but because the view does not
+   * apply to it. Reported with its own reason so a caller cannot read "no source view" as "this file
+   * is empty", which is the same coercion one indirection away.
+   */
+  const viewOf = (f, part) => {
+    if (!contents.has(f)) {
+      return Object.freeze({
+        available: false,
+        partial: false,
+        text: null,
+        reason: "collected but never searched",
+      });
+    }
+    const isPartial = partial.has(f);
+    const reason = isPartial ? `read in part; only the first ${MAX_READ_BYTES} bytes were retained` : null;
+    if (part === null) {
+      return Object.freeze({ available: true, partial: isPartial, text: contents.get(f), reason });
+    }
+    const split = sources.get(f);
+    if (!split) {
+      return Object.freeze({
+        available: false,
+        partial: false,
+        text: null,
+        reason: "not a code file; no split-source view exists",
+      });
+    }
+    return Object.freeze({ available: true, partial: isPartial, text: split[part], reason });
+  };
 
   return {
     root,
@@ -829,6 +866,7 @@ function createRun({ root, strict, json }) {
     json,
     findings,
     sources,
+    contents,
     unknownChecks,
     partial,
 
@@ -850,9 +888,18 @@ function createRun({ root, strict, json }) {
 
     has: (p) => existsSync(path.join(root, p)),
 
-    sourceOf: (f) => sources.get(f)?.code ?? "",
-    structureOf: (f) => sources.get(f)?.structure ?? "",
-    commentsOf: (f) => sources.get(f)?.comments ?? "",
+    /**
+     * The four content views, and the only route from a detector to a file's text.
+     *
+     * Each answers with a record; none can return a string. The names are unchanged from the
+     * coercing accessors they replace, deliberately: every existing call site had to be visited and
+     * changed, and a site that was missed does not compile into a plausible-looking empty string —
+     * it reads `.text` off a record whose `available` is false and gets `null`.
+     */
+    textOf: (f) => viewOf(f, null),
+    sourceOf: (f) => viewOf(f, "code"),
+    structureOf: (f) => viewOf(f, "structure"),
+    commentsOf: (f) => viewOf(f, "comments"),
 
     /**
      * `label` is the Standard 44 evidence label and is not decorative. A detection that rests on a
@@ -1045,7 +1092,7 @@ const MANIFESTS = [
   "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile", "composer.json",
 ];
 
-function detectArchitecture(files, contents, run) {
+function detectArchitecture(files, run) {
   const { rel, addFinding } = run;
   const archDoc = files.find((f) => rel(f).toLowerCase() === "docs/architecture.md");
   if (archDoc) {
@@ -1080,15 +1127,18 @@ function detectArchitecture(files, contents, run) {
   });
 }
 
-function detectCapabilities(files, contents, run) {
+function detectCapabilities(files, run) {
   const { rel, addFinding } = run;
   const evidence = [];
   const notes = [];
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
-  if (pkgPath) {
+  // Descriptive: this detector binds no rule, so an unread manifest withdraws nothing. It simply
+  // reports one fewer capability, which is the honest consequence of not having read it.
+  const manifest = pkgPath ? run.textOf(pkgPath) : null;
+  if (manifest?.available) {
     try {
-      const pkg = JSON.parse(contents.get(pkgPath) ?? "{}");
+      const pkg = JSON.parse(manifest.text);
       const bins = pkg.bin ? Object.keys(pkg.bin) : [];
       const scripts = pkg.scripts ? Object.keys(pkg.scripts) : [];
       if (bins.length) {
@@ -1135,7 +1185,7 @@ const API_CONTENT = [
   /func\s+\w*Handler\s*\(\s*w\s+http\.ResponseWriter/,
 ];
 
-function detectApis(files, contents, run) {
+function detectApis(files, run) {
   const { rel, addFinding, structureOf } = run;
   const specs = files.filter((f) =>
     /(^|\/)(openapi|swagger)\.(ya?ml|json)$/i.test(rel(f)),
@@ -1155,7 +1205,9 @@ function detectApis(files, contents, run) {
     if (/(^|\/)\w*Controller\.(cs|java|ts|js|py|rb)$/i.test(r)) return true;
     if (/(^|\/)(routes?|controllers?|api|endpoints?)\//i.test(r) && isCode(f)) return true;
     if (!isCode(f)) return false; // prose describing a route table is not a route
-    const code = structureOf(f); // a commented-out or quoted route is not a route
+    const view = structureOf(f); // a commented-out or quoted route is not a route
+    if (!view.available) return false;
+    const code = view.text;
     return code ? API_CONTENT.some((re) => re.test(code)) : false;
   });
   if (handlers.length === 0) return;
@@ -1187,12 +1239,12 @@ const JOB_CONTENT = [
  */
 const JOB_PACKAGES = "celery|sidekiq|bullmq|bull|agenda|node-cron|apscheduler|resque";
 
-function detectJobs(files, contents, run) {
+function detectJobs(files, run) {
   const { rel, addFinding, structureOf, sourceOf } = run;
   const workflowCron = files.filter((f) => {
     if (!/\.github\/workflows\/.*\.ya?ml$/.test(rel(f))) return false;
-    const text = contents.get(f) ?? "";
-    return /^\s*schedule:/m.test(text);
+    const workflow = run.textOf(f);
+    return workflow.available && /^\s*schedule:/m.test(workflow.text);
   });
   if (workflowCron.length) {
     addFinding({
@@ -1207,8 +1259,10 @@ function detectJobs(files, contents, run) {
   const jobs = files.filter((f) => {
     if (JOB_NAME.test(path.basename(f))) return true;
     if (!isCode(f)) return false; // prose naming Celery or BullMQ is not a scheduler
-    if (JOB_CONTENT.some((re) => re.test(structureOf(f)))) return true;
-    return importPattern(JOB_PACKAGES).test(sourceOf(f)); // imports live in strings
+    const structure = structureOf(f);
+    if (structure.available && JOB_CONTENT.some((re) => re.test(structure.text))) return true;
+    const source = sourceOf(f); // imports live in strings
+    return source.available && importPattern(JOB_PACKAGES).test(source.text);
   });
   if (jobs.length === 0) return;
 
@@ -1243,7 +1297,7 @@ const INTEGRATION_SDK = [
   ["@slack/|slack_sdk", "Slack"], ["octokit|PyGithub", "GitHub"],
 ];
 
-function detectIntegrations(files, contents, run) {
+function detectIntegrations(files, run) {
   const { rel, addFinding, sourceOf } = run;
   const envTemplates = files.filter((f) =>
     /(^|\/)\.env\.(example|template|sample)$|(^|\/)appsettings\.(Example|Template)\.json$/i.test(rel(f)),
@@ -1264,7 +1318,9 @@ function detectIntegrations(files, contents, run) {
   for (const [pattern, name] of INTEGRATION_SDK) {
     const re = importPattern(pattern);
     for (const f of files) {
-      const code = sourceOf(f);
+      const view = sourceOf(f);
+      if (!view.available) continue;
+      const code = view.text;
       if (code && re.test(code)) {
         if (!found.has(name)) found.set(name, []);
         found.get(name).push(rel(f));
@@ -1295,7 +1351,7 @@ const AI_SDK = [
   ["mistralai", "Mistral"],
 ];
 
-function detectAiInterfaces(files, contents, run) {
+function detectAiInterfaces(files, run) {
   const { rel, addFinding, sourceOf } = run;
   const skillFiles = files.filter((f) => /(^|\/)SKILL\.md$/.test(rel(f)));
   const promptFiles = files.filter((f) => /(^|\/)prompts?\//i.test(rel(f)) || /prompt.*\.md$/i.test(rel(f)));
@@ -1316,7 +1372,9 @@ function detectAiInterfaces(files, contents, run) {
   for (const [pattern, name] of AI_SDK) {
     const re = importPattern(pattern);
     for (const f of files) {
-      const code = sourceOf(f);
+      const view = sourceOf(f);
+      if (!view.available) continue;
+      const code = view.text;
       if (code && re.test(code)) {
         if (!providers.has(name)) providers.set(name, []);
         providers.get(name).push(rel(f));
@@ -1344,7 +1402,7 @@ const CI_FILES = [
   ".circleci/config.yml", ".travis.yml", "bitbucket-pipelines.yml",
 ];
 
-function detectMissingDocs(files, contents, run) {
+function detectMissingDocs(files, run) {
   const { rel, addFinding } = run;
   const missing = [];
   if (!files.some((f) => rel(f).toLowerCase() === "docs/architecture.md")) missing.push("docs/architecture.md");
@@ -1354,7 +1412,7 @@ function detectMissingDocs(files, contents, run) {
     // The presence check above is structural and always valid. Only the length test needs content,
     // so only the length test is withdrawn — the missing `docs/architecture.md` beside it still
     // fails the rule, because that was established.
-    const c = contentOf(contents, readme, run);
+    const c = run.textOf(readme);
     if (!c.available) run.unknown("documentation.architecture", rel(readme), c.reason);
     else if (c.text.trim().length < 400) missing.push(`${rel(readme)} (under 400 characters)`);
   }
@@ -1431,7 +1489,7 @@ function detectArchitectureArtifacts(run) {
  * plan or an untouched template is a judgement no scan makes, and Standard 44's Implementation
  * section says so rather than implying this check covers it.
  */
-function detectMissingPlanningArtifacts(files, contents, run) {
+function detectMissingPlanningArtifacts(files, run) {
   const { has, addFinding, rel } = run;
   const dir = "artifacts/project-plan-breakdown";
   if (!has(dir)) {
@@ -1462,7 +1520,7 @@ function detectMissingPlanningArtifacts(files, contents, run) {
     return;
   }
 
-  const overviewContent = contentOf(contents, overview, run);
+  const overviewContent = run.textOf(overview);
   if (!overviewContent.available) {
     // "A plan directory is evidence of a plan only when it has content" is a claim about the file's
     // body. Over a body nobody read it is a claim about the run.
@@ -1566,10 +1624,18 @@ function detectUnfinished(files, run) {
   };
   for (const f of files) {
     if (!isCode(f)) continue; // a TODO in a Markdown file is a note, not an unfinished code path
+    // Both halves come from one file, so one loss decides both. The old `if (comments && ...)`
+    // guards read as "if there is any comment text at all"; against a record they would read as
+    // "always", which is why every call site had to be visited rather than trusted to keep working.
     const comments = commentsOf(f);
     const code = structureOf(f);
-    for (const [re, kind] of UNFINISHED_COMMENTS) if (comments && re.test(comments)) record(kind, f);
-    for (const [re, kind] of UNFINISHED_CODE) if (code && re.test(code)) record(kind, f);
+    if (!comments.available || !code.available) {
+      run.unknown("quality.unfinished-work", rel(f), comments.reason ?? code.reason);
+      continue;
+    }
+    if (comments.partial) run.unknown("quality.unfinished-work", rel(f), comments.reason);
+    for (const [re, kind] of UNFINISHED_COMMENTS) if (comments.text && re.test(comments.text)) record(kind, f);
+    for (const [re, kind] of UNFINISHED_CODE) if (code.text && re.test(code.text)) record(kind, f);
   }
   if (byKind.size === 0) return;
 
@@ -1608,7 +1674,7 @@ const ENTRYISH = /(^|\/)(index|main|app|Program|Startup|__init__|__main__|setup|
  * evidence is exactly what would refute it. Emitting the finding first and withdrawing after would
  * hit the `confirmed` exemption in aggregation and keep the verdict.
  */
-function detectDeadCode(files, contents, run) {
+function detectDeadCode(files, run) {
   const { rel, addFinding } = run;
 
   // Measured over the reference space itself rather than by enumerating the ways a file can go
@@ -1616,7 +1682,7 @@ function detectDeadCode(files, contents, run) {
   // retained prefix counts as incomplete for the same reason it does everywhere else: a stem absent
   // from the first bytes of a file is not absent from the file.
   const unsearchable = files.filter((other) => {
-    const c = contentOf(contents, other, run);
+    const c = run.textOf(other);
     return !c.available || c.partial;
   });
   if (unsearchable.length > 0) {
@@ -1641,8 +1707,9 @@ function detectDeadCode(files, contents, run) {
     if (stem.length < 3) continue;
     const referenced = files.some((other) => {
       if (other === f) return false;
-      const text = contents.get(other);
-      return text ? text.includes(stem) : false;
+      // Every file is available here: the completeness check above returned otherwise.
+      const c = run.textOf(other);
+      return c.available && c.text.includes(stem);
     });
     if (!referenced) orphans.push(rel(f));
   }
@@ -1662,11 +1729,11 @@ function detectDeadCode(files, contents, run) {
   });
 }
 
-function detectOpenQuestions(files, contents, run) {
+function detectOpenQuestions(files, run) {
   const { rel, addFinding } = run;
   const qFile = files.find((f) => rel(f) === "artifacts/project-baseline/open-questions.md");
   if (!qFile) return;
-  const questions = contentOf(contents, qFile, run);
+  const questions = run.textOf(qFile);
   if (!questions.available) {
     // The quiet polarity. Both counts below come from matching this text, so an unread file scores
     // zero on each and the rule passes — silence indistinguishable from a clean document.
@@ -1750,7 +1817,7 @@ const canonicalStatus = (raw) => {
   return STATUS_ALIASES[first.toLowerCase()] ?? upper;
 };
 
-async function detectPlanDiscrepancies(files, contents, run) {
+async function detectPlanDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
   const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
   if (planFiles.length === 0) return;
@@ -1763,21 +1830,21 @@ async function detectPlanDiscrepancies(files, contents, run) {
   //
   // Files that WERE read are still parsed: a violation found in one plan file is established
   // regardless of another going unread, and aggregation keeps it.
-  for (const f of planFiles.filter((f) => !contentOf(contents, f, run).available)) {
-    const reason = contentOf(contents, f, run).reason;
+  for (const f of planFiles.filter((f) => !run.textOf(f).available)) {
+    const reason = run.textOf(f).reason;
     run.unknown("planning.item-fields", rel(f), reason);
     run.unknown("planning.plan-code-consistency", rel(f), reason);
   }
   // The same asymmetry one detector along: items parsed out of a prefix are real, but the absence of
   // an incomplete one says nothing about the bytes that were never retained.
-  for (const f of planFiles.filter((f) => contentOf(contents, f, run).partial)) {
-    const reason = contentOf(contents, f, run).reason;
+  for (const f of planFiles.filter((f) => run.textOf(f).partial)) {
+    const reason = run.textOf(f).reason;
     run.unknown("planning.item-fields", rel(f), reason);
     run.unknown("planning.plan-code-consistency", rel(f), reason);
   }
   const items = planFiles
-    .filter((f) => contentOf(contents, f, run).available)
-    .flatMap((f) => parsePlanItems(contentOf(contents, f, run).text, rel(f)));
+    .filter((f) => run.textOf(f).available)
+    .flatMap((f) => parsePlanItems(run.textOf(f).text, rel(f)));
   const executable = items.filter((i) => i.fields.has("Status"));
   if (executable.length === 0) return;
 
@@ -1943,11 +2010,19 @@ function looksLikeRepositoryPath(p) {
   return true;
 }
 
-function detectDocDiscrepancies(files, contents, run) {
+function detectDocDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
   if (!readme) return;
-  const text = contents.get(readme) ?? "";
+  const readmeView = run.textOf(readme);
+  if (!readmeView.available) {
+    // Every check below matches against this text, so an unread README scores zero on each and the
+    // rule passes: silence indistinguishable from a README that names nothing which does not exist.
+    run.unknown("documentation.code-consistency", rel(readme), readmeView.reason);
+    return;
+  }
+  if (readmeView.partial) run.unknown("documentation.code-consistency", rel(readme), readmeView.reason);
+  const text = readmeView.text;
   const broken = [];
 
   for (const token of text.match(/`([^`\n]+)`/g) ?? []) {
@@ -1958,9 +2033,17 @@ function detectDocDiscrepancies(files, contents, run) {
   }
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
-  if (pkgPath) {
+  // The README half above may already have established a violation, and it keeps it. This half
+  // cannot run at all: with no script list every `npm run` the README names looks broken, so the
+  // loss is recorded and the check is skipped rather than answered from `"{}"`.
+  const manifest = pkgPath ? run.textOf(pkgPath) : null;
+  if (manifest && !manifest.available) {
+    run.unknown("documentation.code-consistency", rel(pkgPath), manifest.reason);
+  }
+  if (manifest?.available) {
+    if (manifest.partial) run.unknown("documentation.code-consistency", rel(pkgPath), manifest.reason);
     try {
-      const scripts = Object.keys(JSON.parse(contents.get(pkgPath) ?? "{}").scripts ?? {});
+      const scripts = Object.keys(JSON.parse(manifest.text).scripts ?? {});
       for (const m of text.match(/npm run ([\w:-]+)/g) ?? []) {
         const name = m.replace("npm run ", "");
         if (!scripts.includes(name)) broken.push(`${rel(readme)} -> npm run ${name}`);
@@ -1983,7 +2066,7 @@ function detectDocDiscrepancies(files, contents, run) {
   });
 }
 
-function detectStandardsViolations(files, contents, run) {
+function detectStandardsViolations(files, run) {
   const { has, rel, addFinding } = run;
   const violations = [];
   if (has("artifacts/project-baseline")) {
@@ -1995,7 +2078,7 @@ function detectStandardsViolations(files, contents, run) {
       // The mixed case in one detector. R4 above is structural and may already have failed; R6 here
       // needs the prompt's text. Withdrawing both because this one is unknown would erase R4's
       // established violation, which is precisely why the check rather than the rule is the unit.
-      const prompt = contentOf(contents, promptFile, run);
+      const prompt = run.textOf(promptFile);
       if (!prompt.available) {
         run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
       } else if (prompt.partial && !/reconstructed from the existing codebase/i.test(prompt.text)) {
@@ -2157,16 +2240,26 @@ const SECRET_PATTERNS = [
   [/\bsk_live_[A-Za-z0-9]{16,}/, "Stripe live secret key"],
 ];
 
-function detectSecretsInArtifacts(files, contents, run) {
+function detectSecretsInArtifacts(files, run) {
   const { rel, sourceOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     const p = rel(f);
     if (ENV_FILE_RE.test(p)) continue; // Single owner: scm.no-committed-env-files.
     const ext = path.extname(f);
-    let text = null;
-    if (isCode(f)) text = sourceOf(f);
-    else if (CONFIG_EXT.has(ext)) text = contents.get(f) ?? "";
+    // Two views for two kinds of file, and a third case that is neither: a file outside both
+    // domains is not evidence this rule reads, which is a different answer from evidence it wanted
+    // and could not get. Only the second is a loss, and only the second is recorded as one.
+    let view = null;
+    if (isCode(f)) view = sourceOf(f);
+    else if (CONFIG_EXT.has(ext)) view = run.textOf(f);
+    if (!view) continue;
+    if (!view.available) {
+      run.unknown("security.no-secrets-in-artifacts", p, view.reason);
+      continue;
+    }
+    if (view.partial) run.unknown("security.no-secrets-in-artifacts", p, view.reason);
+    const text = view.text;
     if (!text) continue;
 
     for (const [re, what] of SECRET_PATTERNS) {
@@ -2260,14 +2353,21 @@ function carriesJustification(raw, structure, from, to) {
  * still holds the justification comment, because that is the one thing the structural view removes.
  * The span is what binds them: two readings of one site, not two searches of one file.
  */
-function detectSwallowedExceptions(files, contents, run) {
+function detectSwallowedExceptions(files, run) {
   const { rel, structureOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
-    const structure = structureOf(f);
+    const structureView = structureOf(f);
+    const rawView = run.textOf(f);
+    if (!structureView.available || !rawView.available) {
+      run.unknown("errors.no-swallowed-exceptions", rel(f), structureView.reason ?? rawView.reason);
+      continue;
+    }
+    if (structureView.partial) run.unknown("errors.no-swallowed-exceptions", rel(f), structureView.reason);
+    const structure = structureView.text;
     if (!structure) continue;
-    const raw = contents.get(f) ?? "";
+    const raw = rawView.text;
     if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
 
     // Constructed here, so their `lastIndex` cannot outlive this file's turn through the loop.
@@ -2327,7 +2427,13 @@ function detectCertBypass(files, run) {
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
-    const code = structureOf(f);
+    const view = structureOf(f);
+    if (!view.available) {
+      run.unknown("security.no-cert-bypass", rel(f), view.reason);
+      continue;
+    }
+    if (view.partial) run.unknown("security.no-cert-bypass", rel(f), view.reason);
+    const code = view.text;
     if (!code) continue;
     if (CERT_BYPASS.some((re) => re.test(code))) hits.push(rel(f));
     else if (path.extname(f) === ".sh" && /\bcurl\b[^\n|]*\s-[a-zA-Z]*k\b/.test(code)) hits.push(rel(f));
@@ -2373,7 +2479,13 @@ function detectSqlConcat(files, run) {
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
-    const code = sourceOf(f);
+    const view = sourceOf(f);
+    if (!view.available) {
+      run.unknown("security.no-sql-concat", rel(f), view.reason);
+      continue;
+    }
+    if (view.partial) run.unknown("security.no-sql-concat", rel(f), view.reason);
+    const code = view.text;
     if (!code) continue;
     if (SQL_TEMPLATE.test(code) || SQL_FSTRING.test(code)) hits.push(rel(f));
   }
@@ -2547,7 +2659,7 @@ export async function main(args) {
   const validating = cli.subcommand === "validate";
 
   run = createRun({ root, strict: cli.strict, json: cli.json });
-  const { rel, findings, sources, addFinding } = run;
+  const { rel, findings, sources, contents, addFinding } = run;
 
   // Created here, by the invocation that uses it, and carrying the budget this invocation was given
   // rather than one read from the process — ADR 0014.
@@ -2574,7 +2686,6 @@ export async function main(args) {
     files: new Set(ignored.ok ? ignored.files : []),
   };
   const files = await collectFiles(root, [], surfaceLoss, exclusions, run);
-  const contents = new Map();
   // The repository surface this invocation measured. Named so two runs can be compared by identity.
   surface = { files, contents, surfaceLoss };
   const unreadableFiles = [];
@@ -2621,7 +2732,7 @@ export async function main(args) {
 
     if (!read.ok) {
       // Opened, and the content NOT obtained. No entry is set, and that is the whole point: on
-      // failure `readText` returns `text: ""`, so storing it would hand `contentOf` an empty string
+      // failure `readText` returns `text: ""`, so storing it would hand a content view an empty string
       // to call available — the identical coercion this seam exists to remove, arriving through the
       // other door. It read as safe because the two halves are eighteen hundred lines apart: the
       // lookup asks `contents.has(f)`, and only the reader of THIS line knows that a file which
@@ -2772,31 +2883,31 @@ export async function main(args) {
   };
 
   // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
-  detectArchitecture(files, contents, run);
-  detectCapabilities(files, contents, run);
-  detectApis(files, contents, run);
-  detectJobs(files, contents, run);
-  detectIntegrations(files, contents, run);
-  detectAiInterfaces(files, contents, run);
+  detectArchitecture(files, run);
+  detectCapabilities(files, run);
+  detectApis(files, run);
+  detectJobs(files, run);
+  detectIntegrations(files, run);
+  detectAiInterfaces(files, run);
 
-  detectMissingDocs(files, contents, run);
+  detectMissingDocs(files, run);
   detectArchitectureArtifacts(run);
-  detectMissingPlanningArtifacts(files, contents, run);
+  detectMissingPlanningArtifacts(files, run);
   detectMissingAuditInfrastructure(files, run);
   detectUnverifiedFunctionality(files, run);
   detectUnfinished(files, run);
-  detectDeadCode(files, contents, run);
-  detectOpenQuestions(files, contents, run);
-  await detectPlanDiscrepancies(files, contents, run);
-  detectDocDiscrepancies(files, contents, run);
-  detectStandardsViolations(files, contents, run);
+  detectDeadCode(files, run);
+  detectOpenQuestions(files, run);
+  await detectPlanDiscrepancies(files, run);
+  detectDocDiscrepancies(files, run);
+  detectStandardsViolations(files, run);
 
   // Availability is probed once and shared: the env detector and attestation freshness both need the
   // repository, and asking twice would spend a second subprocess to learn the same thing.
   const repoAvailability = repositoryAvailable(root);
   const envCheck = detectCommittedEnvFiles(files, root, repoAvailability, run);
-  detectSecretsInArtifacts(files, contents, run);
-  detectSwallowedExceptions(files, contents, run);
+  detectSecretsInArtifacts(files, run);
+  detectSwallowedExceptions(files, run);
   detectCertBypass(files, run);
   detectSqlConcat(files, run);
 
@@ -2973,8 +3084,10 @@ export async function main(args) {
   // unsearched file is a statement about the run rather than about the project.
   //
   // A file that could not be READ belongs in this condition for exactly the same reason as one the
-  // budget never opened: its content was not obtained, and the derived views the nine rules below
-  // scan resolve it through `sources.get(f)?.code ?? ""` — the same coercion, one indirection away.
+  // budget never opened: its content was not obtained. That used to be invisible to a check, because
+  // the derived views resolved it through `sources.get(f)?.code ?? ""` — the same coercion as the
+  // raw map, one indirection away. The views now answer with a record, so each detector records its
+  // own loss and this surface term is a second, coarser observation point rather than the only one.
   // The trigger is corrected rather than the table extended: the table's membership is not what was
   // wrong, the question it was being asked was.
   //
