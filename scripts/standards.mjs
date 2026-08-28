@@ -105,9 +105,15 @@ const EVALUATED_RULES = [
  * cannot be read, generalised to the surface: a rule whose evidence could not be obtained was not
  * evaluated this run, whatever the static set says (Standard 45 R6, ADR 0008).
  *
- * **Truncation is deliberately not a trigger.** A truncated file was opened and its prefix searched,
- * and findings from a prefix are real findings that are kept; the run says how much it read. The
- * triggers are the two states in which files in scope were never searched at all.
+ * **Truncation is deliberately not a trigger HERE.** A truncated file was opened and its prefix
+ * searched, and findings from a prefix are real findings that are kept; the run says how much it
+ * read. The triggers are the two states in which files in scope were never searched at all.
+ *
+ * That holds for every PRESENCE-based rule in this list and fails for the one absence-based rule in
+ * it. `quality.dead-code` concludes from what it did not find across all other files, so a prefix
+ * leaves its claim unsupported in the over-reporting direction — a live file named as dead. It
+ * measures its own reference space inside `detectDeadCode` and withdraws there, so the
+ * presence-based rules keep the findings a prefix genuinely establishes.
  */
 const CONTENT_DERIVED_RULES = [
   "documentation.code-consistency",
@@ -849,6 +855,11 @@ function createRun({ root, strict, json }) {
   const findings = [];
   const contents = new Map();
   const sources = new Map();
+  // Files opened and read only in part. Carried beside `contents` rather than folded into it,
+  // because a prefix IS content and the entry is genuinely available: every presence-based detector
+  // is right to search it and right to keep what it finds. This records the one thing the retained
+  // text cannot say about itself — that there was more of it.
+  const truncated = new Set();
 
   /**
    * Checks that could not run, by the rule they would have fed.
@@ -869,6 +880,7 @@ function createRun({ root, strict, json }) {
     findings,
     contents,
     sources,
+    truncated,
     unknownChecks,
 
     /**
@@ -1660,9 +1672,33 @@ function detectDeadCode(files, contents, run) {
   // the stem", which is the fabricated-failure polarity: an orphan reported over a search that did
   // not happen. A rule cannot be established file by file when the check ranges over all of them, so
   // the unknown is recorded once for the run rather than per candidate.
-  const unsearchedRef = files.find((other) => contentOf(contents, other).lost);
-  if (unsearchedRef) {
-    run.unknown("quality.dead-code", rel(unsearchedRef), "a reference search cannot conclude over a file nothing read");
+  // MEASURED OVER THE REFERENCE SPACE ITSELF, rather than by enumerating the ways a file can go
+  // missing. `lost` alone named one of them, and the enumeration was short by two: a file whose
+  // extension the read loop never offers to open, and a file opened and retained only in part. Both
+  // leave the same hole — a stem the search never saw — and both were measured reporting a live file
+  // as dead. A fourth cause would be short again, so the question asked here is the one the claim
+  // actually rests on: was every file searched, whole.
+  //
+  // THE ASYMMETRY THAT MAKES THIS DETECTOR DIFFERENT. Truncation is deliberately not a global
+  // withdrawal trigger, and for a presence-based rule that is right: a secret in the first 400 KB is
+  // in the file, and a finding from a prefix is a real finding. This rule concludes from what it did
+  // NOT find across every other file, so the line that would have cleared an orphan may sit in
+  // exactly the bytes past the cap — and unlike a missed secret, which under-reports, this
+  // over-reports, naming something live as dead. Withdrawal is per-detector for that reason, so the
+  // presence-based rules keep what a prefix genuinely establishes.
+  //
+  // The cost is real and is the accepted price of the proposition: a repository holding one image or
+  // one over-cap file reaches no dead-code verdict. A rule claiming absence cannot honestly pass or
+  // fail without searching the whole domain it claims over, and preserving the verdict because most
+  // repositories contain a non-text file would be preserving it over a search that did not happen.
+  const unsearchable = files.filter((other) => !contentOf(contents, other).available || run.truncated.has(other));
+  if (unsearchable.length > 0) {
+    run.unknown(
+      "quality.dead-code",
+      rel(unsearchable[0]),
+      `${unsearchable.length} file(s) went unsearched or were read in part, so "referenced nowhere" ` +
+        "is not established",
+    );
     return;
   }
 
@@ -1673,8 +1709,9 @@ function detectDeadCode(files, contents, run) {
     const referenced = files.some((other) => {
       if (other === f) return false;
       const candidate = contentOf(contents, other);
-      // Every LOST file already returned above, so an unavailable answer here is a file with no text
-      // content to search at all — a binary, an image. Not evidence loss, and not a reference either.
+      // Every unsearchable file already returned above, so this is now a total function over a
+      // reference space that was read whole. The branch is kept because the type still admits the
+      // other answer, not because it can be reached.
       return candidate.available ? candidate.text.includes(stem) : false;
     });
     if (!referenced) orphans.push(rel(f));
@@ -2682,7 +2719,10 @@ export async function main(args) {
       unreadableFiles.push(f);
       continue;
     }
-    if (read.truncated) truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+    if (read.truncated) {
+      truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+      run.truncated.add(f);
+    }
     contents.set(f, read.text);
     if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
 

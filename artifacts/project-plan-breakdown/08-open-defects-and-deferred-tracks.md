@@ -966,6 +966,84 @@ that approval deliberately does not cover.
   cap and on budget exhaustion and not on a read failure — so its trigger was corrected rather than
   its table extended.
 
+  **An absence claim cannot be established over a space it did not search.** Found on a second,
+  now-abandoned branch and measured against this one on 2026-08-27. `quality.dead-code` is the only
+  rule in `CONTENT_DERIVED_RULES` whose proposition is an ABSENCE — *this name is referenced nowhere
+  else* — and that inverts every assumption the rest of the mechanism rests on. The others report
+  what they FOUND, so a file they could not search costs them a finding and they under-report; the
+  coarse withdrawal is a sufficient boundary for them. This one concludes from what it did not find,
+  so an unsearched file lets it name a live file as dead. It **over-reports**, and over-reporting is
+  the polarity `errors.no-false-success` exists to forbid.
+
+  The guard here asked `contentOf(...).lost` alone, which names one way a file goes unsearched. The
+  enumeration was short by two, and both were measured reporting `src/widgetrenderer.js` as dead code
+  on a specimen where the only reference to it was plainly present:
+
+  | Door | The file | Answered | Measured before the fix |
+  | --- | --- | --- | --- |
+  | Extension skip | `assets/diagram.svg` | unavailable, **not** lost — no view was ever derivable | orphan reported, `failed` |
+  | Read cap | a 420 KB `src/uses.js`, reference past 400 KB | **available** — a prefix is content | orphan reported, `failed` |
+  | Read budget | a text file the run never reached | lost | withdrawn correctly |
+
+  The first is the original `.svg` specimen this defect was filed on, arriving back through a door
+  the `lost` enumeration does not cover. The second is subtler and is why the guard is no longer an
+  enumeration at all: `available` is the RIGHT answer for a truncated file, because a prefix genuinely
+  is content and a secret found in the first 400 KB genuinely is in the file. What a prefix cannot say
+  is that there was more of it — which is the one thing this claim needed to know.
+
+  So the question asked is now the one the claim actually rests on — *was every file searched, whole*
+  — rather than a list of the ways a file can go missing, which was short twice and would be short
+  again. Truncation stays out of the global trigger, where excluding it is correct: withdrawing every
+  presence-based rule on truncation would discard findings a prefix genuinely established. The
+  withdrawal is per-detector because the asymmetry is per-detector.
+
+  **The cost, stated rather than discovered later.** Nearly every repository holds a `.gitignore` or
+  an image, so this rule now reaches a verdict in nearly none of them. That is the accepted price of
+  its own proposition and not a regression — see the owner ruling below. One existing guard changed
+  with it: *repository-ignored content is a narrowing, not a loss* still asserts exactly that for the
+  two presence-based rules, and now expects the absence-based one withdrawn. **The ignore declaration
+  is not what withdraws it**, and that was isolated rather than assumed: adding a `.gitignore` to a
+  repository with no exclusions at all withdraws the rule just the same, while `surface.complete`
+  stays `true`. The guard's own proposition is untouched.
+
+  **Mutation result on this tree.** Four mutants over the new guard, all killed, each by a
+  discriminating test rather than by the same one four times — plus the two survivors carried over
+  from the earlier branch, re-measured here and unchanged.
+
+  | Mutant | Killed by |
+  | --- | --- |
+  | Truncation term dropped | the read-cap falsifier **alone** — 24 pass, 1 fail |
+  | Reverted to the `lost`-only enumeration | the extension-skip falsifier, and the ignore guard tracking the same cause |
+  | Guard removed entirely | all three falsifiers |
+  | Withdraw unconditionally | both anti-vacuity guards, and **no falsifier** |
+
+  The last row is the one that makes the other three mean anything. *Withdraw whenever anything is
+  missing* would satisfy every falsifier above while reporting no dead code anywhere; it is refused by
+  the guards, and a falsifier set without them would have accepted it.
+
+  **The two survivors are unchanged and remain acceptable.** Deleting the unavailable-branch loss
+  record from `detectSecretsInArtifacts` or from `detectSwallowedExceptions` still leaves the whole
+  suite passing — 396 of 400, the same four skipped. They are redundant with the coarse withdrawal
+  for the reason the asymmetry above already gives: both emit findings established by **presence**,
+  so neither can defeat a withdrawal the way an absence-based finding does.
+
+  **Owner ruling on `quality.dead-code`, 2026-08-27: accepted.** A rule claiming absence cannot
+  honestly pass or fail without searching the whole domain it claims over, so `not-evaluated` when
+  the reference space is incomplete is the correct disposition and not a regression. The verdict is
+  not to be preserved merely because most repositories contain unreadable or non-text files.
+
+  **Owner ruling on the surviving mutants, 2026-08-27: conditional, and the condition caught one.**
+  A survivor is acceptable only where it is redundant with an independently established boundary and
+  restores no path from unavailable content to a verdict. Measured against that test, the two above
+  pass it. A third — folding a truncation signal into availability — failed it on the earlier branch,
+  which is how the read-cap door was found. The condition did the work it was written to do.
+
+  **On the branch this came from.** The work was developed as PR #43 against a different design of
+  the same seam, which the owner closed in favour of this one. Nothing was resurrected: the two
+  implementations were compared by tree and by ancestry rather than by title, the five-door probe was
+  run against both, and only the behaviour this tree was missing was carried across. #43 is
+  historical.
+
   **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
   this item does not close itself, and the specific thing needing a second party here is not whether
   the tests pass but whether the unmet first criterion is acceptable as scoped or is work still owed.
