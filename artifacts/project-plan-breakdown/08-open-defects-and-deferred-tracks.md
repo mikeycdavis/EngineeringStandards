@@ -1598,8 +1598,16 @@ that is a decision rather than a formality.
   enforces R11. `standards init` writes a template; the rule then passes because the file exists;
   the project is reported as having a manifest it has never filled in. Tool-generated scaffolding is
   being read as evidence of intent by the framework that forbids exactly that.
-- **Deliverables:** a content check of the same family as `hasContent()` in
-  [`scripts/init.mjs`](../../scripts/init.mjs), which already fixed this bug class on the `init` side.
+- **Deliverables:** ~~a content check of the same family as `hasContent()` in
+  [`scripts/init.mjs`](../../scripts/init.mjs), which already fixed this bug class on the `init`
+  side.~~ **Corrected 2026-08-28, before closing:** the shared thing is the bug class, not the
+  mechanism, and the line as written named a lineage the implementation does not have.
+  `hasContent()` asks whether a *directory* holds any `.md` file — the question "is this plan folder
+  empty" — and there is no reading of it that answers "has this file been filled in". What shipped
+  measures the manifest's own substance: template prompts still standing, and headings with nothing
+  beneath them. Recorded rather than quietly satisfied, because a closed item whose deliverable line
+  names a function it never called is the same defect this item is about — a record read as evidence
+  of something nobody checked.
 - **Acceptance Criteria:**
   - A file that is byte-identical to its template, or that retains its placeholder headings with
     nothing under them, does not satisfy the rule.
