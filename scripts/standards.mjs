@@ -138,6 +138,44 @@ const CONTENT_DERIVED_RULES = [
 ];
 
 /**
+ * Which files could have fed each of those rules — the question truncation has to ask and the
+ * never-collected terms do not.
+ *
+ * WHY THE TWO LOSS CLASSES NEED DIFFERENT SHAPES. The never-collected terms describe a run whose
+ * WALK was cut short: a cap reached, a budget spent, a directory unlistable. What went missing is
+ * unknown by construction — the files were never enumerated, so nothing can say which rules they
+ * would have fed, and withdrawing every content-derived rule is the only honest answer. Truncation
+ * is the opposite: the file is named, its path is known, and its extension already decides which
+ * detectors would ever have opened it. Answering a question you can answer with "withdraw
+ * everything" is not caution, it is the over-withdrawal this issue's own guards exist to prevent —
+ * a 4 MB lockfile made `security.no-sql-concat` not-evaluated over a repository whose every code
+ * file was read whole.
+ *
+ * THE PREDICATES ARE THE DETECTORS' OWN. Each mirrors the filter its detector applies when choosing
+ * candidates — `isCode` for the four code scanners, code-or-config-minus-`.env` for the secret
+ * scanner, the two named files for the README/manifest pair. That is deliberate: a domain invented
+ * here could drift from the loop it claims to describe, whereas one written in the same terms fails
+ * visibly when the loop changes. A rule absent from this map keeps the whole text surface as its
+ * domain, which is the conservative default and is why `quality.dead-code` — whose reference space
+ * really is every file — is not listed.
+ *
+ * `verification.before-completion` reads no file itself; it concludes from capabilities OTHER
+ * detectors found in code. A truncated code file can hide the capability that would have produced
+ * its finding, so it takes the code domain by derivation rather than by consumption.
+ */
+const TRUNCATION_DOMAIN = {
+  "quality.unfinished-work": (f) => isCode(f),
+  "errors.no-swallowed-exceptions": (f) => isCode(f),
+  "security.no-cert-bypass": (f) => isCode(f),
+  "security.no-sql-concat": (f) => isCode(f),
+  "verification.before-completion": (f) => isCode(f),
+  "security.no-secrets-in-artifacts": (f) =>
+    !ENV_FILE_RE.test(f.split(path.sep).join("/")) && (isCode(f) || CONFIG_EXT.has(path.extname(f))),
+  "documentation.code-consistency": (f) => /(^|\/)(readme\.md|package\.json)$/i.test(f.split(path.sep).join("/")),
+  "planning.plan-code-consistency": (f) => path.extname(f) === ".md",
+};
+
+/**
  * Read and validate the target repository's project-policy.yml.
  *
  * A malformed or unreadable policy is an ERROR condition, never a compliance failure: the verdict
@@ -2825,6 +2863,9 @@ export async function main(args) {
   surface = { files, surfaceLoss };
   const unreadableFiles = [];
   const truncatedFiles = [];
+  // The same event, kept twice on purpose: `truncatedFiles` is the sentence a reader sees and
+  // carries byte counts, `truncatedPaths` is what the domain predicates can be applied to.
+  const truncatedPaths = [];
   const budget = surfaceLoss.budget;
 
   /**
@@ -2880,6 +2921,7 @@ export async function main(args) {
     }
     if (read.truncated) {
       truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
+      truncatedPaths.push(rel(f));
       run.truncated.add(f);
     }
     run.retain(f, read.text);
@@ -3242,36 +3284,49 @@ export async function main(args) {
   // and cert-bypass bait. `security.no-sql-concat: passed` was never true here. Nine rules go to
   // not-evaluated and that is the honest state, not a regression to be tuned away.
   //
-  // Named for what it now means. Four of the six terms describe content that was never collected or
-  // never obtained, and the fifth — truncation — describes content collected and lost IN PART.
-  // "Files went unsearched" was accurate for the others and quietly false for that one, and a
-  // predicate whose name excludes one of its own terms is how the two omissions below survived
-  // review in the first place.
-  //
   // THE ADMISSION TEST IS NOT "is the surface incomplete". It is: CAN THE AFFECTED CHECKS RECORD
   // THEIR OWN UNKNOWN FOR THIS LOSS MODE? Where they can, the fine-grained record is the right
   // mechanism and a coarse term would withdraw rules whose evidence was in fact available — the
   // failure mode on the other side of this one. Where they cannot, the coarse term is the only
-  // thing that can speak. That test, and not "another way a surface can be imperfect", is what a
-  // seventh term would have to pass.
+  // thing that can speak.
   //
-  // Truncation passes it. The eight presence-based rules resolve content through `textOf`, and
-  // `textOf` answers `available` over a prefix: `contents.has(f)` is true, a string is handed back,
-  // and nothing in that answer says the tail is missing. `run.truncated` exists, but it is a second
-  // seam added for the one absence-based rule that needs to bound its own reference space; making
-  // the other eight consult it would be a maintained list of detectors, which is the fragility this
-  // design already rejected once. An unlistable directory passes it for the stronger reason that
-  // nothing beneath it is ever offered to any accessor at all.
-  const evidenceWentUnsearched =
+  // BOTH LOSS CLASSES PASS THAT TEST, AND THEY STILL DO NOT DESERVE THE SAME MECHANISM. The five
+  // terms below describe a WALK that was cut short — a cap reached, a budget spent, a file
+  // unreadable, a tree excluded, a directory unlistable. What went missing was never enumerated, so
+  // nothing can say which rules it would have fed, and every content-derived rule is withdrawn
+  // because no narrower answer exists.
+  //
+  // TRUNCATION IS NOT LIKE THAT, AND TREATING IT AS THOUGH IT WERE WAS A DEFECT OF ITS OWN. The
+  // file is named. Its extension already decides which detectors would ever have opened it. A
+  // single repository-wide flag therefore withdrew `security.no-sql-concat`, `security.no-cert-
+  // bypass` and `quality.unfinished-work` over a large Markdown file or a lockfile that not one of
+  // those detectors would have read — reporting not-evaluated over evidence that was, in fact,
+  // complete. Answering a question you can answer with "withdraw everything" is the over-withdrawal
+  // this issue's own anti-vacuity guards exist to prevent, arriving through the mechanism meant to
+  // prevent the opposite. So truncation is scoped by `TRUNCATION_DOMAIN` and asked per rule.
+  //
+  // What does not change is why truncation is coarse AT ALL rather than recorded per check. The
+  // presence-based rules resolve content through `textOf`, and `textOf` answers `available` over a
+  // prefix: `contents.has(f)` is true, a string comes back, and nothing in that answer says the
+  // tail is missing. `run.truncated` exists, but it is a second seam serving the one absence-based
+  // rule that must bound its own reference space; making the other eight consult it would be a
+  // maintained list of detectors. The domain map is a table of what each rule READS, which the
+  // extension filters already state, rather than a table of which rules remembered to look.
+  const walkWentShort =
     surfaceLoss.capped ||
     surfaceLoss.budget.exhausted ||
     unreadableFiles.length > 0 ||
     frameworkExcluded.length > 0 ||
-    // Collected, opened, and searched only as far as the cap.
-    truncatedFiles.length > 0 ||
     // Never collected at all, and never authorized by anyone — the parent walk filters the ignore
     // set and `SKIP_DIRS` before a `readdir` failure can land here.
     surfaceLoss.dirs.length > 0;
+
+  // A rule with no entry keeps the whole text surface as its domain, so a rule added to
+  // `CONTENT_DERIVED_RULES` and forgotten here withdraws too much rather than too little.
+  const truncationReached = (id) =>
+    truncatedPaths.length > 0 && truncatedPaths.some((p) => (TRUNCATION_DOMAIN[id] ?? (() => true))(p));
+
+  const evidenceWentUnsearched = (id) => walkWentShort || truncationReached(id);
 
   // Aggregation from checks, which is the part the two mechanisms above cannot do.
   //
@@ -3293,7 +3348,7 @@ export async function main(args) {
   // checks that never got to run. Either way the answer is the same shape: at least one check of this
   // rule did not obtain its evidence.
   const someCheckWentUnknown = (id) =>
-    run.unknownChecks.has(id) || (evidenceWentUnsearched && CONTENT_DERIVED_RULES.includes(id));
+    run.unknownChecks.has(id) || (CONTENT_DERIVED_RULES.includes(id) && evidenceWentUnsearched(id));
 
   // PRECEDENCE, AND IT APPLIES TO BOTH MECHANISMS OR IT IS NOT THE CONTRACT. `confirmed` was
   // previously consulted only for the fine-grained record, so a rule with a real violation still

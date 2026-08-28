@@ -1042,7 +1042,18 @@ const statusOf = (json, id) => {
 };
 
 /** Padding that is unambiguously not a violation, sized to push whatever follows past the read cap. */
-const PAST_CAP = `${"// padding\n".repeat(Math.ceil(400_000 / 11) + 1000)}\n`;
+/**
+ * Enough bytes to push what follows past `MAX_READ_BYTES`, in as few lines as that takes.
+ *
+ * The first version of this used ~37,000 eleven-byte comment lines, and the cost was not
+ * theoretical: the hosted test job spent roughly two minutes of its run inside the source-view
+ * scanners tokenising them, for a boundary that does not care how the bytes are shaped. Long inert
+ * lines put the bait in exactly the same place — past the cap, in a file the run opens and retains
+ * only in part — while giving the comment stripper a hundred lines to walk instead of tens of
+ * thousands. The assertion below still fails if the bait ever lands inside the retained prefix, so
+ * the boundary is proven rather than assumed cheap.
+ */
+const PAST_CAP = `${`// ${"x".repeat(4_000)}\n`.repeat(Math.ceil(400_000 / 4_004) + 4)}\n`;
 
 test("a retained prefix is not the file, and cannot establish a clean result", async () => {
   // `readText` caps each read at MAX_READ_BYTES and the read loop stores the prefix, so
@@ -1084,7 +1095,12 @@ test("GUARD: a violation found in a read file survives truncation elsewhere in t
   // surface withdraws everything". The bait sits in a small file the run reads completely; an
   // unrelated file is truncated. Silence about that file's tail is real, and it does not unfind what
   // the small file established: aggregation keeps the rule FAILED, carrying only the known finding.
-  const root = await baitedFixture({ "src/bait.js": CONTENT_BAIT, "docs/big.md": PAST_CAP });
+  // The truncated file is CODE, deliberately. Truncation is now scoped to each rule's evidence
+  // domain, so a truncated Markdown file would not withdraw `security.no-sql-concat` at all and this
+  // guard would pass without exercising precedence — it would assert that a mechanism which never
+  // fired did not erase anything. Truncating a file the rule genuinely reads is what makes the
+  // withdrawal and the confirmed violation collide, which is the collision under test.
+  const root = await baitedFixture({ "src/bait.js": CONTENT_BAIT, "src/big.js": PAST_CAP });
   try {
     const surface = run("audit", root, AMPLE).evidenceSurface;
     assert.ok(surface.truncatedFiles.length > 0, "the fixture stopped producing a truncated read");
@@ -1099,6 +1115,44 @@ test("GUARD: a violation found in a read file survives truncation elsewhere in t
       "failed/evaluated",
       "a violation established by a check that ran was withdrawn because a different file was truncated",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GUARD: truncation outside a rule's evidence domain does not withdraw it", async () => {
+  // THE FALSIFIER FOR THE OTHER DIRECTION, and it kills the shape this term shipped in. Truncation
+  // began as one repository-wide boolean: any truncated text file withdrew every content-derived
+  // rule. So a large Markdown file — or, in a real repository, a lockfile — made
+  // `security.no-sql-concat` and `security.no-cert-bypass` not-evaluated although neither detector
+  // would ever have opened it. Both scan `isCode` files only; a `.md` is not in their domain, and a
+  // run whose every code file was read whole reported that it could not answer.
+  //
+  // That is the over-withdrawal the anti-vacuity guards exist to catch, arriving through the very
+  // mechanism built to stop the opposite error, which is why it needs its own falsifier rather than
+  // trust in the argument. `quality.dead-code` is deliberately NOT asserted here: its reference
+  // space really is every file, so it withdraws over this fixture and is correct to.
+  const root = await baitedFixture({ "src/clean.js": "export const x = 1;\n", "docs/big.md": PAST_CAP });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.truncatedFiles.length > 0, "nothing was truncated, so this asserts nothing");
+    assert.ok(
+      surface.truncatedFiles.every((f) => f.startsWith("docs/big.md")),
+      "a second truncated file would stop this isolating the domain question",
+    );
+    assert.equal(surface.readBudget.exhausted, false, "budget loss would withdraw these rules for a different reason");
+    assert.equal(surface.fileCapReached, false, "the file cap would withdraw these rules for a different reason");
+    assert.deepEqual(surface.unreadableFiles, [], "a read failure would withdraw these rules for a different reason");
+    assert.deepEqual(surface.unreadableDirectories, [], "an unlistable directory would do the same");
+
+    const json = run("validate", root, AMPLE);
+    for (const id of ["security.no-sql-concat", "security.no-cert-bypass"]) {
+      assert.equal(
+        statusOf(json, id),
+        "passed/evaluated",
+        `${id} was withdrawn over a truncated file no detector of its would have opened`,
+      );
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
