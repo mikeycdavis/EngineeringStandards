@@ -105,15 +105,25 @@ const EVALUATED_RULES = [
  * cannot be read, generalised to the surface: a rule whose evidence could not be obtained was not
  * evaluated this run, whatever the static set says (Standard 45 R6, ADR 0008).
  *
- * **Truncation is deliberately not a trigger HERE.** A truncated file was opened and its prefix
- * searched, and findings from a prefix are real findings that are kept; the run says how much it
- * read. The triggers are the two states in which files in scope were never searched at all.
+ * **Truncation IS a trigger, and the sentence that stood here was half an argument.** It said a
+ * prefix was searched and its findings kept, which is true and is about the OVER-reporting
+ * direction only. The half it did not answer is the one a presence-based rule fails in: a
+ * prohibited construct sitting PAST the cap is not found, and "not found" over a prefix is reported
+ * as `passed`. Measured: a 440 KB file whose SQL interpolation begins after the 400 KB boundary
+ * leaves `security.no-sql-concat` at `passed/evaluated` in a run that has already reported its own
+ * surface incomplete. Keeping the findings a prefix establishes and withdrawing the clean result a
+ * prefix cannot establish are not in tension — the aggregation applies precedence, so a rule with a
+ * confirmed violation stays failed while a rule with nothing found goes not-evaluated.
  *
- * That holds for every PRESENCE-based rule in this list and fails for the one absence-based rule in
- * it. `quality.dead-code` concludes from what it did not find across all other files, so a prefix
- * leaves its claim unsupported in the over-reporting direction — a live file named as dead. It
- * measures its own reference space inside `detectDeadCode` and withdraws there, so the
- * presence-based rules keep the findings a prefix genuinely establishes.
+ * `quality.dead-code` still measures its own reference space inside `detectDeadCode` and withdraws
+ * there, for the over-reporting direction that is peculiar to an absence claim. That mechanism is
+ * unaffected; this trigger covers the eight presence-based rules it was never about.
+ *
+ * **An unlistable directory is a trigger for the reason `frameworkExcluded` is.** Nothing beneath a
+ * directory `readdir` refused enters `files`, so no accessor is ever called for it and no check has
+ * anything to report unknown about. It needs no authority filter: `collectFiles` consults the
+ * repository ignore set and `SKIP_DIRS` in the parent loop BEFORE it recurses, so a listing failure
+ * that reaches `surfaceLoss.dirs` is always over a directory nobody declared disposable.
  */
 const CONTENT_DERIVED_RULES = [
   "documentation.code-consistency",
@@ -2167,10 +2177,16 @@ function detectDocDiscrepancies(files, run) {
   if (manifest && !manifest.available) {
     // The opposite polarity of the same coercion: an unread manifest parsed to `{}`, which has no
     // scripts, so EVERY `npm run` in the README became a broken command. A fabricated failure.
+    //
+    // RECORDING THE UNKNOWN IS THE WHOLE FIX; LEAVING BY THIS DOOR WAS A SECOND DEFECT. The `return`
+    // that stood here discarded broken paths already established from a README the run DID read, so
+    // an unreadable manifest silently erased a confirmed violation — this issue's own truth table
+    // inverted at a call site. `known violation + unknown sibling` is FAILED carrying only the known
+    // finding, never silence; the aggregation applies that precedence and cannot if the detector
+    // throws the finding away first. So the unknown is recorded and the manifest-dependent branch is
+    // skipped, while the path findings below are emitted exactly as they were.
     run.unknown("documentation.code-consistency", rel(pkgPath), manifest.reason);
-    return;
-  }
-  if (manifest) {
+  } else if (manifest) {
     try {
       const scripts = Object.keys(JSON.parse(manifest.text).scripts ?? {});
       for (const m of text.match(/npm run ([\w:-]+)/g) ?? []) {
@@ -3222,11 +3238,37 @@ export async function main(args) {
   // `test/fixtures` by name, 71 tracked committed files, two of which carry deliberate SQL-concat
   // and cert-bypass bait. `security.no-sql-concat: passed` was never true here. Nine rules go to
   // not-evaluated and that is the honest state, not a regression to be tuned away.
-  const filesWentUnsearched =
+  //
+  // Named for what it now means. Four of the six terms describe content that was never collected or
+  // never obtained, and the fifth — truncation — describes content collected and lost IN PART.
+  // "Files went unsearched" was accurate for the others and quietly false for that one, and a
+  // predicate whose name excludes one of its own terms is how the two omissions below survived
+  // review in the first place.
+  //
+  // THE ADMISSION TEST IS NOT "is the surface incomplete". It is: CAN THE AFFECTED CHECKS RECORD
+  // THEIR OWN UNKNOWN FOR THIS LOSS MODE? Where they can, the fine-grained record is the right
+  // mechanism and a coarse term would withdraw rules whose evidence was in fact available — the
+  // failure mode on the other side of this one. Where they cannot, the coarse term is the only
+  // thing that can speak. That test, and not "another way a surface can be imperfect", is what a
+  // seventh term would have to pass.
+  //
+  // Truncation passes it. The eight presence-based rules resolve content through `textOf`, and
+  // `textOf` answers `available` over a prefix: `contents.has(f)` is true, a string is handed back,
+  // and nothing in that answer says the tail is missing. `run.truncated` exists, but it is a second
+  // seam added for the one absence-based rule that needs to bound its own reference space; making
+  // the other eight consult it would be a maintained list of detectors, which is the fragility this
+  // design already rejected once. An unlistable directory passes it for the stronger reason that
+  // nothing beneath it is ever offered to any accessor at all.
+  const evidenceWentUnsearched =
     surfaceLoss.capped ||
     surfaceLoss.budget.exhausted ||
     unreadableFiles.length > 0 ||
-    frameworkExcluded.length > 0;
+    frameworkExcluded.length > 0 ||
+    // Collected, opened, and searched only as far as the cap.
+    truncatedFiles.length > 0 ||
+    // Never collected at all, and never authorized by anyone — the parent walk filters the ignore
+    // set and `SKIP_DIRS` before a `readdir` failure can land here.
+    surfaceLoss.dirs.length > 0;
 
   // Aggregation from checks, which is the part the two mechanisms above cannot do.
   //
@@ -3248,7 +3290,7 @@ export async function main(args) {
   // checks that never got to run. Either way the answer is the same shape: at least one check of this
   // rule did not obtain its evidence.
   const someCheckWentUnknown = (id) =>
-    run.unknownChecks.has(id) || (filesWentUnsearched && CONTENT_DERIVED_RULES.includes(id));
+    run.unknownChecks.has(id) || (evidenceWentUnsearched && CONTENT_DERIVED_RULES.includes(id));
 
   // PRECEDENCE, AND IT APPLIES TO BOTH MECHANISMS OR IT IS NOT THE CONTRACT. `confirmed` was
   // previously consulted only for the fine-grained record, so a rule with a real violation still

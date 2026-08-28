@@ -34,7 +34,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -977,4 +977,332 @@ test("the domain is anchored to the catalog text it was adjudicated from", async
     "none",
     "the rule now claims assurance it did not before; whether withdrawal is still correct must be re-decided",
   );
+});
+
+
+// --- Evidence loss bounds silence; it does not unfind what was found -----------------------------
+//
+// Four guards, and the pairing is the point. Two of them withdraw a rule over evidence the run did
+// not have; two of them refuse to withdraw a rule whose evidence it did have. A mechanism answering
+// "withdraw whenever the surface is imperfect" passes the first pair and fails the second, and a
+// mechanism that does nothing passes the second pair and fails the first. Neither pair is evidence
+// on its own.
+//
+// They exist because a falsifier vanished. The truncation and unlistable-directory cases were
+// present on a parallel branch for this issue and absent from this one, and the aggregate gate was
+// green throughout: a passing suite is not evidence for a property whose test is not in it.
+
+/** Prove a directory really cannot be listed, for the same reason `reallyUnreadable` exists. */
+function reallyUnlistable(dir) {
+  try {
+    readdirSync(dir);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Restore a DIRECTORY, which is not the same call as restoring a file.
+ *
+ * `0o644` on a directory leaves it without the execute bit, so nothing can traverse it and the
+ * recursive cleanup fails with EACCES — the test then fails in its own `finally`, having already
+ * proved what it set out to prove.
+ */
+async function restoreListing(dir) {
+  if (IS_WINDOWS) spawnSync("icacls", [dir, "/remove:d", process.env.USERNAME], { encoding: "utf8" });
+  else await chmod(dir, 0o755);
+}
+
+/** A committed repository carrying the content policy, plus whatever else the caller needs. */
+async function baitedFixture(extra = {}) {
+  const root = await tmp();
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  };
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  await writeFile(path.join(root, "README.md"), `# Specimen\n\n${"substantive prose ".repeat(60)}\n`);
+  await writeFile(path.join(root, "project-policy.yml"), CONTENT_POLICY);
+  for (const [name, body] of Object.entries(extra)) {
+    const full = path.join(root, name);
+    await mkdir(path.dirname(full), { recursive: true });
+    await writeFile(full, body);
+  }
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "specimen");
+  return root;
+}
+
+const statusOf = (json, id) => {
+  const r = resultFor(json, id);
+  return `${r.status}/${r.disposition}`;
+};
+
+/** Padding that is unambiguously not a violation, sized to push whatever follows past the read cap. */
+const PAST_CAP = `${"// padding\n".repeat(Math.ceil(400_000 / 11) + 1000)}\n`;
+
+test("a retained prefix is not the file, and cannot establish a clean result", async () => {
+  // `readText` caps each read at MAX_READ_BYTES and the read loop stores the prefix, so
+  // `contents.has(f)` answers yes and `contentOf` answers `available`. There is no moment inside a
+  // detector where the missing tail is visible: the seam is handed a string and has no way to know
+  // it is short. That is what puts truncation in the coarse predicate rather than in the per-check
+  // record — the per-check record can only carry what some check was able to notice.
+  //
+  // Measured before the fix: the surface reported `truncatedFiles`, `complete: false`, and
+  // `security.no-sql-concat: passed/evaluated` in the SAME run — a clean forbidden rule over four
+  // hundred kilobytes of a file whose violation is past the boundary.
+  const root = await baitedFixture({ "src/big.js": `${PAST_CAP}${CONTENT_BAIT}` });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.truncatedFiles.length > 0, "the fixture stopped producing a truncated read");
+    assert.equal(surface.readBudget.exhausted, false, "budget loss would make this a duplicate of another falsifier");
+    assert.equal(surface.fileCapReached, false, "the file cap would make this a duplicate of another falsifier");
+    assert.deepEqual(surface.unreadableFiles, [], "a read failure would make this a duplicate of another falsifier");
+    assert.deepEqual(
+      surface.frameworkExcludedDirectories,
+      [],
+      "an exclusion would make this a duplicate of another falsifier",
+    );
+
+    const json = run("validate", root, AMPLE);
+    assert.deepEqual(
+      findingsFor(json, "security.no-sql-concat"),
+      [],
+      "the bait was supposed to sit past the cap; if the run can see it this test proves nothing",
+    );
+    assertNotEvaluated(json, "security.no-sql-concat");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GUARD: a violation found in a read file survives truncation elsewhere in the tree", async () => {
+  // The other direction, and the reason the repair is a sixth term rather than "an incomplete
+  // surface withdraws everything". The bait sits in a small file the run reads completely; an
+  // unrelated file is truncated. Silence about that file's tail is real, and it does not unfind what
+  // the small file established: aggregation keeps the rule FAILED, carrying only the known finding.
+  const root = await baitedFixture({ "src/bait.js": CONTENT_BAIT, "docs/big.md": PAST_CAP });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.truncatedFiles.length > 0, "the fixture stopped producing a truncated read");
+
+    const json = run("validate", root, AMPLE);
+    assert.ok(
+      findingsFor(json, "security.no-sql-concat").length > 0,
+      "the bait stopped producing a finding, so this test would prove nothing",
+    );
+    assert.equal(
+      statusOf(json, "security.no-sql-concat"),
+      "failed/evaluated",
+      "a violation established by a check that ran was withdrawn because a different file was truncated",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a directory that could not be listed withdraws the rules its contents would have fed", async (t) => {
+  // The never-collected analogue of a framework-excluded tree. Nothing beneath an unlistable
+  // directory enters the walk, so nothing enters `contents`, so no accessor is ever called for it
+  // and `unknownChecks` records nothing. An absence-based rule iterates over what it does have and
+  // reports "found nothing" about files it never had the chance to see.
+  //
+  // It needs no authority filter of its own: the walk consults the repository's ignore set and
+  // `SKIP_DIRS` before it recurses, so a `readdir` failure is always over a directory nobody
+  // declared disposable.
+  const root = await baitedFixture();
+  const hidden = path.join(root, "src");
+  try {
+    await mkdir(hidden, { recursive: true });
+    await writeFile(path.join(hidden, "inner.js"), "const x = 1;\n");
+    await denyRead(hidden);
+    if (!reallyUnlistable(hidden)) {
+      t.skip("this host refuses to make a directory unlistable; the boundary runs on the Linux image");
+      return;
+    }
+
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(surface.unreadableDirectories.length > 0, "the fixture stopped producing an unlistable directory");
+    assert.equal(surface.readBudget.exhausted, false, "budget loss would make this a duplicate of another falsifier");
+    assert.deepEqual(surface.truncatedFiles, [], "truncation would make this a duplicate of the falsifier above");
+
+    assertNotEvaluated(run("validate", root, AMPLE), "security.no-sql-concat");
+  } finally {
+    await restoreListing(hidden);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GUARD: a violation found in a listed directory survives an unlistable one beside it", async (t) => {
+  // The anti-vacuity control for the falsifier above, and it is not redundant with the truncation
+  // pair: these are two different terms in the predicate, and a repair that applied the precedence
+  // rule to one and not to the other would pass one pair and fail this.
+  const root = await baitedFixture({ "src/bait.js": CONTENT_BAIT });
+  const hidden = path.join(root, "hidden");
+  try {
+    await mkdir(hidden, { recursive: true });
+    await writeFile(path.join(hidden, "inner.js"), "const x = 1;\n");
+    await denyRead(hidden);
+    if (!reallyUnlistable(hidden)) {
+      t.skip("this host refuses to make a directory unlistable; the boundary runs on the Linux image");
+      return;
+    }
+
+    const json = run("validate", root, AMPLE);
+    assert.ok(
+      findingsFor(json, "security.no-sql-concat").length > 0,
+      "the bait stopped producing a finding, so this test would prove nothing",
+    );
+    assert.equal(
+      statusOf(json, "security.no-sql-concat"),
+      "failed/evaluated",
+      "a violation established in a directory the run listed was withdrawn because another could not be listed",
+    );
+  } finally {
+    await restoreListing(hidden);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+// --- One rule, two independent checks, and only one of them went dark ----------------------------
+//
+// `documentation.code-consistency` is established by two checks that share a README and nothing
+// else: every backticked path in it, answered by the filesystem; and every `npm run` in it, answered
+// by `package.json`. The manifest branch recorded its unknown and then RETURNED, discarding entries
+// the path check had already established from a README the run did read — so the rule reported
+// `not-evaluated` while a conclusively-found violation sat in the array it had just abandoned.
+//
+// This is the truth table this issue wrote, inverted at a call site:
+//
+//   known violation + unknown sibling  ->  FAILED, carrying only the known finding
+//   no violation    + unknown sibling  ->  NOT_EVALUATED
+//
+// Both rows are asserted, over one fixture differing in one respect, because either alone admits a
+// wrong answer: dropping the `return` outright satisfies the first row and breaks the second by
+// letting the manifest check reappear, and leaving it satisfies the second and breaks the first.
+
+const DOC_POLICY = [
+  'standardVersion: "2.0.0"',
+  'project: "Sibling check specimen"',
+  "rules:",
+  "  documentation.code-consistency:",
+  "    level: required",
+  "",
+].join("\n");
+
+const MANIFEST = `${JSON.stringify({ name: "specimen", private: true, scripts: { build: "node build.mjs" } }, null, 2)}\n`;
+
+/**
+ * A committed repository whose README names a command the manifest answers for, and — when
+ * `brokenPath` is set — a repository path the FILESYSTEM answers for, with no manifest involved.
+ */
+async function siblingFixture({ brokenPath }) {
+  const root = await tmp();
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+  };
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  await writeFile(
+    path.join(root, "README.md"),
+    `# Specimen\n\n${"substantive prose ".repeat(60)}\n\n` +
+      "Build it with `npm run build`.\n" +
+      (brokenPath ? "The entry point is `src/missing-entry.js`.\n" : "") +
+      `\n${"more substantive prose ".repeat(40)}\n`,
+  );
+  await writeFile(path.join(root, "project-policy.yml"), DOC_POLICY);
+  await writeFile(path.join(root, "package.json"), MANIFEST);
+  git("add", "-A");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "specimen");
+  return root;
+}
+
+/** Deny the manifest, prove the denial took, and return the verdict over that evidence. */
+async function withUnreadableManifest(root, t, body) {
+  const manifest = path.join(root, "package.json");
+  try {
+    await denyRead(manifest);
+    if (!reallyUnreadable(manifest)) {
+      t.skip("this host refuses to make a file unreadable; the boundary runs on the Linux image");
+      return;
+    }
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.ok(
+      surface.unreadableFiles.includes("package.json"),
+      `package.json is not among the unreadable files ${JSON.stringify(surface.unreadableFiles)}`,
+    );
+    await body(run("validate", root, AMPLE));
+  } finally {
+    await restoreRead(manifest);
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+test("a README violation survives an unread manifest, and only the known finding is emitted", async (t) => {
+  const root = await siblingFixture({ brokenPath: true });
+  await withUnreadableManifest(root, t, (json) => {
+    const findings = findingsFor(json, "documentation.code-consistency");
+    assert.ok(findings.length > 0, "the established README violation was discarded with the unknown sibling check");
+    assert.equal(
+      statusOf(json, "documentation.code-consistency"),
+      "failed/evaluated",
+      "a violation the filesystem conclusively established was withdrawn because a DIFFERENT check went unread",
+    );
+
+    const evidence = findings.flatMap((f) => f.evidence ?? []);
+    assert.ok(
+      evidence.some((e) => e.includes("src/missing-entry.js")),
+      `the README path violation is not in the evidence ${JSON.stringify(evidence)}`,
+    );
+    assert.deepEqual(
+      evidence.filter((e) => e.includes("npm run")),
+      [],
+      "the unread manifest produced a command finding; only the KNOWN check may contribute evidence",
+    );
+  });
+});
+
+test("a clean README with an unread manifest establishes nothing", async (t) => {
+  // The same specimen with the broken path removed. Nothing is left for the path check to find, the
+  // command check cannot answer, and the honest disposition is silence rather than a pass. This is
+  // also the row that fails if the fix simply deletes the `return`: `JSON.parse` over an unavailable
+  // manifest would fabricate an empty script list and report `npm run build` as broken.
+  const root = await siblingFixture({ brokenPath: false });
+  await withUnreadableManifest(root, t, (json) => {
+    assert.deepEqual(
+      findingsFor(json, "documentation.code-consistency"),
+      [],
+      "a command was reported broken against a manifest the run never read",
+    );
+    assertNotEvaluated(json, "documentation.code-consistency");
+  });
+});
+
+test("GUARD: both checks answerable is still a real verdict, in both polarities", async () => {
+  // The anti-vacuity control for the pair above. Nothing is denied, so both checks have their
+  // evidence: the clean specimen must PASS rather than sit in the withdrawn state the falsifiers
+  // produce, and the broken-path specimen must FAIL for the ordinary reason.
+  const clean = await siblingFixture({ brokenPath: false });
+  const broken = await siblingFixture({ brokenPath: true });
+  try {
+    assert.equal(
+      statusOf(run("validate", clean, AMPLE), "documentation.code-consistency"),
+      "passed/evaluated",
+      "a fully-answerable rule did not reach a verdict; the withdrawal machinery is firing over nothing",
+    );
+    assert.equal(
+      statusOf(run("validate", broken, AMPLE), "documentation.code-consistency"),
+      "failed/evaluated",
+      "the fixture stopped producing a real violation, so the falsifiers above would prove nothing",
+    );
+  } finally {
+    await rm(clean, { recursive: true, force: true });
+    await rm(broken, { recursive: true, force: true });
+  }
 });

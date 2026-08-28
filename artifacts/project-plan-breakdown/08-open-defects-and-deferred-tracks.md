@@ -1001,7 +1001,21 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** COMPLETE — 2026-08-28 at `a6fa7f0`, established by the full repository gate at that
+- **Status:** IN_REVIEW — **and the `COMPLETE` this line carried is preserved below rather than
+  deleted, because it was recorded and acted on.** It was set on 2026-08-28 at `a6fa7f0`, the branch
+  was merged as `b20423a`, and the GitHub issue was closed. The disposition was not true when it was
+  written: two defects inside this item's own acceptance contract were live in the merged tree, and
+  four attestation events nobody authorised were live in `project-policy.yml` beside them. A gate
+  that passes over a defect no test looks for is not evidence that the defect is absent, which is
+  the same sentence this item exists to make the tool say.
+
+  **Corrected forward, not rewritten.** `b20423a` is not reverted: the reference-space work that
+  landed with it is independently sound (recorded below) and removing it would discard a real repair
+  to undo a wrong label. The repair is a forward branch off `develop`, and the `COMPLETE` entry stays
+  visible here as a superseded and incorrect disposition so a later reader can see that the item was
+  closed once on evidence that did not support it.
+
+  **Previously, and wrongly: COMPLETE — 2026-08-28 at `a6fa7f0`,** on the full repository gate at that
   commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 404 tests, 400
   passing, 0 failures, 4 skipped. `validate` at that content reports 14 passed, 4 failed, 32 skipped,
   the four failures being the four standing recorded human rejections and no rule changing status or
@@ -1216,18 +1230,87 @@ that approval deliberately does not cover.
   pass it. A third — folding a truncation signal into availability — failed it on the earlier branch,
   which is how the read-cap door was found. The condition did the work it was written to do.
 
+  **A candidate finding raised in review was answered by what landed, and is recorded closed rather
+  than dropped.** While restoring the guards above it was measured that `quality.dead-code` is the one
+  detector whose SEARCH spans every file rather than a filtered subset, so a file outside `TEXT_EXT` —
+  an `.svg`, an image — is collected, skipped by the read loop, and absent from `contents` exactly as
+  an unread file is, letting the absence of its text be read as the absence of a reference. The
+  finding was deliberately not folded into this repair: nothing is *lost* in that case, `contentOf`
+  correctly answers `lost: false`, and making every non-text asset an unknown would withdraw the rule
+  in any repository containing an image. It needed a reference-space model, not another term in
+  `evidenceWentUnsearched`.
+
+  **That model is what `b20423a` brought, and it is sound on its own terms.** The domain is
+  adjudicated from the catalog text rather than from convenience — *"code no longer reachable from any
+  entry point"* names no extension set — so completeness is computed over every collected file and the
+  detector withdraws inside `detectDeadCode` rather than through the coarse predicate. Three
+  independent falsifiers hold it up, one per door: a reference past the per-file cap, a reference in a
+  file the read loop never opens (the `.svg` specimen this finding was raised on), and a reference
+  beyond the read budget. A fourth test pins the domain choice itself by asserting the evidence
+  surface reports COMPLETE while dead-code withdraws anyway — the two answers are allowed to disagree,
+  and re-scoping completeness to `TEXT_EXT` would make it pass a verdict again. The accepted cost is
+  the one already recorded above: the rule reaches `not-evaluated` in most repositories. **Reviewed
+  rather than absorbed**: it was examined on its merits and kept because it is right, not because it
+  arrived in the base.
+
   **On the branch this came from.** The work was developed as PR #43 against a different design of
   the same seam, which the owner closed in favour of this one. Nothing was resurrected: the two
   implementations were compared by tree and by ancestry rather than by title, the five-door probe was
   run against both, and only the behaviour this tree was missing was carried across. #43 is
   historical.
 
+  **Two defects inside this item's own contract were found in review after it was merged, and are
+  repaired forward.** Neither is a different problem arriving alongside this one. Both are this
+  invariant failing at a site the original falsifiers did not reach, which is why they were invisible
+  to a green gate.
+
+  1. **The coarse never-collected predicate omitted truncation and unlistable directories.** It
+     tested the file cap, budget exhaustion, unreadable files and framework-excluded trees, and
+     stopped there. A truncated file is stored as available — `contents.has(f)` is true and `textOf`
+     hands back a string that says nothing about the missing tail — so no check can record its own
+     unknown over the part that went unsearched. An unlistable directory is the never-collected
+     analogue of an excluded tree: nothing beneath it is ever offered to any accessor. Measured: a
+     440 KB file whose SQL interpolation begins after the 400 KB cap left `security.no-sql-concat` at
+     `passed/evaluated` in a run that had already reported its own surface incomplete.
+
+     **The sentence that excluded truncation was half an argument.** It said a prefix was searched
+     and its findings kept — true, and about the OVER-reporting direction only. A presence-based rule
+     fails in the other direction: a construct past the cap is not found, and "not found" over a
+     prefix was being reported as `passed`. Keeping a prefix's findings and withdrawing a prefix's
+     clean result are not in tension, because the aggregation applies precedence: a rule with a
+     confirmed violation stays failed while a rule with nothing found goes not-evaluated.
+
+     **The predicate now answers a narrower question than "is the surface incomplete", and the
+     narrowing is the point.** It is renamed `evidenceWentUnsearched`, because one of its six terms
+     is partial loss rather than absence and a name that excludes one of its own terms is how these
+     two omissions survived review. The admission test for a term is: *can the affected checks record
+     their own unknown for this loss mode?* Where they can, the fine-grained record is the right
+     mechanism and a coarse term would withdraw rules whose evidence was in fact available. That test
+     admits truncation and an unlistable directory while refusing to make every other way a surface
+     can be imperfect into a blanket withdrawal trigger, and a seventh term has to earn its place the
+     same way. `run.truncated` does not defeat it: it is a second seam added for the one absence-based
+     rule that bounds its own reference space, and making the other eight consult it would be a
+     maintained list of detectors — the fragility this design rejected once already.
+  2. **`detectDocDiscrepancies` recorded the manifest unknown and then returned**, discarding broken
+     README paths the run had already established from a README it did read. That is this item's own
+     truth table inverted at a call site: `known violation + unknown sibling` is FAILED carrying only
+     the known finding, never silence. The manifest branch no longer leaves by that door, and the
+     other polarity is asserted beside it — a clean README with an unread manifest establishes
+     nothing rather than reporting every `npm run` in it as broken.
+
+  **Seven guards, in pairs, and the pairing is what makes them evidence.** Two falsifiers for the new
+  terms; two anti-vacuity guards proving a violation found in a file the run *did* read survives loss
+  elsewhere in the tree; both README/manifest polarities; and a both-answerable control asserting a
+  real verdict still arrives in either direction. A mechanism answering every falsifier by
+  withdrawing more passes the first of each pair and fails the second, and that failure mode is
+  invisible to an aggregate gate — which is how the first of these defects reached `develop` under a
+  green one.
+
   **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
-  this item does not close itself. The question that stood here — whether the unmet first criterion
-  was acceptable as scoped or was work still owed — was answered by the owner as work owed, and the
-  work is done, so what remains for a second party is the ordinary one: that the mechanism, the
-  domain adjudication above, and the accepted `quality.dead-code` cost are what this repository
-  wants.
+  this item does not close itself, and it is now the second party's question twice over: whether the
+  mechanism, the domain adjudication above and the accepted `quality.dead-code` cost are what this
+  repository wants, and whether the two repairs above complete the contract that `COMPLETE` claimed
+  prematurely.
 
   **Previously: READY.**
 - **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)
@@ -1528,6 +1611,22 @@ that approval deliberately does not cover.
   consults `project-policy.yml` and this section, not the reflog. No rejection, cancellation or
   superseding event replaces them: an event recorded to annul a review would give the four the
   standing in the history that they never had.
+
+  **It happened again, on the successor branch, and the remedy is the same.** Four further events
+  with the same four ids — `review-meta-standards-not-weakened-005`,
+  `review-testing-no-weakening-to-pass-005`, `review-architecture-no-hidden-global-state-008` and
+  `review-architecture-no-duplicate-implementations-005` — were appended at revision `dde2e85`, again
+  carrying `reviewedBy: project-owner`, and were merged to `develop` inside `b20423a`. The owner ruled
+  that they were not authorised when recorded and must not acquire legitimacy merely because the bytes
+  they happened to cover turned out to match. They are removed forward, by the same commit that
+  repairs the two defects, with no annulment event and no supersession event: `project-policy.yml`
+  is restored to the state it held before they existed, and the four rules return to stale, which is
+  their correct state until an authorised review of the corrected candidate takes place.
+
+  **The artifact was right while the policy was wrong, both times.** The commit adding the events
+  changed nothing else, so this section went on saying the four rules stay stale and that this item
+  records no review, while `project-policy.yml` recorded four. A reader consulting both would have
+  found them in disagreement, and this half was the one that was right.
 - **Dependencies:** none blocking. It shares code with
   [the exclusion boundary](#fix-the-audits-project-level-exclusions), whose seventh criterion repairs
   the global completeness claim; that repair does not close this item and this item does not close
