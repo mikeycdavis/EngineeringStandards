@@ -39,7 +39,7 @@
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "Only documented PATHS are compared against the filesystem. Behaviours, flags, and defaults are not checked."
+      "$assuranceNote": "Only documented PATHS are compared against the filesystem, and only those written as inline code spans; markdown links, fenced blocks and bare prose are not read. Behaviours, flags, and defaults are not checked. A path is resolved from the repository root, which is a convention the document is not obliged to follow: a token beginning with './' is relative to a working directory and is reported not-evaluated unless one is established, and a token whose containing directory is absent from the root is reported as unresolved rather than missing, because nothing corroborates the root as its base. Both still fail the rule; neither asserts the document is wrong."
     },
     {
       "id": "documentation.diagram-source",
