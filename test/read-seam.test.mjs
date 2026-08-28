@@ -29,7 +29,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { contentOf, viewOf, createRun } from "../scripts/standards.mjs";
+import { contentOf, viewOf, main } from "../scripts/standards.mjs";
+
+/** A small governed fixture, so the run held below is a real one rather than a constructed shape. */
+const FIXTURE_DIR = ["fixtures", "compliant"];
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "scripts", "standards.mjs");
@@ -285,7 +288,7 @@ test("no detector is handed the content map", () => {
   );
 });
 
-test("the run object carries no content map to reach for", () => {
+test("the run object carries no content map to reach for", async () => {
   // The second door into the same defect, and the one that would reopen it quietly: a detector that
   // takes no `contents` parameter can still write `run.contents.get(f) ?? ""` if the run exposes the
   // map. It does not, and this is what says so.
@@ -293,7 +296,14 @@ test("the run object carries no content map to reach for", () => {
   // Asserted on the returned object rather than by reading source, because that is the thing a
   // detector actually holds. `retain` is the single write door and is expected to be present: its
   // absence would mean the read loop had gone back to holding a map of its own.
-  const run = createRun({ root: process.cwd(), strict: false, json: true });
+  //
+  // REACHED THROUGH `main`, WHICH THE MODULE ALREADY PUBLISHES, and that is why this reads a little
+  // indirectly. The obvious way to hold a run is to export its factory, and doing that would widen
+  // the production surface in order to prove the production surface is narrow — the guard would be
+  // evidence against itself. `main` is the entry point every consumer already has, it returns the
+  // run the audit actually used rather than a shape assembled for a test, and it costs one audit of
+  // a small fixture. A weaker seam bought with a wider API is not the cheaper option.
+  const { run } = await main(["audit", `--dir=${path.join(HERE, ...FIXTURE_DIR)}`, "--json"]);
   for (const forbidden of ["contents", "sources"]) {
     assert.equal(
       run[forbidden],

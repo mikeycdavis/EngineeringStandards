@@ -851,13 +851,7 @@ export function viewOf(sources, contents, f, which) {
     : { available: false, text: null, lost: true, reason: "collected but never searched" };
 }
 
-/**
- * EXPORTED for the same narrow reason `contentOf` and `viewOf` are: the shape of what this returns is
- * itself a safety property, and it is not observable through a whole audit. What a detector can
- * reach for is decided here and nowhere else, so the guard that says "no content map is exposed" has
- * to be able to hold the object rather than infer it from the source that builds it.
- */
-export function createRun({ root, strict, json }) {
+function createRun({ root, strict, json }) {
   const findings = [];
   const contents = new Map();
   const sources = new Map();
