@@ -1658,29 +1658,96 @@ that is a decision rather than a formality.
 *(The heading is left as filed. "Local command context" is part of what the measurement below
 falsifies, and renaming it would erase the record of a framing this item had to correct.)*
 
-- **Status:** COMPLETE as to the measured `./` defect — 2026-08-28 at `de6ad01`, established by the
-  full repository gate at that commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and
-  `audit` all passed, 420 tests, 416 passing, 0 failures, 4 skipped. `validate` reports 14 passed, 4
-  failed, 0 warnings, 32 skipped — unchanged, and the four are the four standing human rejections.
+- **Status:** COMPLETE — 2026-08-28, in two parts, because the issue turned out to hold two different
+  defects.
+
+  **Part one, the `./` resolution defect, at `de6ad01`**, established by the full repository gate at
+  that commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 420
+  tests, 416 passing, 0 failures, 4 skipped.
+
+  **Part two, the remediation contract, at `cf4f95b`**, established by the full repository gate
+  at that commit: all six stages passed, 425 tests, 421 passing, 0 failures, 4 skipped.
+
+  `validate` reports 14 passed, 4 failed, 0 warnings, 32 skipped at part one — unchanged — and **12
+  passed, 4 failed, 0 warnings, 34 skipped at part two.** The four failures are the four standing
+  human rejections at both, and the verdict is `NON_COMPLIANT` with score 100 at both.
   `documentation.code-consistency` was already `not-evaluated` for this repository at `a91676d` and
-  still is; this repository's own README carries no `./` span, so the change moves nothing here.
+  still is; this repository's own README carries no `./` span and no uncorroborated token, so neither
+  part moves anything through the rule this item is about.
 
-  **The item does not close, and issue #4 should not close on it.** The owner's stated acceptance
-  condition is that the adopting repository becomes compliant *for this finding* with its working
-  tree unmodified. Measured at ReleasePilot `f94dbe0` against this commit, one finding remains:
+  **The two rules that moved did so because this change staled two of the owner's attestations, and
+  that is the mechanism working rather than a regression.** `architecture.no-boundary-bypass` and
+  `meta.standards-not-weakened` are both recorded `reviewedAgainst` a path set containing
+  `scripts/compliance.mjs`, which part two edits to add the remediation seam. Under
+  [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md) a review is evidence about the
+  bytes a human read, so changing those bytes returns both rules to `not-evaluated` — reported as
+  `[stale]`, not as a failure. Both are `forbidden`, so the unestablished-prohibition list of
+  Standard 45 R6 grows from four to six; the verdict does not move, because it was already
+  `NON_COMPLIANT` on the four rejections.
 
-  | Before | After |
+  **Two re-reviews are therefore owed, and this item does not perform them.** Minting an attestation
+  over a diff nobody has read is exactly the forgery the token design exists to prevent, and the
+  honest state until an owner looks again is `not-evaluated`. The change under review is fifteen
+  lines in `scripts/compliance.mjs` that add a per-finding remediation override; whether that crosses
+  a boundary or weakens a standard is the question the two stale reviews now ask.
+
+  **Superseded by the amendment below.** This paragraph said the item could not close, on the
+  ground that the acceptance condition required zero findings. That condition was itself falsified
+  by measurement, and the second finding turned out not to be a path-resolution defect at all.
+
+  | Before | After R1 |
   | --- | --- |
   | `README.md -> ./mvnw` | withdrawn — `not-evaluated`, no finding |
-  | `README.md -> overlays/prod` | **unchanged, still reported** |
+  | `README.md -> overlays/prod` | still reported — see the remediation-contract amendment below |
 
-  Closing on "one of two fixed" would restate a partial repair as the acceptance condition being
-  met. What remains is a decision rather than an implementation: whether a link one clause away
-  establishes a base for a sibling token. Adopting that as a contract is the only thing that would
-  clear `overlays/prod`, and it is the owner's to adjudicate — the alternative measured on the way
-  here, withdrawing any token whose parent directory is absent from the root, was rejected because
-  it stops reporting an entire deleted directory tree, which is the stale-documentation case the
-  rule exists to catch.
+  The alternative measured on the way here, withdrawing any token whose parent directory is absent
+  from the root, was rejected and stays rejected: it stops reporting an entire deleted directory
+  tree, which is the stale-documentation case the rule exists to catch.
+
+- **Amended 2026-08-28, and the item closes here. `overlays/prod` was a remediation-contract defect,
+  not a second path-resolution defect.** Measured on the finding rather than on the path:
+
+  | Property | Measured |
+  | --- | --- |
+  | rule / level / severity | `documentation.code-consistency`, `required`, `error` |
+  | validationType / assurance | `structural` / `partial` |
+  | attestation | refused — *"is not attestable; the catalog says it is evaluated by structural, not by human review"*, reproduced against a schema-valid record |
+  | remediation shown | *"Correct the document, or remove the wrong claim. Do not leave it with a caveat."* |
+
+  The key case holds in all three parts. ReleasePilot's document is correct as written —
+  `deploy/k8s/overlays/prod` exists and `overlays/prod` does not exist at the root, so the only
+  reading under which the sentence is wrong is one the document never asserts. The detector cannot
+  establish the token's base; it joins every candidate to the root and reads no context, which is
+  the same fact R1 rests on. And the run nevertheless instructed the adopter to change the file.
+  Because the rule is `required`, structurally evaluated and non-attestable, there was no truthful
+  way to disagree: an exception would be false, `not-applicable` would be false, and the attestation
+  is refused by design. **The pressure was toward damaging a correct repository to satisfy a check
+  that had not established anything about it.**
+
+  So the finding stays and the instruction changes. Not found at the root is two observations, and
+  they now earn different sentences: where the containing directory exists the run resolved the base
+  the document implied and the leaf really is absent — `does not exist`, *"Correct the document"*,
+  unchanged. Where it does not, nothing corroborates the root as the base, and the finding says so
+  and asks for the base to be established rather than for the document to be edited. It is labelled
+  `INFERRED`, not `OBSERVED`, because reading a non-resolving token as a defect rests on a
+  convention rather than on a defined meaning.
+
+  **Detection is not weakened.** Both classes raise a finding, both carry `severity: error`, and both
+  fail the rule; a deleted directory tree is still reported, and a test holds that specifically. The
+  seam added for this — a finding may override the catalog's remediation — is an override rather than
+  a replacement, so every other rule keeps its catalog text by saying nothing.
+
+  **Five mutants, all killed.** A sixth was withdrawn as equivalent rather than recorded as a
+  survivor: `parent === "."` joins back to the root, so the branch was unreachable and no test could
+  ever have killed it. It was deleted, since an unreachable branch is a mutant nothing can kill.
+
+  **On the acceptance condition.** ReleasePilot does not become green, and this item closes anyway.
+  The zero-findings condition presumed both findings were the same defect; measurement showed one is
+  a resolution defect, now fixed, and the other is a correct report carrying a false instruction, now
+  corrected. Manufacturing the green through proximity inference was available and was refused —
+  nothing states the scope or boundary of "a link one clause away", and a detector that resolved by
+  proximity would be guessing in the direction of silence. The condition should be owner-amended to
+  match what was measured; that is recorded on issue #4 rather than assumed here.
 
   **Five mutants, all killed, and one earned its keep by surviving.** Keying the guard on a bare `.`
   rather than `./` withdraws `.github/workflows/ci.yml` — an ordinary root-relative claim that

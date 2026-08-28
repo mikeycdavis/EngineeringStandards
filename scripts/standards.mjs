@@ -938,7 +938,7 @@ function createRun({ root, strict, json }) {
      * This remains the only writer of `findings`, which is what keeps the accumulator auditable. The
      * single-writer property ADR 0007 identified is preserved; what changed is the lifetime.
      */
-    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule }) {
+    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation }) {
       const shown = evidence.slice(0, MAX_EVIDENCE);
       const omitted = evidence.length - shown.length;
       findings.push({
@@ -953,6 +953,11 @@ function createRun({ root, strict, json }) {
         // "observed/detected" findings carry none: they report what the repository HAS, not whether
         // it complies, and binding them to a rule would manufacture a verdict out of an observation.
         rule: rule ?? null,
+        // Present only when the catalog's rule-level remediation would be untrue for THIS finding,
+        // so a finding that says nothing here keeps the catalog's text. Spread rather than set to
+        // `undefined`, because an absent key and a key holding undefined are the same thing to
+        // `JSON.stringify` and different things to a reader of the audit output.
+        ...(remediation ? { remediation } : {}),
       });
     },
   };
@@ -2154,6 +2159,7 @@ function detectDocDiscrepancies(files, run) {
   }
   const text = doc.text;
   const broken = [];
+  const unresolved = [];
 
   for (const token of text.match(/`([^`\n]+)`/g) ?? []) {
     const p = token.slice(1, -1).trim();
@@ -2187,7 +2193,29 @@ function detectDocDiscrepancies(files, run) {
       continue;
     }
 
-    if (!existsSync(path.join(root, clean))) broken.push(`${rel(readme)} -> ${p}`);
+    if (existsSync(path.join(root, clean))) continue;
+
+    // NOT FOUND AT THE ROOT IS TWO DIFFERENT OBSERVATIONS, AND THEY EARN DIFFERENT INSTRUCTIONS.
+    //
+    // `src/nope.ts` where `src/` exists: the run resolved the base the document implied and the leaf
+    // is absent. That is a claim observed to be wrong, and "correct the document" is the right thing
+    // to say.
+    //
+    // `overlays/prod` where no `overlays/` exists at the root: the run found nothing corroborating
+    // that the root is the base at all. It has established that the token does not resolve from the
+    // root — nothing more. Calling that "does not exist" states a conclusion the run did not reach,
+    // and issue #4 is what that costs: an adopter told to correct a document that was right.
+    //
+    // The finding is still raised and the rule still fails. This is not the withdrawal rejected on
+    // the way here — withdrawing every token with an absent parent stops reporting a deleted
+    // directory tree, which is the stale-documentation case this rule exists for. Detection is
+    // identical; only the sentence and the instruction change, and they change to what was measured.
+    // A single-segment token's parent is `.`, which joins back to the root — so a bare `nope/` is
+    // corroborated by the root's own existence and needs no special case. One was written here and
+    // removed: it was unreachable, and an unreachable branch is a mutant nothing can kill.
+    const parent = path.dirname(clean);
+    const baseCorroborated = existsSync(path.join(root, parent));
+    (baseCorroborated ? broken : unresolved).push(`${rel(readme)} -> ${p}`);
   }
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
@@ -2210,17 +2238,47 @@ function detectDocDiscrepancies(files, run) {
     }
   }
 
-  if (broken.length === 0) return;
-  addFinding({
-    id: "doc-code-discrepancies",
+  // Emitted before the unresolved finding on purpose. Where a README carries both, the rule's
+  // one-line message and remediation are taken from the first hit, and an established violation is
+  // the more useful thing to put in front of a reader than an ambiguity standing beside it.
+  if (broken.length > 0) {
+    addFinding({
+      id: "doc-code-discrepancies",
       rule: "documentation.code-consistency",
-    category: "Documentation/code discrepancies",
-    severity: "error",
-    label: "OBSERVED",
-    evidence: uniq(broken),
-    message: `${broken.length} path(s) or command(s) named in the README do not exist.`,
-    standardRef: R.done,
-  });
+      category: "Documentation/code discrepancies",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: uniq(broken),
+      message: `${broken.length} path(s) or command(s) named in the README do not exist.`,
+      standardRef: R.done,
+    });
+  }
+
+  if (unresolved.length > 0) {
+    addFinding({
+      id: "doc-path-base-unestablished",
+      rule: "documentation.code-consistency",
+      category: "Documentation/code discrepancies",
+      severity: "error",
+      // INFERRED, not OBSERVED. The observation is that the token does not resolve from the root;
+      // reading that as a defect rests on the convention that a bare path is root-relative, and
+      // Standard 44 reserves OBSERVED for what a defined meaning establishes.
+      label: "INFERRED",
+      evidence: uniq(unresolved),
+      message:
+        `${unresolved.length} path(s) named in the README could not be resolved from the repository ` +
+        "root, and nothing in the repository corroborates the root as their base — their containing " +
+        "directories are not present there either. Whether the document is wrong, or states its base " +
+        "somewhere this run cannot read, was not established.",
+      // Overrides the catalog's "Correct the document, or remove the wrong claim", which would
+      // instruct a content change over a conclusion no check reached.
+      remediation:
+        "Establish the base: link or name the directory these paths are relative to, or make them " +
+        "relative to the repository root. Correct the paths only if they are actually wrong — this " +
+        "run did not establish that, and a correct document should not be edited to satisfy it.",
+      standardRef: R.done,
+    });
+  }
 }
 
 function detectStandardsViolations(files, run) {
