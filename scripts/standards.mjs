@@ -2210,6 +2210,34 @@ function detectDocDiscrepancies(files, run) {
     const p = token.slice(1, -1).trim();
     if (!looksLikeRepositoryPath(p)) continue;
     const clean = p.replace(/\/$/, "");
+
+    // A LEADING `./` NAMES A WORKING DIRECTORY, AND THIS DOCUMENT MAY NOT ESTABLISH ONE.
+    //
+    // `./x` asserts a location relative to wherever the reader is standing, which for a command is
+    // whatever they last changed to. Joining it to the repository root answers a question the
+    // document never asked, and the answer looks authoritative: issue #4's `./mvnw` was reported
+    // missing against an adopter whose README named it correctly, as the Maven Wrapper, in prose
+    // that never claimed it sat at the root.
+    //
+    // So the base is UNAVAILABLE rather than root, and an unavailable base is a fact about the run
+    // (Standard 44 R12) — recorded through `unknown`, never as a finding. The aggregation's
+    // precedence rule is what makes this safe per token: a rule with a confirmed violation stays
+    // `failed` and keeps that finding, so withdrawing one ambiguous token cannot launder a real one
+    // beside it. Only a README whose every candidate is ambiguous reports `not-evaluated`.
+    //
+    // The cost is stated rather than discovered: a genuinely broken `./does-not-exist` in bare prose
+    // is now unreported too. That is the honest outcome and not a gap to close by trying prefixes
+    // until one matches — a base guessed from the filesystem is not a base the document stated, and
+    // a check that resolves eagerly enough to always succeed has stopped being a check.
+    if (clean.startsWith("./")) {
+      run.unknown(
+        "documentation.code-consistency",
+        rel(readme),
+        `\`${p}\` is stated relative to a working directory, and this document does not establish one`,
+      );
+      continue;
+    }
+
     if (!existsSync(path.join(root, clean))) broken.push(`${rel(readme)} -> ${p}`);
   }
 
