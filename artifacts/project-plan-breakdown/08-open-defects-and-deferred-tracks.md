@@ -1655,9 +1655,50 @@ that is a decision rather than a formality.
 
 ### Fix README path resolution under local command context
 
-- **Status:** READY
+*(The heading is left as filed. "Local command context" is part of what the measurement below
+falsifies, and renaming it would erase the record of a framing this item had to correct.)*
+
+- **Status:** COMPLETE as to the measured `./` defect — 2026-08-28 at `de6ad01`, established by the
+  full repository gate at that commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and
+  `audit` all passed, 420 tests, 416 passing, 0 failures, 4 skipped. `validate` reports 14 passed, 4
+  failed, 0 warnings, 32 skipped — unchanged, and the four are the four standing human rejections.
+  `documentation.code-consistency` was already `not-evaluated` for this repository at `a91676d` and
+  still is; this repository's own README carries no `./` span, so the change moves nothing here.
+
+  **The item does not close, and issue #4 should not close on it.** The owner's stated acceptance
+  condition is that the adopting repository becomes compliant *for this finding* with its working
+  tree unmodified. Measured at ReleasePilot `f94dbe0` against this commit, one finding remains:
+
+  | Before | After |
+  | --- | --- |
+  | `README.md -> ./mvnw` | withdrawn — `not-evaluated`, no finding |
+  | `README.md -> overlays/prod` | **unchanged, still reported** |
+
+  Closing on "one of two fixed" would restate a partial repair as the acceptance condition being
+  met. What remains is a decision rather than an implementation: whether a link one clause away
+  establishes a base for a sibling token. Adopting that as a contract is the only thing that would
+  clear `overlays/prod`, and it is the owner's to adjudicate — the alternative measured on the way
+  here, withdrawing any token whose parent directory is absent from the root, was rejected because
+  it stops reporting an entire deleted directory tree, which is the stale-documentation case the
+  rule exists to catch.
+
+  **Five mutants, all killed, and one earned its keep by surviving.** Keying the guard on a bare `.`
+  rather than `./` withdraws `.github/workflows/ci.yml` — an ordinary root-relative claim that
+  happens to start with a dot — and nothing in the suite objected until that mutant said so. A sixth
+  reported survival was a harness defect, not a live mutant: its anchor matched an unrelated
+  `continue;` five hundred lines earlier. Applied by hand at the real site it fails three tests. The
+  harness measurement was discarded rather than recorded, on the standing rule that an impossible
+  survival is a fact about the harness.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue [#4](https://github.com/mikeycdavis/EngineeringStandards/issues/4)
 - **Evidence:** open as of 2026-08-11.
+- **The two SHAs in issue #4 are different trees, and must not be presented as one acceptance run.**
+  `f94dbe0` is the audited specimen and carries no `project-policy.yml` at all. The `VERSION_MISMATCH`
+  recorded in the issue's second comment therefore cannot have come from it; that file first appears
+  at `7e143a6` (2026-08-21), a descendant. `audit` needs no policy and reproduces the specimen at
+  `f94dbe0` directly, which is why the measurement above did not need the blocked `validate` path —
+  but whoever runs the owner's acceptance procedure has to know which of the two trees they are on.
 - **Purpose:** ~~The README path validator resolves paths from the repository root regardless of the
   context the command was invoked in, so correct relative links can be reported as broken and
   incorrect ones can pass.~~ **Corrected 2026-08-28 by measurement against the adopter.** The
