@@ -8,8 +8,8 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Fourteen are open. Eight are
-claimed here — #1, #4, #6, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
+**Every open GitHub issue is claimed by exactly one plan item.** Thirteen are open. Seven are
+claimed here — #1, #4, #6, #8, #19, #21, #32 — and the other six are claimed where their subject
 lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -31,6 +31,17 @@ The counts in this paragraph previously read "seven here, four elsewhere" agains
 while naming five elsewhere. Six were claimed here and five elsewhere. Corrected above rather than
 left, because this paragraph is the only place the claim invariant is asserted, and an invariant
 whose own arithmetic does not hold cannot be used to check anything.
+
+**Amended 2026-08-28:** **#38** closed at `a6fa7f0`, so it leaves both the open set and *claimed
+here*, taking fourteen/eight to thirteen/seven. Six elsewhere is unchanged.
+
+**Re-derived, not decremented**, which is what this paragraph's own history asks for. The open set
+was read from `gh issue list` — #1, #2, #3, #4, #6, #8, #9, #10, #11, #16, #19, #21, #32 — and
+*claimed here* from the `Tracked by` fields in this file rather than from its links, per the
+ownership rule two paragraphs above. Seven and six partition thirteen with nothing counted twice. The
+arithmetic agreeing with an increment is a check on the increment, not a substitute for the
+derivation: three of the four amendments below were arrived at by incrementing, and two of them were
+wrong.
 
 **Amended again 2026-08-25:** **#7** closed on owner review of its seven-criterion contract, so it
 leaves both the open set and *claimed here*, taking fifteen/nine to fourteen/eight. Six elsewhere is
@@ -931,9 +942,36 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** IN_REVIEW — **every acceptance criterion is now met, criterion 1 in its letter as of
-  2026-08-28.** `IN_REVIEW` is nonterminal, so release closure stays blocked while the disposition is
-  open; what remains is the owner's, not this item's.
+- **Status:** COMPLETE — 2026-08-28 at `a6fa7f0`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 404 tests, 400
+  passing, 0 failures, 4 skipped. `validate` at that content reports 14 passed, 4 failed, 32 skipped,
+  the four failures being the four standing recorded human rejections and no rule changing status or
+  assurance. The self-audit carries 0 error findings. This row is the commit after `a6fa7f0` and
+  changes only this section, which is why the gate it names is the one before it rather than the one
+  on itself.
+
+  **All five acceptance criteria, re-read against that exact tree rather than against the history of
+  how they were met:**
+
+  | # | Criterion | Established by |
+  | --- | --- | --- |
+  | 1 | No call site can reach `""`/`"{}"`, and the mechanism enforces it | The maps are `createRun`'s closure; fifteen detectors take no map. Two guards, each killing a different mutant |
+  | 2 | Both directions for each of the five fabricators, with a full-coverage control | Five falsifier/control pairs in `test/evidence-availability.test.mjs`, one per fabricator |
+  | 3 | The mixed case preserved, not erased | *an established violation survives beside an unknown check on the same rule* |
+  | 4 | `planning.item-fields` and `planning.plan-code-consistency` identical under identical loss | *two rules read from one site behave identically under identical evidence loss* |
+  | 5 | Self-audit unchanged at zero error findings; inertness on a run that loses nothing | 0 error findings measured at `a6fa7f0`; *the mechanism is inert when nothing is lost*, on a fixture that genuinely loses nothing |
+
+  Criterion 5 is met as **amended** by the 2026-08-26 owner ruling recorded with it, not as
+  originally worded. The original assumed this repository has full coverage; it does not, and the
+  amendment is an honesty correction rather than a relaxation. Its inertness half is tested where
+  inertness actually holds.
+
+  **What this item does not claim.** `quality.dead-code` now reaches `not-evaluated` in most
+  repositories, and the catalog's unconditional *"never a failure"* is false for a policy that raises
+  the rule to `required`. The first is a decided cost, adjudicated against the normative text below
+  and accepted by the owner. The second is a real inconsistency in the catalog, found while measuring
+  this one and deliberately left open: it is about severity mapping rather than evidence
+  availability, and folding it in here would close it without anyone having examined it.
 
   **What landed.** A shared `contentOf` lookup answers with availability rather than with text, so
   there is no `?? ""` to reach for at a converted site because there is no string to reach. A check
