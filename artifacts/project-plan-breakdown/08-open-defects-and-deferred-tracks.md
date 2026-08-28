@@ -1655,20 +1655,87 @@ that is a decision rather than a formality.
 
 ### Fix README path resolution under local command context
 
-- **Status:** READY
+*(The heading is left as filed. "Local command context" is part of what the measurement below
+falsifies, and renaming it would erase the record of a framing this item had to correct.)*
+
+- **Status:** COMPLETE as to the measured `./` defect — 2026-08-28 at `de6ad01`, established by the
+  full repository gate at that commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and
+  `audit` all passed, 420 tests, 416 passing, 0 failures, 4 skipped. `validate` reports 14 passed, 4
+  failed, 0 warnings, 32 skipped — unchanged, and the four are the four standing human rejections.
+  `documentation.code-consistency` was already `not-evaluated` for this repository at `a91676d` and
+  still is; this repository's own README carries no `./` span, so the change moves nothing here.
+
+  **The item does not close, and issue #4 should not close on it.** The owner's stated acceptance
+  condition is that the adopting repository becomes compliant *for this finding* with its working
+  tree unmodified. Measured at ReleasePilot `f94dbe0` against this commit, one finding remains:
+
+  | Before | After |
+  | --- | --- |
+  | `README.md -> ./mvnw` | withdrawn — `not-evaluated`, no finding |
+  | `README.md -> overlays/prod` | **unchanged, still reported** |
+
+  Closing on "one of two fixed" would restate a partial repair as the acceptance condition being
+  met. What remains is a decision rather than an implementation: whether a link one clause away
+  establishes a base for a sibling token. Adopting that as a contract is the only thing that would
+  clear `overlays/prod`, and it is the owner's to adjudicate — the alternative measured on the way
+  here, withdrawing any token whose parent directory is absent from the root, was rejected because
+  it stops reporting an entire deleted directory tree, which is the stale-documentation case the
+  rule exists to catch.
+
+  **Five mutants, all killed, and one earned its keep by surviving.** Keying the guard on a bare `.`
+  rather than `./` withdraws `.github/workflows/ci.yml` — an ordinary root-relative claim that
+  happens to start with a dot — and nothing in the suite objected until that mutant said so. A sixth
+  reported survival was a harness defect, not a live mutant: its anchor matched an unrelated
+  `continue;` five hundred lines earlier. Applied by hand at the real site it fails three tests. The
+  harness measurement was discarded rather than recorded, on the standing rule that an impossible
+  survival is a fact about the harness.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue [#4](https://github.com/mikeycdavis/EngineeringStandards/issues/4)
 - **Evidence:** open as of 2026-08-11.
-- **Purpose:** The README path validator resolves paths from the repository root regardless of the
+- **The two SHAs in issue #4 are different trees, and must not be presented as one acceptance run.**
+  `f94dbe0` is the audited specimen and carries no `project-policy.yml` at all. The `VERSION_MISMATCH`
+  recorded in the issue's second comment therefore cannot have come from it; that file first appears
+  at `7e143a6` (2026-08-21), a descendant. `audit` needs no policy and reproduces the specimen at
+  `f94dbe0` directly, which is why the measurement above did not need the blocked `validate` path —
+  but whoever runs the owner's acceptance procedure has to know which of the two trees they are on.
+- **Purpose:** ~~The README path validator resolves paths from the repository root regardless of the
   context the command was invoked in, so correct relative links can be reported as broken and
-  incorrect ones can pass. A path checker that resolves against the wrong base is worse than no path
-  checker, because its findings look authoritative.
-- **Deliverables:** resolution against the correct base, with the choice of base stated rather than
-  implicit.
+  incorrect ones can pass.~~ **Corrected 2026-08-28 by measurement against the adopter.** The
+  document-relative versus root-relative framing was wrong, and so was the heading's "local command
+  context" — both survive above only so the correction is legible. The detector's sole extraction
+  surface is inline code spans; markdown links, fenced blocks and bare prose are never candidates.
+  Neither reported path came from a command context, and deleting both fenced blocks from the
+  adopter's README changes the output not at all.
+- **The measured triggers**, correlated one-to-one at ReleasePilot `f94dbe0` by de-backticking each
+  span alone and observing which finding disappeared:
+
+  | Finding | Trigger | Base claimed |
+  | --- | --- | --- |
+  | `README.md -> ./mvnw` | `README.md:33`, under `## Prerequisites`: prose naming the Maven Wrapper | none — no working directory is established, and the `from ./backend` comment is forty lines away under a different heading |
+  | `README.md -> overlays/prod` | `README.md:126`, a docs bullet | none — the only signal is a sibling link one clause away |
+
+  The two other `./mvnw` spans are not candidates: lines 74 and 140 sit inside fenced blocks, and
+  line 133's span contains a space, which `looksLikeRepositoryPath` already rejects.
+- **Deliverables:** a leading `./` denotes a reference relative to a working directory. Where the
+  document does not establish one, the base is *unavailable* rather than root, so the token is
+  withdrawn through `run.unknown` and the rule reports `not-evaluated` — never `missing`. Joining
+  such a token to the repository root answers a question the document never asked.
+- **`overlays/prod` is recorded as unresolved, and is deliberately still reported.** Nothing states
+  that a link one clause away establishes a base, and resolving it by proximity would be inference
+  presented as measurement — the failure mode this detector layer has already shipped twice. It
+  stays a finding until an owner decides whether proximity is a contract this framework wants.
 - **Acceptance Criteria:**
-  - A fixture with links that are correct relative to the document and a fixture with links that are
-    correct only relative to the root produce opposite results, and the right one each way.
+  - ~~A fixture with links that are correct relative to the document and a fixture with links that are
+    correct only relative to the root produce opposite results.~~ Inoperative: the README selector is
+    anchored to the root README, where those two bases are identical.
+  - A cwd-relative token in prose establishing no working directory reports `not-evaluated`, and a
+    genuinely broken one behaves identically — the coverage cost, asserted rather than discovered.
+  - Ordinary root-scoped paths still pass and still fail, dot-prefixed ones included.
   - The existing finding that an HTTP route in a README is not a missing file (`78f3afb`) is
     unaffected.
+  - A nearby link does not establish a base, and an ambiguous token withdrawing does not take a
+    confirmed violation beside it with it.
 - **Verification:** `npm test`; the audit reports no README path findings against this repository.
 - **Dependencies:** the absence and discrepancy categories in [`03`](03-standards-audit-cli.md).
 
