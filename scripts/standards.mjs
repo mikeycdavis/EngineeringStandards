@@ -851,7 +851,13 @@ export function viewOf(sources, contents, f, which) {
     : { available: false, text: null, lost: true, reason: "collected but never searched" };
 }
 
-function createRun({ root, strict, json }) {
+/**
+ * EXPORTED for the same narrow reason `contentOf` and `viewOf` are: the shape of what this returns is
+ * itself a safety property, and it is not observable through a whole audit. What a detector can
+ * reach for is decided here and nowhere else, so the guard that says "no content map is exposed" has
+ * to be able to hold the object rather than infer it from the source that builds it.
+ */
+export function createRun({ root, strict, json }) {
   const findings = [];
   const contents = new Map();
   const sources = new Map();
@@ -878,10 +884,26 @@ function createRun({ root, strict, json }) {
     strict,
     json,
     findings,
-    contents,
-    sources,
     truncated,
     unknownChecks,
+
+    /**
+     * The ONE write door for collected content, and the reason the two maps above are no longer
+     * properties of this object.
+     *
+     * While `contents` and `sources` were exposed, every detector received a live map beside its
+     * accessors, so `contents.get(f) ?? ""` stayed one keystroke away at fifteen call sites and the
+     * seam held because nobody took it — an invariant maintained by discipline, which is the thing
+     * the criterion this closes says it must not be. The read loop is the only caller that has any
+     * business writing, so it gets a verb and everyone else gets nothing.
+     *
+     * Deriving the code view HERE rather than at the call site is part of the same move: the two
+     * maps can no longer disagree about which files were retained, because one call fills both.
+     */
+    retain(f, text) {
+      contents.set(f, text);
+      if (isCode(f)) sources.set(f, splitSource(text, path.extname(f)));
+    },
 
     /**
      * Record that a check could not be performed, and emit nothing.
@@ -904,6 +926,11 @@ function createRun({ root, strict, json }) {
     // Availability-returning, exactly like `contentOf`. There is deliberately no accessor on this
     // run that hands back a bare string: a caller cannot forget to branch on evidence it was never
     // given, and `test/read-seam.test.mjs` holds the boundary shut against the next raw `.get`.
+    // The raw-text sibling of the three derived views. It completes the set deliberately: while it
+    // was missing, a detector needing plain text had exactly one route to it — the `contents` map
+    // passed in beside `run` — so the seam was opt-in at every call site rather than enforced. With
+    // this here, `contents` no longer has to leave `createRun` at all.
+    textOf: (f) => contentOf(contents, f),
     sourceOf: (f) => viewOf(sources, contents, f, "code"),
     structureOf: (f) => viewOf(sources, contents, f, "structure"),
     commentsOf: (f) => viewOf(sources, contents, f, "comments"),
@@ -1099,7 +1126,7 @@ const MANIFESTS = [
   "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile", "composer.json",
 ];
 
-function detectArchitecture(files, contents, run) {
+function detectArchitecture(files, run) {
   const { rel, addFinding } = run;
   const archDoc = files.find((f) => rel(f).toLowerCase() === "docs/architecture.md");
   if (archDoc) {
@@ -1134,13 +1161,13 @@ function detectArchitecture(files, contents, run) {
   });
 }
 
-function detectCapabilities(files, contents, run) {
+function detectCapabilities(files, run) {
   const { rel, addFinding } = run;
   const evidence = [];
   const notes = [];
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
-  const manifest = pkgPath ? contentOf(contents, pkgPath) : null;
+  const manifest = pkgPath ? run.textOf(pkgPath) : null;
   // `?? "{}"` parsed a manifest nobody read into an empty object, and an empty object has no bin and
   // no scripts — so an unread package.json reported a project with no CLI entry point. This detector
   // binds no rule, so nothing is withdrawn; it simply declines to describe what it did not read.
@@ -1193,7 +1220,7 @@ const API_CONTENT = [
   /func\s+\w*Handler\s*\(\s*w\s+http\.ResponseWriter/,
 ];
 
-function detectApis(files, contents, run) {
+function detectApis(files, run) {
   const { rel, addFinding, structureOf } = run;
   const specs = files.filter((f) =>
     /(^|\/)(openapi|swagger)\.(ya?ml|json)$/i.test(rel(f)),
@@ -1246,11 +1273,11 @@ const JOB_CONTENT = [
  */
 const JOB_PACKAGES = "celery|sidekiq|bullmq|bull|agenda|node-cron|apscheduler|resque";
 
-function detectJobs(files, contents, run) {
+function detectJobs(files, run) {
   const { rel, addFinding, structureOf, sourceOf } = run;
   const workflowCron = files.filter((f) => {
     if (!/\.github\/workflows\/.*\.ya?ml$/.test(rel(f))) return false;
-    const workflow = contentOf(contents, f);
+    const workflow = run.textOf(f);
     if (!workflow.available) return false; // unread: no schedule found is not "no schedule declared"
     return /^\s*schedule:/m.test(workflow.text);
   });
@@ -1306,7 +1333,7 @@ const INTEGRATION_SDK = [
   ["@slack/|slack_sdk", "Slack"], ["octokit|PyGithub", "GitHub"],
 ];
 
-function detectIntegrations(files, contents, run) {
+function detectIntegrations(files, run) {
   const { rel, addFinding, sourceOf } = run;
   const envTemplates = files.filter((f) =>
     /(^|\/)\.env\.(example|template|sample)$|(^|\/)appsettings\.(Example|Template)\.json$/i.test(rel(f)),
@@ -1359,7 +1386,7 @@ const AI_SDK = [
   ["mistralai", "Mistral"],
 ];
 
-function detectAiInterfaces(files, contents, run) {
+function detectAiInterfaces(files, run) {
   const { rel, addFinding, sourceOf } = run;
   const skillFiles = files.filter((f) => /(^|\/)SKILL\.md$/.test(rel(f)));
   const promptFiles = files.filter((f) => /(^|\/)prompts?\//i.test(rel(f)) || /prompt.*\.md$/i.test(rel(f)));
@@ -1409,7 +1436,7 @@ const CI_FILES = [
   ".circleci/config.yml", ".travis.yml", "bitbucket-pipelines.yml",
 ];
 
-function detectMissingDocs(files, contents, run) {
+function detectMissingDocs(files, run) {
   const { rel, addFinding } = run;
   const missing = [];
   if (!files.some((f) => rel(f).toLowerCase() === "docs/architecture.md")) missing.push("docs/architecture.md");
@@ -1419,7 +1446,7 @@ function detectMissingDocs(files, contents, run) {
     // The presence check above is structural and always valid. Only the length test needs content,
     // so only the length test is withdrawn — the missing `docs/architecture.md` beside it still
     // fails the rule, because that was established.
-    const c = contentOf(contents, readme);
+    const c = run.textOf(readme);
     if (!c.available) run.unknown("documentation.architecture", rel(readme), c.reason);
     else if (c.text.trim().length < 400) missing.push(`${rel(readme)} (under 400 characters)`);
   }
@@ -1496,7 +1523,7 @@ function detectArchitectureArtifacts(run) {
  * plan or an untouched template is a judgement no scan makes, and Standard 44's Implementation
  * section says so rather than implying this check covers it.
  */
-function detectMissingPlanningArtifacts(files, contents, run) {
+function detectMissingPlanningArtifacts(files, run) {
   const { has, addFinding, rel } = run;
   const dir = "artifacts/project-plan-breakdown";
   if (!has(dir)) {
@@ -1527,7 +1554,7 @@ function detectMissingPlanningArtifacts(files, contents, run) {
     return;
   }
 
-  const overviewContent = contentOf(contents, overview);
+  const overviewContent = run.textOf(overview);
   if (!overviewContent.available) {
     // "A plan directory is evidence of a plan only when it has content" is a claim about the file's
     // body. Over a body nobody read it is a claim about the run.
@@ -1657,7 +1684,7 @@ function detectUnfinished(files, run) {
 
 const ENTRYISH = /(^|\/)(index|main|app|Program|Startup|__init__|__main__|setup|conftest)\.[a-z]+$/i;
 
-function detectDeadCode(files, contents, run) {
+function detectDeadCode(files, run) {
   const { rel, addFinding } = run;
   const candidates = files.filter((f) => {
     const r = rel(f);
@@ -1691,7 +1718,7 @@ function detectDeadCode(files, contents, run) {
   // one over-cap file reaches no dead-code verdict. A rule claiming absence cannot honestly pass or
   // fail without searching the whole domain it claims over, and preserving the verdict because most
   // repositories contain a non-text file would be preserving it over a search that did not happen.
-  const unsearchable = files.filter((other) => !contentOf(contents, other).available || run.truncated.has(other));
+  const unsearchable = files.filter((other) => !run.textOf(other).available || run.truncated.has(other));
   if (unsearchable.length > 0) {
     run.unknown(
       "quality.dead-code",
@@ -1708,7 +1735,7 @@ function detectDeadCode(files, contents, run) {
     if (stem.length < 3) continue;
     const referenced = files.some((other) => {
       if (other === f) return false;
-      const candidate = contentOf(contents, other);
+      const candidate = run.textOf(other);
       // Every unsearchable file already returned above, so this is now a total function over a
       // reference space that was read whole. The branch is kept because the type still admits the
       // other answer, not because it can be reached.
@@ -1732,11 +1759,11 @@ function detectDeadCode(files, contents, run) {
   });
 }
 
-function detectOpenQuestions(files, contents, run) {
+function detectOpenQuestions(files, run) {
   const { rel, addFinding } = run;
   const qFile = files.find((f) => rel(f) === "artifacts/project-baseline/open-questions.md");
   if (!qFile) return;
-  const questions = contentOf(contents, qFile);
+  const questions = run.textOf(qFile);
   if (!questions.available) {
     // The quiet polarity. Both counts below come from matching this text, so an unread file scores
     // zero on each and the rule passes — silence indistinguishable from a clean document.
@@ -1816,7 +1843,7 @@ const canonicalStatus = (raw) => {
   return STATUS_ALIASES[first.toLowerCase()] ?? upper;
 };
 
-async function detectPlanDiscrepancies(files, contents, run) {
+async function detectPlanDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
   const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
   if (planFiles.length === 0) return;
@@ -1829,14 +1856,14 @@ async function detectPlanDiscrepancies(files, contents, run) {
   //
   // Files that WERE read are still parsed: a violation found in one plan file is established
   // regardless of another going unread, and aggregation keeps it.
-  for (const f of planFiles.filter((f) => !contentOf(contents, f).available)) {
-    const reason = contentOf(contents, f).reason;
+  for (const f of planFiles.filter((f) => !run.textOf(f).available)) {
+    const reason = run.textOf(f).reason;
     run.unknown("planning.item-fields", rel(f), reason);
     run.unknown("planning.plan-code-consistency", rel(f), reason);
   }
   const items = planFiles
-    .filter((f) => contentOf(contents, f).available)
-    .flatMap((f) => parsePlanItems(contentOf(contents, f).text, rel(f)));
+    .filter((f) => run.textOf(f).available)
+    .flatMap((f) => parsePlanItems(run.textOf(f).text, rel(f)));
   const executable = items.filter((i) => i.fields.has("Status"));
   if (executable.length === 0) return;
 
@@ -2002,11 +2029,11 @@ function looksLikeRepositoryPath(p) {
   return true;
 }
 
-function detectDocDiscrepancies(files, contents, run) {
+function detectDocDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
   const readme = files.find((f) => /^readme\.md$/i.test(rel(f)));
   if (!readme) return;
-  const doc = contentOf(contents, readme);
+  const doc = run.textOf(readme);
   if (!doc.available) {
     // A README nobody opened names no broken path. Both polarities were reachable from `?? ""`: this
     // one reported clean, and the length check in another detector reported the same file as short.
@@ -2024,7 +2051,7 @@ function detectDocDiscrepancies(files, contents, run) {
   }
 
   const pkgPath = files.find((f) => rel(f) === "package.json");
-  const manifest = pkgPath ? contentOf(contents, pkgPath) : null;
+  const manifest = pkgPath ? run.textOf(pkgPath) : null;
   if (manifest && !manifest.available) {
     // The opposite polarity of the same coercion: an unread manifest parsed to `{}`, which has no
     // scripts, so EVERY `npm run` in the README became a broken command. A fabricated failure.
@@ -2056,7 +2083,7 @@ function detectDocDiscrepancies(files, contents, run) {
   });
 }
 
-function detectStandardsViolations(files, contents, run) {
+function detectStandardsViolations(files, run) {
   const { has, rel, addFinding } = run;
   const violations = [];
   if (has("artifacts/project-baseline")) {
@@ -2068,7 +2095,7 @@ function detectStandardsViolations(files, contents, run) {
       // The mixed case in one detector. R4 above is structural and may already have failed; R6 here
       // needs the prompt's text. Withdrawing both because this one is unknown would erase R4's
       // established violation, which is precisely why the check rather than the rule is the unit.
-      const prompt = contentOf(contents, promptFile);
+      const prompt = run.textOf(promptFile);
       if (!prompt.available) {
         run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
       } else if (!/reconstructed from the existing codebase/i.test(prompt.text)) {
@@ -2225,7 +2252,7 @@ const SECRET_PATTERNS = [
   [/\bsk_live_[A-Za-z0-9]{16,}/, "Stripe live secret key"],
 ];
 
-function detectSecretsInArtifacts(files, contents, run) {
+function detectSecretsInArtifacts(files, run) {
   const { rel, sourceOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
@@ -2234,7 +2261,7 @@ function detectSecretsInArtifacts(files, contents, run) {
     const ext = path.extname(f);
     let evidence = null;
     if (isCode(f)) evidence = sourceOf(f);
-    else if (CONFIG_EXT.has(ext)) evidence = contentOf(contents, f);
+    else if (CONFIG_EXT.has(ext)) evidence = run.textOf(f);
     if (!evidence) continue; // neither code nor config: not this detector's subject at all
     if (evidence.lost) {
       run.unknown("security.no-secrets-in-artifacts", p, evidence.reason);
@@ -2333,13 +2360,13 @@ function carriesJustification(raw, structure, from, to) {
  * still holds the justification comment, because that is the one thing the structural view removes.
  * The span is what binds them: two readings of one site, not two searches of one file.
  */
-function detectSwallowedExceptions(files, contents, run) {
+function detectSwallowedExceptions(files, run) {
   const { rel, structureOf, addFinding } = run;
   const hits = [];
   for (const f of files) {
     if (!isCode(f)) continue;
     const view = structureOf(f);
-    const source = contentOf(contents, f);
+    const source = run.textOf(f);
     if (view.lost || source.lost) {
       run.unknown("errors.no-swallowed-exceptions", rel(f), view.reason ?? source.reason);
       continue;
@@ -2634,7 +2661,7 @@ export async function main(args) {
   const validating = cli.subcommand === "validate";
 
   run = createRun({ root, strict: cli.strict, json: cli.json });
-  const { rel, findings, sources, addFinding } = run;
+  const { rel, findings, addFinding } = run;
 
   // Created here, by the invocation that uses it, and carrying the budget this invocation was given
   // rather than one read from the process — ADR 0014.
@@ -2661,9 +2688,10 @@ export async function main(args) {
     files: new Set(ignored.ok ? ignored.files : []),
   };
   const files = await collectFiles(root, [], surfaceLoss, exclusions, run);
-  const contents = run.contents;
   // The repository surface this invocation measured. Named so two runs can be compared by identity.
-  surface = { files, contents, surfaceLoss };
+  // It carries the file list and the loss record; the retained text is reachable only through the
+  // run's accessors, which is the point of the seam rather than an omission.
+  surface = { files, surfaceLoss };
   const unreadableFiles = [];
   const truncatedFiles = [];
   const budget = surfaceLoss.budget;
@@ -2723,8 +2751,7 @@ export async function main(args) {
       truncatedFiles.push(`${rel(f)} (read ${MAX_READ_BYTES} of ${read.bytes} bytes)`);
       run.truncated.add(f);
     }
-    contents.set(f, read.text);
-    if (isCode(f)) sources.set(f, splitSource(read.text, path.extname(f)));
+    run.retain(f, read.text);
 
     // The derived `sources` entry is proportional to the same text, so one accounting bounds both.
     budget.retainedBytes += cost;
@@ -2857,31 +2884,31 @@ export async function main(args) {
   };
 
   // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
-  detectArchitecture(files, contents, run);
-  detectCapabilities(files, contents, run);
-  detectApis(files, contents, run);
-  detectJobs(files, contents, run);
-  detectIntegrations(files, contents, run);
-  detectAiInterfaces(files, contents, run);
+  detectArchitecture(files, run);
+  detectCapabilities(files, run);
+  detectApis(files, run);
+  detectJobs(files, run);
+  detectIntegrations(files, run);
+  detectAiInterfaces(files, run);
 
-  detectMissingDocs(files, contents, run);
+  detectMissingDocs(files, run);
   detectArchitectureArtifacts(run);
-  detectMissingPlanningArtifacts(files, contents, run);
+  detectMissingPlanningArtifacts(files, run);
   detectMissingAuditInfrastructure(files, run);
   detectUnverifiedFunctionality(files, run);
   detectUnfinished(files, run);
-  detectDeadCode(files, contents, run);
-  detectOpenQuestions(files, contents, run);
-  await detectPlanDiscrepancies(files, contents, run);
-  detectDocDiscrepancies(files, contents, run);
-  detectStandardsViolations(files, contents, run);
+  detectDeadCode(files, run);
+  detectOpenQuestions(files, run);
+  await detectPlanDiscrepancies(files, run);
+  detectDocDiscrepancies(files, run);
+  detectStandardsViolations(files, run);
 
   // Availability is probed once and shared: the env detector and attestation freshness both need the
   // repository, and asking twice would spend a second subprocess to learn the same thing.
   const repoAvailability = repositoryAvailable(root);
   const envCheck = detectCommittedEnvFiles(files, root, repoAvailability, run);
-  detectSecretsInArtifacts(files, contents, run);
-  detectSwallowedExceptions(files, contents, run);
+  detectSecretsInArtifacts(files, run);
+  detectSwallowedExceptions(files, run);
   detectCertBypass(files, run);
   detectSqlConcat(files, run);
 

@@ -931,10 +931,9 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** IN_REVIEW — **the mechanism is built and every acceptance criterion but one is met;
-  the remaining one is met in substance and not in the letter it was written in, which is a
-  distinction the owner should rule on rather than this item.** `IN_REVIEW` is nonterminal, so
-  release closure stays blocked while the disposition is open.
+- **Status:** IN_REVIEW — **every acceptance criterion is now met, criterion 1 in its letter as of
+  2026-08-28.** `IN_REVIEW` is nonterminal, so release closure stays blocked while the disposition is
+  open; what remains is the owner's, not this item's.
 
   **What landed.** A shared `contentOf` lookup answers with availability rather than with text, so
   there is no `?? ""` to reach for at a converted site because there is no string to reach. A check
@@ -944,17 +943,48 @@ that approval deliberately does not cover.
   point 4, whose first three points described only the negative direction and so could be honoured
   word for word by a tool manufacturing a failure.
 
-  **Where the letter is not met, stated plainly rather than reported as done.** The first acceptance
-  criterion says *no call site can reach `""` or `"{}"` for unread content, and the mechanism
-  enforces this rather than a comment asserting it.* Seven raw read sites remain, and `contents` is
-  still passed to every detector, so the seam is opt-in at the call site rather than enforced by
-  construction. What is established instead is the weaker claim that no remaining site can fabricate
-  a **verdict**: two of the seven bind no rule at all and produce descriptive findings only
-  (`detectCapabilities`, `detectJobs`), and the other five feed rules that are already withdrawn
-  wholesale by `CONTENT_DERIVED_RULES`. Enforcing the criterion literally means withholding
-  `contents` from detectors entirely, which converts every remaining site including the descriptive
-  ones and changes audit output well beyond this defect. That is a larger change than the evidence
-  here justifies, and it is recorded as unmet rather than reinterpreted into met.
+  **Criterion 1, met in its letter 2026-08-28.** It says *no call site can reach `""` or `"{}"` for
+  unread content, and the mechanism enforces this rather than a comment asserting it.* The second
+  clause was the unmet half. Every detector already read through `contentOf`, so no site could
+  fabricate a verdict — but `contents` was still passed to all fifteen of them, so the seam was
+  **opt-in**: `contents.get(f) ?? ""` stayed one keystroke away at every call site and the invariant
+  held because nobody took it. An invariant maintained by discipline is what the criterion's second
+  clause exists to refuse, and the honest reading was that it was unmet.
+
+  It was previously recorded that enforcing this literally would *"change audit output well beyond
+  this defect"*. **That was wrong, and the measurement is the correction:** the full suite is
+  unchanged at 404 tests, 400 passing, and no audit output moved. The estimate had assumed the
+  remaining sites read raw text; they did not — every one already went through the primitive, so
+  removing the map took away a door nobody was using. The cost was two ownership tests that reached
+  through `run.contents` and `run.sources`, which is a different thing from a behaviour change.
+
+  What landed:
+
+  - `run.textOf` completes the accessor set. While it was missing, a detector needing plain text had
+    exactly one route to it, which is why the map had to be passed at all.
+  - Fifteen detector signatures lose the parameter: `detect*(files, contents, run)` becomes
+    `detect*(files, run)`. `detectArchitecture` never used it in the first place.
+  - `contents` and `sources` stop being properties of the run and become its closure. The read loop
+    is the only caller with any business writing, so it gets one verb — `run.retain(f, text)` — and
+    everyone else gets nothing. Deriving the code view inside `retain` is part of the same move: the
+    two maps can no longer disagree about what was retained, because one call fills both.
+  - `createRun` is exported for the same narrow reason `contentOf` and `viewOf` are — what a detector
+    can reach for is decided there and is not observable through a whole audit.
+
+  **Two guards, each mutation-killed, and deliberately not one guard.** *No detector is handed the
+  content map* reads the parameter lists; *the run object carries no content map to reach for* holds
+  the returned object. They cover different doors: a detector taking no parameter can still write
+  `run.contents.get(f) ?? ""` if the run exposes the map, and re-exposing the map is caught only by
+  the second while handing one detector its parameter back is caught only by the first. Both mutants
+  were applied and each killed exactly one guard.
+
+  **The ownership tests were re-expressed, not relaxed.** *No invocation-owned object is shared* and
+  *mutating a completed result cannot affect a later run* both reached into `run.contents` and
+  `run.sources`, which no longer exist to reach. Identity is now asserted on `retain` — both maps are
+  built inside `createRun` and captured by one closure, so two distinct `retain` functions cannot
+  share a map, and a module-scope map is independently refused by the seam guards. The poisoning test
+  now empties every retained entry **through `retain`**, walking `surface.files`, which reproduces
+  the defect by the same route the reader uses rather than by reaching past it.
 
   **Two loss modes, not one.** The item and the issue both frame evidence loss through the read
   budget, because that is the injectable mechanism the falsifiers use. A failed **read** was the
@@ -1092,8 +1122,11 @@ that approval deliberately does not cover.
   historical.
 
   **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
-  this item does not close itself, and the specific thing needing a second party here is not whether
-  the tests pass but whether the unmet first criterion is acceptable as scoped or is work still owed.
+  this item does not close itself. The question that stood here — whether the unmet first criterion
+  was acceptable as scoped or was work still owed — was answered by the owner as work owed, and the
+  work is done, so what remains for a second party is the ordinary one: that the mechanism, the
+  domain adjudication above, and the accepted `quality.dead-code` cost are what this repository
+  wants.
 
   **Previously: READY.**
 - **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)

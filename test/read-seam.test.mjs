@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { contentOf, viewOf } from "../scripts/standards.mjs";
+import { contentOf, viewOf, createRun } from "../scripts/standards.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "scripts", "standards.mjs");
@@ -253,3 +253,56 @@ test("neither primitive ever returns a string on an unavailable answer", () => {
  * That class is answered from the evidence surface and its authority filter, and is pinned by the
  * four exclusion specimens rather than here.
  */
+
+// --- The seam is closed by construction, not by call-site discipline ----------------------------
+//
+// Everything above holds the PRIMITIVES honest: `contentOf` and `viewOf` answer with availability,
+// and nothing else reads the maps directly. That left the criterion met in substance and unmet in
+// its letter, which said the mechanism must ENFORCE the invariant rather than a comment asserting
+// it. It did not: every detector was handed the live `contents` map beside its accessors, so
+// `contents.get(f) ?? ""` stayed one keystroke away at fifteen call sites and the seam held because
+// nobody took it. A guard that has to be obeyed is a convention.
+//
+// The two tests below close that. A detector now receives no map at all — there is nothing to
+// coerce, and the failure mode is a reference error at authoring time rather than a fabricated
+// verdict at runtime.
+
+test("no detector is handed the content map", () => {
+  // The parameter list is the whole assertion. While `contents` was in it, the availability seam was
+  // opt-in: a detector could take the accessor route or the raw one, and only review could tell which
+  // it had taken. Removing the parameter converts that choice into a syntax error.
+  const signatures = [...CODE.matchAll(/\bfunction\s+(detect[A-Za-z]+)\s*\(([^)]*)\)/g)];
+  assert.ok(signatures.length >= 15, `only ${signatures.length} detectors found; this guard is looking in the wrong place`);
+
+  const offenders = signatures
+    .filter(([, , params]) => /\b(contents|sources)\b/.test(params))
+    .map(([, name]) => name);
+  assert.deepEqual(
+    offenders,
+    [],
+    `${offenders.join(", ")} still receive(s) a raw content map. Read through run.textOf / run.sourceOf / ` +
+      "run.structureOf / run.commentsOf, which answer with availability and cannot be coerced.",
+  );
+});
+
+test("the run object carries no content map to reach for", () => {
+  // The second door into the same defect, and the one that would reopen it quietly: a detector that
+  // takes no `contents` parameter can still write `run.contents.get(f) ?? ""` if the run exposes the
+  // map. It does not, and this is what says so.
+  //
+  // Asserted on the returned object rather than by reading source, because that is the thing a
+  // detector actually holds. `retain` is the single write door and is expected to be present: its
+  // absence would mean the read loop had gone back to holding a map of its own.
+  const run = createRun({ root: process.cwd(), strict: false, json: true });
+  for (const forbidden of ["contents", "sources"]) {
+    assert.equal(
+      run[forbidden],
+      undefined,
+      `run.${forbidden} is exposed again, so any detector can read unavailable content as a bare string`,
+    );
+  }
+  assert.equal(typeof run.retain, "function", "the write door is gone, so the read loop must be holding a map itself");
+  for (const accessor of ["textOf", "sourceOf", "structureOf", "commentsOf"]) {
+    assert.equal(typeof run[accessor], "function", `run.${accessor} is missing, so some read has nowhere honest to go`);
+  }
+});

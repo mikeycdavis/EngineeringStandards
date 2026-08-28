@@ -109,32 +109,41 @@ test("no invocation-owned object is shared between two runs", async () => {
   // Equal CONTENT is expected and is not what is asserted. Shared IDENTITY is the defect: two
   // invocations holding one object cannot be independent however similar their output looks.
   assert.notEqual(first.run.findings, second.run.findings);
-  assert.notEqual(first.run.sources, second.run.sources);
-  // `run.contents` and `surface.contents` are the SAME object — the surface is assembled from the
-  // run's map, not a copy of it — so the line below and the `surface.contents` line are one property
-  // asserted twice. Both are kept, and deliberately: the surface line reads as being about the
-  // surface, and an invocation-owned cache should be falsified where it is owned. If the two ever
-  // stop being the same object, this pair is what says so.
-  assert.notEqual(first.run.contents, second.run.contents);
+  assert.notEqual(first.run.truncated, second.run.truncated);
   assert.notEqual(first.surface.files, second.surface.files);
-  assert.notEqual(first.surface.contents, second.surface.contents);
   assert.notEqual(first.surface.surfaceLoss, second.surface.surfaceLoss);
+
+  // THE CONTENT CACHE IS ASSERTED THROUGH ITS WRITE DOOR, because it is no longer an object anyone
+  // can hold. `contents` and `sources` used to be properties of the run and of the surface, and the
+  // identity checks here read them directly; closing them into `createRun`'s body is what makes a
+  // detector structurally unable to reach a raw string, and it takes those two handles with it.
+  //
+  // `retain` is not a weaker proxy. Both maps are constructed inside `createRun` and captured by
+  // exactly one closure, so two distinct `retain` functions cannot be looking at one map — the only
+  // way they could is a map hoisted to module scope, which `test/read-seam.test.mjs` independently
+  // refuses. What made the old assertion strong was that it falsified a SHARED CACHE, and the test
+  // below still falsifies it behaviourally, which is the part that would actually break.
+  assert.notEqual(first.run.retain, second.run.retain);
 });
 
 test("mutating a completed result cannot affect a later run", async () => {
   const completed = await audit(A);
-  completed.run.sources.set("poison", { code: "x", structure: "x", comments: "" });
   completed.run.findings.push({ id: "poison" });
   completed.surface.files.push("poison");
 
-  // `contents` is poisoned two ways, because the two catch different defects. A key no file has
-  // survives only a shared map. Emptying every REAL entry is the one that matters: an empty string is
-  // available content, so a run that reused these entries instead of re-reading would report a
-  // repository whose every file is blank — and the natural optimisation that would cause it
-  // (`if (!contents.has(f))` around the read) is a one-line edit that no output comparison of two
-  // clean runs can see.
-  for (const key of completed.run.contents.keys()) completed.run.contents.set(key, "");
-  completed.run.contents.set("poison", "poison");
+  // The retained text is poisoned two ways, because the two catch different defects, and both now go
+  // through `retain` — the run's only write door — rather than through a map the test used to hold.
+  // Reaching the same entries by the same route the reader uses is if anything a closer reproduction
+  // of the defect than reaching into the map was.
+  //
+  // A key no file has survives only a shared cache. Emptying every REAL entry is the one that
+  // matters: an empty string is available content, so a run that reused these entries instead of
+  // re-reading would report a repository whose every file is blank — and the natural optimisation
+  // that would cause it, a `has` check around the read, is a one-line edit no output comparison of
+  // two clean runs can see. `surface.files` is the same list the read loop walked, so this empties
+  // exactly what a second run would have to re-read.
+  for (const f of completed.surface.files) completed.run.retain(f, "");
+  completed.run.retain("poison", "poison");
 
   const after = await audit(A);
   assert.equal(norm(after.stdout), norm(oracleA.stdout));
