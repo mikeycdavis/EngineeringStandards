@@ -1665,7 +1665,7 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   that commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 420
   tests, 416 passing, 0 failures, 4 skipped.
 
-  **Part two, the remediation contract, at `PART_TWO_SHA`**, established by the full repository gate
+  **Part two, the remediation contract, at `cf4f95b`**, established by the full repository gate
   at that commit: all six stages passed, 425 tests, 421 passing, 0 failures, 4 skipped.
 
   `validate` reports 14 passed, 4 failed, 0 warnings, 32 skipped at both — unchanged from before this
