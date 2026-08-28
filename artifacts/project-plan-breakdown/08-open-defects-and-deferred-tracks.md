@@ -8,10 +8,11 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item — except two, named below.**
-Thirteen are open. Five are claimed here — #1, #4, #19, #21, #32 — six are claimed where their
-subject lives, and #45 and #46 are claimed by nothing, which the amendment at the end of this
-section derives and does not round away. The six live where their subject does:
+**Every open GitHub issue is claimed by exactly one plan item — except four, named below, and
+nothing checks this.** Fifteen are open. Five are claimed here — #1, #4, #19, #21, #32 — six are
+claimed where their subject lives, and #45, #46, #48 and #49 are claimed by nothing, which the
+amendments at the end of this section derive and do not round away. The six live where their subject
+does:
 [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -58,6 +59,10 @@ Re-derived rather than adjusted: the open set read from `gh issue list` is #1, #
 #4, #19, #21, #32 — five. Claimed elsewhere is #2, #3, #9, #10, #11, #16 — six. **Unclaimed: #45 and
 #46 — two.** Five, six and two partition thirteen with nothing counted twice.
 
+**Superseded within the day by the third amendment below**, which is the point rather than an
+embarrassment: this paragraph was re-derived correctly and was stale in under an hour, because two
+more issues were filed after the derivation and nothing recomputes it.
+
 The unclaimed pair is recorded rather than absorbed. Renumbering the sentence above until the
 arithmetic closed would have restated the invariant as satisfied while it was not, which is the
 failure this whole paragraph exists to prevent, one level up: a count that is made to agree is not a
@@ -67,6 +72,35 @@ items, which is a decision rather than a formality. Until that happens the hones
 the invariant holds for eleven of thirteen and is named as broken for the other two. The total
 returning to thirteen is a coincidence of two closures meeting two openings, not evidence that
 nothing moved.
+
+**Amended 2026-08-28 (third), after running what this repository actually has.** The reconciliation
+asked for here does not exist. `scripts/tracking.mjs` runs the **item to issue** direction — given an
+item, is its `Tracked by` authority reachable and does it contain the id — and reports `resolved`,
+`missing` or `unverifiable`. Nothing runs **issue to item**. On merged `develop` (`1cd886f`)
+`planning.item-fields` and `planning.breakdown-directory` pass, `planning.plan-code-consistency` and
+four other `planning.*` rules are `not-evaluated`, and the audit reports zero plan-related findings.
+None of that establishes the invariant; it is the `passed` versus `not-evaluated` distinction of
+Standard 24 R4, and this invariant sits in the second column while being written as the first.
+
+**So no plan items were created here.** The instruction was to mint them only if the mechanism says
+the open issues require canonical ownership, and the mechanism does not say so because no mechanism
+asks. Minting four items on my own judgement would scope work nobody has scoped, and would repair the
+arithmetic by producing owners rather than by establishing ownership — the same move this paragraph's
+history warns about, one level up.
+
+Re-derived from `gh issue list`: open is #1, #2, #3, #4, #9, #10, #11, #16, #19, #21, #32, #45, #46,
+#48, #49 — fifteen. *Claimed here*, from the `Tracked by` fields, is #1, #4, #19, #21, #32 — five.
+Claimed elsewhere is #2, #3, #9, #10, #11, #16 — six. **Unclaimed is #45, #46, #48 and #49 — four.**
+Five, six and four partition fifteen with nothing counted twice.
+
+The unclaimed set grew because #48 (a working tree that changed branches under an in-progress edit)
+and #49 (this invariant being asserted by prose and established by nothing) were filed while carrying
+out this normalisation. **#49 is itself unclaimed, and that is not an oversight to tidy.** An issue
+filed and not yet scoped is a legal state this file already recognises elsewhere; a check that
+forbade it would force items to be minted before anyone had scoped them, and any issue about the
+claim invariant would be unclaimed the moment it was filed. Whether "unclaimed" is recordable, and
+how, is the decision #49 asks for — and it has to come before the check, because building the check
+first fixes the arithmetic and loses the distinction.
 
 **Amended again 2026-08-25:** **#7** closed on owner review of its seven-criterion contract, so it
 leaves both the open set and *claimed here*, taking fifteen/nine to fourteen/eight. Six elsewhere is
