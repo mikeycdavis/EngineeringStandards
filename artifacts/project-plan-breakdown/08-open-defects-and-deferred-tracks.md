@@ -1032,6 +1032,53 @@ that approval deliberately does not cover.
   the reference space is incomplete is the correct disposition and not a regression. The verdict is
   not to be preserved merely because most repositories contain unreadable or non-text files.
 
+  **The domain that ruling ranges over, measured 2026-08-28 rather than assumed.** The owner declined
+  to accept the `.gitignore`/image consequence without the governing rule's scope, which was the
+  right thing to ask: the cost above is only acceptable if the rule really does claim over every
+  file. Two questions, answered in order.
+
+  *Where is the rule defined?* In `rules/verification.json` and nowhere else. All 53 standards were
+  searched: none mentions dead code. Standard 38 is its catalogued `standard` and says nothing about
+  it; the finding's own `standardRef` points at Standard 44 R10, which is a completion checklist. The
+  three standards containing the phrase "entry point" use it of manifests, dogfooding, and
+  documentation. **The catalog entry is the whole of the normative text.**
+
+  *What does it claim?* `Code no longer reachable from any entry point is deleted rather than left in
+  place.` That is a property of the whole program. It names no file kind, no extension set, and no
+  searchable subset — so the proposition is **repository-wide absence**, and under the owner's own
+  decision rule the conservative withdrawal stands.
+
+  Bounding the search to the extensions this tool happens to read was the alternative, and it fails
+  on its own terms: it is the reference space defined by the walker's convenience rather than by the
+  rule. [Standard 24](../../standards/24-validator-rules.md) R2 names that failure exactly — a check
+  may not report outside the scope its evidence supports — and reporting a repository-wide absence
+  from a subset is reporting outside it.
+
+  **And the cost is smaller than it first reads, which is worth stating precisely.** At the level the
+  catalog declares — `optional`, `severity: info`, `assurance: none` — an orphan is a `warning`
+  carrying an `INFERRED` label, never a failure; the catalog says so itself, and the finding's own
+  message calls each orphan *a question, not a verdict*. What withdrawal suppresses is a guess, and
+  what it prevents is that guess naming a live file as dead. Standard 24 R4 settles the disposition
+  directly: a rule may be catalogued `code-analysis` while the validator reports `not-evaluated`
+  because no analyzer exists, and **"that is the correct behaviour, not a gap to paper over."** The
+  catalog agrees in its own words — reachability is not computed.
+
+  **Pinned by two falsifiers so it cannot drift back into "whatever the walker read".** The first
+  builds a repository whose only unsearched file is a `.png` and asserts that the evidence surface
+  reports itself **complete** while the rule withdraws anyway — the two answers are allowed to
+  disagree, because the surface asks what the run lost and an absence claim asks what it searched.
+  The second binds the decision to the sentence it was read out of, asserting the catalog still
+  claims entry-point reachability at `assurance: none`, so a later narrowing fails where the
+  reasoning would have had to change rather than leaving code correct for text nobody has re-read.
+  Mutation: re-scoping completeness to `TEXT_EXT` is killed by both, and by the `.svg` door.
+
+  **One inconsistency found while measuring, recorded and not fixed here.** The catalog says findings
+  are "never a failure", and at the declared level that holds — an orphan reports `warning`. A
+  project policy may nonetheless raise the rule to `level: required`, and it then reports `failed`.
+  So "never a failure" is a property of the default rather than of the rule, and the catalog states
+  it unconditionally. Out of scope for #38, which is about evidence availability, and left visible
+  rather than folded into a defect it is not part of.
+
   **Owner ruling on the surviving mutants, 2026-08-27: conditional, and the condition caught one.**
   A survivor is acceptable only where it is redundant with an independently established boundary and
   restores no path from unavailable content to a verdict. Measured against that test, the two above

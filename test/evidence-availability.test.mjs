@@ -895,3 +895,86 @@ test("a reference in a file the budget could not reach cannot establish dead cod
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// --- The domain the absence claim is made over --------------------------------------------------
+//
+// ADJUDICATED 2026-08-28 against the normative text rather than against convenience. Two questions
+// had to be answered in order, and the second only had one available answer once the first was:
+//
+//   Where is `quality.dead-code` defined?   `rules/verification.json` and nowhere else. All 53
+//                                           standards were searched; none mentions dead code, and
+//                                           the three that say "entry point" say it about manifests,
+//                                           dogfooding, and documentation.
+//   What does that text claim?              "Code no longer reachable from any entry point." That is
+//                                           a property of the whole program. It names no file kind,
+//                                           no extension set, and no searchable subset.
+//
+// So the domain is REPOSITORY-WIDE, and completeness is computed over every collected file. The
+// alternative — bounding the search to the extensions this tool happens to read — would be the
+// reference space defined by the walker's convenience rather than by the rule, and Standard 24 R2
+// names that failure exactly: a check may not report outside the scope its evidence supports.
+// Narrowing the domain to fit what was searched reports a repository-wide absence from a subset.
+//
+// The cost is accepted and is not a regression. Standard 24 R4 settles that directly: a rule may be
+// catalogued `code-analysis` while the validator reports `not-evaluated` because no analyzer exists,
+// and "that is the correct behaviour, not a gap to paper over". The catalog says the same thing
+// about this rule in its own words — `assurance: "none"`, and reachability is not computed.
+
+const CATALOG = JSON.parse(readFileSync(path.join(HERE, "..", "rules", "verification.json"), "utf8"));
+
+test("the reference space is every collected file, not the subset the read loop opens", async () => {
+  // THE ANTI-DRIFT FALSIFIER for the domain choice, and the case that separates the two candidate
+  // definitions. A `.png` is not a recognised text type, so the read loop never offers to open it
+  // and the evidence surface — correctly — reports itself COMPLETE: nothing eligible was lost.
+  //
+  // Dead-code withdraws anyway, and the gap between those two answers is the whole point. The
+  // surface asks "did this run lose evidence it was owed"; an absence claim asks "was every file
+  // searched". A file nobody was owed is still a file nobody searched, and the reference that would
+  // clear an orphan does not care which of the two it was.
+  //
+  // Re-scoping completeness to TEXT_EXT would make this test pass a verdict again, which is why it
+  // asserts the surface is complete rather than ignoring it: the two must be allowed to disagree.
+  const root = await deadCodeFixture({
+    "src/other.js": "export const x = 1;\n",
+    "assets/logo.png": "not really a png, and deliberately unreadable as text\n",
+  });
+  try {
+    const surface = run("audit", root, AMPLE).evidenceSurface;
+    assert.equal(
+      surface.complete,
+      true,
+      "the fixture lost eligible evidence, so this no longer isolates the domain question",
+    );
+
+    const json = run("validate", root, AMPLE);
+    assert.ok(
+      !orphanNames(json).includes("src/widgetrenderer.js"),
+      "an orphan was established over a reference space containing an unsearched file",
+    );
+    assertNotEvaluated(json, "quality.dead-code");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the domain is anchored to the catalog text it was adjudicated from", async () => {
+  // The decision above is only as good as the sentence it was read out of, and that sentence lives
+  // in a file this repository edits. Binding them here means a later narrowing of the rule — to a
+  // file kind, a language, or a directory — fails at the point where the reasoning would have had to
+  // change, rather than silently leaving code that was correct for text nobody has read since.
+  //
+  // Deliberately not a snapshot of the whole entry: the fields asserted are the two the adjudication
+  // actually turned on, and pinning more would make routine wording edits look like a scope change.
+  const rule = CATALOG.rules.find((r) => r.id === "quality.dead-code");
+  assert.ok(rule, "quality.dead-code left the catalog, so the domain rests on nothing");
+  assert.match(
+    rule.description,
+    /reachable from any entry point/,
+    "the catalog no longer claims entry-point reachability; the repository-wide domain must be re-adjudicated",
+  );
+  assert.equal(
+    rule.assurance,
+    "none",
+    "the rule now claims assurance it did not before; whether withdrawal is still correct must be re-decided",
+  );
+});
