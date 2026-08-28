@@ -1828,13 +1828,16 @@ function detectDeadCode(files, run) {
   // as dead. A fourth cause would be short again, so the question asked here is the one the claim
   // actually rests on: was every file searched, whole.
   //
-  // THE ASYMMETRY THAT MAKES THIS DETECTOR DIFFERENT. Truncation is deliberately not a global
-  // withdrawal trigger, and for a presence-based rule that is right: a secret in the first 400 KB is
-  // in the file, and a finding from a prefix is a real finding. This rule concludes from what it did
-  // NOT find across every other file, so the line that would have cleared an orphan may sit in
-  // exactly the bytes past the cap — and unlike a missed secret, which under-reports, this
-  // over-reports, naming something live as dead. Withdrawal is per-detector for that reason, so the
-  // presence-based rules keep what a prefix genuinely establishes.
+  // THE ASYMMETRY THAT MAKES THIS DETECTOR DIFFERENT, AND WHY IT SURVIVES TRUNCATION BECOMING A
+  // GLOBAL TRIGGER. A finding from a prefix is a real finding, so the presence-based rules keep what
+  // a prefix establishes; what the coarse predicate now withdraws for them is the CLEAN result a
+  // prefix cannot establish, because a construct past the cap goes unfound and "unfound" was being
+  // reported as passed. That is the under-reporting direction. This rule fails in the other one: it
+  // concludes from what it did NOT find across every other file, so the line that would have cleared
+  // an orphan may sit in exactly the bytes past the cap, and it names something live as dead. The
+  // coarse term cannot express that, because it fires on loss anywhere while this claim needs every
+  // file whole — so the per-detector withdrawal below stays, and the two mechanisms overlap without
+  // either being redundant.
   //
   // The cost is real and is the accepted price of the proposition: a repository holding one image or
   // one over-cap file reaches no dead-code verdict. A rule claiming absence cannot honestly pass or
