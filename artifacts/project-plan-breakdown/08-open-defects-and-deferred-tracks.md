@@ -1668,11 +1668,28 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   **Part two, the remediation contract, at `cf4f95b`**, established by the full repository gate
   at that commit: all six stages passed, 425 tests, 421 passing, 0 failures, 4 skipped.
 
-  `validate` reports 14 passed, 4 failed, 0 warnings, 32 skipped at both — unchanged from before this
-  item, and the four are the four standing human rejections.
+  `validate` reports 14 passed, 4 failed, 0 warnings, 32 skipped at part one — unchanged — and **12
+  passed, 4 failed, 0 warnings, 34 skipped at part two.** The four failures are the four standing
+  human rejections at both, and the verdict is `NON_COMPLIANT` with score 100 at both.
   `documentation.code-consistency` was already `not-evaluated` for this repository at `a91676d` and
   still is; this repository's own README carries no `./` span and no uncorroborated token, so neither
-  part moves anything here.
+  part moves anything through the rule this item is about.
+
+  **The two rules that moved did so because this change staled two of the owner's attestations, and
+  that is the mechanism working rather than a regression.** `architecture.no-boundary-bypass` and
+  `meta.standards-not-weakened` are both recorded `reviewedAgainst` a path set containing
+  `scripts/compliance.mjs`, which part two edits to add the remediation seam. Under
+  [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md) a review is evidence about the
+  bytes a human read, so changing those bytes returns both rules to `not-evaluated` — reported as
+  `[stale]`, not as a failure. Both are `forbidden`, so the unestablished-prohibition list of
+  Standard 45 R6 grows from four to six; the verdict does not move, because it was already
+  `NON_COMPLIANT` on the four rejections.
+
+  **Two re-reviews are therefore owed, and this item does not perform them.** Minting an attestation
+  over a diff nobody has read is exactly the forgery the token design exists to prevent, and the
+  honest state until an owner looks again is `not-evaluated`. The change under review is fifteen
+  lines in `scripts/compliance.mjs` that add a per-finding remediation override; whether that crosses
+  a boundary or weakens a standard is the question the two stale reviews now ask.
 
   **Superseded by the amendment below.** This paragraph said the item could not close, on the
   ground that the acceptance condition required zero findings. That condition was itself falsified
