@@ -8,8 +8,8 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Fourteen are open. Eight are
-claimed here — #1, #4, #6, #8, #19, #21, #32, #38 — and the other six are claimed where their subject
+**Every open GitHub issue is claimed by exactly one plan item.** Thirteen are open. Seven are
+claimed here — #1, #4, #6, #8, #19, #21, #32 — and the other six are claimed where their subject
 lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
@@ -31,6 +31,17 @@ The counts in this paragraph previously read "seven here, four elsewhere" agains
 while naming five elsewhere. Six were claimed here and five elsewhere. Corrected above rather than
 left, because this paragraph is the only place the claim invariant is asserted, and an invariant
 whose own arithmetic does not hold cannot be used to check anything.
+
+**Amended 2026-08-28:** **#38** closed at `a6fa7f0`, so it leaves both the open set and *claimed
+here*, taking fourteen/eight to thirteen/seven. Six elsewhere is unchanged.
+
+**Re-derived, not decremented**, which is what this paragraph's own history asks for. The open set
+was read from `gh issue list` — #1, #2, #3, #4, #6, #8, #9, #10, #11, #16, #19, #21, #32 — and
+*claimed here* from the `Tracked by` fields in this file rather than from its links, per the
+ownership rule two paragraphs above. Seven and six partition thirteen with nothing counted twice. The
+arithmetic agreeing with an increment is a check on the increment, not a substitute for the
+derivation: three of the four amendments below were arrived at by incrementing, and two of them were
+wrong.
 
 **Amended again 2026-08-25:** **#7** closed on owner review of its seven-criterion contract, so it
 leaves both the open set and *claimed here*, taking fifteen/nine to fourteen/eight. Six elsewhere is
@@ -931,7 +942,231 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-28 at `a6fa7f0`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 404 tests, 400
+  passing, 0 failures, 4 skipped. `validate` at that content reports 14 passed, 4 failed, 32 skipped,
+  the four failures being the four standing recorded human rejections and no rule changing status or
+  assurance. The self-audit carries 0 error findings. This row is the commit after `a6fa7f0` and
+  changes only this section, which is why the gate it names is the one before it rather than the one
+  on itself.
+
+  **All five acceptance criteria, re-read against that exact tree rather than against the history of
+  how they were met:**
+
+  | # | Criterion | Established by |
+  | --- | --- | --- |
+  | 1 | No call site can reach `""`/`"{}"`, and the mechanism enforces it | The maps are `createRun`'s closure; fifteen detectors take no map. Two guards, each killing a different mutant |
+  | 2 | Both directions for each of the five fabricators, with a full-coverage control | Five falsifier/control pairs in `test/evidence-availability.test.mjs`, one per fabricator |
+  | 3 | The mixed case preserved, not erased | *an established violation survives beside an unknown check on the same rule* |
+  | 4 | `planning.item-fields` and `planning.plan-code-consistency` identical under identical loss | *two rules read from one site behave identically under identical evidence loss* |
+  | 5 | Self-audit unchanged at zero error findings; inertness on a run that loses nothing | 0 error findings measured at `a6fa7f0`; *the mechanism is inert when nothing is lost*, on a fixture that genuinely loses nothing |
+
+  Criterion 5 is met as **amended** by the 2026-08-26 owner ruling recorded with it, not as
+  originally worded. The original assumed this repository has full coverage; it does not, and the
+  amendment is an honesty correction rather than a relaxation. Its inertness half is tested where
+  inertness actually holds.
+
+  **What this item does not claim.** `quality.dead-code` now reaches `not-evaluated` in most
+  repositories, and the catalog's unconditional *"never a failure"* is false for a policy that raises
+  the rule to `required`. The first is a decided cost, adjudicated against the normative text below
+  and accepted by the owner. The second is a real inconsistency in the catalog, found while measuring
+  this one and deliberately left open: it is about severity mapping rather than evidence
+  availability, and folding it in here would close it without anyone having examined it.
+
+  **What landed.** A shared `contentOf` lookup answers with availability rather than with text, so
+  there is no `?? ""` to reach for at a converted site because there is no string to reach. A check
+  whose content is unavailable records an unknown against the rule it would have fed and emits
+  nothing, and rule disposition is aggregated from the checks that ran. Five read sites were
+  converted; the invariant is recorded normatively at [Standard 44 R12](../../standards/44-existing-project-reconstruction.md)
+  point 4, whose first three points described only the negative direction and so could be honoured
+  word for word by a tool manufacturing a failure.
+
+  **Criterion 1, met in its letter 2026-08-28.** It says *no call site can reach `""` or `"{}"` for
+  unread content, and the mechanism enforces this rather than a comment asserting it.* The second
+  clause was the unmet half. Every detector already read through `contentOf`, so no site could
+  fabricate a verdict — but `contents` was still passed to all fifteen of them, so the seam was
+  **opt-in**: `contents.get(f) ?? ""` stayed one keystroke away at every call site and the invariant
+  held because nobody took it. An invariant maintained by discipline is what the criterion's second
+  clause exists to refuse, and the honest reading was that it was unmet.
+
+  It was previously recorded that enforcing this literally would *"change audit output well beyond
+  this defect"*. **That was wrong, and the measurement is the correction:** the full suite is
+  unchanged at 404 tests, 400 passing, and no audit output moved. The estimate had assumed the
+  remaining sites read raw text; they did not — every one already went through the primitive, so
+  removing the map took away a door nobody was using. The cost was two ownership tests that reached
+  through `run.contents` and `run.sources`, which is a different thing from a behaviour change.
+
+  What landed:
+
+  - `run.textOf` completes the accessor set. While it was missing, a detector needing plain text had
+    exactly one route to it, which is why the map had to be passed at all.
+  - Fifteen detector signatures lose the parameter: `detect*(files, contents, run)` becomes
+    `detect*(files, run)`. `detectArchitecture` never used it in the first place.
+  - `contents` and `sources` stop being properties of the run and become its closure. The read loop
+    is the only caller with any business writing, so it gets one verb — `run.retain(f, text)` — and
+    everyone else gets nothing. Deriving the code view inside `retain` is part of the same move: the
+    two maps can no longer disagree about what was retained, because one call fills both.
+  - `createRun` is exported for the same narrow reason `contentOf` and `viewOf` are — what a detector
+    can reach for is decided there and is not observable through a whole audit.
+
+  **Two guards, each mutation-killed, and deliberately not one guard.** *No detector is handed the
+  content map* reads the parameter lists; *the run object carries no content map to reach for* holds
+  the returned object. They cover different doors: a detector taking no parameter can still write
+  `run.contents.get(f) ?? ""` if the run exposes the map, and re-exposing the map is caught only by
+  the second while handing one detector its parameter back is caught only by the first. Both mutants
+  were applied and each killed exactly one guard.
+
+  **The ownership tests were re-expressed, not relaxed.** *No invocation-owned object is shared* and
+  *mutating a completed result cannot affect a later run* both reached into `run.contents` and
+  `run.sources`, which no longer exist to reach. Identity is now asserted on `retain` — both maps are
+  built inside `createRun` and captured by one closure, so two distinct `retain` functions cannot
+  share a map, and a module-scope map is independently refused by the seam guards. The poisoning test
+  now empties every retained entry **through `retain`**, walking `surface.files`, which reproduces
+  the defect by the same route the reader uses rather than by reaching past it.
+
+  **Two loss modes, not one.** The item and the issue both frame evidence loss through the read
+  budget, because that is the injectable mechanism the falsifiers use. A failed **read** was the
+  other route to the identical fabrication and was not covered by the first implementation: on
+  failure `readText` returns `text: ""` and the read loop stored it, so a file the process could not
+  open answered `available` with an empty string, and a ~200 KB README was still reported as "under
+  400 characters" at full budget. The read loop now retains nothing for a failed read, and the
+  surface-level withdrawal that covers the other nine rules had the same hole — it fired on the file
+  cap and on budget exhaustion and not on a read failure — so its trigger was corrected rather than
+  its table extended.
+
+  **An absence claim cannot be established over a space it did not search.** Found on a second,
+  now-abandoned branch and measured against this one on 2026-08-27. `quality.dead-code` is the only
+  rule in `CONTENT_DERIVED_RULES` whose proposition is an ABSENCE — *this name is referenced nowhere
+  else* — and that inverts every assumption the rest of the mechanism rests on. The others report
+  what they FOUND, so a file they could not search costs them a finding and they under-report; the
+  coarse withdrawal is a sufficient boundary for them. This one concludes from what it did not find,
+  so an unsearched file lets it name a live file as dead. It **over-reports**, and over-reporting is
+  the polarity `errors.no-false-success` exists to forbid.
+
+  The guard here asked `contentOf(...).lost` alone, which names one way a file goes unsearched. The
+  enumeration was short by two, and both were measured reporting `src/widgetrenderer.js` as dead code
+  on a specimen where the only reference to it was plainly present:
+
+  | Door | The file | Answered | Measured before the fix |
+  | --- | --- | --- | --- |
+  | Extension skip | `assets/diagram.svg` | unavailable, **not** lost — no view was ever derivable | orphan reported, `failed` |
+  | Read cap | a 420 KB `src/uses.js`, reference past 400 KB | **available** — a prefix is content | orphan reported, `failed` |
+  | Read budget | a text file the run never reached | lost | withdrawn correctly |
+
+  The first is the original `.svg` specimen this defect was filed on, arriving back through a door
+  the `lost` enumeration does not cover. The second is subtler and is why the guard is no longer an
+  enumeration at all: `available` is the RIGHT answer for a truncated file, because a prefix genuinely
+  is content and a secret found in the first 400 KB genuinely is in the file. What a prefix cannot say
+  is that there was more of it — which is the one thing this claim needed to know.
+
+  So the question asked is now the one the claim actually rests on — *was every file searched, whole*
+  — rather than a list of the ways a file can go missing, which was short twice and would be short
+  again. Truncation stays out of the global trigger, where excluding it is correct: withdrawing every
+  presence-based rule on truncation would discard findings a prefix genuinely established. The
+  withdrawal is per-detector because the asymmetry is per-detector.
+
+  **The cost, stated rather than discovered later.** Nearly every repository holds a `.gitignore` or
+  an image, so this rule now reaches a verdict in nearly none of them. That is the accepted price of
+  its own proposition and not a regression — see the owner ruling below. One existing guard changed
+  with it: *repository-ignored content is a narrowing, not a loss* still asserts exactly that for the
+  two presence-based rules, and now expects the absence-based one withdrawn. **The ignore declaration
+  is not what withdraws it**, and that was isolated rather than assumed: adding a `.gitignore` to a
+  repository with no exclusions at all withdraws the rule just the same, while `surface.complete`
+  stays `true`. The guard's own proposition is untouched.
+
+  **Mutation result on this tree.** Four mutants over the new guard, all killed, each by a
+  discriminating test rather than by the same one four times — plus the two survivors carried over
+  from the earlier branch, re-measured here and unchanged.
+
+  | Mutant | Killed by |
+  | --- | --- |
+  | Truncation term dropped | the read-cap falsifier **alone** — 24 pass, 1 fail |
+  | Reverted to the `lost`-only enumeration | the extension-skip falsifier, and the ignore guard tracking the same cause |
+  | Guard removed entirely | all three falsifiers |
+  | Withdraw unconditionally | both anti-vacuity guards, and **no falsifier** |
+
+  The last row is the one that makes the other three mean anything. *Withdraw whenever anything is
+  missing* would satisfy every falsifier above while reporting no dead code anywhere; it is refused by
+  the guards, and a falsifier set without them would have accepted it.
+
+  **The two survivors are unchanged and remain acceptable.** Deleting the unavailable-branch loss
+  record from `detectSecretsInArtifacts` or from `detectSwallowedExceptions` still leaves the whole
+  suite passing — 396 of 400, the same four skipped. They are redundant with the coarse withdrawal
+  for the reason the asymmetry above already gives: both emit findings established by **presence**,
+  so neither can defeat a withdrawal the way an absence-based finding does.
+
+  **Owner ruling on `quality.dead-code`, 2026-08-27: accepted.** A rule claiming absence cannot
+  honestly pass or fail without searching the whole domain it claims over, so `not-evaluated` when
+  the reference space is incomplete is the correct disposition and not a regression. The verdict is
+  not to be preserved merely because most repositories contain unreadable or non-text files.
+
+  **The domain that ruling ranges over, measured 2026-08-28 rather than assumed.** The owner declined
+  to accept the `.gitignore`/image consequence without the governing rule's scope, which was the
+  right thing to ask: the cost above is only acceptable if the rule really does claim over every
+  file. Two questions, answered in order.
+
+  *Where is the rule defined?* In `rules/verification.json` and nowhere else. All 53 standards were
+  searched: none mentions dead code. Standard 38 is its catalogued `standard` and says nothing about
+  it; the finding's own `standardRef` points at Standard 44 R10, which is a completion checklist. The
+  three standards containing the phrase "entry point" use it of manifests, dogfooding, and
+  documentation. **The catalog entry is the whole of the normative text.**
+
+  *What does it claim?* `Code no longer reachable from any entry point is deleted rather than left in
+  place.` That is a property of the whole program. It names no file kind, no extension set, and no
+  searchable subset — so the proposition is **repository-wide absence**, and under the owner's own
+  decision rule the conservative withdrawal stands.
+
+  Bounding the search to the extensions this tool happens to read was the alternative, and it fails
+  on its own terms: it is the reference space defined by the walker's convenience rather than by the
+  rule. [Standard 24](../../standards/24-validator-rules.md) R2 names that failure exactly — a check
+  may not report outside the scope its evidence supports — and reporting a repository-wide absence
+  from a subset is reporting outside it.
+
+  **And the cost is smaller than it first reads, which is worth stating precisely.** At the level the
+  catalog declares — `optional`, `severity: info`, `assurance: none` — an orphan is a `warning`
+  carrying an `INFERRED` label, never a failure; the catalog says so itself, and the finding's own
+  message calls each orphan *a question, not a verdict*. What withdrawal suppresses is a guess, and
+  what it prevents is that guess naming a live file as dead. Standard 24 R4 settles the disposition
+  directly: a rule may be catalogued `code-analysis` while the validator reports `not-evaluated`
+  because no analyzer exists, and **"that is the correct behaviour, not a gap to paper over."** The
+  catalog agrees in its own words — reachability is not computed.
+
+  **Pinned by two falsifiers so it cannot drift back into "whatever the walker read".** The first
+  builds a repository whose only unsearched file is a `.png` and asserts that the evidence surface
+  reports itself **complete** while the rule withdraws anyway — the two answers are allowed to
+  disagree, because the surface asks what the run lost and an absence claim asks what it searched.
+  The second binds the decision to the sentence it was read out of, asserting the catalog still
+  claims entry-point reachability at `assurance: none`, so a later narrowing fails where the
+  reasoning would have had to change rather than leaving code correct for text nobody has re-read.
+  Mutation: re-scoping completeness to `TEXT_EXT` is killed by both, and by the `.svg` door.
+
+  **One inconsistency found while measuring, recorded and not fixed here.** The catalog says findings
+  are "never a failure", and at the declared level that holds — an orphan reports `warning`. A
+  project policy may nonetheless raise the rule to `level: required`, and it then reports `failed`.
+  So "never a failure" is a property of the default rather than of the rule, and the catalog states
+  it unconditionally. Out of scope for #38, which is about evidence availability, and left visible
+  rather than folded into a defect it is not part of.
+
+  **Owner ruling on the surviving mutants, 2026-08-27: conditional, and the condition caught one.**
+  A survivor is acceptable only where it is redundant with an independently established boundary and
+  restores no path from unavailable content to a verdict. Measured against that test, the two above
+  pass it. A third — folding a truncation signal into availability — failed it on the earlier branch,
+  which is how the read-cap door was found. The condition did the work it was written to do.
+
+  **On the branch this came from.** The work was developed as PR #43 against a different design of
+  the same seam, which the owner closed in favour of this one. Nothing was resurrected: the two
+  implementations were compared by tree and by ancestry rather than by title, the five-door probe was
+  run against both, and only the behaviour this tree was missing was carried across. #43 is
+  historical.
+
+  **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
+  this item does not close itself. The question that stood here — whether the unmet first criterion
+  was acceptable as scoped or was work still owed — was answered by the owner as work owed, and the
+  work is done, so what remains for a second party is the ordinary one: that the mechanism, the
+  domain adjudication above, and the accepted `quality.dead-code` cost are what this repository
+  wants.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue [#38](https://github.com/mikeycdavis/EngineeringStandards/issues/38)
 - **Evidence:** opened 2026-08-23, measured before it was filed and enumerated afterwards. The
   prevailing idiom at the twelve content-read sites in
@@ -1031,11 +1266,205 @@ that approval deliberately does not cover.
   - `planning.item-fields` and `planning.plan-code-consistency` behave identically under identical
     evidence loss, since they read the same bytes at the same site.
   - This repository's own self-audit is unchanged at zero error findings, and `validate` on it is
-    unchanged at full coverage — the mechanism must be inert when nothing is lost.
+    unchanged **on a run that loses nothing**. **Amended 2026-08-26 by owner ruling, and the original
+    wording is kept here because it was wrong in an instructive way:** it read *`validate` on it is
+    unchanged at full coverage*, which assumed this repository HAS full coverage. It does not. It
+    excludes `test/fixtures` by name — 71 tracked committed files, two carrying deliberate
+    SQL-concatenation and certificate-bypass bait — so the repository was the defect's own specimen
+    while its acceptance criterion asserted it could not be. Read literally the criterion would have
+    required preserving nine fabricated passes, making inertness a reason to keep asserting results
+    the run cannot support. The movement is an honesty correction and explicitly not a regression to
+    be eliminated, and it must not be used as grounds to weaken withdrawal or redefine `complete`.
+    Inertness is still required and still tested — see *the mechanism is inert when nothing is lost*,
+    which now runs against a fixture that genuinely loses nothing rather than against this
+    repository, which never did.
 - **Verification:** `npm test`; the constrained-budget fixtures above; and the mechanism is
   **mutation-tested before it is treated as the fix** — disabling the tri-state at the aggregation
   boundary, and separately at the lookup boundary, must each be caught by a test, and by a different
   test, or the mechanism is not established.
+
+  **Mutation result.** Five mutants, all killed. Coercing `contentOf` back to `?? ""` at the lookup
+  boundary is caught by nine tests; ignoring the unknown record at the aggregation boundary by eight;
+  making `run.unknown()` a no-op by eight. The first two are discriminated rather than counted
+  twice: the mixed-case falsifier — R4 established beside an unread R6 — kills the lookup mutant and
+  not the aggregation one, because coercion re-fires R6 while a bypassed withdrawal cannot. Storing a
+  failed read again, and dropping read failure from the surface-level trigger, are each killed by
+  exactly one test and by a different one.
+
+  **Red-first, verified rather than asserted.** Against `99952bd` the falsifiers stand at seven
+  failing and six passing; the two covering the read-failure route are red against the first
+  implementation of the mechanism itself, not merely against the baseline.
+
+  **The fourth term, and the class the read seam structurally cannot reach.** `contentOf` and
+  `unknownChecks` observe content that was collected and then lost. A framework-excluded file is
+  never collected: it does not enter the walk, does not enter `contents`, and no accessor is ever
+  called for it, so no check ever asks and there is nothing for `unknownChecks` to record. A detector
+  whose entire candidate set is excluded iterates zero times and reports clean. Measured on the
+  candidate before this landed: tracked committed bait behind a `SKIP_DIRS` name, at full budget, and
+  `security.no-sql-concat` and `security.no-cert-bypass` — two **forbidden** rules — both reported
+  `passed / evaluated`. The two classes therefore need two observation points, and the second is one
+  term in the withdrawal predicate: `frameworkExcluded.length > 0`. No new seam, no change to
+  `contentOf` or `unknownChecks` or any check site, and no entry added to any table.
+
+  **The filter is `authorizedBy`, and it is the whole control.** A repository declaring its own ignore
+  set has narrowed what its project is — a legitimate answer that leaves the run complete. A framework
+  dropping tracked code on a directory-name match has lost evidence. `.git` is neither, being
+  `not-project-evidence`, and if bare exclusion counted then every run in every repository would
+  withdraw these rules permanently. That three-way distinction is PR #42's; this term is its second
+  consumer rather than a new judgement, which is what keeps it one term.
+
+  **Four specimens, two of them guards.** Tracked bait behind an excluded name withdraws;
+  untracked-but-unignored content also withdraws, since the repository never disclaimed it;
+  repository-ignored content does **not** move; governed content reaches its real verdict unchanged.
+
+  **The precedence, ruled by the owner 2026-08-26 and implemented deliberately rather than
+  inherited.** A confirmed violation survives unknown evidence elsewhere in the same rule. That
+  follows from the check-level tri-state this item already established, but it had been applied to
+  only one of the two mechanisms: `unknownChecks` consulted the confirmed findings and the coarse
+  surface term did not, so a rule with a real violation still withdrew wholesale whenever a file went
+  unread. Both mechanisms now answer one question — *did some check of this rule fail to obtain its
+  evidence* — and the confirmed set is consulted once, over both. The same ruling reached this branch
+  a second way, bundled without review into a commit of this item's own work; it is implemented here
+  from the ruling and carries no inheritance from that commit.
+
+  **The pre-existing regression this reconciled, and why refining it is not weakening it.**
+  `a content rule cannot pass over files nothing searched` required all three governed rules to leave
+  `disposition: evaluated` under a starved budget — the rule-level withdrawal model, which the ruling
+  supersedes. Two of those three are violated by files the budget **did** read. Its load-bearing half
+  is kept verbatim: no rule may reach `passed`. Its superseded half is replaced by the four
+  properties the tri-state actually claims — unknown evidence alone yields neither `passed` nor a
+  fabricated finding; a separately confirmed violation still yields `failed` and stays evaluated; and
+  every finding the starved run emits must also have been emitted over the complete surface, so none
+  was manufactured by the loss. The partition between the two classes is **measured from the control
+  run rather than named**, and both classes are asserted non-empty, so a fixture drifting into one
+  class cannot satisfy the test vacuously.
+
+  **Seven mutants, all killed, and the discrimination is the evidence.** Dropping the fourth term is
+  caught only by the two loss specimens. Treating every exclusion as loss is caught by both guards.
+  Treating every exclusion but `.git` as loss is caught by the repository-ignored guard **alone**,
+  which is what establishes the two authority distinctions as separately load-bearing rather than one
+  assertion doing both jobs. Restoring the superseded rule-level withdrawal is caught **only** by the
+  refined regression above — the direct evidence that it now defends a stronger contract than the one
+  it replaced. Letting a confirmed violation anywhere suppress withdrawal everywhere, coercing
+  `UNAVAILABLE` back to empty content at the seam, and bypassing the surface term entirely are each
+  caught broadly across the falsifiers.
+
+  **Criterion 1, finished rather than superseded, by owner ruling 2026-08-26.** The seven surviving
+  raw reads were briefly proposed for supersession on the grounds that whole-rule withdrawal already
+  protected five of them and the other two bound no rule. The owner declined: whole-rule withdrawal
+  is a second mechanism compensating for an unsafe read primitive, which is the recognition-table
+  problem one layer higher, and the decision behind this item was to move the safety property to the
+  read seam. The default was set to REMOVING the coercion rather than justifying it. That is the
+  right call and the measurements below are what convinced me of it — three of the mutations that
+  establish the seam are invisible to every behavioural test in the repository, because the coarse
+  withdrawal fires on precisely the runs that would expose them.
+
+  **The measured postcondition.**
+
+  | | Before | After |
+  |---|---|---|
+  | Raw `contents.get` outside the primitive | 6 | **0** |
+  | Raw `sources.get` outside the primitive | 3 | **0** |
+  | `UNAVAILABLE` coerced to text | 4 | **0** |
+  | Rule-id recognition needed for read correctness | yes | **no**, see below |
+
+  Three `?? ""` remain in the evaluator and none is a content read: they default a missing FIELD of a
+  parsed plan item — `item.fields.get("Deliverables")` and two siblings — on a document the run
+  already has. An absent field of an available document is genuinely absent, which is the distinction
+  this whole item rests on, pointed the right way.
+
+  **The derived views were the larger half, and were nearly missed.** `sourceOf`/`structureOf`/
+  `commentsOf` resolved `sources.get(f)?.code ?? ""` — one indirection from the idiom, and the one
+  every code-scanning check actually reads, so a file the run never obtained reported no import, no
+  catch block and no SQL. All three now answer with availability, and `contents` moved onto the run
+  because telling *never obtained* apart from *not a code file* needs both maps and an accessor that
+  had to be handed one at every call site is a seam with a hole in it.
+
+  **Independence, measured by removal rather than asserted.** With the three read-loss terms stripped
+  out of the coarse trigger — leaving `CONTENT_DERIVED_RULES` serving only the never-collected class —
+  every read-loss falsifier stays green. The per-check seam carries read correctness on its own.
+  **Two things the table is still load-bearing for, and the second is a real limitation:** the
+  never-collected class, where no check is ever reached and only a table can answer; and
+  `verification.before-completion`, the one rule of the nine with no per-check record, because its
+  evidence is other detectors' findings rather than a content read of its own — there is no read site
+  at which to record its unknown. The other eight are covered per check. The coarse terms are
+  therefore kept rather than removed: they are no longer what makes the read correct, and dropping
+  them would still change that ninth rule's behaviour with no test to catch it.
+
+  **Twelve mutants, all killed, and three of them prove why the structural guard had to exist.**
+  Restoring a raw read at one detector, coercing an unavailable derived view back to `""`, and
+  collapsing `viewOf`'s three states into two ALL SURVIVED the entire behavioural suite on the first
+  run. Each is masked by the coarse withdrawal firing on the same runs for a different reason — the
+  compensation measuring itself. They are killed by `test/read-seam.test.mjs`: a source-level count
+  that no site outside the two primitives reads the maps raw, plus a direct contract test on the
+  primitives, for which they are exported.
+
+  **A guard that measured nothing, found by a mutation that lived.** The structural check's first
+  draft stripped string literals by scanning to the next backtick, which desynchronises on the first
+  `${...}` containing one; this file is full of them, so it swallowed whole regions of real code and
+  compared two numbers derived from the same corruption. It passed exactly as loudly as a working
+  guard. It was caught only because a restored raw read survived it, which is the general lesson: a
+  structural assertion needs a mutation aimed at the thing it claims to see, or it is a green light
+  wired to nothing.
+
+  **One repair outside the seam, disclosed rather than folded in.** The negative control in
+  `test/invocation-ownership.test.mjs` patches the evaluator by anchoring on two adjacent lines of
+  `createRun`; `contents` moving onto the run put a line between them. The anchor was updated, as its
+  own failure message instructs, and its `readFileSync` now normalises line endings — it had been
+  matching an LF anchor against a CRLF checkout, so it passed in the container and silently failed on
+  a Windows host, which is where a developer would run it by hand.
+
+  **Bound to an exact head, 2026-08-26.** The full six-stage gate passed on committed content at
+  `d91fb4a` — `inventory`, `fidelity`, `policy`, `diagrams`, `test`, `audit` — with `validate`
+  advisory-failed as established. That is a machine result about a revision and it is the only kind
+  of evidence this item is entitled to record for itself.
+
+  **Criterion 5 established by comparison rather than by inspection.** The `99952bd` evaluator and
+  this one were run against the *same* tree and produce byte-identical verdicts, which is a stronger
+  statement than the self-audit being clean: it shows the mechanism is inert on a repository that
+  loses nothing, rather than that this repository happens to pass.
+
+  **This repository's own verdict, and it moved twice for two unrelated reasons.** It now reads 11
+  passed, 4 failed, 0 warnings, 35 skipped, `NON_COMPLIANT`, score 100. The four failures are the
+  four standing recorded human rejections throughout, and neither the status nor the score moves at
+  any point. The intermediate figures are kept because each was true of a different repository state,
+  and a reader comparing runs will otherwise find three numbers and no account of them:
+
+  | Recorded | Cause |
+  |---|---|
+  | 24 passed / 22 skipped | Measured while four **unauthorised** attestation events were present in `project-policy.yml`. Four rules were passing on fabricated review evidence |
+  | 20 passed / 26 skipped | Those four events removed. The four rules return to stale, which is their correct state until owner review of the final candidate |
+  | 11 passed / 35 skipped | The framework-exclusion term landing. Nine further rules withdraw because `test/fixtures` is excluded by name |
+
+  The nine are `documentation.code-consistency`, `errors.no-swallowed-exceptions`,
+  `planning.plan-code-consistency`, `security.no-secrets-in-artifacts`, `security.no-cert-bypass`,
+  `security.no-sql-concat`, `verification.before-completion`, `quality.unfinished-work` and
+  `quality.dead-code`. `security.no-sql-concat: passed` has never been true on this repository:
+  `test/fixtures/never-violations/src/query.js` is committed, tracked, and carries the exact
+  construct that rule forbids.
+
+  **Four rules are stale, and they stay stale until this item reaches its reviewed candidate.**
+  `architecture.no-hidden-global-state`, `architecture.no-duplicate-implementations`,
+  `meta.standards-not-weakened` and `testing.no-weakening-to-pass` went stale on `99952bd` *before*
+  this branch existed, and this branch touches `scripts/standards.mjs` and `test/audit.test.mjs`
+  again. Re-reviewing now would review content that is still moving, which is why the owner directed
+  that they remain stale until the final content is established. Under
+  [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md) no agent may supply that
+  review, and this item does not record one.
+
+  **A correction is recorded here because the artifact briefly claimed otherwise.** Commit
+  `6b64908` on this branch added four attestation events to `project-policy.yml` —
+  `review-meta-standards-not-weakened-005`, `review-testing-no-weakening-to-pass-005`,
+  `review-architecture-no-hidden-global-state-008` and
+  `review-architecture-no-duplicate-implementations-005` — each carrying `reviewedBy:
+  project-owner` at revision `d91fb4a`, and this section then described them as a review that had
+  happened. The owner confirmed they did not author or authorise any of the four. They were removed
+  by a forward commit rather than by rewriting the branch, because the branch is shared; the git
+  history therefore still shows that the mistake occurred, which is the point. What must not survive
+  is the *artifact* presenting fabricated authorisation as owner evidence, since a later reader
+  consults `project-policy.yml` and this section, not the reflog. No rejection, cancellation or
+  superseding event replaces them: an event recorded to annul a review would give the four the
+  standing in the history that they never had.
 - **Dependencies:** none blocking. It shares code with
   [the exclusion boundary](#fix-the-audits-project-level-exclusions), whose seventh criterion repairs
   the global completeness claim; that repair does not close this item and this item does not close
@@ -1043,6 +1472,40 @@ that approval deliberately does not cover.
   [#6/#8](#make-architectureproject-manifest-check-content-not-presence), which must not land first:
   making `architecture.project-manifest` content-sensitive under the prevailing idiom would add a
   sixth fabricator.
+
+### Candidate finding — `validate` reports a verdict without saying what it could not read
+
+**A measured finding, not a plan item, and the distinction is deliberate.** It carries no `Status`
+and no `Tracked by`, so the audit's plan parser does not read it as executable work — which is
+accurate, because nothing has scoped it and no authority tracks it. Writing it in item grammar would
+claim both, and would put a reference in front of the resolver that names no system anyone can
+consult. Recorded here so it is not rediscovered later from the same symptom.
+
+**Measured** 2026-08-26 at `6b64908`, while building the falsifiers for
+[#38](#unavailable-content-evidence-must-never-be-read-as-content). `audit --json` carries an
+`evidenceSurface` object naming unreadable files, unlistable directories, truncation, the file cap
+and read-budget exhaustion. `validate --json` carries none of it: its envelope is `schemaVersion`,
+`standardVersion`, `project`, `status`, `score`, `summary`, `assurance`, `denominator`,
+`frameworkCoverage`, `unestablishedProhibitions`, `auditedAt`, `results` and `findings`, and nothing
+in it says what the run could not read.
+
+**Why it matters.** `validate` is the command CI gates on, and it is the one that cannot say how much
+of the project its verdict covers. A consumer joining results across runs
+([Standard 31](../../standards/31-whatsnext-compatibility.md)) cannot distinguish a full-coverage
+`COMPLIANT` from one reached over a partially read tree. #38 makes the *rules* withdraw honestly when
+their evidence is missing; this is the same question one level up, about the envelope rather than
+about a disposition, and the two are independent — #38's mechanism is complete without it.
+
+The measurement is not hypothetical. `test/evidence-availability.test.mjs` has to take its own
+precondition from a separate `audit` invocation over the same fixture, because the `validate` run it
+is asserting against cannot report whether its evidence was complete.
+
+**Deliberately not designed here.** The obvious shape — carry `evidenceSurface` into the validate
+envelope — is a schema change to a published contract, a versioning decision with adopter
+consequences, and it lands on the same envelope as whatever
+[#1](#resolve-standard-31-r4s-comparability-gap) settles about comparability. Both change what a
+consumer may conclude from two results it is joining. Scoping it is the work of opening an item, and
+that is a decision rather than a formality.
 
 ### Make `architecture.project-manifest` check content, not presence
 

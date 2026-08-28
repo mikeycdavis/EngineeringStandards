@@ -109,17 +109,41 @@ test("no invocation-owned object is shared between two runs", async () => {
   // Equal CONTENT is expected and is not what is asserted. Shared IDENTITY is the defect: two
   // invocations holding one object cannot be independent however similar their output looks.
   assert.notEqual(first.run.findings, second.run.findings);
-  assert.notEqual(first.run.sources, second.run.sources);
+  assert.notEqual(first.run.truncated, second.run.truncated);
   assert.notEqual(first.surface.files, second.surface.files);
-  assert.notEqual(first.surface.contents, second.surface.contents);
   assert.notEqual(first.surface.surfaceLoss, second.surface.surfaceLoss);
+
+  // THE CONTENT CACHE IS ASSERTED THROUGH ITS WRITE DOOR, because it is no longer an object anyone
+  // can hold. `contents` and `sources` used to be properties of the run and of the surface, and the
+  // identity checks here read them directly; closing them into `createRun`'s body is what makes a
+  // detector structurally unable to reach a raw string, and it takes those two handles with it.
+  //
+  // `retain` is not a weaker proxy. Both maps are constructed inside `createRun` and captured by
+  // exactly one closure, so two distinct `retain` functions cannot be looking at one map — the only
+  // way they could is a map hoisted to module scope, which `test/read-seam.test.mjs` independently
+  // refuses. What made the old assertion strong was that it falsified a SHARED CACHE, and the test
+  // below still falsifies it behaviourally, which is the part that would actually break.
+  assert.notEqual(first.run.retain, second.run.retain);
 });
 
 test("mutating a completed result cannot affect a later run", async () => {
   const completed = await audit(A);
-  completed.run.sources.set("poison", { code: "x", structure: "x", comments: "" });
   completed.run.findings.push({ id: "poison" });
   completed.surface.files.push("poison");
+
+  // The retained text is poisoned two ways, because the two catch different defects, and both now go
+  // through `retain` — the run's only write door — rather than through a map the test used to hold.
+  // Reaching the same entries by the same route the reader uses is if anything a closer reproduction
+  // of the defect than reaching into the map was.
+  //
+  // A key no file has survives only a shared cache. Emptying every REAL entry is the one that
+  // matters: an empty string is available content, so a run that reused these entries instead of
+  // re-reading would report a repository whose every file is blank — and the natural optimisation
+  // that would cause it, a `has` check around the read, is a one-line edit no output comparison of
+  // two clean runs can see. `surface.files` is the same list the read loop walked, so this empties
+  // exactly what a second run would have to re-read.
+  for (const f of completed.surface.files) completed.run.retain(f, "");
+  completed.run.retain("poison", "poison");
 
   const after = await audit(A);
   assert.equal(norm(after.stdout), norm(oracleA.stdout));
@@ -254,47 +278,65 @@ test("importing the module still runs nothing, by either of its two paths", (t) 
 });
 
 /**
- * The negative control, and the reason the identity assertion is not redundant.
+ * The negative control, and the reason the identity assertions are not redundant.
  *
- * A copy of the evaluator is patched so one object — the source cache — regains its pre-refactor
- * lifetime: created once at module scope and reused by every invocation. That is the exact defect
- * ADR 0014 removes.
+ * A copy of the evaluator is patched so one object regains its pre-refactor lifetime: created once at
+ * module scope and reused by every invocation. That is the exact defect ADR 0014 removes.
  *
- * The measured result, which is the point: the patched module still produces correct output for
- * both targets, so every behavioural check above passes against it. Only the identity assertion
- * fails. A suite that tested output alone would have reported this defect as absent.
+ * The measured result, which is the point: the patched module still produces correct output for both
+ * targets, so every behavioural check above passes against it. Only the identity assertion fails. A
+ * suite that tested output alone would have reported this defect as absent.
+ *
+ * IT RUNS FOR BOTH CACHES, and that is not symmetry for its own sake. `contents` joined `sources` on
+ * the run when the derived-view accessors began answering with availability, and it arrived with no
+ * falsifier of its own: the shared-`sources` control passes unchanged while `contents` is the object
+ * being shared, so a control patching one proves nothing whatever about the other. A cache is only
+ * shown to be invocation-owned by an experiment that shares THAT cache.
  */
-test("the identity assertion detects a shared cache that output comparison cannot", async () => {
-  const src = readFileSync(CLI, "utf8");
-  const anchor = "  const findings = [];\n  const sources = new Map();";
-  assert.ok(
-    src.includes(anchor),
-    "the control must patch real construction code; if this anchor moves, fix the control rather than deleting it",
-  );
+const SHARED_CACHE_CONTROLS = [
+  { which: "sources", construction: "  const contents = new Map();\n  const sources = SHARED;", read: (r) => r.run.sources },
+  { which: "contents", construction: "  const contents = SHARED;\n  const sources = new Map();", read: (r) => r.run.contents },
+];
 
-  const patched = src
-    .replace("function createRun({ root, strict, json }) {", "const SHARED = new Map();\nfunction createRun({ root, strict, json }) {")
-    .replace(anchor, "  const findings = [];\n  const sources = SHARED;");
+for (const control of SHARED_CACHE_CONTROLS) {
+  test(`the identity assertion detects a shared ${control.which} cache that output comparison cannot`, async () => {
+    // Normalised, because the anchor is written with LF and a Windows checkout holds CRLF. The
+    // container reads an LF blob and matched; a developer running the suite on the host did not, so
+    // this control silently failed on the one platform where running it by hand is most useful.
+    const src = readFileSync(CLI, "utf8").split("\r\n").join("\n");
+    // The anchor follows the construction code rather than the construction code being held still
+    // for it. Both maps are constructed here, which is what lets one control cover either of them.
+    const anchor = "  const contents = new Map();\n  const sources = new Map();";
+    assert.ok(
+      src.includes(anchor),
+      "the control must patch real construction code; if this anchor moves, fix the control rather than deleting it",
+    );
 
-  // Beside the real module, because it imports its siblings by relative path. Dot-prefixed and
-  // removed in `finally`, so it is never a file the repository audits.
-  const copy = path.join(ROOT, "scripts", ".shared-cache-control.mjs");
-  writeFileSync(copy, patched);
+    const patched = src
+      .replace("function createRun({ root, strict, json }) {", "const SHARED = new Map();\nfunction createRun({ root, strict, json }) {")
+      .replace(anchor, control.construction);
+    assert.notEqual(patched, src, "the control patched nothing and would have tested the real module");
 
-  try {
-    const control = await import(pathToFileURL(copy).href);
-    const [first, second] = await Promise.all([
-      control.main(["audit", `--dir=${A}`, "--json"]),
-      control.main(["audit", `--dir=${A}`, "--json"]),
-    ]);
+    // Beside the real module, because it imports its siblings by relative path. Dot-prefixed and
+    // removed in `finally`, so it is never a file the repository audits.
+    const copy = path.join(ROOT, "scripts", `.shared-${control.which}-control.mjs`);
+    writeFileSync(copy, patched);
 
-    // Behaviourally indistinguishable from the real thing.
-    assert.equal(norm(first.stdout), norm(oracleA.stdout));
-    assert.equal(norm(second.stdout), norm(oracleA.stdout));
+    try {
+      const module = await import(pathToFileURL(copy).href);
+      const [first, second] = await Promise.all([
+        module.main(["audit", `--dir=${A}`, "--json"]),
+        module.main(["audit", `--dir=${A}`, "--json"]),
+      ]);
 
-    // And yet the two runs share one cache.
-    assert.equal(first.run.sources, second.run.sources);
-  } finally {
-    rmSync(copy, { force: true });
-  }
-});
+      // Behaviourally indistinguishable from the real thing.
+      assert.equal(norm(first.stdout), norm(oracleA.stdout));
+      assert.equal(norm(second.stdout), norm(oracleA.stdout));
+
+      // And yet the two runs share one cache.
+      assert.equal(control.read(first), control.read(second));
+    } finally {
+      rmSync(copy, { force: true });
+    }
+  });
+}

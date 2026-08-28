@@ -453,6 +453,25 @@ Operationally:
    citing the evidence newly found, and becomes `CONFIRMED_BY_OWNER` only through R9 with its
    provenance fields. A label never strengthens silently, and never strengthens because the claim was
    repeated often enough to feel established.
+4. **The invariant is symmetric: unavailable evidence produces no result in either direction.**
+   Evidence that was not obtained MUST NOT be interpreted as evidence of anything, including of
+   absence. A check whose required evidence is unavailable is `UNKNOWN`; it may produce neither a
+   satisfaction claim nor a violation finding, and the disposition of whatever it feeds is derived
+   from the checks that ran rather than from a substituted value.
+
+   The three sentences above this one all describe the *negative* direction — not finding a thing —
+   and that asymmetry was itself the defect. Stated only that way, the invariant reads as a rule
+   about clean results, and a tool can honour every word of it while manufacturing a **failure**: a
+   README nobody could open is "under 400 characters", and a declaration nobody read is "missing".
+   Missing evidence has no natural polarity. Which verdict it fabricates is decided by whether the
+   check is satisfied by presence or by absence, so a rule that governs only one of them governs
+   whichever half the next check happens to fall in.
+
+   The operative word is *unavailable*, not *empty*. Wherever a lookup for absent evidence can return
+   the same value as a lookup for genuinely empty evidence, this invariant is unenforceable no matter
+   what the surrounding code says, because the distinction it rests on has already been discarded at
+   the point of reading. Availability therefore has to be answered by the lookup itself rather than
+   asserted afterwards.
 
 The same invariant appears elsewhere in the standards under other names, and they are cross-references
 rather than duplicates: [Standard 24](24-validator-rules.md) — a check may claim only what its own
@@ -492,8 +511,54 @@ because their limits matter:
 | `CONFIRMED_BY_OWNER` carries a `(YYYY-MM-DD)` date (R3, R9) | Every confirmation in `open-questions.md` can be reassessed against a date | The rest of R9's provenance, which is prose; and any labeled claim outside that one file. The scan reads the questions document, so that is all it may claim ([Standard 24](24-validator-rules.md)) |
 | Open questions are surfaced rather than quietly closed (R8) | Questions marked open are counted and reported | Whether a question marked answered really was |
 
-**Not mechanically checked, and honestly so.** R11 and R12 are discipline, not structure, and no rule
-ID is claimed for them:
+**Mechanically enforced against this framework's own evaluator.** R12's fourth point is a constraint
+on any tool that reports results, this one included, and it is the one part of R11/R12 that is not
+purely discipline. `standards audit` answers every content lookup with availability rather than with
+text, records a check whose evidence was unavailable as unknown, and aggregates rule disposition from
+the checks that ran. No rule ID is claimed for R12 itself; the enforcement is structural, in
+`scripts/standards.mjs`, and is pinned by `test/evidence-availability.test.mjs`,
+`test/audit-read-budget.test.mjs` and `test/read-seam.test.mjs`.
+
+**The lookup is the mechanism, and "every" is enforced rather than intended.** Two primitives answer
+every content read in the evaluator — one for raw text, one for the derived views the code-scanning
+checks actually read — and each returns availability instead of a string, so there is no `?? ""` for
+a caller to reach for. What makes that a mechanism and not a convention is that the count is
+asserted: no raw map read survives outside the two primitives, and neither primitive returns text on
+a branch where it has none. A tool may instead withdraw whole rules whenever anything went unread,
+and that is a real safety net, but it is a maintained list of rule identities compensating for an
+unsafe read — correct until the next check is added, and correct for reasons no one is checking. The
+list is not what makes the result honest; the lookup is.
+
+**Three states, not two, on both sides of the seam.** Evidence that is absent is absent for two
+unrelated reasons, and answering them alike breaks the invariant from the other direction. Content
+that was eligible and not obtained is a LOSS and a check must say so. Content that was never
+eligible — a file with no text to read, a document with no code view — is simply not that check's
+subject, and reporting it as loss withdraws a rule for every ordinary file in the repository. Both
+collapses were tried during implementation and both were caught: the first by a specimen, the second
+by the primitive's own contract test.
+
+**The unit is the check, and that is what makes the mixed case expressible.** A rule with an unknown
+check and no confirmed violation reports `not-evaluated`. A rule whose violation was established by a
+check that ran stays `failed` and carries only that finding — and *whether the surviving check needed
+content is irrelevant*. A content check over a file that was read establishes its violation just as
+firmly as a structural one, and a sibling check that went unread does not retract it. Withdrawing the
+whole rule there would discard a finding the run actually made, which is this same invariant broken
+in the opposite direction: a verdict decided by evidence nobody has. Because that distinction lives
+between two checks of one rule, no table over rule IDs can express it, and any mechanism that
+withdraws by rule ID must consult the confirmed findings before it fires.
+
+**Two loss classes, and they need two observation points.** Content that was collected and then lost —
+spent by a read budget, cut by a cap, or unreadable — is visible at the lookup: a check asks and is
+told the content is unavailable. Content that was **never collected** is not: a file the tool excluded
+never enters the walk, so no lookup is ever made for it, and a detector whose whole candidate set was
+excluded iterates zero times and reports clean. A tool that observes only the first class satisfies
+R12 at every call site and still reports a forbidden rule as satisfied over code it refused to read.
+The second class is answered from the evidence surface instead, and only where the exclusion was the
+*tool's* decision: a repository that declares its own ignore set has narrowed what its project is,
+which is an answer rather than a loss.
+
+**Not mechanically checked, and honestly so.** R11 and the rest of R12 are discipline, not structure,
+and no rule ID is claimed for them:
 
 - R11's substantive-content test is a judgement about whether a plan file says anything real. The
   tooling makes the same judgement in its own narrow way — `standards init` treats a directory as
