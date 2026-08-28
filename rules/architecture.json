@@ -21,7 +21,7 @@
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "Existence is checked; whether its current-state fields are current is not."
+      "$assuranceNote": "Existence is checked, and whether the file still reads as the template rather than as this project. Whether its current-state fields are CURRENT is not checked, and no automated check can establish that."
     },
     {
       "id": "architecture.adr",

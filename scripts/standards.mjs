@@ -1459,14 +1459,92 @@ function detectMissingDocs(files, run) {
 }
 
 /**
+ * Template prompts still standing in a manifest, and headings with nothing beneath them.
+ *
+ * The rule's `remediation` says "copy the template and fill it in", and until now only the copying
+ * was checked. `standards init` writes `templates/PROJECT.md` with no substitution — PROJECT.md
+ * carries neither a `standardVersion:` line for `stampVersion` to stamp nor the agent-instruction
+ * markers — so the untouched template and the file `init` just wrote are byte-identical here. Issues
+ * #6 and #8 are therefore one specimen for this artifact, but the check does not rely on that: it
+ * measures the manifest's own substance rather than comparing against the template, so a template
+ * that later gains a generated line does not silently start passing.
+ *
+ * **A prompt is angle-bracketed and ends its line.** Code spans and fences are removed first, which
+ * is what keeps this repository's own `standards/NN-<kebab-title>.md` from reading as an unfilled
+ * field — a path inside backticks is documentation, not a prompt. Closing HTML tags and spaceless
+ * ones like `<br>` are excluded too. What remains reachable as a false positive is raw HTML with an
+ * attribute at end of line, e.g. `<img src="x">`; that is stated rather than hidden, and the finding
+ * is phrased as a question for the same reason the catalog calls this assurance `partial`.
+ */
+function unfilledManifestPrompts(text) {
+  // A template comment is not an answer, so neither scan below counts it.
+  const prose = text.replace(/<!--[\s\S]*?-->/g, "");
+
+  // Code is removed for the prompt scan and kept for the emptiness scan, because it means opposite
+  // things to the two questions. A fenced line like `<html lang="en">` ends in `>` and would read as
+  // an unanswered field; the same block under a heading is unmistakably an answer. Stripping code
+  // once, for both, was wrong in the second direction and is what the two falsifiers below hold.
+  const prompts = (
+    prose
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/`[^`\n]*`/g, "")
+      .match(/<(?!\/)[^<>]*\s[^<>]*>[ \t]*$/gm) || []
+  ).map((p) => p.trim());
+
+  // A section whose body is empty once the table skeleton is removed. This exists because a prompt
+  // check alone is defeated by deleting the angle brackets and writing nothing, which would leave a
+  // manifest that is emptier than the template and passes where the template fails.
+  const empty = [];
+  const sections = prose.split(/^##\s+(.+)$/m);
+  for (let i = 1; i < sections.length; i += 2) {
+    if (withoutTableSkeletons(sections[i + 1]).trim() === "") empty.push(sections[i].trim());
+  }
+  return { prompts, empty };
+}
+
+/**
+ * Drop table blocks that carry no data, keeping ones that do.
+ *
+ * A header row is part of the skeleton, not an answer: `| Layer | Technology |` over a separator and
+ * nothing else is the template's Stack section verbatim, and counting the header as content made the
+ * whole section read as filled in. Rows are indexed rather than pattern-matched — row 0 is the
+ * header and row 1 the separator, by markdown's own definition — so a block survives only when some
+ * row from the third onwards has a cell in it.
+ */
+function withoutTableSkeletons(body) {
+  const out = [];
+  const lines = body.split("\n");
+  for (let i = 0; i < lines.length; ) {
+    if (!/^\s*\|/.test(lines[i])) {
+      out.push(lines[i]);
+      i += 1;
+      continue;
+    }
+    const block = [];
+    while (i < lines.length && /^\s*\|/.test(lines[i])) block.push(lines[i++]);
+    const hasData = block
+      .slice(2)
+      .some((row) => row.split("|").slice(1, -1).some((cell) => cell.trim() !== ""));
+    if (hasData) out.push(...block);
+  }
+  return out.join("\n");
+}
+
+/**
  * Structural checks for the two architecture rules. Both are `assurance: partial` in the catalog:
  * the file existing is not the same as the file being correct or current, and the catalog says so
  * rather than leaving a reader to infer it (Standard 24 R2).
+ *
+ * The manifest rule now also asks whether the file was filled in, which moves one case out of
+ * `partial` and leaves the rest there. Currency is what remains unestablished, and nothing here can
+ * establish it: a manifest answered once and never revisited is indistinguishable, in its bytes,
+ * from one answered today.
  */
-function detectArchitectureArtifacts(run) {
-  const { has, addFinding } = run;
+function detectArchitectureArtifacts(files, run) {
+  const { has, rel, addFinding } = run;
   const manifest = ["PROJECT.md", "artifacts/project-manifest.md"];
-  if (!manifest.some((f) => has(f))) {
+  const present = manifest.filter((f) => has(f));
+  if (present.length === 0) {
     addFinding({
       id: "missing-project-manifest",
       rule: "architecture.project-manifest",
@@ -1477,6 +1555,46 @@ function detectArchitectureArtifacts(run) {
       message: "No project manifest exists; a fresh agent has nowhere to learn what this is or what state it is in.",
       standardRef: R.artifacts,
     });
+  } else {
+    // Presence was established above and stands on its own. Only the content test needs the file's
+    // text, so only the content test withdraws when that text is unavailable (#38): a manifest the
+    // run never read is not a manifest observed to be unfilled.
+    for (const name of present) {
+      const f = files.find((p) => rel(p) === name);
+      if (!f) continue;
+      const c = run.textOf(f);
+      if (!c.available) {
+        run.unknown("architecture.project-manifest", name, c.reason);
+        continue;
+      }
+      const { prompts, empty } = unfilledManifestPrompts(c.text);
+      if (prompts.length === 0 && empty.length === 0) continue;
+      const evidence = [
+        ...prompts.map((p) => `${name}: unfilled field ${p}`),
+        ...empty.map((h) => `${name}: heading "${h}" has nothing beneath it`),
+      ];
+      addFinding({
+        id: "unfilled-project-manifest",
+        rule: "architecture.project-manifest",
+        category: "Missing planning artifacts",
+        severity: "warning",
+        label: "OBSERVED",
+        evidence,
+        // Named from what was actually found. A finding that reports prompts where it measured
+        // empty headings is the same category error one layer out: evidence describing something
+        // other than what established it.
+        message:
+          `${name} ${[
+            prompts.length > 0 ? "still carries the template's own prompts" : "",
+            empty.length > 0 ? "has headings with nothing beneath them" : "",
+          ]
+            .filter(Boolean)
+            .join(" and ")}, so it records what a manifest should say rather than what this ` +
+          "project is. Scaffolding a tool wrote is not evidence that anyone answered it " +
+          "(Standard 44 R11).",
+        standardRef: R.artifacts,
+      });
+    }
   }
   // Standard 11 R1 is a SHOULD, and it names one location out of several the industry settled on.
   // `docs/adr/` and `doc/adr/` are what Nygard's original article and adr-tools established, and a
@@ -2886,7 +3004,7 @@ export async function main(args) {
   detectAiInterfaces(files, run);
 
   detectMissingDocs(files, run);
-  detectArchitectureArtifacts(run);
+  detectArchitectureArtifacts(files, run);
   detectMissingPlanningArtifacts(files, run);
   detectMissingAuditInfrastructure(files, run);
   detectUnverifiedFunctionality(files, run);

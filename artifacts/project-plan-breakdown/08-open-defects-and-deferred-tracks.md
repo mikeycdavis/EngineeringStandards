@@ -8,9 +8,11 @@ Before the plan repair, eleven GitHub issues, four recorded rule rejections, and
 deferred design questions existed as a parallel obligation system that no plan item claimed. A plan
 that omits its own open work will always report itself complete.
 
-**Every open GitHub issue is claimed by exactly one plan item.** Thirteen are open. Seven are
-claimed here — #1, #4, #6, #8, #19, #21, #32 — and the other six are claimed where their subject
-lives: [#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
+**Every open GitHub issue is claimed by exactly one plan item — except two, named below.**
+Thirteen are open. Five are claimed here — #1, #4, #19, #21, #32 — six are claimed where their
+subject lives, and #45 and #46 are claimed by nothing, which the amendment at the end of this
+section derives and does not round away. The six live where their subject does:
+[#10 and #11](04-compliance-and-policy-system.md) by the exception machinery,
 [#3](06-must-never-standards.md) by the detectors, and
 [#2, #9 and #16](07-distributed-validation-and-ci.md) by the adoption path. None is rejected as
 out of release scope.
@@ -42,6 +44,29 @@ ownership rule two paragraphs above. Seven and six partition thirteen with nothi
 arithmetic agreeing with an increment is a check on the increment, not a substitute for the
 derivation: three of the four amendments below were arrived at by incrementing, and two of them were
 wrong.
+
+**Amended 2026-08-28 (second), and the invariant above no longer holds.** Two arrivals and two
+departures move the total by nothing and the composition by four, which is exactly the shape an
+increment gets wrong. **#6** and **#8** close at `e7a6d22` and leave both sets together, being one
+item. [#45](https://github.com/mikeycdavis/EngineeringStandards/issues/45) (`validate-self`'s
+framework pin, and what the pin is for) and
+[#46](https://github.com/mikeycdavis/EngineeringStandards/issues/46) (the catalog's unconditional
+"never a failure") were opened while closing #38 and this item, and **no plan item claims either**.
+
+Re-derived rather than adjusted: the open set read from `gh issue list` is #1, #2, #3, #4, #9, #10,
+#11, #16, #19, #21, #32, #45, #46 — thirteen. *Claimed here*, from the `Tracked by` fields, is #1,
+#4, #19, #21, #32 — five. Claimed elsewhere is #2, #3, #9, #10, #11, #16 — six. **Unclaimed: #45 and
+#46 — two.** Five, six and two partition thirteen with nothing counted twice.
+
+The unclaimed pair is recorded rather than absorbed. Renumbering the sentence above until the
+arithmetic closed would have restated the invariant as satisfied while it was not, which is the
+failure this whole paragraph exists to prevent, one level up: a count that is made to agree is not a
+count. Both are findings whose scope nobody has settled — #45 turns on what the pin is *for*, and
+#46 on whether the mechanism or the sentence should move — and scoping them is the work of opening
+items, which is a decision rather than a formality. Until that happens the honest statement is that
+the invariant holds for eleven of thirteen and is named as broken for the other two. The total
+returning to thirteen is a coincidence of two closures meeting two openings, not evidence that
+nothing moved.
 
 **Amended again 2026-08-25:** **#7** closed on owner review of its seven-criterion contract, so it
 leaves both the open set and *claimed here*, taking fifteen/nine to fourteen/eight. Six elsewhere is
@@ -1145,7 +1170,11 @@ that approval deliberately does not cover.
   project policy may nonetheless raise the rule to `level: required`, and it then reports `failed`.
   So "never a failure" is a property of the default rather than of the rule, and the catalog states
   it unconditionally. Out of scope for #38, which is about evidence availability, and left visible
-  rather than folded into a defect it is not part of.
+  rather than folded into a defect it is not part of. **Filed 2026-08-28 as
+  [#46](https://github.com/mikeycdavis/EngineeringStandards/issues/46)**, with the escalation
+  measured at `b20423a` rather than restated, so the observation is tracked somewhere an owner will
+  see it instead of resting in a closed item's evidence. It is not claimed by this file: no section
+  here carries it as `Tracked by`, and writing one would scope work nobody has scoped.
 
   **Owner ruling on the surviving mutants, 2026-08-27: conditional, and the condition caught one.**
   A survivor is acceptable only where it is redundant with an independently established boundary and
@@ -1509,7 +1538,54 @@ that is a decision rather than a formality.
 
 ### Make `architecture.project-manifest` check content, not presence
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-28 at `e7a6d22`, established by the full repository gate at that
+  commit: `inventory`, `fidelity`, `policy`, `diagrams`, `test` and `audit` all passed, 413 tests,
+  409 passing, 0 failures, 4 skipped. `validate` at that content reports 14 passed, 4 failed, 0
+  warnings, 32 skipped — unchanged from before this item, and the four failures are the four
+  standing human rejections. Self-audit at zero error findings, also unchanged. This row is the
+  commit after `e7a6d22` and changes only this section and the two paragraphs named below, which is
+  why the gate it names is the one before it.
+
+  | Criterion | Established by |
+  | --- | --- |
+  | Byte-identical to its template does not satisfy the rule | *the untouched template does not satisfy the rule that tells you to copy it* |
+  | Placeholder headings with nothing under them do not satisfy it | *headings with nothing beneath them are not a manifest*, and *a table skeleton with no rows in it is not content* |
+  | Exactly what `init` writes fails; a filled-in manifest passes | *what `standards init` writes is that same specimen, measured rather than assumed*; *a genuinely filled-in manifest satisfies the rule* |
+  | This repository's own `PROJECT.md` still passes, for the right reason | *this repository's own manifest satisfies the rule*, with the reason isolated by *an angle-bracketed path inside a code span is documentation* — two fixtures differing only in the backticks |
+  | `npm test`; self-audit unchanged at zero error findings | 413/409/0/4 and 0 error findings at `e7a6d22` |
+
+  **The two issues were one specimen, and that is now measured rather than asserted.** `PROJECT.md`
+  carries no `standardVersion:` line for `stampVersion` to stamp and no agent-instruction markers for
+  `injectAgentInstructions` to replace, so init's generator is the identity on it. The test runs that
+  generator instead of restating the equality, so a template that later gains a generated line turns
+  #8 back into a second specimen rather than into a silent gap.
+
+  **Seven mutants, each killed by a discriminating set.** Dropping the prompt scan is caught by the
+  template and by the prose half of the code-span pair; dropping the empty-heading scan by the bare
+  headings and the table skeleton; counting a table header as a data row by the skeleton alone;
+  reading unavailable content as content by the withdrawal test alone; and raising the finding
+  unconditionally by all four passing cases and no failing one, which is the anti-vacuity direction.
+
+  **One defect was found by mutation rather than by review, and it was mine.** Removing code once,
+  before both scans, passed every test then written and was still wrong: a fenced line ending in `>`
+  is not an unanswered field, and a section whose whole body is a code block is not a section with
+  nothing beneath it. A single strip satisfies one direction by breaking the other. The two scans now
+  read different text, and the two mutants — strip nothing for prompts, strip code for emptiness —
+  are killed by the same test because that test holds both directions, each with its own message.
+
+  **What this item does not claim.** Currency. The catalog note now says existence and
+  filled-in-ness are checked and that whether the current-state fields are *current* is not, adding
+  that no automated check can establish it: a manifest answered once and never revisited is
+  indistinguishable, in its bytes, from one answered today. `assurance` stays `partial` for that
+  reason. The prompt scan also has a stated reachable false positive — raw HTML with an attribute at
+  end of line, `<img src="x">` — recorded in the code rather than left for a reader to discover.
+
+  **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
+  this item does not close itself. What remains for a second party is the ordinary question: that the
+  two scans, the reachable false positive, and the accepted limit on currency are what this
+  repository wants.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issues [#6](https://github.com/mikeycdavis/EngineeringStandards/issues/6)
   and [#8](https://github.com/mikeycdavis/EngineeringStandards/issues/8) — **merged into this one
   item**, because they are two manifestations of one defect: #6 against an untouched `PROJECT.md`
@@ -1522,8 +1598,16 @@ that is a decision rather than a formality.
   enforces R11. `standards init` writes a template; the rule then passes because the file exists;
   the project is reported as having a manifest it has never filled in. Tool-generated scaffolding is
   being read as evidence of intent by the framework that forbids exactly that.
-- **Deliverables:** a content check of the same family as `hasContent()` in
-  [`scripts/init.mjs`](../../scripts/init.mjs), which already fixed this bug class on the `init` side.
+- **Deliverables:** ~~a content check of the same family as `hasContent()` in
+  [`scripts/init.mjs`](../../scripts/init.mjs), which already fixed this bug class on the `init`
+  side.~~ **Corrected 2026-08-28, before closing:** the shared thing is the bug class, not the
+  mechanism, and the line as written named a lineage the implementation does not have.
+  `hasContent()` asks whether a *directory* holds any `.md` file — the question "is this plan folder
+  empty" — and there is no reading of it that answers "has this file been filled in". What shipped
+  measures the manifest's own substance: template prompts still standing, and headings with nothing
+  beneath them. Recorded rather than quietly satisfied, because a closed item whose deliverable line
+  names a function it never called is the same defect this item is about — a record read as evidence
+  of something nobody checked.
 - **Acceptance Criteria:**
   - A file that is byte-identical to its template, or that retains its placeholder headings with
     nothing under them, does not satisfy the rule.
