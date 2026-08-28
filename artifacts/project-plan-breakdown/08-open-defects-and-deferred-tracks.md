@@ -1298,13 +1298,44 @@ that approval deliberately does not cover.
      other polarity is asserted beside it — a clean README with an unread manifest establishes
      nothing rather than reporting every `npm run` in it as broken.
 
-  **Seven guards, in pairs, and the pairing is what makes them evidence.** Two falsifiers for the new
-  terms; two anti-vacuity guards proving a violation found in a file the run *did* read survives loss
-  elsewhere in the tree; both README/manifest polarities; and a both-answerable control asserting a
-  real verdict still arrives in either direction. A mechanism answering every falsifier by
-  withdrawing more passes the first of each pair and fails the second, and that failure mode is
-  invisible to an aggregate gate — which is how the first of these defects reached `develop` under a
-  green one.
+  **Eight guards, in pairs, and the pairing is what makes them evidence.** Two falsifiers for the new
+  terms; three anti-vacuity guards proving a violation found in a file the run *did* read survives
+  loss elsewhere in the tree, and that a rule is not withdrawn over loss it did not suffer; both
+  README/manifest polarities; and a both-answerable control asserting a real verdict still arrives in
+  either direction. A mechanism answering every falsifier by withdrawing more passes the first of
+  each pair and fails the second, and that failure mode is invisible to an aggregate gate — which is
+  how the first of these defects reached `develop` under a green one.
+
+  **The third guard exists because the over-withdrawal happened anyway, in review of this very
+  repair.** Truncation shipped as one repository-wide boolean, so any truncated text file withdrew
+  every content-derived rule. A large Markdown file — or, in a real repository, a lockfile — made
+  `security.no-sql-concat`, `security.no-cert-bypass` and `quality.unfinished-work` not-evaluated
+  although not one of those detectors would ever have opened it: they scan `isCode` files only. A run
+  whose every code file was read whole reported that it could not answer, which is the failure mode
+  on the other side of this item, arriving through the mechanism built to stop the first one. It also
+  contradicted the admission test in the implementation's own comment, since those checks consume no
+  Markdown and so lost nothing they could have recorded an unknown about.
+
+  **The two loss classes are not the same shape, and that is what the repair turns on.** A walk cut
+  short — cap, budget, unreadable file, excluded tree, unlistable directory — lost files that were
+  never enumerated, so nothing can say which rules they would have fed and withdrawing every
+  content-derived rule is the only honest answer. A truncated file is *named*, and its extension has
+  already decided which detectors would ever have opened it. Answering a question you can answer with
+  *withdraw everything* is not caution. So `walkWentShort` keeps the five never-collected terms and
+  stays repository-wide, while truncation is asked per rule through `TRUNCATION_DOMAIN`, whose
+  predicates are written in the detectors' own terms — `isCode` for the four code scanners,
+  code-or-config-minus-`.env` for the secret scanner, the two named files for the README/manifest
+  pair — so a domain here fails visibly if the loop it describes changes. A rule with no entry keeps
+  the whole surface, which means forgetting one over-withdraws rather than under-withdraws.
+  `verification.before-completion` reads no file itself and takes the code domain by derivation,
+  because a truncated code file can hide the capability whose finding it concludes from.
+
+  **A guard whose falsifier stops firing is not a guard, and one of them nearly became one.** The
+  pre-existing precedence guard truncated a Markdown file beside its bait. Under domain scoping that
+  file no longer withdraws `security.no-sql-concat` at all, so the guard would have gone on passing
+  while asserting that a mechanism which never fired had erased nothing. Its fixture now truncates a
+  code file, so the withdrawal and the confirmed violation still collide, which is the collision it
+  was written for.
 
   **The disposition is reserved.** Under [ADR 0005](../adr/0005-attestations-are-recorded-human-evidence.md)
   this item does not close itself, and it is now the second party's question twice over: whether the
@@ -1634,6 +1665,32 @@ that approval deliberately does not cover.
   [#6/#8](#make-architectureproject-manifest-check-content-not-presence), which must not land first:
   making `architecture.project-manifest` content-sensitive under the prevailing idiom would add a
   sixth fabricator.
+
+### Candidate finding — an attestation may cite a standard that does not govern its rule
+
+**A measured finding, not a plan item.** No `Status` and no `Tracked by`, so the audit's plan parser
+does not read it as executable work — accurate, because nothing has scoped it.
+
+**Measured** 2026-08-28, from a review finding on the #38 forward-repair candidate. Two live
+attestation events cited `standards/46-source-control-safety.md`: one for
+`meta.standards-not-weakened`, which Standard 45 defines, and one for `testing.no-weakening-to-pass`,
+which Standard 47 defines. Both were corrected on that branch, and both had been copied verbatim from
+their `-004` predecessors, which still carry the wrong value and are historical records that are not
+being edited.
+
+**What the check can and cannot see.** `policy` validated both without complaint, and correctly by
+its own contract: the schema requires `reference` to name a file that exists, and both named files do
+exist. A reference to a real-but-unrelated standard is precisely the failure a file-existence check
+cannot detect. The reader following the attestation is sent somewhere plausible and wrong, which is
+worse than a broken link, because a broken link announces itself.
+
+**Why it is not fixed here.** The obvious repair — check that the cited standard is the one the rule's
+catalog entry belongs to — assumes a rule is governed by exactly one standard, and the catalog does
+not say that. `meta.standards-not-weakened` is defined by Standard 45 and federates requirements from
+six others. Whether `reference` means *the standard that defines this rule*, *a standard this review
+consulted*, or something else is undecided, and a check enforcing one reading would silently pick it.
+**The correct remedy is not known**, and it belongs with the wider question of what an attestation's
+non-digest fields assert.
 
 ### Candidate finding — `validate` reports a verdict without saying what it could not read
 
