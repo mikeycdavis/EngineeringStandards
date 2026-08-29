@@ -1850,8 +1850,62 @@ falsifies, and renaming it would erase the record of a framing this item had to 
 
 ### Resolve Standard 31 R4's comparability gap
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-29. R4 now carries a comparability contract; the producer-side
+  prerequisite it names is owned by issue
+  [#55](https://github.com/mikeycdavis/EngineeringStandards/issues/55) and is deliberately not
+  answered here.
+
+  **The mechanism the issue reported is obsolete, and the defect it points at is not.** #1's evidence
+  is that a consumer cannot tell "the project re-declared against a newer version" from "the validator
+  moved underneath an unchanged declaration". A version-identity guard at `scripts/standards.mjs:3193`
+  already refuses to emit an envelope when those two disagree — exit 2, typed `VERSION_MISMATCH`. It
+  landed at `11d8632` on 2026-08-09 20:37; #1 was filed 2026-08-10 01:37, five hours later, against
+  the tree its author had. The report was true when its evidence was gathered.
+
+  So a non-null `standardVersion` is *both* what the project declares and what evaluated it, and #1's
+  requested `validatorVersion` is not merely unbuilt — the separation it asks for is **unrepresentable**,
+  because the guard refuses to emit the envelope in which the two could differ.
+
+  **The gap survives at a granularity the guard cannot reach.** Under a constant `VERSION 2.0.0`,
+  `scripts/standards.mjs` changed across 21 commits and `rules/` across 6; `scm.no-committed-env-files`
+  moved its `assurance`, and three rules moved a `$assuranceNote` that the envelope does not carry.
+
+  **The falsifier, measured rather than argued.** Two validators, both `VERSION 2.0.0`, run against a
+  byte-identical unchanged tree naming `overlays/prod` with `deploy/k8s/overlays/prod` present:
+  `status`, `level`, `severity`, `validationType`, `assurance`, `disposition`, `evidence`, `score`,
+  `summary`, `standardVersion` and `schemaVersion` are **all identical**, and the observation moved
+  from *this path does not exist* to *could not be resolved, and whether the document is wrong was not
+  established*. Different measurements; nothing joinable says so. Any contract asserting those two are
+  machine-detectably comparable is wrong, which is why R4 declares the dimension `unknown` rather than
+  supplying a basis it does not have.
+
+  **A first draft of R4 was withdrawn before it was written, and the falsifier came from this
+  repository.** It would have said that a change in `level`, `severity`, `validationType`, `assurance`
+  or `disposition` breaks the series as a rule-semantic change. Ownership was then measured:
+  `severity` is catalog-only (0/50 results differ from it), `level` is policy-owned with a catalog
+  fallback (a fixture declaring `required` over a catalog `recommended` reports `required`), and
+  `validationType` and `assurance` follow the result path rather than the catalog — **23 of 50 results
+  in this repository's own envelope disagree with the catalog on one of the two**. PR #54 then proved
+  it outright: it touched neither `rules/` nor `scripts/` by a single line, and moved two rules from
+  `not-evaluated`/`none` to `attested`/`full`. The withdrawn wording would have called that a broken
+  series. It is the project's evidence state legitimately advancing, which is what a longitudinal view
+  exists to show.
+
+  R4 as written therefore names those fields **observable evaluation context**, rules that a change in
+  them must not be misattributed to rule semantics, and — separately — that their *equality* proves
+  nothing about the context that produced them, since two runs may agree on all of them while
+  consuming different policy content, evidence, or files.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue [#1](https://github.com/mikeycdavis/EngineeringStandards/issues/1)
+- **Prerequisite, owned elsewhere and deliberately not closed here:**
+  [#55](https://github.com/mikeycdavis/EngineeringStandards/issues/55) — Standard 25 R2 owns the
+  envelope, so the missing producer-issued rule-set identity is defined there or nowhere. This item
+  does not wait on it: a consumer that knows it cannot compare will refuse rather than compare
+  wrongly, which is #1's own stated first remedy. No fingerprint shape is proposed, because the two
+  obvious ones are each blocked by something measured — a git-blob identity is unavailable to a
+  package installed without a repository, and a raw working-tree digest differs between a CRLF
+  checkout and a `git archive` export, which is the defect ADR 0011 exists to prevent.
 - **Evidence:** open as of 2026-08-11.
   [`standards/31-whatsnext-compatibility.md`](../../standards/31-whatsnext-compatibility.md) R4
   defines the *join key* — two results are the same finding if they share `project` and `ruleId` —
@@ -1872,6 +1926,13 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   - Whatever is required of the JSON envelope is already present in it, or the change discloses that
     it is not.
 - **Verification:** `npm run fidelity && npm run inventory && npm test`.
+- **How the acceptance criteria were met.** The first: the contract is in R4, not in the tool, and no
+  code changed. The second: `fidelity` passes, R4 carries no verbatim source block, and the addition
+  is disclosed in the standard's own additions-beyond-the-source list. The third is the one that
+  permits closure at all — *"or the change discloses that it is not"* — and this is that case. What
+  the envelope needs is a rule-set identity it does not have; R4 says so, and #55 owns supplying it.
+  Closing on a disclosed absence is what that clause was written for, and it is not the same as
+  closing on a satisfied requirement.
 - **Dependencies:** [ADR 0002](../adr/0002-canonical-rule-identity.md), already settled.
 - **Note on this item's history:** an earlier reconciliation of Standard 31 merged into `develop` at
   `5b4b917`. That commit is an ancestor of `origin/develop` — the reconciliation landed. The issue

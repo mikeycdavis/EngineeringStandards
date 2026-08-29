@@ -74,7 +74,8 @@ A consumer MAY depend on these, and only these:
 | Exceptions applied | [Standard 20](20-exceptions.md); reported per [Standard 23](23-standards-validator-cli.md) R5 |
 | Evidence | [Standard 25](25-validator-output.md) R3; `evidence`, `files` |
 | Remediation | [Standard 25](25-validator-output.md) R3; `remediation` |
-| Validator and schema version | [Standard 25](25-validator-output.md) R2; `schemaVersion` |
+| Envelope format version | [Standard 25](25-validator-output.md) R2; `schemaVersion` |
+| Framework release that evaluated the project | [Standard 21](21-versioning.md) R5 and the version-identity guard; `standardVersion` |
 
 Two things this list does *not* include, deliberately:
 
@@ -115,6 +116,51 @@ Consequences for the validator:
 - **Aliases MUST NOT appear in output** ([ADR 0002](../artifacts/adr/0002-canonical-rule-identity.md)).
   A consumer joining on a name that varies by input file has no join key at all.
 
+**Identity is not comparability, and comparability has two parts.** The join key answers *are these
+the same rule?* A consumer computing a regression is claiming more than that: that both readings
+measured the same thing. Two distinct questions decide it, and they have different answers.
+
+**Observable evaluation context — what the run reports about how it evaluated.** `level` is the
+project's declaration, overriding the catalog wherever the policy names a rule. `disposition` is how
+the result was reached, and `validationType` and `assurance` follow it rather than the catalog: an
+attested result reports `manual-review` and `full` whatever the catalog says, and a skipped result
+reports `none`. A consumer MUST read these as evaluation context and MUST NOT read a change in them
+as a change in what the rule means. A rule moving from `not-evaluated` to `attested`, or from
+`evaluated` to `not-applicable`, is a real and reportable transition in the project's own state;
+presenting it as a regression or as a remediation misattributes it to code that did not move.
+
+**Equality of those fields does not establish that the context was the same.** They are what the run
+reports, not the whole of what it consumed. Two runs may agree on every one of them while evaluating
+different policy content, different evidence, or a different set of files, and nothing in the
+envelope distinguishes those cases. A consumer MAY use a change in them as positive evidence that
+the context moved; it MUST NOT use their equality as evidence that the context held.
+
+**Rule-semantic comparability — did the rule mean the same thing?** This is **not** establishable
+from the envelope. `severity` is the only rule-semantic value carried, and it is the smallest part of
+what a rule means. A rule's description, remediation, assurance note and detector may all change
+while the framework release, the join key, and every field above are identical — and when they do,
+two readings can differ in what they measured while nothing a consumer can join on differs at all.
+
+`standardVersion` is **necessary and insufficient**. A validator MUST refuse to emit a verdict
+labelled with a version that did not produce it ([Standard 21](21-versioning.md) R5), so equal
+`standardVersion` establishes that one framework release produced both readings and nothing further:
+detectors and catalog content change within a release. Where `standardVersion` differs, the readings
+were produced by different releases and MUST NOT be presented as one series; this is the same
+prohibition R6 applies to averaging scores, applied to the comparison rather than to the aggregate.
+
+**A consumer MUST therefore treat rule-semantic comparability as `unknown`, and MUST disclose it** —
+on successful comparisons as well as refused ones. It MUST NOT infer it from a rule count, a coverage
+figure, a message, a remediation string, or a checkout on disk. A wrong inference restores confidence
+in exactly the comparison that should not be trusted, and a consumer that declines to assert a
+regression it cannot ground is behaving correctly, not incompletely.
+
+**The prerequisite is producer-side and is deliberately not defined here.** Establishing rule-semantic
+comparability requires an identity for the evaluating rule set at finer granularity than the release,
+issued by the validator. [Standard 25](25-validator-output.md) R2 owns the envelope and is where such
+a field belongs; this standard introduces no field, and will cite that one when it exists. Until then
+`unknown` is the honest contract, and saying so is what stops a consumer inventing a basis the
+producer never supplied.
+
 ### R5 — Work items derive from findings; findings never derive from work items
 
 Where a consumer creates work items from violations, the finding is the source and the work item is
@@ -150,7 +196,11 @@ different denominators, MUST NOT be presented as a portfolio compliance figure
   than a note about sequencing.
 - R3's separation of `schemaVersion` from `standardVersion`, and why "detect outdated standard
   versions" requires it.
-- R4's join key and its three consequences.
+- R4's join key and its three consequences, and R4's separation of identity from comparability — the
+  observable evaluation context, the ruling that equality of those fields proves nothing about the
+  context that produced them, and rule-semantic comparability as an explicitly `unknown` disposition
+  pending a producer-issued rule-set identity. The source asks for correlation and does not reach the
+  question of whether two correlated results may be compared.
 - R5 in full — the one-direction rule between findings and work items.
 - R6 in full — carrying assurance into portfolio aggregates, and the ranking failure it prevents.
 
