@@ -1669,8 +1669,10 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   at that commit: all six stages passed, 425 tests, 421 passing, 0 failures, 4 skipped.
 
   `validate` reports 14 passed, 4 failed, 0 warnings, 32 skipped at part one — unchanged — and **12
-  passed, 4 failed, 0 warnings, 34 skipped at part two.** The four failures are the four standing
-  human rejections at both, and the verdict is `NON_COMPLIANT` with score 100 at both.
+  passed, 4 failed, 0 warnings, 34 skipped at part two**, returning to 14/4/32 at part three once
+  the owner re-review below restored the two attestations part two staled. The four failures are the
+  four standing human rejections throughout, and the verdict is `NON_COMPLIANT` with score 100 at
+  all three.
   `documentation.code-consistency` was already `not-evaluated` for this repository at `a91676d` and
   still is; this repository's own README carries no `./` span and no uncorroborated token, so neither
   part moves anything through the rule this item is about.
@@ -1685,11 +1687,31 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   Standard 45 R6 grows from four to six; the verdict does not move, because it was already
   `NON_COMPLIANT` on the four rejections.
 
-  **Two re-reviews are therefore owed, and this item does not perform them.** Minting an attestation
-  over a diff nobody has read is exactly the forgery the token design exists to prevent, and the
-  honest state until an owner looks again is `not-evaluated`. The change under review is fifteen
-  lines in `scripts/compliance.mjs` that add a per-finding remediation override; whether that crosses
-  a boundary or weakens a standard is the question the two stale reviews now ask.
+  **Two re-reviews were owed, and were performed by the owner on 2026-08-29 as part three.** They
+  are not a repair of this item's implementation; they are the answer to the question staleness
+  asked. Both are recorded as fresh review events superseding their predecessors, against the merged
+  content at `77730e4`, inheriting no digest. Exactly one reviewed path had changed in each, measured
+  by blob identity rather than inferred from the diff looking small: `scripts/compliance.mjs`, from
+  blob `3015fdaf` to `6110fd47`, with every other reviewed path byte-identical to the revision its
+  prior event was recorded against. The four propositions the owner named — presentation only;
+  incapable of changing result, applicability, exceptionability, `validationType` or `assurance`;
+  defaulting to the catalog when no finding overrides; and neither a boundary bypass nor a standards
+  weakening — were each checked and each hold, with two limitations recorded rather than denied.
+  **First:** remediation text can now originate in two places and nothing binds them, so a detector
+  could supply an override contradicting the catalog for the same rule and no check would object —
+  a recorded coupling of the same class as the `adrDirs`/`satisfiedBy` coupling already recorded
+  under `ai.destructive-approval`. **Second:** `scripts/standards.mjs` is in neither attestation's
+  reviewed path set, so neither event establishes anything about the detector change itself, which is
+  where coverage actually narrowed.
+
+  **The unestablished-prohibition list returns to four, not to zero, and the fourth is not a residue
+  of this work.** `architecture.no-hidden-global-state` is `[stale]` and stays so. Its path set names
+  `scripts/standards.mjs` and `test/invocation-ownership.test.mjs`, and both had already moved away
+  from the content of its recorded event — blobs `3804e7e4` and `307ab937` at `dde2e85` against
+  `70f9adb6` and `313cc432` at `a91676d`, which is the develop head *before* either pull request in
+  this item. Measured by blob comparison rather than assumed, so it is not attributable here and is
+  not repaired here. It is a third re-review owed, on its own evidence, and minting it inside this
+  item would be exactly the unread approval the other two were careful not to be.
 
   **Superseded by the amendment below.** This paragraph said the item could not close, on the
   ground that the acceptance condition required zero findings. That condition was itself falsified
@@ -1737,25 +1759,26 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   seam added for this — a finding may override the catalog's remediation — is an override rather than
   a replacement, so every other rule keeps its catalog text by saying nothing.
 
-  **Five mutants, all killed.** A sixth was withdrawn as equivalent rather than recorded as a
-  survivor: `parent === "."` joins back to the root, so the branch was unreachable and no test could
-  ever have killed it. It was deleted, since an unreachable branch is a mutant nothing can kill.
-
   **On the acceptance condition.** ReleasePilot does not become green, and this item closes anyway.
   The zero-findings condition presumed both findings were the same defect; measurement showed one is
   a resolution defect, now fixed, and the other is a correct report carrying a false instruction, now
   corrected. Manufacturing the green through proximity inference was available and was refused —
   nothing states the scope or boundary of "a link one clause away", and a detector that resolved by
-  proximity would be guessing in the direction of silence. The condition should be owner-amended to
-  match what was measured; that is recorded on issue #4 rather than assumed here.
+  proximity would be guessing in the direction of silence. The condition was owner-amended on
+  2026-08-29 to match what was measured, on issue #4 and in the Acceptance Criteria below, and the
+  amendment says in both places that it corrects the contract rather than reporting that the original
+  condition was met.
 
   **Five mutants, all killed, and one earned its keep by surviving.** Keying the guard on a bare `.`
   rather than `./` withdraws `.github/workflows/ci.yml` — an ordinary root-relative claim that
-  happens to start with a dot — and nothing in the suite objected until that mutant said so. A sixth
-  reported survival was a harness defect, not a live mutant: its anchor matched an unrelated
-  `continue;` five hundred lines earlier. Applied by hand at the real site it fails three tests. The
-  harness measurement was discarded rather than recorded, on the standing rule that an impossible
-  survival is a fact about the harness.
+  happens to start with a dot — and nothing in the suite objected until that mutant said so. Two
+  further mutants were removed from the count for opposite reasons, and neither is a survivor. One
+  was **equivalent**: `parent === "."` joins back to the root, so the branch was unreachable and no
+  test could ever have killed it; it was deleted, since an unreachable branch is a mutant nothing can
+  kill. The other was a **harness defect** — its anchor matched an unrelated `continue;` five hundred
+  lines earlier, and applied by hand at the real site it fails three tests. That measurement was
+  discarded rather than recorded, on the standing rule that an impossible survival is a fact about
+  the harness.
 
   **Previously: READY.**
 - **Tracked by:** GitHub issue [#4](https://github.com/mikeycdavis/EngineeringStandards/issues/4)
@@ -1792,7 +1815,26 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   that a link one clause away establishes a base, and resolving it by proximity would be inference
   presented as measurement — the failure mode this detector layer has already shipped twice. It
   stays a finding until an owner decides whether proximity is a contract this framework wants.
+- **The acceptance contract was amended by the owner on 2026-08-29, and the amendment is a
+  correction to the contract rather than a claim that the original criterion passed.** The filed
+  criterion required both reported paths to resolve and pass, which is the zero-findings condition.
+  Measurement falsified its premise: the two findings are not two manifestations of one
+  path-resolution defect. `./mvnw` is a resolution defect and is fixed; `overlays/prod` is a correct
+  report carrying a false instruction, and is fixed as such. ReleasePilot does not reach zero
+  findings, and the amended contract does not pretend otherwise. The four clauses below carry it, and
+  the label of the field they sit under is deliberately left exactly as the parser expects — the
+  qualified-heading question is its own open item, and answering it by accident here would break the
+  R7 field check.
 - **Acceptance Criteria:**
+  - The measured `./mvnw` finding is **withdrawn** because its working-directory base is unavailable
+    to the run — never because a base was guessed and happened to match.
+  - Ambiguous references such as `overlays/prod` are **not resolved by invented proximity semantics**.
+    Nothing states the scope or boundary of a link one clause away, and a detector resolving by
+    proximity would be guessing in the direction of silence.
+  - Where the detector has **not established that the document is wrong**, remediation must not
+    instruct the adopter to change it.
+  - Genuinely missing, root-scoped references **remain actionable failures**, with the instruction to
+    correct the document unchanged.
   - ~~A fixture with links that are correct relative to the document and a fixture with links that are
     correct only relative to the root produce opposite results.~~ Inoperative: the README selector is
     anchored to the root README, where those two bases are identical.
