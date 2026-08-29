@@ -1923,25 +1923,129 @@ function detectOpenQuestions(files, run) {
   });
 }
 
-/** Parse `### Title` items and their `- **Field:** value` lines out of a plan-breakdown file. */
+/**
+ * The plan-item field grammar. Exactly two forms, and a label occupies one line:
+ *
+ * ```text
+ * - **<key>:** value
+ * - **<key> — <qualifier>:** value
+ * ```
+ *
+ * The key is canonical and matched EXACTLY after trimming; the qualifier is free prose for a human
+ * and is read by nothing. There is no prefix matching, no case folding, and no fuzziness anywhere —
+ * `Verification of the digest` is a different key from `Verification`, and stays one.
+ *
+ * The separator is a space, an em dash, and a space, and nothing else. That is narrow on purpose:
+ * a comma, a parenthesis, and a bare hyphen all occur inside labels people legitimately write, so
+ * admitting them would make the key depend on punctuation the author did not intend as structure.
+ */
+const FIELD_SEPARATOR = " — ";
+const PLAN_FIELDS = ["Status", "Purpose", "Deliverables", "Acceptance Criteria", "Verification", "Dependencies"];
+
+/**
+ * Every key any consumer reads. `Tracked by` is here and not in PLAN_FIELDS because it is optional,
+ * but losing it is worse than losing an optional field: it is the disclosure that an item's status
+ * is a cached copy of an authority nobody consulted, and without it that status reads as established.
+ */
+const READABLE_FIELDS = new Set([...PLAN_FIELDS, "Tracked by", "TrackedBy"]);
+
+/** A well-formed field line, unchanged from the form every existing plan already uses. */
+const FIELD_LINE = /^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/;
+
+/**
+ * A bullet that OPENS a bold run. Deliberately looser than FIELD_LINE in three ways, because its
+ * job is to notice a field that was written wrongly rather than to read one: `*` bullets count,
+ * no closing `**` is required, so a label wrapped across two source lines is still seen.
+ */
+const BOLD_OPEN = /^\s*[-*]\s+\*\*(.*)$/;
+
+/**
+ * A separator that was attempted and missed. An em or en dash is never intra-word, so it is always
+ * an attempt at structure; a plain hyphen usually is intra-word, so it counts only when whitespace
+ * surrounds it. That distinction is the whole reason `Acceptance Criteria-ish` stays an ordinary
+ * unknown key while `Acceptance Criteria - amended` is reported as a malformed separator.
+ */
+const NEAR_SEPARATOR = /^(?:\s*[–—]\s*|\s+-\s+)/;
+
+/** The text before the first separator. The qualifier after it is for people, and is discarded. */
+function canonicalFieldKey(label) {
+  const at = label.indexOf(FIELD_SEPARATOR);
+  return (at === -1 ? label : label.slice(0, at)).trim();
+}
+
+/**
+ * Did this label mean to name `key` and miss the separator? Returns the intended key or null.
+ * Exact prefix, then a dash where the separator belongs — never a fuzzy resemblance.
+ */
+function intendedKey(label) {
+  const trimmed = label.trim();
+  for (const field of READABLE_FIELDS) {
+    if (!trimmed.startsWith(field)) continue;
+    const rest = trimmed.slice(field.length);
+    if (rest.trim() !== "" && NEAR_SEPARATOR.test(rest)) return field;
+  }
+  return null;
+}
+
+/**
+ * Parse `### Title` items and their field lines out of a plan-breakdown file.
+ *
+ * Each item also carries `syntax`: labels that were trying to be a field and failed. That list is
+ * the point of the reader rather than a by-product. Before it existed, a malformed label was
+ * indistinguishable from an absent field, and the three ways that went wrong all reported something
+ * untrue — a qualified `Status` removed the item from evaluation entirely and said nothing, a
+ * qualified required field produced "(no Acceptance Criteria)" against an item that visibly had one,
+ * and a qualified `Tracked by` deleted the cached-status disclosure so a delegated status read as
+ * established. Rejecting malformed syntax is right; converting it into absence is not.
+ */
 function parsePlanItems(text, file) {
   const items = [];
   let current = null;
-  for (const line of text.split(/\r?\n/)) {
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
     const heading = line.match(/^###\s+(.*)$/);
     if (heading) {
       if (current) items.push(current);
-      current = { title: heading[1].trim(), file, fields: new Map() };
+      current = { title: heading[1].trim(), file, fields: new Map(), syntax: [] };
       continue;
     }
-    const field = line.match(/^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/);
-    if (field && current) current.fields.set(field[1].trim(), field[2].trim());
+    if (!current) continue;
+    const lineNumber = index + 1;
+
+    const field = line.match(FIELD_LINE);
+    if (field) {
+      const label = field[1].trim();
+      const key = canonicalFieldKey(label);
+      if (READABLE_FIELDS.has(key)) {
+        // First occurrence wins. Canonicalisation makes two labels able to collide where the raw
+        // strings could not, and silently overwriting one with the other would let a qualified
+        // duplicate replace the field a reader can see.
+        if (current.fields.has(key)) {
+          current.syntax.push({ line: lineNumber, key, kind: "duplicate", label });
+        } else {
+          current.fields.set(key, field[2].trim());
+        }
+        continue;
+      }
+      const intended = intendedKey(label);
+      if (intended) current.syntax.push({ line: lineNumber, key: intended, kind: "separator", label });
+      // An unknown key is not an error. `Evidence` is a house convention on most items here, and a
+      // label nothing reads is a label nothing reads — it is stored exactly as before.
+      else current.fields.set(label, field[2].trim());
+      continue;
+    }
+
+    const bold = line.match(BOLD_OPEN);
+    if (!bold) continue;
+    // Strip a closing `**` and a trailing colon, so `- **Status**:` and `* **Status:**` are seen as
+    // broken field syntax rather than read as ordinary prose.
+    const label = bold[1].split("**")[0].replace(/:\s*$/, "");
+    const key = canonicalFieldKey(label);
+    const intended = READABLE_FIELDS.has(key) ? key : intendedKey(label);
+    if (intended) current.syntax.push({ line: lineNumber, key: intended, kind: "syntax", label: label.trim() });
   }
   if (current) items.push(current);
   return items;
 }
-
-const PLAN_FIELDS = ["Status", "Purpose", "Deliverables", "Acceptance Criteria", "Verification", "Dependencies"];
 
 /**
  * The canonical lifecycle vocabulary — Standard 8, decided in ADR 0001. Legacy tokens are accepted
@@ -1981,6 +2085,43 @@ async function detectPlanDiscrepancies(files, run) {
   const items = planFiles
     .filter((f) => run.textOf(f).available)
     .flatMap((f) => parsePlanItems(run.textOf(f).text, rel(f)));
+  // BEFORE the executable filter, and before its early return, because a malformed `Status` is
+  // exactly what stops an item being executable. A diagnostic that ran after this point could not
+  // see the case that most needs reporting: a plan whose every item has a broken Status would be
+  // reported as having no executable items, which is silence rather than a finding. This is the
+  // ordering the suite pins, and it was wrong first — a single-item fixture returned before
+  // collecting anything, and the test for it failed until the block moved up here.
+  const malformed = [];
+  for (const item of items) {
+    for (const problem of item.syntax) {
+      const what =
+        problem.kind === "duplicate"
+          ? `a second ${problem.key} field`
+          : problem.kind === "separator"
+            ? `${problem.key} followed by something that is not the separator`
+            : `${problem.key} written in a form the plan grammar does not accept`;
+      malformed.push(`${item.file}:${problem.line} :: ${item.title} :: ${what} -- ${problem.label}`);
+    }
+  }
+  if (malformed.length > 0) {
+    addFinding({
+      id: "plan-item-field-syntax",
+      rule: "planning.item-fields",
+      category: "Plan/code discrepancies",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: uniq(malformed),
+      message:
+        `${malformed.length} plan item field heading(s) name a field the plan reads but are not ` +
+        "written in a form it accepts, so the field was not read.",
+      remediation:
+        "Write the heading as `- **Field:** value`, or `- **Field \u2014 qualifier:** value` where a " +
+        "qualifier helps a reader. The key must match exactly, the separator is a space, an em dash " +
+        "and a space, the colon is required, and the whole label must fit on one line.",
+      standardRef: R.plan,
+    });
+  }
+
   const executable = items.filter((i) => i.fields.has("Status"));
   if (executable.length === 0) return;
 
