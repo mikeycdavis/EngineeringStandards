@@ -2626,6 +2626,179 @@ function detectCommittedEnvFiles(files, repoRoot, repo, run) {
 }
 
 /**
+ * Committed conflict markers — P1 of issue #21, and deliberately NOT a catalog rule.
+ *
+ * VIEW: raw text (`textOf`). None of the three derived views applies, and saying which one was
+ * rejected is the ADR 0009 declaration this detector owes: a conflict marker is not a comment, not
+ * a language construct and not a string literal. It is a line-shaped artifact in the bytes. The
+ * specimen that reached `develop` was in Markdown, which has no derived view at all.
+ *
+ * WHAT THIS IS NOT. It is not `git diff --check`. That reads *added lines in a diff*, so it saw the
+ * markers while they were unstaged and went silent the moment `8870a43` committed them — which is
+ * the only state that ever reached the branch. Measured: on a clean tree holding committed markers
+ * it exits 0 and prints nothing.
+ *
+ * WHY A GROUP AND NOT A TOKEN. An opener alone is prose about conflicts. A group — opener, then a
+ * separator, then a terminator, in that order, each at column 0 and exactly seven characters — is
+ * the shape Git actually writes. Requiring the group is what keeps a sentence naming `<<<<<<<` from
+ * being a finding.
+ *
+ * WHY FENCED REGIONS ARE EXCLUDED, AND WHAT IT COSTS. A well-formed group is lexically identical to
+ * a textbook illustration of one; the `8870a43` specimen is column-0, seven characters, complete and
+ * correctly ordered, and so is every example in the documentation of this very check. No git-native
+ * mechanism separates them — `git diff --check` over the commit that ADDS the documentation reports
+ * its fenced example as three leftover markers. The one discriminator left is where the lines sit,
+ * and it is a trade rather than a solution: **a genuine group inside a fenced block is missed.** The
+ * finding says so in its own message, and `test/conflict-markers.test.mjs` asserts the miss rather
+ * than leaving it as untested behaviour a reader could mistake for coverage.
+ *
+ * That heuristic is exactly why this emits an audit finding carrying no `rule`. Binding it to the
+ * catalog would make the fence exclusion normative by implementation accident rather than by a
+ * decision anyone took; issue #58 owns that decision, and "leave it audit-only" is one of its
+ * legitimate answers.
+ *
+ * TWO BOUNDARIES, NOT ONE. The fence exclusion is this detector's own. The second is inherited and
+ * governs every content detector here: `TEXT_EXT` decides which files the walk reads at all, so
+ * `.txt`, `.xml` and `.csv` are outside this check because they are outside the audit. Both are
+ * named in the finding's message, because a reader who knows about only one of them will read a
+ * clean result as stronger than it is.
+ *
+ * TRACKED FILES ONLY, through the ADR 0008 seam. A marker group in an untracked scratch file is one
+ * developer's working state, not the repository's content. Where the index cannot be read,
+ * tracked-ness is unestablished and the detector says so rather than reporting either a violation or
+ * a pass. The candidate set is the intersection of the index and the walk, which is a disclosed
+ * narrowing rather than a silent one: content has to be read to be examined, so a file that is
+ * tracked but absent from this checkout — a sparse checkout, an unstaged deletion — is outside what
+ * this can see. Unlike `scm.no-committed-env-files`, whose question the index answers alone, there is
+ * no version of this check that reads content the walk never collected.
+ */
+const CONFLICT_OPEN = /^<{7}(?!<)/;
+const CONFLICT_BASE = /^\|{7}(?!\|)/;
+const CONFLICT_SEP = /^={7}(?!=)\s*$/;
+const CONFLICT_END = /^>{7}(?!>)/;
+// CommonMark allows up to three leading spaces and three or more fence characters. Both forms are
+// recognised because both appear in this repository, and a closing fence must use the same
+// character and be at least as long as the one that opened the block.
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
+const FENCED_EXT = new Set([".md", ".markdown"]);
+
+/**
+ * Line numbers of every conflict-marker group in a file, ignoring fenced regions where the file
+ * type has them.
+ *
+ * Returns one entry per complete group. An opener with no terminator is not reported: it is either
+ * prose or a file so damaged that a marker group is the least of it, and reporting partial groups
+ * would reintroduce the token-level matching this check exists to avoid.
+ */
+function conflictGroups(text, fenced) {
+  const lines = text.split(/\r?\n/);
+  const groups = [];
+  let fence = null; // the opening run, when inside a fenced block
+  // `open` and `sep` deliberately survive a fenced block rather than resetting at its edge. A real
+  // conflict region can contain a fence -- the merge cut through a code example -- and pairing
+  // across it catches that case. The cost is theoretical: two column-0 marker lines of opposite
+  // kinds, in prose, on either side of a block.
+  let open = null;
+  let sep = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (fenced) {
+      const f = line.match(FENCE_OPEN);
+      if (fence !== null) {
+        // Closing requires the same character and at least the opening length; anything else is
+        // ordinary content inside the block, and out of scope.
+        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+        continue;
+      }
+      // A fence line is never itself a marker. Everything else outside a block falls through to
+      // the matching below, which is where the `8870a43` specimen lived: immediately after a
+      // closing fence, not inside one.
+      if (f) {
+        fence = f[1];
+        continue;
+      }
+    }
+    if (CONFLICT_OPEN.test(line)) {
+      open = i + 1;
+      sep = null;
+      continue;
+    }
+    if (open === null) continue;
+    // The diff3 style inserts a common-ancestor section between the opener and the separator. It is
+    // consumed rather than treated as a reset, so `merge.conflictStyle=diff3` is covered.
+    if (CONFLICT_BASE.test(line)) continue;
+    if (CONFLICT_SEP.test(line)) {
+      sep = i + 1;
+      continue;
+    }
+    if (sep !== null && CONFLICT_END.test(line)) {
+      groups.push({ open, end: i + 1 });
+      open = null;
+      sep = null;
+    }
+  }
+  return groups;
+}
+
+function detectConflictMarkers(files, repoRoot, repo, run) {
+  const { rel, textOf, addFinding } = run;
+
+  const scan = (f) => {
+    const t = textOf(f);
+    // A file nobody could read holds no markers only in the sense that nobody looked. The evidence
+    // surface already reports unread and truncated files for the run as a whole, so this adds no
+    // second channel for the same fact.
+    if (t.lost || !t.available) return [];
+    const fenced = FENCED_EXT.has(path.extname(f).toLowerCase());
+    return conflictGroups(t.text, fenced).map((g) => `${rel(f)}:${g.open}-${g.end}`);
+  };
+
+  const listed = repo.available ? trackedMatching(repoRoot, ["*"]) : { ok: false, files: null };
+  if (!listed.ok) {
+    // Same shape as scm.no-committed-env-files: say nothing when there is nothing concrete to name,
+    // so auditing a directory that is simply not a repository does not collect a warning on every
+    // run for a question it never asked. What is suppressed is noise, never a claim of cleanliness.
+    const anywhere = files.flatMap(scan).sort();
+    if (anywhere.length === 0) return;
+    addFinding({
+      id: "repository-evidence-unavailable",
+      category: "evidence-surface",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: anywhere,
+      message:
+        `Whether these files are tracked could not be established: ` +
+        `${repo.reason ?? "the repository index could not be read"}. Each holds a conflict-marker ` +
+        `group, but an untracked file is one developer's working state rather than repository ` +
+        `content, so this is reported as unknown rather than as a finding.`,
+      standardRef: R.search,
+    });
+    return;
+  }
+
+  const tracked = new Set(listed.files);
+  const hits = files.filter((f) => tracked.has(rel(f))).flatMap(scan).sort();
+  if (hits.length === 0) return;
+
+  addFinding({
+    id: "committed-conflict-markers",
+    category: "Unresolved merge conflicts",
+    severity: "warning",
+    label: "INFERRED",
+    evidence: hits,
+    message:
+      `${hits.length} conflict-marker group(s) in tracked files. Markdown fenced blocks are ` +
+      `outside this check, because documentation of merge conflicts is written in them and is ` +
+      `indistinguishable from the real thing; so are file types this audit does not read. A clean ` +
+      `result is therefore not proof that none exists.`,
+    remediation:
+      "Resolve the conflict and commit the resolution. `git diff --check` will not find these: it " +
+      "reads added lines in a diff, so it is silent once the markers are committed.",
+    standardRef: R.evidence,
+  });
+}
+
+/**
  * security.no-secrets-in-artifacts — Standard 16 R2, evaluated from 2.0.0 (Standard 46 R1).
  *
  * VIEW: `sourceOf` for code — comments removed, strings intact — because a credential lives inside
@@ -3307,6 +3480,7 @@ export async function main(args) {
   // repository, and asking twice would spend a second subprocess to learn the same thing.
   const repoAvailability = repositoryAvailable(root);
   const envCheck = detectCommittedEnvFiles(files, root, repoAvailability, run);
+  detectConflictMarkers(files, root, repoAvailability, run);
   detectSecretsInArtifacts(files, run);
   detectSwallowedExceptions(files, run);
   detectCertBypass(files, run);
