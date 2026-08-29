@@ -164,6 +164,22 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     const exception = activeExceptions.get(rule.id);
     const outcome = level === "required" || level === "forbidden" ? RESULT.failed : RESULT.warning;
     const result = base(rule, level, outcome, exception ? "excepted" : "evaluated", hits[0].message);
+
+    // A FINDING MAY CARRY ITS OWN REMEDIATION, AND ONLY WHEN THE RULE'S WOULD BE UNTRUE.
+    //
+    // The catalog's remediation is written for the rule, so it presumes the rule's ordinary failure.
+    // `documentation.code-consistency` says "Correct the document, or remove the wrong claim" — which
+    // is right when a check established that a claim is wrong, and a false instruction when it did
+    // not. Issue #4 is that case: a path the run could not resolve is not a path observed to be
+    // absent, and telling an author to correct a correct document is how a check spends the trust
+    // that makes people act on it.
+    //
+    // Deliberately an override rather than a replacement. A finding says nothing about remediation
+    // unless it has something the catalog cannot know, so every existing rule keeps its catalog text
+    // by saying nothing — and `hits[0]` is the same finding whose message is already being used, so
+    // the sentence and the instruction under it come from one place and cannot disagree.
+    if (hits[0].remediation) result.remediation = hits[0].remediation;
+
     result.evidence = hits.flatMap((h) => h.evidence ?? []);
     result.files = result.evidence;
     if (exception) {

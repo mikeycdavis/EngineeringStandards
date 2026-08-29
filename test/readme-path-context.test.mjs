@@ -246,3 +246,115 @@ test("an ambiguous token withdraws without taking a confirmed violation with it"
     assert.equal(r.status, "failed", "the confirmed violation stopped being scored");
   });
 });
+
+// --- The remediation contract ---------------------------------------------------------------------
+//
+// The second half of issue #4 is not a path-resolution defect. `overlays/prod` cannot be resolved
+// without semantic proximity inference that no contract states, so it stays reported — but the
+// instruction under it presumed a conclusion the run never reached. A rule that is required,
+// structurally evaluated and non-attestable leaves an adopter no truthful way to disagree with a
+// wrong instruction, which is measured directly below.
+
+const REMEDIATION_CATALOG =
+  "Correct the document, or remove the wrong claim. Do not leave it with a caveat.";
+
+test("an unresolvable base is reported, and does not pass by proximity to a link", async () => {
+  const readme = [
+    "# Fixture",
+    "",
+    "- Kubernetes manifests: [`deploy/k8s`](deploy/k8s) (kustomize base + `overlays/prod`).",
+    "",
+  ].join("\n");
+  await withReadme(readme, (root) => {
+    assert.deepEqual(evidenceOf(cli("audit", root)), ["README.md -> overlays/prod"]);
+    const r = resultFor(cli("validate", root));
+    assert.equal(r.status, "failed", "an unresolvable token stopped failing the rule");
+    assert.equal(r.disposition, "evaluated");
+  });
+});
+
+test("an unresolvable base does not instruct a content change", async () => {
+  const readme = [
+    "# Fixture",
+    "",
+    "- Kubernetes manifests: [`deploy/k8s`](deploy/k8s) (kustomize base + `overlays/prod`).",
+    "",
+  ].join("\n");
+  await withReadme(readme, (root) => {
+    const r = resultFor(cli("validate", root));
+    assert.notEqual(
+      r.remediation,
+      REMEDIATION_CATALOG,
+      "an adopter is still told to correct a document this run never established was wrong",
+    );
+    assert.ok(
+      !/correct the document/i.test(r.remediation),
+      `remediation still instructs a content change: ${r.remediation}`,
+    );
+    assert.ok(
+      !/do not exist/i.test(r.message),
+      `the message still asserts non-existence the run did not establish: ${r.message}`,
+    );
+  });
+});
+
+test("a missing path under a corroborated base still gets actionable remediation", async () => {
+  // The direction that keeps the change honest. `src/` exists, so the run did resolve the base the
+  // document implied and the leaf really is absent — the catalog's instruction is correct here and
+  // must survive untouched.
+  const readme = ["# Fixture", "", "Absent: `src/nope.ts`.", ""].join("\n");
+  await withReadme(readme, (root) => {
+    const r = resultFor(cli("validate", root));
+    assert.equal(r.status, "failed");
+    assert.equal(
+      r.remediation,
+      REMEDIATION_CATALOG,
+      "the ordinary stale-documentation case lost its actionable remediation",
+    );
+    assert.ok(/do not exist/.test(r.message), "the established case stopped saying what it observed");
+  });
+});
+
+test("a deleted directory tree is still detected, not softened into silence", async () => {
+  // The constraint that rejected the alternative fix. Withdrawing every token whose parent is absent
+  // would stop reporting a whole deleted tree — the stale-documentation case this rule exists for.
+  // Detection must be identical; only the sentence and the instruction differ.
+  const readme = [
+    "# Fixture",
+    "",
+    "See `docs/api.md`, `docs/erd.md` and `docs/threat-model.md`.",
+    "",
+  ].join("\n");
+  await withReadme(readme, (root) => {
+    assert.deepEqual(
+      evidenceOf(cli("audit", root)).sort(),
+      ["README.md -> docs/api.md", "README.md -> docs/erd.md", "README.md -> docs/threat-model.md"],
+      "a deleted directory tree stopped being reported",
+    );
+    const r = resultFor(cli("validate", root));
+    assert.equal(r.status, "failed", "a deleted directory tree stopped failing the rule");
+  });
+});
+
+test("both classes in one README keep the established violation in front", async () => {
+  const readme = [
+    "# Fixture",
+    "",
+    "Absent: `src/nope.ts`.",
+    "- Manifests: [`deploy/k8s`](deploy/k8s) (kustomize base + `overlays/prod`).",
+    "",
+  ].join("\n");
+  await withReadme(readme, (root) => {
+    const r = resultFor(cli("validate", root));
+    assert.equal(
+      r.remediation,
+      REMEDIATION_CATALOG,
+      "an ambiguous token displaced the actionable instruction for a real one",
+    );
+    assert.deepEqual(
+      evidenceOf(cli("audit", root)).sort(),
+      ["README.md -> overlays/prod", "README.md -> src/nope.ts"],
+      "one class of finding swallowed the other's evidence",
+    );
+  });
+});
