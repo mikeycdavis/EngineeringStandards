@@ -2006,8 +2006,62 @@ falsifies, and renaming it would erase the record of a framing this item had to 
 
 ### Resolve Standard 31 R4's comparability gap
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-29. R4 now carries a comparability contract; the producer-side
+  prerequisite it names is owned by issue
+  [#55](https://github.com/mikeycdavis/EngineeringStandards/issues/55) and is deliberately not
+  answered here.
+
+  **The mechanism the issue reported is obsolete, and the defect it points at is not.** #1's evidence
+  is that a consumer cannot tell "the project re-declared against a newer version" from "the validator
+  moved underneath an unchanged declaration". A version-identity guard at `scripts/standards.mjs:3193`
+  already refuses to emit an envelope when those two disagree — exit 2, typed `VERSION_MISMATCH`. It
+  landed at `11d8632` on 2026-08-09 20:37; #1 was filed 2026-08-10 01:37, five hours later, against
+  the tree its author had. The report was true when its evidence was gathered.
+
+  So a non-null `standardVersion` is *both* what the project declares and what evaluated it, and #1's
+  requested `validatorVersion` is not merely unbuilt — the separation it asks for is **unrepresentable**,
+  because the guard refuses to emit the envelope in which the two could differ.
+
+  **The gap survives at a granularity the guard cannot reach.** Under a constant `VERSION 2.0.0`,
+  `scripts/standards.mjs` changed across 21 commits and `rules/` across 6; `scm.no-committed-env-files`
+  moved its `assurance`, and three rules moved a `$assuranceNote` that the envelope does not carry.
+
+  **The falsifier, measured rather than argued.** Two validators, both `VERSION 2.0.0`, run against a
+  byte-identical unchanged tree naming `overlays/prod` with `deploy/k8s/overlays/prod` present:
+  `status`, `level`, `severity`, `validationType`, `assurance`, `disposition`, `evidence`, `score`,
+  `summary`, `standardVersion` and `schemaVersion` are **all identical**, and the observation moved
+  from *this path does not exist* to *could not be resolved, and whether the document is wrong was not
+  established*. Different measurements; nothing joinable says so. Any contract asserting those two are
+  machine-detectably comparable is wrong, which is why R4 declares the dimension `unknown` rather than
+  supplying a basis it does not have.
+
+  **A first draft of R4 was withdrawn before it was written, and the falsifier came from this
+  repository.** It would have said that a change in `level`, `severity`, `validationType`, `assurance`
+  or `disposition` breaks the series as a rule-semantic change. Ownership was then measured:
+  `severity` is catalog-only (0/50 results differ from it), `level` is policy-owned with a catalog
+  fallback (a fixture declaring `required` over a catalog `recommended` reports `required`), and
+  `validationType` and `assurance` follow the result path rather than the catalog — **23 of 50 results
+  in this repository's own envelope disagree with the catalog on one of the two**. PR #54 then proved
+  it outright: it touched neither `rules/` nor `scripts/` by a single line, and moved two rules from
+  `not-evaluated`/`none` to `attested`/`full`. The withdrawn wording would have called that a broken
+  series. It is the project's evidence state legitimately advancing, which is what a longitudinal view
+  exists to show.
+
+  R4 as written therefore names those fields **observable evaluation context**, rules that a change in
+  them must not be misattributed to rule semantics, and — separately — that their *equality* proves
+  nothing about the context that produced them, since two runs may agree on all of them while
+  consuming different policy content, evidence, or files.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue [#1](https://github.com/mikeycdavis/EngineeringStandards/issues/1)
+- **Prerequisite, owned elsewhere and deliberately not closed here:**
+  [#55](https://github.com/mikeycdavis/EngineeringStandards/issues/55) — Standard 25 R2 owns the
+  envelope, so the missing producer-issued rule-set identity is defined there or nowhere. This item
+  does not wait on it: a consumer that knows it cannot compare will refuse rather than compare
+  wrongly, which is #1's own stated first remedy. No fingerprint shape is proposed, because the two
+  obvious ones are each blocked by something measured — a git-blob identity is unavailable to a
+  package installed without a repository, and a raw working-tree digest differs between a CRLF
+  checkout and a `git archive` export, which is the defect ADR 0011 exists to prevent.
 - **Evidence:** open as of 2026-08-11.
   [`standards/31-whatsnext-compatibility.md`](../../standards/31-whatsnext-compatibility.md) R4
   defines the *join key* — two results are the same finding if they share `project` and `ruleId` —
@@ -2028,6 +2082,13 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   - Whatever is required of the JSON envelope is already present in it, or the change discloses that
     it is not.
 - **Verification:** `npm run fidelity && npm run inventory && npm test`.
+- **How the acceptance criteria were met.** The first: the contract is in R4, not in the tool, and no
+  code changed. The second: `fidelity` passes, R4 carries no verbatim source block, and the addition
+  is disclosed in the standard's own additions-beyond-the-source list. The third is the one that
+  permits closure at all — *"or the change discloses that it is not"* — and this is that case. What
+  the envelope needs is a rule-set identity it does not have; R4 says so, and #55 owns supplying it.
+  Closing on a disclosed absence is what that clause was written for, and it is not the same as
+  closing on a satisfied requirement.
 - **Dependencies:** [ADR 0002](../adr/0002-canonical-rule-identity.md), already settled.
 - **Note on this item's history:** an earlier reconciliation of Standard 31 merged into `develop` at
   `5b4b917`. That commit is an ancestor of `origin/develop` — the reconciliation landed. The issue
@@ -2036,7 +2097,77 @@ falsifies, and renaming it would erase the record of a framing this item had to 
 
 ### Decide how the plan-item field parser handles qualified headings
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-29. The decision is an explicit grammar plus a diagnostic, and the
+  measurement that shaped it found a third failure class this item did not record.
+
+  **Three failure classes, measured end to end against a five-item fixture plan.**
+
+  | | Written | Before | After |
+  | --- | --- | --- | --- |
+  | 1 | `- **Status — as of today:** READY` | **the item disappears** — excluded from `executable` before any check runs, and *no finding of any kind* is emitted | parses as `Status`; the item is evaluated |
+  | 2 | `- **Acceptance Criteria — amended today:** a` | `(no Acceptance Criteria)` against an item that visibly has one | parses as `Acceptance Criteria` |
+  | 3 | `- **Tracked by — see the note:** issue #99` | delegation disclosure **deleted**, so a `COMPLETE` that nobody verified reads as established | parses; the cached-copy warning is emitted |
+
+  **Class 1 is not in this item's original text, and it is the worst of the three.** The other two
+  produce something wrong; this one produces nothing at all. A fixture item carrying all six fields,
+  one of them qualified, was reported clean.
+
+  **Class 3 is understated above what this item recorded.** Framed here as a field disappearing, it
+  measures as worse: losing `Tracked by` does not merely drop a field, it *manufactures* an
+  unearned claim, because the item's own `Status` stops being labelled a cached copy of an authority
+  nobody consulted.
+
+- **The grammar, adopted.** Exactly two forms, and a label occupies one line.
+
+  ```text
+  - **<key>:** value
+  - **<key> — <qualifier>:** value
+  ```
+
+  The key is matched **exactly** after trimming; the separator is a space, an em dash and a space,
+  and nothing else; the colon is required. No prefix matching, no case folding, no fuzziness. The
+  qualifier is free prose that nothing reads.
+
+- **PR #54 stays rejected under this grammar, and that is the point.** Its heading dropped the colon
+  *and* wrapped across two lines. The defect was never that a human-readable qualification failed to
+  parse — it is that the rejection was silent in class 1 and misdiagnosed in class 2. What changed is
+  the report, not the tolerance.
+
+- **The diagnostic's boundary is what had to be measured, and the obvious version of it is wrong.**
+  Reporting any unrecognised bold bullet inside an item fires **136 times on this repository's own
+  plan**, every one of them correct content: 64 keyed bullets whose key nothing reads — `Evidence`
+  alone appears in eight of the nine plan files — and 72 bold prose lead-ins such as
+  `**CI deliberately does not run --strict.**`. A positional rule fails too: **26 items** carry bold
+  bullets after their last known field, so there is no contiguous field block to anchor to.
+
+  So the diagnostic fires only where a label's canonical key is **exactly** a field the plan reads,
+  or is one followed by a dash where the separator belongs. Measured across all 13 plan files in
+  `artifacts/` and `test/fixtures/` — 492 classified bullets — it produces **zero** findings.
+
+- **A fourth class the strict separator creates, and which had to be caught rather than shipped.**
+  Adopting ` — ` as the only separator makes `Status - as of today`, `Status – as of today` and
+  `Status—as of today` unknown keys, which is *silent loss again* — the defect this item exists to
+  remove, reintroduced by its own fix. They are reported as a malformed separator instead. The rule
+  distinguishing them from `Acceptance Criteria-ish`, which must stay an ordinary unknown key, is
+  that an em or en dash is never intra-word while a plain hyphen usually is, so a hyphen counts only
+  when whitespace surrounds it. The first version of this rule fired on `Acceptance Criteria-ish`
+  and was rejected by the suite before it left the worktree.
+
+- **The ordering is load-bearing and was wrong first.** The diagnostic must run *before* the
+  executable filter and its early return, because a malformed `Status` is precisely what stops an
+  item being executable. The first implementation collected syntax problems after that point; a
+  single-item fixture returned before collecting anything, and class 1 stayed invisible. The test
+  named for it is what failed, and the ordering is now pinned by that test.
+
+- **Eight mutants, all killed, and one of them earned the suite an extra test.** Relaxing the key
+  match from a prefix to a substring survived every other test here. The case that kills it is
+  ordinary rather than exotic: a prose lead-in the same length as a field name mentioned after the
+  dash, such as a bolded `Caveat` followed by an em dash and a sentence mentioning `Status` — six
+  characters before the separator, and the field name after it — which a substring rule reports as a
+  malformed `Status` field. That is precisely the false-positive class this item was told not to
+  create, and it survived until a mutant asked for it.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue
   [#19](https://github.com/mikeycdavis/EngineeringStandards/issues/19)
 - **Evidence:** open as of 2026-08-11. The parser in
@@ -2055,19 +2186,38 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   findings, and it was found only by a one-off script written during the 2026-08-11 plan audit. So
   the impact is not confined to required fields generating a misleading *"missing required field"*
   message; for optional fields, a qualified heading disappears silently and permanently.
-- **Deliverables:** a decision on the owning layer and the fix, plus a regression. Deliberately not
+- **Deliverables:** ~~a decision on the owning layer and the fix, plus a regression. Deliberately not
   chosen here — the parser could recognise a known field name as a prefix, or the plan format and
-  templates could make the exact token mechanically unavoidable. A third option is compatible with
-  either: report an unrecognised field key as its own finding, so a near-miss explains itself.
+  templates could make the exact token mechanically unavoidable.~~ **Chosen 2026-08-29: an explicit
+  grammar in the parser, plus the third option, which the original text noted was compatible with
+  either — a malformed field heading reports itself.** Prefix recognition was rejected outright: it
+  is the fuzzy matching that would misread `Verification of the digest`, and the grammar gets the
+  same result with an exact key and a declared separator. The template route was not taken because it
+  cannot reach a plan already written, and every specimen so far was authored by hand.
 - **Acceptance Criteria:**
-  - A qualified heading is either accepted or produces a finding that names the heading as the
-    cause. `(no Acceptance Criteria)` against an item that visibly has one is the outcome to remove.
-  - The fix covers fields outside `PLAN_FIELDS`, or the plan explicitly records that it does not and
-    why. Fixing only the required fields would leave the silent case exactly as it is.
-  - A prefix-matching fix must not misread `- **Verification of the digest:**` as the `Verification`
-    field. Whichever direction is taken needs a known-negative fixture, not only a known-positive.
-- **Verification:** `npm test` with the new fixtures; plant a qualified heading of each shape in a
-  fixture plan item and confirm the chosen behaviour, including for a non-required field.
+  - A malformed or qualified `Status` MUST NOT make an item disappear. It either parses, or produces
+    a finding — silence is the failure this criterion exists to forbid, and it is the class the
+    original wording did not cover.
+  - A malformed `Tracked by` MUST NOT suppress the delegation disclosure. Restoring the field is not
+    sufficient on its own: the cached-copy warning is what stops an unverified `COMPLETE` reading as
+    established, so the test asserts the warning rather than the field.
+  - A wrapped or otherwise malformed label MUST be rejected loudly rather than converted to absence.
+    Where the field really is missing, the missing-field finding still fires **and** the syntax
+    finding names the line and the label beside it — the pair is the fix, because suppressing the
+    first would under-report a real R7 violation.
+  - A qualified heading is accepted when it follows the grammar, and `(no Acceptance Criteria)`
+    standing alone against an item that visibly has one is gone.
+  - The fix covers fields outside `PLAN_FIELDS` — `Tracked by` is included by name, and a key nothing
+    reads stays exactly as before rather than becoming an error.
+  - The grammar must not misread `- **Verification of the digest:**` as `Verification`. All four
+    near-misses — that one, `Statuses`, `Acceptance Criteria-ish`, `Dependencies and risks` — are
+    held as known-negatives, and ordinary bold prose inside an item must not become a parser error.
+  - One qualified field must not be mistaken for another, and a duplicate canonical key must not let
+    a qualified label silently overwrite the field a reader can see.
+- **Verification:** `npm test`. Twelve tests in
+  [`test/plan-field-grammar.test.mjs`](../../test/plan-field-grammar.test.mjs), each building a real
+  plan and running the real CLI. Eight are positives; four are the anti-vacuity half, which a
+  diagnostic that fired on everything would fail.
 - **Dependencies:** none.
 - **Repairing the four instances is not fixing this.** The malformed `Evidence` heading in this file
   was corrected in the same change that created this item. That removed one specimen; the parser
