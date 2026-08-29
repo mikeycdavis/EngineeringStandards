@@ -1941,7 +1941,77 @@ falsifies, and renaming it would erase the record of a framing this item had to 
 
 ### Decide how the plan-item field parser handles qualified headings
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-29. The decision is an explicit grammar plus a diagnostic, and the
+  measurement that shaped it found a third failure class this item did not record.
+
+  **Three failure classes, measured end to end against a five-item fixture plan.**
+
+  | | Written | Before | After |
+  | --- | --- | --- | --- |
+  | 1 | `- **Status — as of today:** READY` | **the item disappears** — excluded from `executable` before any check runs, and *no finding of any kind* is emitted | parses as `Status`; the item is evaluated |
+  | 2 | `- **Acceptance Criteria — amended today:** a` | `(no Acceptance Criteria)` against an item that visibly has one | parses as `Acceptance Criteria` |
+  | 3 | `- **Tracked by — see the note:** issue #99` | delegation disclosure **deleted**, so a `COMPLETE` that nobody verified reads as established | parses; the cached-copy warning is emitted |
+
+  **Class 1 is not in this item's original text, and it is the worst of the three.** The other two
+  produce something wrong; this one produces nothing at all. A fixture item carrying all six fields,
+  one of them qualified, was reported clean.
+
+  **Class 3 is understated above what this item recorded.** Framed here as a field disappearing, it
+  measures as worse: losing `Tracked by` does not merely drop a field, it *manufactures* an
+  unearned claim, because the item's own `Status` stops being labelled a cached copy of an authority
+  nobody consulted.
+
+- **The grammar, adopted.** Exactly two forms, and a label occupies one line.
+
+  ```text
+  - **<key>:** value
+  - **<key> — <qualifier>:** value
+  ```
+
+  The key is matched **exactly** after trimming; the separator is a space, an em dash and a space,
+  and nothing else; the colon is required. No prefix matching, no case folding, no fuzziness. The
+  qualifier is free prose that nothing reads.
+
+- **PR #54 stays rejected under this grammar, and that is the point.** Its heading dropped the colon
+  *and* wrapped across two lines. The defect was never that a human-readable qualification failed to
+  parse — it is that the rejection was silent in class 1 and misdiagnosed in class 2. What changed is
+  the report, not the tolerance.
+
+- **The diagnostic's boundary is what had to be measured, and the obvious version of it is wrong.**
+  Reporting any unrecognised bold bullet inside an item fires **136 times on this repository's own
+  plan**, every one of them correct content: 64 keyed bullets whose key nothing reads — `Evidence`
+  alone appears in eight of the nine plan files — and 72 bold prose lead-ins such as
+  `**CI deliberately does not run --strict.**`. A positional rule fails too: **26 items** carry bold
+  bullets after their last known field, so there is no contiguous field block to anchor to.
+
+  So the diagnostic fires only where a label's canonical key is **exactly** a field the plan reads,
+  or is one followed by a dash where the separator belongs. Measured across all 13 plan files in
+  `artifacts/` and `test/fixtures/` — 492 classified bullets — it produces **zero** findings.
+
+- **A fourth class the strict separator creates, and which had to be caught rather than shipped.**
+  Adopting ` — ` as the only separator makes `Status - as of today`, `Status – as of today` and
+  `Status—as of today` unknown keys, which is *silent loss again* — the defect this item exists to
+  remove, reintroduced by its own fix. They are reported as a malformed separator instead. The rule
+  distinguishing them from `Acceptance Criteria-ish`, which must stay an ordinary unknown key, is
+  that an em or en dash is never intra-word while a plain hyphen usually is, so a hyphen counts only
+  when whitespace surrounds it. The first version of this rule fired on `Acceptance Criteria-ish`
+  and was rejected by the suite before it left the worktree.
+
+- **The ordering is load-bearing and was wrong first.** The diagnostic must run *before* the
+  executable filter and its early return, because a malformed `Status` is precisely what stops an
+  item being executable. The first implementation collected syntax problems after that point; a
+  single-item fixture returned before collecting anything, and class 1 stayed invisible. The test
+  named for it is what failed, and the ordering is now pinned by that test.
+
+- **Eight mutants, all killed, and one of them earned the suite an extra test.** Relaxing the key
+  match from a prefix to a substring survived every other test here. The case that kills it is
+  ordinary rather than exotic: a prose lead-in the same length as a field name mentioned after the
+  dash, such as a bolded `Caveat` followed by an em dash and a sentence mentioning `Status` — six
+  characters before the separator, and the field name after it — which a substring rule reports as a
+  malformed `Status` field. That is precisely the false-positive class this item was told not to
+  create, and it survived until a mutant asked for it.
+
+  **Previously: READY.**
 - **Tracked by:** GitHub issue
   [#19](https://github.com/mikeycdavis/EngineeringStandards/issues/19)
 - **Evidence:** open as of 2026-08-11. The parser in
@@ -1960,19 +2030,38 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   findings, and it was found only by a one-off script written during the 2026-08-11 plan audit. So
   the impact is not confined to required fields generating a misleading *"missing required field"*
   message; for optional fields, a qualified heading disappears silently and permanently.
-- **Deliverables:** a decision on the owning layer and the fix, plus a regression. Deliberately not
+- **Deliverables:** ~~a decision on the owning layer and the fix, plus a regression. Deliberately not
   chosen here — the parser could recognise a known field name as a prefix, or the plan format and
-  templates could make the exact token mechanically unavoidable. A third option is compatible with
-  either: report an unrecognised field key as its own finding, so a near-miss explains itself.
+  templates could make the exact token mechanically unavoidable.~~ **Chosen 2026-08-29: an explicit
+  grammar in the parser, plus the third option, which the original text noted was compatible with
+  either — a malformed field heading reports itself.** Prefix recognition was rejected outright: it
+  is the fuzzy matching that would misread `Verification of the digest`, and the grammar gets the
+  same result with an exact key and a declared separator. The template route was not taken because it
+  cannot reach a plan already written, and every specimen so far was authored by hand.
 - **Acceptance Criteria:**
-  - A qualified heading is either accepted or produces a finding that names the heading as the
-    cause. `(no Acceptance Criteria)` against an item that visibly has one is the outcome to remove.
-  - The fix covers fields outside `PLAN_FIELDS`, or the plan explicitly records that it does not and
-    why. Fixing only the required fields would leave the silent case exactly as it is.
-  - A prefix-matching fix must not misread `- **Verification of the digest:**` as the `Verification`
-    field. Whichever direction is taken needs a known-negative fixture, not only a known-positive.
-- **Verification:** `npm test` with the new fixtures; plant a qualified heading of each shape in a
-  fixture plan item and confirm the chosen behaviour, including for a non-required field.
+  - A malformed or qualified `Status` MUST NOT make an item disappear. It either parses, or produces
+    a finding — silence is the failure this criterion exists to forbid, and it is the class the
+    original wording did not cover.
+  - A malformed `Tracked by` MUST NOT suppress the delegation disclosure. Restoring the field is not
+    sufficient on its own: the cached-copy warning is what stops an unverified `COMPLETE` reading as
+    established, so the test asserts the warning rather than the field.
+  - A wrapped or otherwise malformed label MUST be rejected loudly rather than converted to absence.
+    Where the field really is missing, the missing-field finding still fires **and** the syntax
+    finding names the line and the label beside it — the pair is the fix, because suppressing the
+    first would under-report a real R7 violation.
+  - A qualified heading is accepted when it follows the grammar, and `(no Acceptance Criteria)`
+    standing alone against an item that visibly has one is gone.
+  - The fix covers fields outside `PLAN_FIELDS` — `Tracked by` is included by name, and a key nothing
+    reads stays exactly as before rather than becoming an error.
+  - The grammar must not misread `- **Verification of the digest:**` as `Verification`. All four
+    near-misses — that one, `Statuses`, `Acceptance Criteria-ish`, `Dependencies and risks` — are
+    held as known-negatives, and ordinary bold prose inside an item must not become a parser error.
+  - One qualified field must not be mistaken for another, and a duplicate canonical key must not let
+    a qualified label silently overwrite the field a reader can see.
+- **Verification:** `npm test`. Twelve tests in
+  [`test/plan-field-grammar.test.mjs`](../../test/plan-field-grammar.test.mjs), each building a real
+  plan and running the real CLI. Eight are positives; four are the anti-vacuity half, which a
+  diagnostic that fired on everything would fail.
 - **Dependencies:** none.
 - **Repairing the four instances is not fixing this.** The malformed `Evidence` heading in this file
   was corrected in the same change that created this item. That removed one specimen; the parser
