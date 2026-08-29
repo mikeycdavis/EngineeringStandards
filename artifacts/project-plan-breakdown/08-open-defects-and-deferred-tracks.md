@@ -2069,34 +2069,139 @@ falsifies, and renaming it would erase the record of a framing this item had to 
 
 ### Decide which layer detects unresolved merge-conflict metadata
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-29. The layer question is answered, and the measurement answered it
+  by splitting it: there is no single layer, because there is no single signal.
+
+  **Two propositions, different owners, and neither detects the other's case.**
+
+  | | Proposition | Owner | Reaches `develop`? |
+  | --- | --- | --- | --- |
+  | **P1** | this tracked file's committed content contains a conflict-marker group | an `audit` finding, `INFERRED`, **no catalog rule** | **yes — it did** |
+  | **P2** | this working tree is mid-conflict | a local preflight in `scripts/ci-context.sh` / `.ps1`, outside the catalog | no |
+
+  **They are disjoint, measured rather than reasoned.** A delete/modify conflict leaves stages in
+  the index, `MERGE_HEAD` on disk and `status` reporting `UD`, over a file whose content holds **no
+  markers at all**. A committed marker leaves a clean index, a clean status and no metadata. Content
+  scanning misses the first; every repository-state probe misses the second.
+
+  **P2 can never reach CI, and that is what decided its layer rather than a preference.** `git
+  commit` refuses an unmerged index; `git add` clears the stages and deletes `CHERRY_PICK_HEAD`, so
+  the state is *erased* by the act that would carry it forward. `ci-context.sh` clones committed
+  HEAD and `actions/checkout` does the same, so no index stage can exist in either. A CI-time check
+  for P2 could not fire even once. It was already refused locally, but under the wrong name — as
+  *"the working tree has uncommitted changes"* — and now says which state it found.
+
+  **The incident was a cherry-pick**, so `CHERRY_PICK_HEAD` existed and `MERGE_HEAD` did not. A
+  probe written as `git rev-parse --verify MERGE_HEAD` would have missed the specimen this item is
+  about. The preflight reads `git ls-files -u` and the full operation set — merge, cherry-pick,
+  revert, rebase, sequencer, `AUTO_MERGE` — and reports `unknown` where the repository cannot
+  answer, rather than inferring clean.
+
+  **P2's two signals are both load-bearing, and the test drives them separately.** The index misses
+  a resolution that has been staged while the operation is still open; the metadata misses nothing
+  there, and the reverse case — a delete/modify conflict — is invisible to any content check
+  because the file holds no markers. The refusal moved ahead of every other repository read, so a
+  directory that cannot answer the question is refused as `unknown` instead of failing later with
+  git's own unexplained error.
+
+  **Previously: READY.**
+- **Superseded status line:** READY
 - **Tracked by:** GitHub issue
   [#21](https://github.com/mikeycdavis/EngineeringStandards/issues/21)
 - **Evidence:** open as of 2026-08-11, and **reproduced on `develop` rather than hypothesised**.
   Three cherry-pick conflict markers reached `develop` in this file, introduced by `8870a43` and
   removed by `18857e9`. While they were present the repository passed `inventory`, `fidelity`,
   `policy`, `diagrams`, 229 tests, and a self-audit reporting **0 errors and 0 warnings**.
-  `git diff --check` detects them in one command and names the lines.
+  ~~`git diff --check` detects them in one command and names the lines.~~ **Corrected 2026-08-29:
+  useful only in the pre-commit diff window; silent after commit.** It reads *added lines in a
+  diff*, not repository content, so it was true while the markers were unstaged and false from the
+  moment `8870a43` landed — which is the state this item exists for. Measured on a repository
+  holding committed markers and a clean tree, `git diff --check` exits **0** and prints nothing.
+  Adopting it would have shipped a gate that cannot see its own specimen.
 - **Purpose:** Unresolved merge metadata can sit in a tracked file — in the canonical release-gate
   artifact, inside a plan item's `Verification` field — while every gate reports clean. The plan
   parser reads `- **Field:**` lines and ignores all others, Markdown renders markers as ordinary
   text, and the tests assert behaviour rather than file-content shape. The defect was found by
   external review, not by this repository's own tooling.
-- **Deliverables:** a decision on the owning enforcement layer, and a check with fixtures. **The
-  layer is deliberately not chosen here**, because the incident does not settle it. The question
-  underneath: is unresolved merge metadata a *finding about the repository*, or a *hygiene
-  precondition* that should fail before the evaluator is asked anything? Candidates are a repository
-  hygiene command run by CI alongside the existing invariant checks, an `audit` finding category, or
-  an extension of an existing validation layer.
+- **Deliverables:** ~~a decision on the owning enforcement layer, and a check with fixtures. **The
+  layer is deliberately not chosen here**, because the incident does not settle it.~~ **Chosen
+  2026-08-29, and the question's own framing is what the measurement corrected.** It asked whether
+  unresolved merge metadata is *a finding about the repository* or *a hygiene precondition*. It is
+  both, because it is two signals: the committed content is a finding (P1, an `audit` finding
+  category — one of the three candidates named here), and the live conflicted tree is a
+  precondition (P2, the hygiene-command candidate, narrowed to a preflight because CI cannot
+  observe it at all). The third candidate, extending a validation layer, was rejected with
+  Standard 46 below.
+
+  **P1 is deliberately not a catalog rule.** The remaining discriminator is heuristic — see the
+  acceptance criteria — and promoting it would make that heuristic normative by implementation
+  accident rather than by a decision anyone took. Normative ownership is left open as
+  [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58), and *"leave it audit-only
+  permanently"* is among its legitimate answers.
+
+  **Standard 46 is rejected as the normative home**, measured against its own preamble: it scopes
+  itself to *"the prohibitions whose damage cannot be undone by a later commit"*. A committed
+  conflict marker is reversible and `18857e9` reversed this one. Putting the clause there would
+  widen the standard's stated scope in order to gain a rule, which is the kind of trade this
+  repository refuses elsewhere.
 - **Acceptance Criteria:**
-  - **Known positive:** a file containing genuine unresolved markers is detected.
+  - **Known positive:** the actual `8870a43` specimen — unfenced markers in Markdown — is reported.
+    The test uses that shape rather than an invented one.
   - **Known negative:** documentation that *mentions* conflict-marker syntax is not flagged —
     including issue #21 itself, this plan item, and any standard or design document explaining merge
     conflicts. A naive content scan would flag the very documents describing the rule, which is the
     use/mention defect ([ADR 0009](../adr/0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md))
     that has already shipped five times here.
+  - **A group is required, not a token.** An isolated `<<<<<<<` in prose is not enough to fire; an opener
+    and a terminator must both be present, at column 0, in order.
+  - **Non-Markdown tracked content is covered.** A fence is a Markdown construct; a `.mjs` or
+    `.json` file has none, so every column-0 group in it counts — including one wrapped in three
+    backticks, which are three backticks there and not a fence.
+  - **A second limitation, inherited rather than introduced, is disclosed with the first.** The
+    audit's existing readable-extension set decides which files the walk opens at all, so `.txt`,
+    `.xml` and `.csv` are outside this check because they are outside the audit. Both limits are
+    named in the finding's own message: a reader who knows about only one of them will read a clean
+    result as stronger than it is. A test pins the `.txt` case, which also keeps the untracked-file
+    test honest — written against a `.txt` it would have passed for the wrong reason.
+  - **The known miss is asserted, not papered over.** A genuine marker group inside a fenced block
+    is **not** reported, and a test pins that as the limitation rather than leaving it as untested
+    behaviour that might be mistaken for coverage.
   - The regression is a known-negative guard, not only a known-positive one.
-- **Verification:** `npm test` with both fixtures; `git diff --check` exits 0 on a clean tree.
+- **The discriminator is heuristic, and this is the reason P1 stays audit-only.** No git-native
+  mechanism separates an instance from an illustration, and the range-scoped form only defers the
+  problem by one commit:
+
+  ```text
+  git diff --check <empty-tree> <the-commit-that-adds-the-documentation>
+    doc.md:4: leftover conflict marker
+    doc.md:6: leftover conflict marker
+    doc.md:8: leftover conflict marker
+  ```
+
+  Those three lines are inside a fenced block in a document about merge conflicts. Git's `--check`
+  is fence-blind. Marker well-formedness does not separate them either: the `8870a43` specimen is
+  column-0, exactly seven characters, complete and ordered, in Markdown — and so is any textbook
+  example, including the ones in this item.
+
+  What is left is fenced-region exclusion, which is a trade rather than a solution. It catches the
+  real specimen, spares the documentation, and **misses a genuine group inside a fence**. The
+  finding says so in its own message, so absence is never read as proof of absence.
+- **Verification:** `npm test`. Seventeen tests in
+  [`test/conflict-markers.test.mjs`](../../test/conflict-markers.test.mjs) for P1, each building a
+  real repository — not a directory — because the detector asks the index which paths are tracked
+  and refuses to answer from the filesystem. Two more in
+  [`test/local-ci.test.mjs`](../../test/local-ci.test.mjs) for P2, one driving four conflicted
+  repositories through the real script and one holding the PowerShell twin to the same signals as
+  text. ~~`git diff --check` exits 0 on a clean tree.~~ **Withdrawn:** it exits 0 on a clean tree
+  holding committed markers too, so it verifies nothing here.
+- **Twelve mutants, all killed — and three of the tests were passing for the wrong reason until they
+  were.** Relaxing the grammar to accept a lone token, or a terminator with no separator, left the
+  suite green: those three negatives were written against a `.txt` fixture, and `.txt` is outside
+  the audit's readable-extension set, so nothing was ever scanned. They asserted an absence produced
+  by the file's name. Moving them to `.mjs` is what made them tests. Two more survivors were real
+  gaps in the same way: nothing isolated the index signal from the operation metadata (every P2
+  fixture had both, so a build that never asked the index passed), and nothing pinned the opener's
+  exact length independently of the separator's. Both now have a fixture of their own.
 - **Dependencies:** none.
 - **One specimen removed is not one class prevented.** `18857e9` deleted the markers that reached
   `develop` and the repository is currently clean. That establishes nothing about whether the next
