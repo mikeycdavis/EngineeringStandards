@@ -348,6 +348,170 @@ test("a project name cannot choose what the context builder deletes", (t) => {
   assert.match(ps, /not a usable project name/, "the PowerShell twin does not name the refusal");
 });
 
+test("an unresolved conflict is refused by name, before the generic dirty-tree message", (t) => {
+  // P2 of issue #21. A conflicted tree is already a dirty tree, so this changes no verdict — it
+  // changes the sentence. "The working tree has uncommitted changes" sends a developer looking for
+  // an edit they forgot to commit; what is actually true is that a merge, cherry-pick, rebase or
+  // revert is still open.
+  //
+  // Driven for real, because the two signals it reads are exactly the ones a text assertion cannot
+  // tell apart. A delete/modify conflict leaves unmerged index stages over a file whose content
+  // holds NO conflict markers, so the audit-side check for committed markers cannot see it; and
+  // once the paths are staged the index goes clean while the operation is still open, so
+  // `ls-files --unmerged` cannot see that. Each case below is one of those halves.
+  const bash = spawnSync("bash", ["-c", "exit 0"], { encoding: "utf8" });
+  if (bash.error || bash.status !== 0) {
+    t.skip("bash is unavailable, so the POSIX twin cannot be driven here");
+    return;
+  }
+
+  const sandbox = mkdtempSync(path.join(tmpdir(), "ci-context-conflict-"));
+  const git = (cwd, args) => spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  const build = (name) => {
+    const repo = path.join(sandbox, name);
+    mkdirSync(repo);
+    git(repo, ["init", "--quiet"]);
+    git(repo, ["config", "user.email", "fixture@example.invalid"]);
+    git(repo, ["config", "user.name", "fixture"]);
+    git(repo, ["config", "core.autocrlf", "false"]);
+    return repo;
+  };
+  const context = (repo, project) =>
+    spawnSync("bash", [path.join(ROOT, "scripts/ci-context.sh"), repo, project], {
+      encoding: "utf8",
+      env: { ...process.env, TMPDIR: path.join(sandbox, "temp") },
+    });
+
+  try {
+    mkdirSync(path.join(sandbox, "temp"));
+
+    // A delete/modify conflict: unmerged stages, and a file with no markers in it at all.
+    const del = build("deletemodify");
+    writeFileSync(path.join(del, "k.txt"), "base\n");
+    git(del, ["add", "k.txt"]);
+    git(del, ["commit", "--quiet", "-m", "base"]);
+    git(del, ["checkout", "--quiet", "-b", "other"]);
+    git(del, ["rm", "--quiet", "k.txt"]);
+    git(del, ["commit", "--quiet", "-m", "delete"]);
+    git(del, ["checkout", "--quiet", "-"]);
+    writeFileSync(path.join(del, "k.txt"), "base\nmodified\n");
+    git(del, ["commit", "--quiet", "-a", "-m", "modify"]);
+    git(del, ["merge", "other"]);
+
+    const conflicted = context(del, "conflict-a");
+    assert.notEqual(conflicted.status, 0, "a conflicted working tree was accepted");
+    assert.match(
+      `${conflicted.stderr}`,
+      /unresolved conflict/,
+      "a conflicted tree was refused as a generic dirty tree, which names the wrong cause",
+    );
+    assert.doesNotMatch(
+      readFileSync(path.join(del, "k.txt"), "utf8"),
+      /^<{7}/m,
+      "the fixture leaked marker text, so this no longer proves the marker-free case is caught",
+    );
+
+    // The other half: the paths are staged, so the index is clean and only the operation metadata
+    // is left. A check written as `git rev-parse --verify MERGE_HEAD` would also miss this one,
+    // because a cherry-pick writes CHERRY_PICK_HEAD and no MERGE_HEAD.
+    const cp = build("cherrypick");
+    writeFileSync(path.join(cp, "f.txt"), "one\n");
+    git(cp, ["add", "f.txt"]);
+    git(cp, ["commit", "--quiet", "-m", "base"]);
+    git(cp, ["checkout", "--quiet", "-b", "side"]);
+    writeFileSync(path.join(cp, "f.txt"), "side\n");
+    git(cp, ["commit", "--quiet", "-a", "-m", "side"]);
+    git(cp, ["checkout", "--quiet", "-"]);
+    writeFileSync(path.join(cp, "f.txt"), "trunk\n");
+    git(cp, ["commit", "--quiet", "-a", "-m", "trunk"]);
+    git(cp, ["cherry-pick", "side"]);
+    git(cp, ["add", "f.txt"]); // resolution staged; the cherry-pick is still open
+
+    assert.equal(git(cp, ["ls-files", "--unmerged"]).stdout.trim(), "", "the fixture is not staged");
+    const paused = context(cp, "conflict-b");
+    assert.notEqual(paused.status, 0, "a paused cherry-pick with a clean index was accepted");
+    assert.match(
+      `${paused.stderr}`,
+      /operation in progress:[^\n]*CHERRY_PICK_HEAD/,
+      "the open operation was not named",
+    );
+
+    // A third shape, and the one that makes the index signal independent rather than redundant: a
+    // conflicted `git stash pop` leaves unmerged stages and NO MERGE_HEAD or CHERRY_PICK_HEAD. The
+    // operation list catches it here only because AUTO_MERGE is on it, and AUTO_MERGE is written by
+    // a merge strategy rather than promised by the porcelain — so an index that is never consulted
+    // would make this case depend on which strategy resolved the stash.
+    const st = build("stashpop");
+    writeFileSync(path.join(st, "f.txt"), "one\n");
+    git(st, ["add", "f.txt"]);
+    git(st, ["commit", "--quiet", "-m", "base"]);
+    writeFileSync(path.join(st, "f.txt"), "stashed\n");
+    git(st, ["stash", "--quiet"]);
+    writeFileSync(path.join(st, "f.txt"), "other\n");
+    git(st, ["commit", "--quiet", "-a", "-m", "other"]);
+    git(st, ["stash", "pop"]);
+
+    assert.notEqual(git(st, ["ls-files", "--unmerged"]).stdout.trim(), "", "the fixture is not conflicted");
+    assert.ok(
+      !existsSync(path.join(st, ".git", "MERGE_HEAD")) &&
+        !existsSync(path.join(st, ".git", "CHERRY_PICK_HEAD")),
+      "the fixture grew merge metadata, so it no longer isolates the index signal",
+    );
+    const stashed = context(st, "conflict-d");
+    assert.notEqual(stashed.status, 0, "a conflicted stash pop was accepted");
+    assert.match(`${stashed.stderr}`, /unresolved conflict/, "the refusal does not name the cause");
+
+    // AUTO_MERGE removed, leaving unmerged stages and no operation metadata whatsoever. That is
+    // what this same conflict looks like under a git old enough not to write it, and it is the only
+    // fixture here in which the index is the ONLY signal — without it, a build that never asked the
+    // index would pass every test in this file while missing a whole class of conflicted tree.
+    rmSync(path.join(st, ".git", "AUTO_MERGE"), { force: true });
+    assert.notEqual(git(st, ["ls-files", "--unmerged"]).stdout.trim(), "", "the stages went away too");
+    const indexOnly = context(st, "conflict-e");
+    assert.notEqual(indexOnly.status, 0, "unmerged stages with no metadata were read as a clean tree");
+    assert.match(`${indexOnly.stderr}`, /unresolved conflict/, "the index signal alone does not refuse");
+    assert.doesNotMatch(
+      `${indexOnly.stderr}`,
+      /operation in progress/,
+      "the fixture still has metadata, so this does not isolate the index signal",
+    );
+
+    // Unavailable is not clean. A directory that is not a work tree cannot answer the question, and
+    // the refusal says so rather than starting a run over an unexamined tree (ADR 0008).
+    const bare = path.join(sandbox, "notarepo");
+    mkdirSync(bare);
+    const unknown = context(bare, "conflict-c");
+    assert.notEqual(unknown.status, 0, "a directory that cannot answer was treated as clean");
+    assert.match(`${unknown.stderr}`, /unknown/, "an unanswerable question was not reported as unknown");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("both context builders read the same conflict signals", () => {
+  // The PowerShell twin cannot be driven here, so it is held to the same alphabet as text — the
+  // limitation this file already records for every environment assertion. Both halves are named:
+  // the index signal misses a staged resolution, and the metadata signal misses nothing about a
+  // cherry-pick only because CHERRY_PICK_HEAD is listed beside MERGE_HEAD.
+  for (const file of ["scripts/ci-context.ps1", "scripts/ci-context.sh"]) {
+    const text = withoutComments(read(file));
+    assert.match(text, /ls-files['", ]+--unmerged/, `${file} never asks the index about a conflict`);
+    for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "AUTO_MERGE"]) {
+      assert.match(text, new RegExp(marker), `${file} does not look for ${marker}`);
+    }
+    for (const dir of ["rebase-merge", "rebase-apply", "sequencer"]) {
+      assert.match(text, new RegExp(dir), `${file} does not look for ${dir}`);
+    }
+    assert.match(text, /unresolved conflict/, `${file} does not name the cause`);
+    // Ordering, held as text in both twins: the specific message has to come first, or the generic
+    // one answers a question the developer did not ask.
+    assert.ok(
+      text.indexOf("unresolved conflict") < text.indexOf("uncommitted changes"),
+      `${file} reports a conflicted tree as a generic dirty tree`,
+    );
+  }
+});
+
 test("the context is removed by exact path and never by a sweep of the temp directory", () => {
   // The same rule as container teardown: this can remove what this run created and nothing else.
   for (const file of ["scripts/ci.ps1", "scripts/ci.sh", "scripts/verify-materialisation.ps1"]) {

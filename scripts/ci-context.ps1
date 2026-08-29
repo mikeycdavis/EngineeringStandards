@@ -123,6 +123,56 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "git was not found on PATH. It is required to materialise the CI context."
 }
 
+# An unresolved conflict is refused BEFORE the generic dirty-tree check, and by name.
+#
+# It would already be refused below: a conflicted tree is a dirty tree. But "the working tree has
+# uncommitted changes" sends a developer looking for an edit they forgot to commit, when what is
+# actually true is that a merge, cherry-pick, rebase or revert is still open. Issue #21's specimen
+# reached `develop` because three cherry-pick markers were committed while every gate reported
+# clean; this is the half of that defect that never gets to be committed, and naming it is the whole
+# value of checking it separately.
+#
+# TWO SIGNALS, because neither implies the other. `ls-files --unmerged` reports index stages, which
+# a delete/modify conflict produces over a file whose content holds no markers at all. The operation
+# metadata reports a paused operation, which survives even where every path has been staged. The
+# metadata list is deliberately not just MERGE_HEAD: the incident was a CHERRY-PICK, which writes
+# CHERRY_PICK_HEAD and no MERGE_HEAD, so a check written for merges alone would have missed the
+# specimen this exists for.
+#
+# WHERE GIT CANNOT ANSWER, THIS SAYS SO. `Invoke-Git` throws rather than returning empty, so an
+# unreadable index refuses the run instead of being read as an absent conflict. Failure to know is
+# never converted into a fact about the repository (ADR 0008).
+$unmerged = Invoke-Git @('-C', $RepoRoot, 'ls-files', '--unmerged') 'reading unmerged index entries; whether a conflict is open is unknown'
+$gitDir = Invoke-Git @('-C', $RepoRoot, 'rev-parse', '--absolute-git-dir') 'locating the git directory; whether a conflict is open is unknown'
+
+# One entry per operation that can pause with a conflict. AUTO_MERGE is written by the merge
+# machinery itself and is listed so a conflicted state mid-resolution is still named.
+$operations = @()
+foreach ($marker in @('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD', 'AUTO_MERGE')) {
+    if (Test-Path (Join-Path $gitDir $marker)) { $operations += $marker }
+}
+foreach ($marker in @('rebase-merge', 'rebase-apply', 'sequencer')) {
+    if (Test-Path (Join-Path $gitDir $marker) -PathType Container) { $operations += "$marker/" }
+}
+
+if ($unmerged -or $operations.Count -gt 0) {
+    $detail = ''
+    if ($operations.Count -gt 0) { $detail += "`n  operation in progress: $($operations -join ' ')" }
+    if ($unmerged) {
+        $paths = Invoke-Git @('-C', $RepoRoot, 'diff', '--name-only', '--diff-filter=U') 'listing unmerged paths'
+        $detail += "`n  unmerged paths:`n$($paths -split "`n" | ForEach-Object { "    $_" } | Out-String)"
+    }
+    throw @"
+this working tree has an unresolved conflict, and local CI verifies committed content at HEAD.
+
+Nothing about this state can reach a commit: git refuses to commit an unmerged index, and staging
+the files clears it. So the run is refused here rather than producing a verdict about a tree that
+does not yet exist.
+$detail
+Finish or abort the operation, then re-run.
+"@
+}
+
 $sha = Invoke-Git @('-C', $RepoRoot, 'rev-parse', 'HEAD') 'reading HEAD'
 $branch = Invoke-Git @('-C', $RepoRoot, 'rev-parse', '--abbrev-ref', 'HEAD') 'reading the current branch'
 
