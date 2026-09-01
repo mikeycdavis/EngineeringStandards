@@ -2439,7 +2439,53 @@ falsifies, and renaming it would erase the record of a framing this item had to 
 
 ### Make remediation carry the sequencing its repository state requires
 
-- **Status:** READY
+- **Status:** COMPLETE — 2026-08-29. The remedy is state-free conditional remediation, and the
+  measurement is what ruled the alternatives out rather than a preference between them.
+
+  **The same rule, two states, byte-identical advice — while the framework already distinguishes
+  them.** Reproduced at `6662262` on two real repositories built for the comparison:
+
+  | State | What `init` says next | What `validate` emits for `planning.breakdown-directory` |
+  | --- | --- | --- |
+  | greenfield | *"Run /plan-structure and /plan-handoff, then standards validate."* | *"Run /plan-structure and /plan-handoff, writing each top-level section…"* |
+  | reconstruction-required | *"Run the project-reconstruction skill (Standard 44). **Do NOT author a plan** as though this project were starting now."* | **the same string, byte for byte** |
+
+  So the sequencing was never missing from the framework. It was missing from the layer that emits
+  the remediation, and `validate` cannot supply it: `detectMode` has exactly one caller, `runInit`,
+  and neither `audit` nor `validate` computes the repository's mode at all.
+
+  **Following the current remediation erases the evidence that ordering was needed.** Measured by
+  doing it — authoring `00-overview.md` and one section file in the reconstruction fixture, with no
+  reconstruction:
+
+  ```text
+  BEFORE  Mode: reconstruction-required   Next: ... Do NOT author a plan ...
+  AFTER   Mode: existing-with-plan        Next: Normalise the existing plan ...; do not replace it.
+          planning.breakdown-directory: failed -> passed
+  ```
+
+  The defect is **self-concealing**, and that is what settles it as more than presentation. Acting on
+  the under-specified advice moves the repository into a state whose own next step is to *preserve*
+  the material [Standard 44](../../standards/44-existing-project-reconstruction.md) R11 says is not
+  evidence. Nothing afterwards reports that reconstruction was ever required.
+
+  **Rule-intrinsic sequencing and repository-state-dependent sequencing are different problems, and
+  only the second is this item's.** Seven of the fifty catalog remediations already carry an order in
+  prose — `security.no-secrets-in-artifacts` (*"Replace the value… then rotate"*),
+  `quality.dead-code` (*"Confirm reachability, then delete"*), `data.migration-rollback`,
+  `verification.before-completion`, `testing.no-weakening-to-pass`, `security.no-sql-concat`,
+  `reconstruction.open-questions`. Those orders are knowable from the rule alone, so structure could
+  carry them. This one is not, and **structuring the string would only have made the wrong advice
+  easier to execute**: machine-readable steps resting on a prerequisite the producer cannot see are
+  still wrong.
+
+  **No envelope or schema change.** [Standard 25](../../standards/25-validator-output.md) R3's
+  `remediation` field is unchanged in shape and in type, and no consumer has to learn anything new.
+  What changed is what a catalog author is permitted to write into it, which is
+  [Standard 27](../../standards/27-rule-catalog.md)'s business.
+
+  **Previously: READY.**
+- **Superseded status line:** READY
 - **Tracked by:** GitHub issue
   [#32](https://github.com/mikeycdavis/EngineeringStandards/issues/32)
 - **Evidence:** open as of 2026-08-16, verified at `e842a5a`.
@@ -2477,13 +2523,26 @@ falsifies, and renaming it would erase the record of a framing this item had to 
   material without the reconstruction evidence that gives it meaning. **The defective part is the
   remediation, not the finding** — `planning.breakdown-directory` failing in the reconstruction state
   may well be correct, and "make reconstruction pass" is explicitly out of scope.
-- **Deliverables:** a measured decision among the remediation alternatives, the normative invariant,
-  implementation of the selected mechanism, and regression coverage over the reconstruction state.
-  **The mechanism is deliberately not chosen here**, but the candidates are no longer equally
-  motivated. State-conditional remediation and a reconstruction-specific remediation string are the
-  two the specimen directly supports. **Suppression is not**, because the finding may be legitimate;
-  a deeper applicability change stays open for measurement but is no longer implied, since it was
-  implied only by a contradiction that does not exist.
+- **Deliverables:** ~~a measured decision among the remediation alternatives… **The mechanism is
+  deliberately not chosen here**~~ **Chosen 2026-08-29: state-free conditional remediation**, plus
+  [Standard 27](../../standards/27-rule-catalog.md) R6 as the normative invariant and regression
+  coverage over both states.
+
+  The remediation states the prerequisite as a *condition* and never claims which branch applies. It
+  is therefore true in every state, needs no mode signal, and asserts no repository state — which is
+  what keeps it inside [ADR 0008](../adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md).
+
+  **State-conditional remediation is rejected for this slice, and the measurement is why it is the
+  hardest candidate rather than the obvious one.** #53's precedent permits narrowing advice on
+  *measured* state. `detectMode` is labelled `[INFERRED]` by `init` itself, so specialising prose on
+  it would make a detector depend on a heuristic classification of intent — the fabrication ADR 0008
+  forbids, arriving through the fix. A later slice may earn result-specific text from a genuinely
+  measured signal (implementation markers present **and** no
+  `artifacts/project-baseline/reconstructed-baseline.md` is observable, where the *mode* is not);
+  this item does not need one, and introducing a second state classifier to close it would be paying
+  a permanent cost for a sentence.
+
+  **Suppression stays rejected** for the reason already recorded: the finding may be legitimate.
 - **Acceptance Criteria:**
   - The invariant is recorded normatively, in a form a future rule author is bound by: *for every
     repository state the framework explicitly recognises, remediation must preserve the
@@ -2496,7 +2555,32 @@ falsifies, and renaming it would erase the record of a framing this item had to 
     sequencing `init`'s `nextStep` establishes for that same state.
   - `planning.breakdown-directory` remains a legitimate finding in the reconstruction state unless a
     measured decision says otherwise.
-- **Verification:** `npm test` with the reconstruction-state fixture; the self-audit unchanged.
+  - **A second live specimen is covered, not only the one this item was filed for.**
+    `architecture.project-manifest` fails in the same state with *"PROJECT.md still carries the
+    template's own prompts"*, and told the reader to *"Copy templates/PROJECT.md to the repository
+    root and fill it in"* — over a file `init` had already created. Its first step is a no-op at
+    best and destroys work at worst, since a human following it has no `--force-overwrite` guard.
+    Creating a manifest and completing a template-derived one are now distinguished without
+    asserting which holds. The item as filed named only `planning.handoff`, which is
+    `manual-review` and emits nothing.
+  - **No detector acquires a `detectMode` dependency**, and a test asserts it, so specialising prose
+    can never be the reason a heuristic classification enters the evaluation path.
+- **Verification:** `npm test`. Nine tests in
+  [`test/remediation-state.test.mjs`](../../test/remediation-state.test.mjs) build real repositories
+  in both states, run the real `init` and the real `validate`, and read the remediation out of the
+  emitted envelope. Asserting the catalog strings directly would have passed while the envelope said
+  something else, which is the layer the defect lived in. Two of the nine are anti-vacuity: that the
+  fixtures really do land in different modes, and that both rules really do fail in both.
+- **Seven mutants, all killed.** Restoring either original string, dropping the
+  no-branch-claimed disclaimer, emitting the branches in the wrong order, dropping the greenfield
+  branch, adding `detectMode` to `standards.mjs`'s imports, and making `init` stop distinguishing
+  the two states.
+- **`planning.handoff` is knowingly left alone, and this is the reason rather than an oversight.**
+  Its remediation reads *"Run /plan-handoff over the breakdown, or reproduce its behaviour
+  manually"* — which names the breakdown as its object, so where there is none the instruction is
+  inapplicable rather than harmful. That is a weaker case than either specimen fixed here, and the
+  item recorded it from the start as catalog-wide scope evidence rather than a live one. Standard 27
+  R6 now binds it if it is ever rewritten.
 - **Dependencies:** none. **Do not modify rule, remediation, or reconstruction semantics before the
   mechanism is measured and selected.**
 - **Boundaries, recorded so they are not crossed later.** Section 04 owns the compliance and policy

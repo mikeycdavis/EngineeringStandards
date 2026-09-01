@@ -14,7 +14,7 @@
       "introducedIn": "1.0.0",
       "description": "A project with active work has a decomposed plan on disk, one ordered file per top-level section.",
       "rationale": "A plan that exists only in a conversation is unavailable to the next agent, which is the failure Standard 5 exists to prevent.",
-      "remediation": "Run /plan-structure and /plan-handoff, writing each top-level section to its own file under artifacts/project-plan-breakdown/.",
+      "remediation": "If this project already has an implementation and has not been reconstructed, run the project-reconstruction skill first (Standard 44), then apply /plan-structure and /plan-handoff to the reconstructed plan. Otherwise run /plan-structure and /plan-handoff, writing each top-level section to its own file under artifacts/project-plan-breakdown/. This run has not established which of the two holds.",
       "aliases": ["planning.requireBreakdownDirectory"],
       "deprecatedIn": null,
       "supersededBy": null,
