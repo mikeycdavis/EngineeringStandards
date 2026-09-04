@@ -38,6 +38,33 @@ whose own arithmetic does not hold cannot be used to check anything.
 **Amended 2026-08-28:** **#38** closed at `a6fa7f0`, so it leaves both the open set and *claimed
 here*, taking fourteen/eight to thirteen/seven. Six elsewhere is unchanged.
 
+**Amended 2026-08-29, and the amendment above is stale in two ways rather than one.** #38 was
+REOPENED on 2026-08-29: PR #51's squash merge closed it as an unauthorized side effect, the closure
+was repaired, and the issue rejoins both the open set and *claimed here*. That falsifies the last
+step of the lineage. **The step before it was already wrong when it was written**, which the reopen
+merely exposed: #1, #4, #19 and #21 have since closed and left *claimed here*, so "eight" did not
+hold either. The lineage fifteen/nine to fourteen/eight to thirteen/seven is therefore wrong at its
+last two steps, and both are recorded rather than the arithmetic being made to agree — which is
+what the paragraphs above ask for, and the fourth time this paragraph has drifted for the reason
+they give: the count is a shared counter with no owner.
+
+Re-derived rather than decremented, from `gh issue list` for the open set and from the `Tracked by`
+fields for the claims, per the ownership rule above. Open is #2, #3, #9, #10, #11, #16, #32, #38,
+#45, #46, #48, #49, #55, #58 — **fourteen**. *Claimed here* is #32 and #38 — **two**. Claimed
+elsewhere is #10 and #11 ([section 04](04-compliance-and-policy-system.md)), #3
+([section 06](06-must-never-standards.md)), and #2, #9 and #16
+([section 07](07-distributed-validation-and-ci.md)) — **six**. **Unclaimed is #45, #46, #48, #49,
+#55 and #58 — six.** Two, six and six partition fourteen with nothing counted twice. The unclaimed
+set grew by #55 and #58, which is the legal state this file already recognises and not an oversight
+to tidy.
+
+**The item below is `COMPLETE` while its issue is open, and that moves none of these counts.**
+*Claimed here* is derived from the `Tracked by` field rather than from an item's status, so a
+terminal item still claims its issue. It is the first `COMPLETE` item in this file whose issue is
+open, and the terminal-semantics table below conditions `COMPLETE` on acceptance criteria and
+evidence rather than on GitHub state — so the pairing is legal, and it is written down here so a
+later reader does not read it as drift and re-derive the counts to remove it.
+
 **Re-derived, not decremented**, which is what this paragraph's own history asks for. The open set
 was read from `gh issue list` — #1, #2, #3, #4, #6, #8, #9, #10, #11, #16, #19, #21, #32 — and
 *claimed here* from the `Tracked by` fields in this file rather than from its links, per the
@@ -1001,7 +1028,53 @@ that approval deliberately does not cover.
 
 ### Unavailable content evidence must never be read as content
 
-- **Status:** IN_REVIEW — **and the `COMPLETE` this line carried is preserved below rather than
+- **Status:** COMPLETE — 2026-08-29 at `b90b915`, by squash merge of
+  [PR #51](https://github.com/mikeycdavis/EngineeringStandards/pull/51) at head `ad2ea77`.
+  `required_linear_history` on `develop` forbids a merge commit, so squash was both the specified
+  method and the permitted one.
+
+  **The establishing check is the exact-head Docker gate run on `ad2ea77`** — six gating stages
+  passed (inventory, fidelity, policy, diagrams, test, audit), 466 tests of which 466 passed, 0
+  failed and 0 skipped, `validate` advisory-failed as established, from an isolated clone
+  materialising committed HEAD. **No gate has been run on `b90b915` itself.** It carries that
+  evidence by whole-tree identity, and the transfer is stated rather than elided because asserting a
+  check that never ran on this commit would be this item's own defect appearing in the sentence a
+  person reads. The identity is unqualified: `develop` was contained in the branch, so the squash
+  added no tree content and reproduced the reviewed tree byte for byte —
+  `e01678eda772c430ded58e9476dfa25ebfb33943` on both sides, `project-policy.yml`
+  `285bd8e279f1589889f29eeaaaba6762995e67e0` on both, with no exclusion. Every earlier round of this
+  repair carried a `project-policy.yml` exclusion on that proof; the absorb of current `develop` is
+  what retired it, and it is dropped here rather than carried forward as a formality.
+
+  **A local non-container run reports 462 passed and 4 skipped, which is not a disagreement with
+  that figure.** All four skips are container-only. Three are refusals to create a symlink — two
+  reporting `EPERM`, the third recording that this host refuses symlink creation — and the fourth
+  skips because a local run is not a verifying run. All four execute on the Linux image, where the
+  count is the 466 of 466 above. Recorded here because a reader who runs the suite locally meets 4
+  skipped against a line asserting 0, and a number a reader can falsify in one command while the
+  document says nothing is this item's own subject arriving in its own evidence.
+
+  **Hosted checks are deliberately not cited.** `ci.yml` triggers `on: pull_request` and pins no
+  `ref:`, so `actions/checkout` takes `refs/pull/51/merge` — a merge preview, never an exact head.
+  On this particular head the two coincide, because the base was contained; that is a property of
+  this moment rather than a change in what a hosted check measures, and it does not retire the
+  distinction for a later round.
+
+  **All five acceptance criteria are met**, criterion 5 as amended by the 2026-08-26 owner ruling
+  rather than as originally worded. Three forbidden rules — `errors.no-swallowed-exceptions`,
+  `security.no-cert-bypass` and `security.no-sql-concat` — are reported `not-evaluated` in this
+  repository's own `unestablishedProhibitions`, because `test/fixtures` is excluded by name and two
+  of its tracked committed files carry deliberate SQL-concatenation and certificate-bypass bait.
+  **That is the amended criterion being honoured, not a criterion failing**, and the limitation is
+  recorded rather than converted into a passing claim — the conversion this item exists to forbid.
+  Whether `fixtures` and `vendor` are the right names to drop is the third question this file
+  already records as belonging to no item, and it is outside this item's contract.
+
+  **GitHub issue #38 remains OPEN, by a separate decision.** The terminal-semantics table conditions
+  `COMPLETE` on acceptance criteria and evidence, not on issue state, so the two are independent
+  here by this document's own vocabulary rather than by convention.
+
+  **Previously: IN_REVIEW — and the `COMPLETE` that line carried is preserved below rather than
   deleted, because it was recorded and acted on.** It was set on 2026-08-28 at `a6fa7f0`, the branch
   was merged as `b20423a`, and the GitHub issue was closed. The disposition was not true when it was
   written: two defects inside this item's own acceptance contract were live in the merged tree, and
