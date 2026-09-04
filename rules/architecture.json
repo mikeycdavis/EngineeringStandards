@@ -14,7 +14,7 @@
       "introducedIn": "1.0.0",
       "description": "PROJECT.md or artifacts/project-manifest.md records purpose, stack, commands, environments, integrations, architectural rules, artifact locations, and current state.",
       "rationale": "It is the file a fresh engineer or agent reads first, and nothing else answers what this is and what state it is in.",
-      "remediation": "Copy templates/PROJECT.md to the repository root and fill it in.",
+      "remediation": "Where the project has no manifest, start one from templates/PROJECT.md. Where one is already present -- including one a bootstrap wrote -- complete it in place rather than copying over it, which would discard whatever has been filled in. Either way its content must come from what this project is; a manifest answering the template's own prompts is scaffolding rather than a record (Standard 44 R11). This run has not established which of the two holds.",
       "aliases": [
         "architecture.requireProjectManifest"
       ],

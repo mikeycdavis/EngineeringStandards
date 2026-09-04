@@ -146,6 +146,41 @@ in *that* version — a rule with `introducedIn: 2.0.0` does not apply to a proj
 Without this the version pin means nothing, which is the failure
 [Standard 21](21-versioning.md) R5 describes.
 
+### R6 — Remediation MUST NOT assume repository state the producer has not established
+
+A rule's `remediation` is executed by someone — or something — that trusts it.
+[Standard 25](25-validator-output.md) R3 already says why the field matters: the consumers are CI
+and agents, and *"an agent given a failure with no remediation will invent one."* An agent given a
+**confidently wrong** one does not invent anything. It complies.
+
+Three constraints, and they are separable because they fail separately.
+
+**Remediation MUST NOT prescribe an action whose safety or ordering depends on repository state the
+producer has not established.** A repair that is correct in one state and destructive in another is
+not a repair; it is a coin toss the reader cannot see they are making.
+
+**Where a prerequisite is knowable but not established, remediation MUST express it conditionally
+rather than imply it is satisfied.** *"Do X"* asserts that nothing has to happen first. When
+something might, the conditional form — *"if P, do Y first; otherwise do X"* — is true in every
+state, so it neither withholds the advice nor smuggles in a claim about which state holds.
+
+**Remediation MUST NOT fabricate repository state in order to be more specific.** Specificity bought
+by guessing is the failure
+[ADR 0008](../artifacts/adr/0008-detectors-do-not-assert-repository-state-they-have-not-measured.md)
+names, arriving through the remediation rather than the finding. A producer that *has* measured the
+state may narrow the advice on it; one that has inferred the state has measured nothing.
+
+**Two kinds of ordering, and only one of them is this requirement's subject.** Ordering internal to a
+single repair — *"replace the value, then rotate the credential"*, *"confirm reachability, then
+delete"* — is knowable from the rule alone and is unaffected here. This requirement governs ordering
+that depends on the *state of the repository being remediated*, which the rule cannot know and the
+producer may not have looked at.
+
+**This introduces no field and no envelope change**, which is the point. The constraint is on what a
+catalog author may write in `remediation`, not on its shape, so a consumer of
+[Standard 25](25-validator-output.md) R3 sees the same contract it always did. A requirement needing
+a new field here would be describing a different problem.
+
 ## Additions this standard makes beyond the source
 
 - The `assurance` field and R3's separation of it from `validationType` — the mechanism that makes
@@ -156,6 +191,9 @@ Without this the version pin means nothing, which is the failure
 - The lifecycle trio, and the rule that they exist from the first release even when empty.
 - R4's division-of-labour table and the mechanical check.
 - R5 in full — that rules are evaluated against the version in force for the project.
+- R6 in full. The source specifies that a rule carries remediation; it does not constrain what the
+  remediation may assume about the repository it is aimed at. The failure it prevents was produced
+  by this framework's own catalog after the source was written — see the Implementation note.
 
 ## Relationship to other standards
 
@@ -193,6 +231,20 @@ rule ids.
 A further check asserts every catalog `standard` reference resolves to a document that exists. The
 converse — every enforceable requirement having a catalog entry — is **not** checked, and the catalog
 does not claim to cover all 53 standards. It covers what the evaluator and the policy speak in.
+
+**R6 was written from a measured specimen, not from principle.**
+`planning.breakdown-directory` emitted *"Run /plan-structure and /plan-handoff…"* byte-identically
+in two repository states that `scripts/init.mjs` itself distinguishes — one where that is the whole
+repair, and one where `init`'s own next step reads *"Do NOT author a plan as though this project were
+starting now."* Following it in the second state moved the repository from `reconstruction-required`
+to `existing-with-plan`, whose next step is to *preserve* the plan just written, and the finding that
+prompted it changed to `passed`. The advice erased the evidence that it had been wrong.
+
+Neither `audit` nor `validate` computes the repository's mode — `detectMode` has one caller, in
+`init` — so the fix could not be state-conditional text without giving a detector a dependency on an
+inferred classification of intent. Both remediations are conditional and claim no branch;
+`test/remediation-state.test.mjs` holds them to it in both states, and asserts that no detector
+acquired that dependency.
 
 **That gap is now a reported metric rather than a footnote.** `coverage()` emits
 `frameworkCoverage` alongside every verdict — catalogued rules, evaluated rules, standards with
