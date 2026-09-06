@@ -9,7 +9,7 @@
       "level": "required",
       "severity": "error",
       "validationType": "code-analysis",
-      "assurance": "partial",
+      "assurance": "none",
       "nonExemptible": false,
       "introducedIn": "1.0.0",
       "description": "Every meaningful change to business state is recorded. Derived, transient, or serialized metadata may be excluded where it can be safely reconstructed and has no compliance, security, or business-history value.",
@@ -19,7 +19,7 @@
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "The evaluator observes whether audit infrastructure exists. It does not observe whether mutations use it. A pass is partial evidence and MUST NOT be reported as 'all business mutations are audited' (Standard 24 R2)."
+      "$assuranceNote": "No analyzer exists. Reported as not-evaluated rather than passing (Standard 24 R4). Until 2026-09-06 this rule was bound to a detector that observed only test and CI infrastructure, so it passed on repositories with no audit path and failed on audited repositories with no test suite — the assurance elevation Standard 24 R2 forbids. The binding and the EVALUATED_RULES membership were removed together; see issue #62."
     },
     {
       "id": "audit.actor-attribution",
