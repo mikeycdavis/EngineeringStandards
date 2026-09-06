@@ -79,7 +79,6 @@ const EVALUATED_RULES = [
   "planning.breakdown-directory",
   "planning.item-fields",
   "planning.plan-code-consistency",
-  "audit.business-state",
   "verification.before-completion",
   "quality.unfinished-work",
   "quality.dead-code",
@@ -1741,27 +1740,6 @@ function detectMissingPlanningArtifacts(files, run) {
       standardRef: R.artifacts,
     });
   }
-}
-
-function detectMissingAuditInfrastructure(files, run) {
-  const { rel, has, addFinding } = run;
-  const tests = files.filter((f) => TEST_RE.test(rel(f)));
-  const ci = CI_FILES.filter((c) => has(c));
-  const missing = [];
-  if (tests.length === 0) missing.push("no test suite");
-  if (ci.length === 0) missing.push("no CI configuration");
-  if (missing.length === 0) return;
-
-  addFinding({
-    id: "missing-audit-infrastructure",
-      rule: "audit.business-state",
-    category: "Missing audit infrastructure",
-    severity: "warning",
-    label: "OBSERVED",
-    evidence: missing,
-    message: `The repository has ${missing.join(" and ")}; nothing mechanically verifies its behavior.`,
-    standardRef: R.done,
-  });
 }
 
 function detectUnverifiedFunctionality(files, run) {
@@ -3467,7 +3445,6 @@ export async function main(args) {
   detectMissingDocs(files, run);
   detectArchitectureArtifacts(files, run);
   detectMissingPlanningArtifacts(files, run);
-  detectMissingAuditInfrastructure(files, run);
   detectUnverifiedFunctionality(files, run);
   detectUnfinished(files, run);
   detectDeadCode(files, run);

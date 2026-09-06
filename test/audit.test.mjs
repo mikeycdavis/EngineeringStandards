@@ -203,7 +203,7 @@ test("a delegated item resolved to done is checked against its deliverables", ()
 
 test("a complete repository provokes none of the missing-* categories", () => {
   const found = ids(audit(fixture("compliant")));
-  for (const id of ["missing-documentation", "missing-planning-artifacts", "missing-audit-infrastructure"]) {
+  for (const id of ["missing-documentation", "missing-planning-artifacts"]) {
     assert.ok(!found.has(id), `${id} fired on a fixture that satisfies it`);
   }
 });
@@ -211,7 +211,6 @@ test("a complete repository provokes none of the missing-* categories", () => {
 test("an incomplete repository provokes the missing-* categories", () => {
   const found = ids(audit(fixture("delegated")));
   assert.ok(found.has("missing-documentation"), "no docs/architecture.md and a one-line README");
-  assert.ok(found.has("missing-audit-infrastructure"), "no tests and no CI");
 });
 
 test("a repository with no plan breakdown is reported", () => {
