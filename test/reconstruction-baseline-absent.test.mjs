@@ -117,11 +117,8 @@ const resultFor = (json) => {
 
 const boundFindings = (json) => (json.findings ?? []).filter((f) => f.rule === RULE);
 
-/** The notice that says why the rule was withdrawn. Not bound to the rule, or it would fail it. */
-const absenceNotices = (json) => (json.findings ?? []).filter((f) => f.id === "reconstruction-baseline-absent");
-
 /**
- * Run the absent case and assert everything it must satisfy. Returns what a comparison needs.
+ * Run the absent case and assert everything it must satisfy. Returns the rule's result for comparison.
  *
  * The evidence surface is asserted complete first. Without that, a `not-evaluated` here could be the
  * unread-evidence mechanism firing for some other reason, and the test would pass for the wrong one.
@@ -145,16 +142,7 @@ function assertAbsentWithdrawn(root) {
   assert.equal(r.disposition, "not-evaluated");
   assert.deepEqual(r.evidence, [], "a withdrawn rule must rest on no evidence");
   assert.deepEqual(boundFindings(json), [], "absence produced a violation, which asserts reconstruction was required");
-
-  const notices = absenceNotices(json);
-  assert.equal(notices.length, 1, `expected one absence notice, got ${JSON.stringify(notices)}`);
-  const [notice] = notices;
-  assert.equal(notice.rule, null, "the notice is bound to the rule, so it would fail it");
-  assert.equal(notice.severity, "info", "absence of an optional subject must not make `audit --strict` exit 1");
-  assert.equal(notice.label, "OBSERVED", "the directory's absence is observed at a defined path");
-  assert.match(notice.message, /artifacts\/project-baseline\/ is absent/);
-  assert.match(notice.message, /whether this repository requires reconstruction was not established by this run/);
-  return { result: r, notice };
+  return r;
 }
 
 // ------------------------------------------------------------------------------- absent
@@ -174,8 +162,7 @@ test("absent in an implemented repository: the same result, because nothing clas
     }
     return assertAbsentWithdrawn(root);
   });
-  assert.deepEqual(implemented.result, bare.result, "the result varied with implementation presence");
-  assert.deepEqual(implemented.notice, bare.notice, "the notice varied with implementation presence");
+  assert.deepEqual(implemented, bare, "the rule's result varied with implementation presence");
 });
 
 // ----------------------------------------------------------------------------- controls
@@ -189,7 +176,6 @@ test("incomplete: a baseline directory without reconstructed-baseline.md still f
     const found = boundFindings(json);
     assert.equal(found.length, 1, `expected the R4 finding alone, got ${JSON.stringify(found.map((f) => f.message))}`);
     assert.match(found[0].message, /^R4:/);
-    assert.deepEqual(absenceNotices(json), [], "a present directory was reported absent");
   });
 });
 
@@ -208,7 +194,6 @@ test("incomplete: a prompt without its reconstruction declaration still fails R6
       const found = boundFindings(json);
       assert.equal(found.length, 1, `expected the R6 finding alone, got ${JSON.stringify(found.map((f) => f.message))}`);
       assert.match(found[0].message, /^R6:/);
-      assert.deepEqual(absenceNotices(json), []);
     },
   );
 });
@@ -228,7 +213,6 @@ test("sufficient: a complete, self-declaring baseline still passes", async () =>
       assert.equal(r.status, "passed", `expected passed, got ${r.status} (${r.disposition}): ${r.message}`);
       assert.equal(r.disposition, "evaluated");
       assert.deepEqual(boundFindings(json), []);
-      assert.deepEqual(absenceNotices(json), []);
     },
   );
 });

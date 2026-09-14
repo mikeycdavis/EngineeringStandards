@@ -2474,32 +2474,17 @@ function detectDocDiscrepancies(files, run) {
  * project from one that needs reconstruction. The only signal that separates them is init's mode
  * classification, which is labelled INFERRED and which no detector may consume (#32, ADR 0008);
  * implementation presence would be that same classification re-derived here. So both states emit the
- * same bytes, the notice says which question went unanswered, and a project with no reconstruction
- * subject declares this rule not-applicable in its policy — the owner's statement, not the tool's.
+ * same bytes, and a project with no reconstruction subject declares this rule not-applicable in its
+ * policy — the owner's statement, not the tool's.
+ *
+ * KNOWN LIMITATION: the withdrawn result's message is compliance.mjs's generic "No implemented check
+ * evaluates ...", because no detector can supply its own reason for a not-evaluated result today —
+ * the same limitation `scm.no-committed-env-files` already has when it withdraws silently.
  */
 function detectStandardsViolations(files, run) {
   const { has, rel, addFinding } = run;
   const violations = [];
-  if (!has("artifacts/project-baseline")) {
-    // Deliberately unbound: a finding carrying `rule` is a confirmed violation and would fail the rule,
-    // which asserts reconstruction was required. Informational, so `audit --strict` does not exit 1
-    // on every repository that has nothing to reconstruct.
-    addFinding({
-      id: "reconstruction-baseline-absent",
-      category: "Standards violations",
-      severity: "info",
-      label: "OBSERVED",
-      evidence: ["artifacts/project-baseline/"],
-      message:
-        "artifacts/project-baseline/ is absent, so reconstruction.baseline-artifacts has nothing to " +
-        "check and reports not-evaluated rather than passed: whether this repository requires " +
-        "reconstruction was not established by this run. If it has an implementation that was never " +
-        "reconstructed, run the project-reconstruction skill (Standard 44); if it has no reconstruction " +
-        "subject, declare the rule not-applicable in project-policy.yml.",
-      standardRef: R.artifacts,
-    });
-    return { evaluated: false };
-  }
+  if (!has("artifacts/project-baseline")) return { evaluated: false };
   if (!has("artifacts/project-baseline/reconstructed-baseline.md")) {
     violations.push(["artifacts/project-baseline/", "R4: baseline directory exists without reconstructed-baseline.md", R.artifacts]);
   }
