@@ -410,6 +410,10 @@ test("the mechanism is inert when nothing is lost", async () => {
       "README.md": README_PROSE,
       "docs/architecture.md": "# Architecture\n\nReal content.\n",
       "artifacts/project-plan-breakdown/00-overview.md": `# Overview\n\n${OVERVIEW}`,
+      // The baseline is present so the declared baseline rule has a subject. An absent subject is
+      // withdrawn by design (#63), and that is not the evidence-loss withdrawal this test forbids.
+      "artifacts/project-baseline/reconstructed-baseline.md": "# Baseline\n\nReal content.\n",
+      "artifacts/project-baseline/RECONSTRUCTED-PROMPT.md": "# Reconstructed prompt\n\nThis was reconstructed from the existing codebase.\n",
     });
     assert.equal(run("audit", root, AMPLE).evidenceSurface.complete, true, "the fixture did not achieve full coverage");
     const json = run("validate", root, AMPLE);

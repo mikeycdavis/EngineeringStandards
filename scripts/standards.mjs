@@ -2457,24 +2457,47 @@ function detectDocDiscrepancies(files, run) {
   }
 }
 
+/**
+ * reconstruction.baseline-artifacts — Standard 44 R4 and R6.
+ *
+ * VIEW: the directory listing for R4, and the prompt's raw text through `textOf` for R6.
+ *
+ * Returns `{ evaluated }`, the shape `detectCommittedEnvFiles` already returns, because the absent
+ * case is that detector's question over a different subject: every check here is about the contents
+ * of `artifacts/project-baseline/`, so with no such directory no check has anything to run on, and a
+ * rule that pushes no violation used to be reported `passed` — the emptiest repository was the one it
+ * approved (#63). Absence is not unread content, so it is deliberately NOT `run.unknown`: that records
+ * a check whose evidence exists and was not obtained, and nothing here was lost. It is a rule whose
+ * subject this run cannot establish, which `evaluated: false` already means.
+ *
+ * MEASURED DECISION: the absent case withdraws rather than guessing, and does not tell a greenfield
+ * project from one that needs reconstruction. The only signal that separates them is init's mode
+ * classification, which is labelled INFERRED and which no detector may consume (#32, ADR 0008);
+ * implementation presence would be that same classification re-derived here. So both states emit the
+ * same bytes, and a project with no reconstruction subject declares this rule not-applicable in its
+ * policy — the owner's statement, not the tool's.
+ *
+ * KNOWN LIMITATION: the withdrawn result's message is compliance.mjs's generic "No implemented check
+ * evaluates ...", because no detector can supply its own reason for a not-evaluated result today —
+ * the same limitation `scm.no-committed-env-files` already has when it withdraws silently.
+ */
 function detectStandardsViolations(files, run) {
   const { has, rel, addFinding } = run;
   const violations = [];
-  if (has("artifacts/project-baseline")) {
-    if (!has("artifacts/project-baseline/reconstructed-baseline.md")) {
-      violations.push(["artifacts/project-baseline/", "R4: baseline directory exists without reconstructed-baseline.md", R.artifacts]);
-    }
-    const promptFile = files.find((f) => rel(f) === "artifacts/project-baseline/RECONSTRUCTED-PROMPT.md");
-    if (promptFile) {
-      // The mixed case in one detector. R4 above is structural and may already have failed; R6 here
-      // needs the prompt's text. Withdrawing both because this one is unknown would erase R4's
-      // established violation, which is precisely why the check rather than the rule is the unit.
-      const prompt = run.textOf(promptFile);
-      if (!prompt.available) {
-        run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
-      } else if (!/reconstructed from the existing codebase/i.test(prompt.text)) {
-        violations.push([rel(promptFile), "R6: reconstructed prompt does not declare itself reconstructed", R.prompt]);
-      }
+  if (!has("artifacts/project-baseline")) return { evaluated: false };
+  if (!has("artifacts/project-baseline/reconstructed-baseline.md")) {
+    violations.push(["artifacts/project-baseline/", "R4: baseline directory exists without reconstructed-baseline.md", R.artifacts]);
+  }
+  const promptFile = files.find((f) => rel(f) === "artifacts/project-baseline/RECONSTRUCTED-PROMPT.md");
+  if (promptFile) {
+    // The mixed case in one detector. R4 above is structural and may already have failed; R6 here
+    // needs the prompt's text. Withdrawing both because this one is unknown would erase R4's
+    // established violation, which is precisely why the check rather than the rule is the unit.
+    const prompt = run.textOf(promptFile);
+    if (!prompt.available) {
+      run.unknown("reconstruction.baseline-artifacts", rel(promptFile), prompt.reason);
+    } else if (!/reconstructed from the existing codebase/i.test(prompt.text)) {
+      violations.push([rel(promptFile), "R6: reconstructed prompt does not declare itself reconstructed", R.prompt]);
     }
   }
   for (const [evidence, message, ref] of violations) {
@@ -2489,6 +2512,7 @@ function detectStandardsViolations(files, run) {
       standardRef: ref,
     });
   }
+  return { evaluated: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -3451,7 +3475,7 @@ export async function main(args) {
   detectOpenQuestions(files, run);
   await detectPlanDiscrepancies(files, run);
   detectDocDiscrepancies(files, run);
-  detectStandardsViolations(files, run);
+  const baselineCheck = detectStandardsViolations(files, run);
 
   // Availability is probed once and shared: the env detector and attestation freshness both need the
   // repository, and asking twice would spend a second subprocess to learn the same thing.
@@ -3741,8 +3765,14 @@ export async function main(args) {
   //   no violation + everything known       -> passed
   const unestablished = (id) => someCheckWentUnknown(id) && !confirmed.has(id);
 
+  // A detector that reports `evaluated: false` withdrew its rule because the rule's subject could not
+  // be established — an unreadable index, or no baseline directory (#63) — which is neither a
+  // violation nor unread content, so neither `confirmed` nor `unestablished` above can express it.
   const evaluatedThisRun = EVALUATED_RULES.filter(
-    (id) => !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) && !unestablished(id),
+    (id) =>
+      !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
+      !(id === "reconstruction.baseline-artifacts" && baselineCheck.evaluated === false) &&
+      !unestablished(id),
   );
 
   const verdict = evaluate({
