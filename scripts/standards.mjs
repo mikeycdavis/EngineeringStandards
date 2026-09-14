@@ -2470,12 +2470,22 @@ function detectDocDiscrepancies(files, run) {
  * a check whose evidence exists and was not obtained, and nothing here was lost. It is a rule whose
  * subject this run cannot establish, which `evaluated: false` already means.
  *
- * MEASURED DECISION: the absent case withdraws rather than guessing, and does not tell a greenfield
- * project from one that needs reconstruction. The only signal that separates them is init's mode
- * classification, which is labelled INFERRED and which no detector may consume (#32, ADR 0008);
- * implementation presence would be that same classification re-derived here. So both states emit the
- * same bytes, and a project with no reconstruction subject declares this rule not-applicable in its
- * policy — the owner's statement, not the tool's.
+ * APPLICABILITY IS NOT ESTABLISHED, SO THE ABSENT CASE WITHDRAWS. With no baseline directory this
+ * detector cannot tell a project that never needed reconstruction from one that needs it and has not
+ * started, so it reports neither pass nor fail, and both states emit the same bytes. That bounds this
+ * detector; it is not a claim that no signal could separate them. The signal #63 proposed was
+ * measured before this note was written, and does not separate them on its own: implementation
+ * markers with no baseline also hold in this repository and in greenfield projects that already
+ * carry a plan or prompt. Narrowed to "and no plan or prompt" — init's INFERRED decision re-derived,
+ * which no detector may consume (#32) — it still holds where planning lives under names init does
+ * not recognise (`artifacts/backlog/`, `docs/roadmap.md`). Standard 44 makes applicability a
+ * judgement about whether the planning history is trustworthy, which file presence does not measure.
+ * A project with no reconstruction subject may declare this rule not-applicable in its policy — the
+ * owner's statement, not the tool's.
+ *
+ * A withdrawn `required` rule lowers assurance and does not cap the verdict: compliance.mjs caps only
+ * unestablished `forbidden` rules (Standard 45 R6). Whether that cap should reach this rule is a
+ * framework decision, not this detector's.
  *
  * KNOWN LIMITATION: the withdrawn result's message is compliance.mjs's generic "No implemented check
  * evaluates ...", because no detector can supply its own reason for a not-evaluated result today —
