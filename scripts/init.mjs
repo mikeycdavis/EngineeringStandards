@@ -23,7 +23,7 @@
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, lstatSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,15 +62,116 @@ const ARTIFACTS = [
  * (Standard 33 R4, Standard 44 R2). A false "existing" only costs a routing decision the operator
  * can override with --mode.
  */
-const IMPLEMENTATION_MARKERS = [
-  "src", "lib", "app", "source", "cmd", "internal", "pkg",
-  "package.json", "go.mod", "Cargo.toml", "pyproject.toml", "pom.xml", "build.gradle",
-];
+const DIRECTORY_MARKERS = ["src", "lib", "app", "source", "cmd", "internal", "pkg"];
+const MANIFEST_MARKERS = ["package.json", "go.mod", "Cargo.toml", "pyproject.toml", "pom.xml", "build.gradle"];
+const IMPLEMENTATION_MARKERS = [...DIRECTORY_MARKERS, ...MANIFEST_MARKERS];
 
 const PLAN_MARKERS = ["artifacts/project-plan-breakdown", "PLAN.md", "plan.md"];
 const PROMPT_MARKERS = ["artifacts/prompts"];
 
 const has = (root, p) => existsSync(path.join(root, p));
+
+/**
+ * The search one directory below the root, and exactly where it stops (issue #2).
+ *
+ * A monorepo keeps its manifests one level down, so a root-only search found nothing and reported
+ * greenfield over real code — the dangerous direction named above. The root is still searched as it
+ * always was; each directory directly under it is now searched too, within these limits:
+ *
+ *   manifests only     One level down, only MANIFEST_MARKERS count. A manifest is a build system's
+ *                      declaration; a directory name is not. `book/src/` (mdBook) and `docs/source/`
+ *                      (Sphinx) are populated documentation trees, so counting DIRECTORY_MARKERS
+ *                      there would make a documentation-only repository "existing" — destroying
+ *                      greenfield where it is currently right. Populated-or-not cannot tell those
+ *                      apart, which is why the rule is "not at all" rather than hasContent().
+ *   content            A manifest counts only as a regular file with bytes in it — hasContent()'s
+ *                      rule applied to a file: a zero-byte placeholder declares nothing, and a
+ *                      directory that happens to be named package.json is not a manifest.
+ *   one level          Deeper manifests with nothing above them are not found. The evidence says so,
+ *                      so "nothing found" never reads as "nothing there".
+ *   skipped            Dot-directories (VCS, tool and editor state) and SKIPPED_DIRECTORIES
+ *                      (installed dependencies) hold other people's manifests, not this project's.
+ *                      Symbolic links are not followed, so nothing outside the repository is counted.
+ *                      Every skip actually present is named in the evidence.
+ *   unreadable         A directory that could not be read was not searched, and an unsearched
+ *                      directory cannot support "no implementation". It is named, and the mode falls
+ *                      to the non-greenfield outcomes rather than to the one that fabricates history.
+ *
+ * Entries are ordered by code unit, not locale, so the evidence is identical on every platform.
+ */
+const SKIPPED_DIRECTORIES = ["node_modules"];
+
+const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** True for a regular, non-empty file. Throws when the containing directory cannot be searched. */
+function isManifest(file) {
+  try {
+    const stat = lstatSync(file);
+    return stat.isFile() && stat.size > 0;
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+/** Whether a link names a directory. Resolves the link's target type only; never reads into it. */
+function linksToDirectory(link) {
+  try {
+    return statSync(link).isDirectory();
+  } catch (error) {
+    // A dangling link is not a directory. One that cannot be resolved for another reason (a loop, a
+    // permission) might be, so it is reported as skipped rather than dropped from the evidence.
+    return error.code !== "ENOENT";
+  }
+}
+
+function searchOneLevelDown(root) {
+  const found = [];
+  const skipped = [];
+  const unread = [];
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch (error) {
+    // A root that does not exist has nothing below it — the answer the root-level checks already
+    // give. Any other failure means the root was not listed, and that is reported, not absorbed.
+    if (error.code !== "ENOENT" && error.code !== "ENOTDIR") unread.push("./");
+    return { found, skipped, unread };
+  }
+
+  for (const entry of entries.sort((a, b) => byCodeUnit(a.name, b.name))) {
+    const full = path.join(root, entry.name);
+    if (entry.isSymbolicLink()) {
+      if (linksToDirectory(full)) skipped.push(`${entry.name}/`);
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".") || SKIPPED_DIRECTORIES.includes(entry.name)) {
+      skipped.push(`${entry.name}/`);
+      continue;
+    }
+    try {
+      const here = MANIFEST_MARKERS.filter((m) => isManifest(path.join(full, m)));
+      found.push(...here.map((m) => `${entry.name}/${m}`));
+    } catch {
+      unread.push(`${entry.name}/`); // a partial answer for this directory is not an answer
+    }
+  }
+  return { found, skipped, unread };
+}
+
+/** The evidence lines that say where the search went, where it stopped, and what it passed over. */
+function searchBoundary({ skipped, unread }) {
+  const lines = [
+    `searched: the root for ${IMPLEMENTATION_MARKERS.join(", ")}; ` +
+      `each directory one level below the root for ${MANIFEST_MARKERS.join(", ")}`,
+    "not searched: anything deeper than one level below the root, dot-directories, " +
+      `${SKIPPED_DIRECTORIES.join(", ")}, and symbolic links`,
+  ];
+  if (skipped.length > 0) lines.push(`skipped here: ${skipped.join(", ")}`);
+  if (unread.length > 0) lines.push(`could not be read, so not searched: ${unread.join(", ")}`);
+  return lines;
+}
 
 /**
  * A directory counts as evidence only when it has content.
@@ -148,15 +249,24 @@ export function detectMode(root, override = null) {
     return { mode: override, evidence: ["--mode was given explicitly"], confidence: "CONFIRMED_BY_OWNER" };
   }
 
-  const implementation = IMPLEMENTATION_MARKERS.filter((m) => has(root, m));
+  const nested = searchOneLevelDown(root);
+  // Root markers first, in their declared order, so a root-only repository's evidence is unchanged.
+  const implementation = [...IMPLEMENTATION_MARKERS.filter((m) => has(root, m)), ...nested.found];
   const plans = PLAN_MARKERS.filter((m) => hasContent(root, m));
   const prompts = PROMPT_MARKERS.filter((m) => hasContent(root, m));
 
   if (implementation.length === 0) {
-    evidence.push("no implementation markers found");
-    return { mode: MODES.GREENFIELD, evidence, confidence: "INFERRED" };
+    const complete = nested.unread.length === 0;
+    evidence.push(complete ? "no implementation markers found" : "no implementation markers found in what could be read");
+    evidence.push(...searchBoundary(nested));
+    if (complete) return { mode: MODES.GREENFIELD, evidence, confidence: "INFERRED" };
+    evidence.push("greenfield is not inferred while part of the search could not be read");
+  } else {
+    evidence.push(`implementation markers: ${implementation.join(", ")}`);
+    if (nested.unread.length > 0) {
+      evidence.push(`could not be read, so not searched: ${nested.unread.join(", ")}`);
+    }
   }
-  evidence.push(`implementation markers: ${implementation.join(", ")}`);
 
   if (plans.length > 0) {
     evidence.push(`planning artifacts: ${plans.join(", ")}`);
