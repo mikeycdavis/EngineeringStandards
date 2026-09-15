@@ -8,12 +8,14 @@
  * `src/index.ts`, `package.json`, `README.md` — which `init` classifies reconstruction-required.
  *
  * WHAT IS ASSERTED, AND WHAT IS DELIBERATELY NOT. Absent is `skipped / not-evaluated`, never `passed`.
- * It is also never `failed`: this rule does not distinguish a greenfield project from one that needs
- * reconstruction, because the only classifier that separates them is `init`'s INFERRED mode, which no
- * detector may consume (#32, ADR 0008). The implemented-repository case therefore asserts the SAME
- * result as the bare case — identical bytes are the evidence that no classification was consulted,
- * the same property `test/remediation-state.test.mjs` buys for remediation text. `init` is not run
- * here for the same reason: these fixtures must not depend on what `init` concludes.
+ * It is also never `failed`: with no baseline directory the detector does not establish whether
+ * reconstruction applies, so it withdraws in every repository. No presence signal is consulted — the
+ * implementation-marker signal the issue proposed was measured and does not separate greenfield from
+ * reconstruction-required on its own (see the note on `detectStandardsViolations`), and `init`'s mode
+ * is INFERRED and may not be consumed by a detector (#32). The implemented-repository case therefore
+ * asserts the SAME result as the bare case — identical bytes are the evidence that no classification
+ * was consulted, the same property `test/remediation-state.test.mjs` buys for remediation text. `init`
+ * is not run here for the same reason: these fixtures must not depend on what `init` concludes.
  *
  * CONTROLS, EACH POINTING THE OTHER WAY. A mechanism that withdrew the rule whenever anything looked
  * unusual would pass both absent cases and fail all three controls: a partially-present directory

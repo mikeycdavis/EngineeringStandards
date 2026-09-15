@@ -84,9 +84,14 @@ const has = (root, p) => existsSync(path.join(root, p));
  *                      there would make a documentation-only repository "existing" — destroying
  *                      greenfield where it is currently right. Populated-or-not cannot tell those
  *                      apart, which is why the rule is "not at all" rather than hasContent().
- *   content            A manifest counts only as a regular file with bytes in it — hasContent()'s
- *                      rule applied to a file: a zero-byte placeholder declares nothing, and a
- *                      directory that happens to be named package.json is not a manifest.
+ *   content            A manifest counts only as a regular file holding a non-whitespace character: a
+ *                      placeholder of zero bytes or only whitespace declares nothing, and a directory
+ *                      that happens to be named package.json is not a manifest. This takes
+ *                      hasContent()'s principle — content, not existence — and not its code, which
+ *                      answers on existence alone for anything that is not a directory. Only a bounded
+ *                      prefix is read; a longer file counts unread, because the dangerous direction is
+ *                      greenfield. Nothing reads what a manifest builds, so one that declares only
+ *                      documentation tooling (a docs site's `docs/package.json`) counts too.
  *   one level          Deeper manifests with nothing above them are not found. The evidence says so,
  *                      so "nothing found" never reads as "nothing there".
  *   skipped            Dot-directories (VCS, tool and editor state) and SKIPPED_DIRECTORIES
@@ -103,15 +108,24 @@ const SKIPPED_DIRECTORIES = ["node_modules"];
 
 const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** True for a regular, non-empty file. Throws when the containing directory cannot be searched. */
+/** How much of a manifest is read to decide whether it holds anything. */
+const MANIFEST_PREFIX_BYTES = 64 * 1024;
+
+/**
+ * True for a regular file holding a non-whitespace character, or too long to read in full. Throws when
+ * the file or its directory cannot be read, so the caller reports the directory as unsearched.
+ */
 function isManifest(file) {
+  let stat;
   try {
-    const stat = lstatSync(file);
-    return stat.isFile() && stat.size > 0;
+    stat = lstatSync(file);
   } catch (error) {
     if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
     throw error;
   }
+  if (!stat.isFile() || stat.size === 0) return false;
+  if (stat.size > MANIFEST_PREFIX_BYTES) return true;
+  return /\S/.test(readFileSync(file, "utf8")); // \S excludes U+FEFF, so a lone byte-order mark is empty
 }
 
 /** Whether a link names a directory. Resolves the link's target type only; never reads into it. */

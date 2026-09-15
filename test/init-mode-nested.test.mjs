@@ -150,6 +150,10 @@ const GREENFIELD_CONTROLS = {
   },
   "a manifest two directories below the root": { "a/b/package.json": '{"name":"deep"}\n' },
   "a zero-byte manifest one level down": { "service/package.json": "" },
+  // Whitespace is no more a declaration than zero bytes are. Counting it would make the zero-byte
+  // control above a test of file size rather than of content.
+  "a whitespace-only manifest one level down": { "service/package.json": " \n\t\r\n" },
+  "a manifest holding only a byte-order mark one level down": { "service/go.mod": "\uFEFF\n" },
   "a directory named like a manifest one level down": { "service/package.json/": null },
 };
 
@@ -163,6 +167,17 @@ for (const [name, files] of Object.entries(GREENFIELD_CONTROLS)) {
     });
   });
 }
+
+test("a manifest too large to read in full counts, because an unread remainder is not assumed empty", async () => {
+  // Content is judged from a bounded prefix. Past it, the conservative answer is "not greenfield":
+  // a false greenfield scaffolds a clean-room plan over real code.
+  const padded = " ".repeat(200 * 1024) + '{"name":"late"}\n';
+  await withRepo({ "service/package.json": padded }, (dir) => {
+    const detected = detectMode(dir);
+    assert.equal(detected.mode, MODES.RECONSTRUCTION_REQUIRED, detected.evidence.join(" | "));
+    assert.equal(markersLine(detected.evidence), "implementation markers: service/package.json");
+  });
+});
 
 // --- E: directories that are skipped do not count --------------------------------------------------
 
