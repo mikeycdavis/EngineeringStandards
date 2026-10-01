@@ -178,15 +178,31 @@ the one failure class this repository exists to prevent.
   documented resolution path that silently does nothing is worse than an undocumented one, because
   an adopter who takes it believes the rule is resolved.
 - **Deliverables:**
-  - **#10** — an exception declared on a `manual-review` `forbidden` rule must have an effect, or
-    the policy template and the `validate` guidance must stop naming it as a resolution. Decide
-    which; do not leave the two disagreeing.
-  - **#11** — a staged or unapproved state for an exception, matching the one attestations already
-    have. Today an exception is either absent or in force; there is no way to record one as proposed
-    and awaiting approval, which is precisely the state a reviewer needs to see.
+  - **Original #10 alternative** — an exception declared on a `manual-review` `forbidden` rule must
+    have an effect, or the policy template and the `validate` guidance must stop naming it as a
+    resolution. Decide which; do not leave the two disagreeing.
+  - **Original #11 direction** — a staged or unapproved state for an exception, matching the one
+    attestations already have. Today an exception is either absent or in force; there is no way to
+    record one as proposed and awaiting approval, which is precisely the state a reviewer needs to
+    see.
+  - **#10 owner decision (2026-10-01)** - an active approved exception on an exemptible
+    `manual-review` forbidden rule produces `excepted`, retains its approval evidence, and removes
+    the rule from `unestablishedProhibitions`; it is never represented as `passed`. Existing
+    non-exemptible rejection and expiry precedence remain unchanged.
+  - **#11 owner decision (2026-10-01)** - add a backward-compatible discriminated exception state.
+    A legacy entry with no `status` retains approved meaning; `status: proposed` forbids
+    `approvedBy` and `approvedAt`; `status: approved` requires both. Proposed entries round-trip,
+    render distinctly, and are verdict-inert. The already-implemented `exceptions: []` template
+    alternative remains preserved as rejected history for this story, not described as invalid.
+  - The unresolved validation choices for proposed exceptions are bounded in
+    [`design/exception-proposal-validation.md`](../../design/exception-proposal-validation.md).
 - **Acceptance Criteria:**
-  - For #10: a fixture policy declaring an exception on a `manual-review` forbidden rule produces a
-    result the test asserts explicitly — whichever behaviour is chosen, it is no longer silent.
+  - **Original #10 acceptance:** a fixture policy declaring an exception on a `manual-review`
+    forbidden rule produces a result the test asserts explicitly — whichever behaviour is chosen,
+    it is no longer silent.
+  - **Selected #10 acceptance:** a fixture policy declaring an active approved exception on an exemptible
+    `manual-review` forbidden rule produces `excepted`, retains approval evidence, is absent from
+    `unestablishedProhibitions`, and is never `passed`.
   - For #11: the staged state round-trips through the schema, is rendered distinctly by `validate`,
     and does **not** suppress the failure it concerns. A staged exception is a request, not a grant.
   - Neither fix may widen what an exception can do to a `nonExemptible` rule.

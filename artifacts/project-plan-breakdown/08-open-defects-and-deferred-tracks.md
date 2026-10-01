@@ -21,16 +21,20 @@ decisions preserved later in the section. The issue bodies remain the full accep
 
 - **Status:** NOT_STARTED
 - **Tracked by:** GitHub issue [#45](https://github.com/mikeycdavis/EngineeringStandards/issues/45)
-- **Evidence:** Pending owner decision and post-decision comparison. Issue #45 preserves the measured
-  local/hosted count disagreement and the contradictory pin contracts; no resolution is claimed.
-- **Purpose:** Decide whether the immutable pin is a fidelity probe that follows framework head or a
-  fixed reference point, determine whether the 23-to-14 count movement is catalog growth or a
-  transport change, and define a maintenance trigger only if the pin is meant to track.
-- **Deliverables:** A recorded owner decision on the pin's meaning, an explanation of the measured
-  count movement, and a maintenance trigger if the decision is to track framework head.
-- **Acceptance Criteria:** Advancing the SHA is not itself a resolution. The workflow comment and
-  its acceptance criterion currently support opposite meanings, and the owner must choose before
-  the evidence is erased by a bump.
+- **Evidence:** Pending owner decision and post-decision comparison was the original state. Issue #45
+  preserves the measured local/hosted count disagreement and the contradictory pin contracts.
+- **Owner decision (2026-10-01):** The pin is an immutable tracking fidelity
+  probe. Issue #45 preserves the historical 23-to-14 observation; later retained runs observed
+  19-to-9. Neither aggregate comparison establishes exact per-rule transitions.
+- **Purpose:** Keep an immutable evaluator revision per checked-in workflow revision while making
+  semantic changes trigger explicit review and observable renewal. This records tracking semantics;
+  it does not authorize changing the current pin.
+- **Deliverables:** The trigger and comparison protocol in
+  [`design/validate-self-tracking-probe.md`](../../design/validate-self-tracking-probe.md), followed
+  later by complete local/hosted per-rule evidence against the same evaluator and subject identities.
+- **Acceptance Criteria:** Advancing the SHA is not itself a resolution. The checked-in contract
+  states tracking-fidelity semantics, defines observable semantic-change review and renewal
+  triggers, and preserves prior evidence before any separately authorized pin change.
 - **Verification:** Re-run local and hosted `validate-self` against the decided reference and compare
   both verdicts, rule sets, and counts without substituting a new pin for the comparison.
 - **Dependencies:** None recorded; the owner decision precedes any SHA change.
@@ -39,15 +43,18 @@ decisions preserved later in the section. The issue bodies remain the full accep
 
 - **Status:** NOT_STARTED
 - **Tracked by:** GitHub issue [#46](https://github.com/mikeycdavis/EngineeringStandards/issues/46)
-- **Evidence:** Pending owner decision and implementation evidence. Issue #46 preserves the measured
-  optional-versus-required fixture results; neither candidate resolution is claimed selected.
+- **Evidence:** Pending owner decision and implementation evidence was the original state. Issue #46
+  preserves both candidates and the measured optional-versus-required fixture results.
+- **Owner decision (2026-10-01):** Select accurate catalog language while preserving policy
+  escalation. Implementation and paired fixture evidence remain pending.
 - **Purpose:** Reconcile the catalog's unconditional "never a failure" assurance note with the
   measured result that policy escalation to `required` produces a build-stopping failure.
-- **Deliverables:** Either an enforced and documented severity cap or corrected catalog language,
-  selected by the owner rather than inferred from the current implementation.
+- **Deliverables:** Narrow the assurance statement to "never a failure at its catalogued level" and
+  preserve the existing escalation mechanism. The earlier severity-cap alternative is rejected; do
+  not add one.
 - **Acceptance Criteria:** Either enforce a severity cap and disclose that policy cannot fully
   escalate this rule, or narrow the documentation and accept that the heuristic may stop a build.
-  The choice is not made here and does not reopen #38.
+  The owner selected the documentation branch; this does not reopen #38.
 - **Verification:** Repeat the measured orphan fixture at catalog `optional` and policy-escalated
   `required`; the result must match the selected contract and its documented assurance.
 - **Dependencies:** None recorded; #38 is explicitly outside this item's scope.
@@ -56,16 +63,21 @@ decisions preserved later in the section. The issue bodies remain the full accep
 
 - **Status:** NOT_STARTED
 - **Tracked by:** GitHub issue [#48](https://github.com/mikeycdavis/EngineeringStandards/issues/48)
-- **Evidence:** Pending investigation and control evidence. Issue #48 preserves the reflog timestamps,
-  worktree transition, and explicit refusal to attribute the event to an unmeasured actor.
-- **Purpose:** Investigate the observed 2026-08-28 branch/worktree transition, including expected
-  concurrent acquisition, stale worktree pruning, and reserving the main tree for integration.
-- **Deliverables:** A measured account of the transition and an owner-approved worktree acquisition
-  and integration rule that protects in-progress edits and exact-head evidence.
+- **Evidence:** Pending investigation and control evidence was the original state. Issue #48
+  preserves the reflog timestamps, worktree transition, and refusal to attribute the event.
+- **Owner decision (2026-10-01):** Establish inventory-first handling and preserve the
+  observed actor and mechanism as unknown. Active and unknown worktrees are retained; pruning stays
+  separately owner-gated after exact target, ownership, staleness, and recoverable-work review.
+- **Purpose:** Prepare preventive isolated-authoring and exact-HEAD/acquisition controls without
+  assigning a cause to the 2026-08-28 transition.
+- **Deliverables:** The bounded alternatives and falsifiers in
+  [`design/worktree-acquisition-controls.md`](../../design/worktree-acquisition-controls.md). No
+  worktree pruning, cleanup, movement, or live control experiment belongs to this item.
 - **Acceptance Criteria:** The evidence does not identify an actor or mechanism. Closure requires
   an established operating rule and evidence for the cause or control, not attribution by guess.
-- **Verification:** Reproduce or otherwise falsify the unsafe acquisition path, then demonstrate
-  that the selected control prevents an unrequested HEAD move during an in-progress edit.
+- **Verification:** Use non-destructive fixtures or falsifiers for the bounded control claims and
+  demonstrate identity-change detection/invalidation at the declared checkpoints. Do not mutate a
+  registered worktree experimentally or claim atomic exclusion from sequential checks.
 - **Dependencies:** None recorded; the investigation must preserve the reflog evidence named in #48.
 
 ### Establish the issue-to-plan ownership invariant
@@ -92,13 +104,18 @@ decisions preserved later in the section. The issue bodies remain the full accep
 
 - **Status:** NOT_STARTED
 - **Tracked by:** GitHub issue [#55](https://github.com/mikeycdavis/EngineeringStandards/issues/55)
-- **Evidence:** Pending identity selection and cross-materialization proof. Issue #55 preserves the
-  measured same-envelope/different-semantics case and the constraints on obvious identity shapes.
+- **Evidence:** Pending identity selection and cross-materialization proof was the original state.
+  Issue #55 preserves the measured same-envelope/different-semantics case and constraints on the
+  obvious identity shapes.
+- **Owner decision (2026-10-01):** Select the design direction of a packaged canonical
+  semantic-manifest digest. Exact inputs, boundary, serialization algorithm, and portability proof
+  remain unresolved in [`design/semantic-manifest-identity.md`](../../design/semantic-manifest-identity.md).
 - **Purpose:** Make Standard 25 R2 state what the result envelope establishes about the rule set that
   produced it, with a reproducible identity across a checkout, `git archive`, and an installed
   package, or an explicit disclosure of unsupported forms.
-- **Deliverables:** A selected producer-issued identity contract, its Standard 25 field semantics,
-  and the corresponding Standard 31 R4 comparability citation.
+- **Deliverables:** First resolve and approve the bounded design choices; only then may a separate
+  implementation add a producer-issued identity contract and Standard 31 citation. ST-15 has no
+  hard dependency on ST-11; this does not establish broader scheduling or writer independence.
 - **Acceptance Criteria:** No field name, format, or algorithm is selected here. A target-project
   git-blob identity and raw working-tree bytes each violate measured constraints; this is not a
   request to change `standardVersion` or to build portfolio tooling. The selected mechanism is
@@ -111,15 +128,18 @@ decisions preserved later in the section. The issue bodies remain the full accep
 
 - **Status:** NOT_STARTED
 - **Tracked by:** GitHub issue [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58)
-- **Evidence:** Pending owner decision. Issue #58 preserves the P1/P2 split, fenced-region limitation,
-  and measured rejection of Standard 46 as the normative home.
-- **Purpose:** Decide whether the existing audit-only P1 observation becomes a rule and, if so, which
-  standard owns the fenced-region trade-off. The live-tree P2 preflight is already separately owned.
-- **Deliverables:** A recorded terminal governance decision: audit-only, a normatively specified
-  owning clause, or an explicit wait for a non-heuristic discriminator.
+- **Evidence:** Pending owner decision was the original state. Issue #58 preserves the P1/P2 split,
+  fenced-region limitation, three open options, and measured rejection of Standard 46 as the home.
+- **Owner decision (2026-10-01):** Permanently assign committed conflict-marker P1 to
+  audit-only evidence. Its fenced-content limitation, separation from live-conflict P2, lack of
+  compliance effect, and rejection of Standard 46 as a home are preserved. Verification remains.
+- **Purpose:** Preserve the truthful audit observation and its disclosed miss without promoting the
+  heuristic into a normative compliance rule.
+- **Deliverables:** Durable governance wording plus focused evidence that P1 stays unbound and does
+  not itself alter rule evaluation. Recording the direction does not close the story.
 - **Acceptance Criteria:** Standard 46 has been rejected as the home. Leaving P1 permanently
-  audit-only is a legitimate terminal decision; promotion waits for a normative statement of the
-  heuristic limitation or a future non-heuristic discriminator.
+  audit-only is the selected ownership decision; the limitation remains disclosed and no normative
+  promotion or compliance effect is introduced.
 - **Verification:** Re-run the unfenced specimen, canonical fenced documentation, and genuine marker
   group inside a fence; the chosen contract must describe all three outcomes truthfully.
 - **Dependencies:** None recorded; P1 and P2 remain separate propositions.
@@ -147,13 +167,14 @@ decisions preserved later in the section. The issue bodies remain the full accep
 
 - **Status:** NOT_STARTED
 - **Tracked by:** GitHub issue [#64](https://github.com/mikeycdavis/EngineeringStandards/issues/64)
-- **Evidence:** Pending owner decision and resulting evaluator evidence. Issue #64 preserves the
-  removed detector's truthful observation and the measured ownership gap without rebinding it.
-- **Purpose:** Decide whether the truthful observation removed with #62 returns as its own rule, a
-  widened `verification.before-completion` check, or an audit-only unbound finding, and whether test
-  and CI absence remain one observation or two.
-- **Deliverables:** An owner-selected home and granularity for the no-tests/no-CI observation, plus
-  the corresponding audit/validate behavior and regression coverage.
+- **Evidence:** Pending owner decision and evaluator evidence was the original state. Issue #64
+  preserves the removed detector's observation and the candidate homes without rebinding it.
+- **Owner decision (2026-10-01):** Define two separate audit-only observations: no test
+  surface and no CI configuration. Neither has compliance effect.
+- **Purpose:** Restore both useful observations without rebinding either to `audit.business-state`
+  or widening `verification.before-completion`.
+- **Deliverables:** Two independent unbound audit findings and regression coverage proving each is
+  `rule: null` and does not itself alter a rule evaluation.
 - **Acceptance Criteria:** Do not rebind it to `audit.business-state`; that rule concerns business
   mutation recording and repeating that association would recreate #62's defect.
 - **Verification:** Run #62's business-logic/no-tests/no-CI fixture and prove the observation appears
