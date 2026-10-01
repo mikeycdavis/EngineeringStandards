@@ -23,6 +23,15 @@ no evidence link is an assertion; a status with one is a claim someone else can 
 is delegated to another tracking system, the pointer is a `Tracked by` field and is not a status —
 [ADR 0001](../adr/0001-canonical-status-vocabulary.md) again.
 
+**Canonical backlog authority recorded 2026-10-01.** Current ownership, hierarchy, and liveness for
+the EngineeringStandards 2.0 release closure now live in GitHub Issues, identified by the embedded
+`TH-01` through `ST-15` markers and recorded durably in
+[`artifacts/backlog/github-mapping.json`](../backlog/github-mapping.json). The plan breakdown remains
+the record of scope, reasoning, acceptance criteria, and historical status evidence. Its older
+`Status` lines are not silently rewritten to make them agree with the new store: current execution
+state is the issue's canonical `status:` label, while `Tracked by` and the mapping connect the two
+records. Merge state is not completion evidence.
+
 ## What this project is
 
 A durable home for a numbered series of engineering standards. Each standard is a **normative

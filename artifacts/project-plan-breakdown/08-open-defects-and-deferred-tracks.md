@@ -1,5 +1,165 @@
 # 08 — Open defects, recorded rejections, and deferred tracks
 
+**Canonical ownership recorded 2026-10-01.** The historical claim counts and amendments below are
+preserved as evidence of why prose arithmetic was insufficient. They are no longer the live
+authority. The complete release-relevant set is now represented by `ST-01` through `ST-15` in the
+GitHub backlog, grouped under `FE-01` through `FE-05`, `EP-01`, `IN-01`, and `TH-01`; the durable
+number/global-id/parent bindings are in
+[`artifacts/backlog/github-mapping.json`](../backlog/github-mapping.json). In particular, the former
+unclaimed set is now owned as `ST-07` (#45), `ST-08` (#46), `ST-09` (#48), `ST-10` (#49), `ST-11`
+(#55), `ST-12` (#58), `ST-13` (#63), and `ST-14` (#64). `ST-15` (#77) owns preparation of a truthful
+Engineering adapter release candidate; publication remains a separate decision. `ST-01` (#2) and
+`ST-13` (#63) are `IN_REVIEW`; the other current stories are `NOT_STARTED`. No issue was closed,
+assigned, or treated as complete by this ownership transition.
+
+## Canonical ownership for the formerly unclaimed release work
+
+These items bind the canonical stories to this plan without rewriting the measurements and
+decisions preserved later in the section. The issue bodies remain the full acceptance records.
+
+### Settle what the `validate-self` framework pin attests to
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#45](https://github.com/mikeycdavis/EngineeringStandards/issues/45)
+- **Evidence:** Pending owner decision and post-decision comparison. Issue #45 preserves the measured
+  local/hosted count disagreement and the contradictory pin contracts; no resolution is claimed.
+- **Purpose:** Decide whether the immutable pin is a fidelity probe that follows framework head or a
+  fixed reference point, determine whether the 23-to-14 count movement is catalog growth or a
+  transport change, and define a maintenance trigger only if the pin is meant to track.
+- **Deliverables:** A recorded owner decision on the pin's meaning, an explanation of the measured
+  count movement, and a maintenance trigger if the decision is to track framework head.
+- **Acceptance Criteria:** Advancing the SHA is not itself a resolution. The workflow comment and
+  its acceptance criterion currently support opposite meanings, and the owner must choose before
+  the evidence is erased by a bump.
+- **Verification:** Re-run local and hosted `validate-self` against the decided reference and compare
+  both verdicts, rule sets, and counts without substituting a new pin for the comparison.
+- **Dependencies:** None recorded; the owner decision precedes any SHA change.
+
+### Decide whether `quality.dead-code` can become a failure
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#46](https://github.com/mikeycdavis/EngineeringStandards/issues/46)
+- **Evidence:** Pending owner decision and implementation evidence. Issue #46 preserves the measured
+  optional-versus-required fixture results; neither candidate resolution is claimed selected.
+- **Purpose:** Reconcile the catalog's unconditional "never a failure" assurance note with the
+  measured result that policy escalation to `required` produces a build-stopping failure.
+- **Deliverables:** Either an enforced and documented severity cap or corrected catalog language,
+  selected by the owner rather than inferred from the current implementation.
+- **Acceptance Criteria:** Either enforce a severity cap and disclose that policy cannot fully
+  escalate this rule, or narrow the documentation and accept that the heuristic may stop a build.
+  The choice is not made here and does not reopen #38.
+- **Verification:** Repeat the measured orphan fixture at catalog `optional` and policy-escalated
+  `required`; the result must match the selected contract and its documented assurance.
+- **Dependencies:** None recorded; #38 is explicitly outside this item's scope.
+
+### Determine how authoring worktrees are acquired and protected
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#48](https://github.com/mikeycdavis/EngineeringStandards/issues/48)
+- **Evidence:** Pending investigation and control evidence. Issue #48 preserves the reflog timestamps,
+  worktree transition, and explicit refusal to attribute the event to an unmeasured actor.
+- **Purpose:** Investigate the observed 2026-08-28 branch/worktree transition, including expected
+  concurrent acquisition, stale worktree pruning, and reserving the main tree for integration.
+- **Deliverables:** A measured account of the transition and an owner-approved worktree acquisition
+  and integration rule that protects in-progress edits and exact-head evidence.
+- **Acceptance Criteria:** The evidence does not identify an actor or mechanism. Closure requires
+  an established operating rule and evidence for the cause or control, not attribution by guess.
+- **Verification:** Reproduce or otherwise falsify the unsafe acquisition path, then demonstrate
+  that the selected control prevents an unrequested HEAD move during an in-progress edit.
+- **Dependencies:** None recorded; the investigation must preserve the reflog evidence named in #48.
+
+### Establish the issue-to-plan ownership invariant
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#49](https://github.com/mikeycdavis/EngineeringStandards/issues/49)
+- **Evidence:** The 2026-10-01 owner decision establishes that temporary unscoped issues are legal
+  but never release-eligible, and that every release-relevant issue requires canonical ownership.
+  Representation and enforcement evidence remain pending.
+- **Purpose:** Add the missing issue-to-item direction to the existing item-to-issue tracking checks,
+  after defining how the settled temporary-unscoped state and canonical mapping participate in
+  release ownership.
+- **Deliverables:** A durable representation of temporary unscoped status and a check that detects
+  missing or duplicate release ownership without treating temporary unscoped work as release-ready.
+- **Acceptance Criteria:** A newly filed issue may remain temporarily unscoped, but it is never
+  release-eligible in that state. Every release-relevant issue has exactly one canonical owner.
+  Enforcement preserves both truths instead of collapsing them into a zero-unclaimed rule.
+- **Verification:** Exercise claimed-once, claimed-twice, absent-from-plan, and deliberately temporary
+  unclaimed fixtures against the issue-to-item check and the canonical mapping.
+- **Dependencies:** None recorded; the owner decision is settled, and only representation and
+  enforcement remain open.
+
+### Define producer-issued rule-set identity
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#55](https://github.com/mikeycdavis/EngineeringStandards/issues/55)
+- **Evidence:** Pending identity selection and cross-materialization proof. Issue #55 preserves the
+  measured same-envelope/different-semantics case and the constraints on obvious identity shapes.
+- **Purpose:** Make Standard 25 R2 state what the result envelope establishes about the rule set that
+  produced it, with a reproducible identity across a checkout, `git archive`, and an installed
+  package, or an explicit disclosure of unsupported forms.
+- **Deliverables:** A selected producer-issued identity contract, its Standard 25 field semantics,
+  and the corresponding Standard 31 R4 comparability citation.
+- **Acceptance Criteria:** No field name, format, or algorithm is selected here. A target-project
+  git-blob identity and raw working-tree bytes each violate measured constraints; this is not a
+  request to change `standardVersion` or to build portfolio tooling. The selected mechanism is
+  reproducible across the supported materializations or discloses which it cannot serve.
+- **Verification:** Compare the identity across a checkout, a `git archive`, and an installed
+  package, and prove that a semantic rule-set change changes the identity without diffing prose.
+- **Dependencies:** None recorded; #1 may remain closed on its honest `unknown` contract.
+
+### Decide whether committed conflict-marker detection is normative
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58)
+- **Evidence:** Pending owner decision. Issue #58 preserves the P1/P2 split, fenced-region limitation,
+  and measured rejection of Standard 46 as the normative home.
+- **Purpose:** Decide whether the existing audit-only P1 observation becomes a rule and, if so, which
+  standard owns the fenced-region trade-off. The live-tree P2 preflight is already separately owned.
+- **Deliverables:** A recorded terminal governance decision: audit-only, a normatively specified
+  owning clause, or an explicit wait for a non-heuristic discriminator.
+- **Acceptance Criteria:** Standard 46 has been rejected as the home. Leaving P1 permanently
+  audit-only is a legitimate terminal decision; promotion waits for a normative statement of the
+  heuristic limitation or a future non-heuristic discriminator.
+- **Verification:** Re-run the unfenced specimen, canonical fenced documentation, and genuine marker
+  group inside a fence; the chosen contract must describe all three outcomes truthfully.
+- **Dependencies:** None recorded; P1 and P2 remain separate propositions.
+
+### Resolve the absent reconstruction-baseline verdict
+
+- **Status:** IN_REVIEW
+- **Tracked by:** GitHub issue [#63](https://github.com/mikeycdavis/EngineeringStandards/issues/63)
+- **Evidence:** Implementation evidence exists on the merged development history and issue #63 is
+  awaiting review/verification; merge state alone is not asserted as completion.
+- **Purpose:** Prevent a repository with no reconstruction artifacts from reporting `passed`, while
+  preserving partial-directory R4/R6 behavior and the ban on evaluator dependence on `detectMode`.
+- **Deliverables:** An existing-vocabulary result for absent artifacts, state coverage for greenfield
+  and reconstruction-required repositories, and regression coverage for the empty baseline case.
+- **Acceptance Criteria:** Distinguish greenfield absence from reconstruction-required absence,
+  or record a measured decision not to distinguish them. Do not turn inferred mode into evaluator
+  truth. A missing baseline is never `passed`; partial-directory R4/R6 behavior stays intact.
+- **Verification:** Run the absent, implemented-absent, incomplete R4/R6, and sufficient baseline
+  fixtures plus `test/remediation-state.test.mjs`; review and verification, not merge evidence alone,
+  decide completion.
+- **Dependencies:** None recorded; #32 and ADR 0008 constrain the implementation but are not hard
+  backlog dependencies.
+
+### Decide who owns the missing no-tests/no-CI observation
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#64](https://github.com/mikeycdavis/EngineeringStandards/issues/64)
+- **Evidence:** Pending owner decision and resulting evaluator evidence. Issue #64 preserves the
+  removed detector's truthful observation and the measured ownership gap without rebinding it.
+- **Purpose:** Decide whether the truthful observation removed with #62 returns as its own rule, a
+  widened `verification.before-completion` check, or an audit-only unbound finding, and whether test
+  and CI absence remain one observation or two.
+- **Deliverables:** An owner-selected home and granularity for the no-tests/no-CI observation, plus
+  the corresponding audit/validate behavior and regression coverage.
+- **Acceptance Criteria:** Do not rebind it to `audit.business-state`; that rule concerns business
+  mutation recording and repeating that association would recreate #62's defect.
+- **Verification:** Run #62's business-logic/no-tests/no-CI fixture and prove the observation appears
+  only under the selected owner, with audit and validate behavior matching the decision.
+- **Dependencies:** None recorded; #62 supplies provenance, not unfinished work this item waits on.
+
 **Added 2026-08-11.** Everything in this repository that is currently open, plus everything that is
 deliberately not being worked on and the reason. It exists so that *open* and *dormant* are visible
 states rather than absent ones.

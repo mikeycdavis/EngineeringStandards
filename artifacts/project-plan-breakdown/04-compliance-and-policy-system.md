@@ -163,9 +163,10 @@ the one failure class this repository exists to prevent.
 - **Tracked by:** GitHub issues
   [#10](https://github.com/mikeycdavis/EngineeringStandards/issues/10) and
   [#11](https://github.com/mikeycdavis/EngineeringStandards/issues/11)
-- **Why these pointers are hand-verified.** `Tracked by` here names GitHub rather than a backlog
-  item, because this repository has no `artifacts/backlog/` and the audit's reference resolver
-  understands only backlog ids — the coupling defect owned by section 08. Kept out of the
+- **Why these pointers were hand-verified.** When this item was written, `Tracked by` named GitHub
+  rather than a canonical backlog item because the repository had no `artifacts/backlog/` mapping
+  and the audit's reference resolver understood only backlog ids - the coupling defect owned by
+  section 08. The canonical mapping now records both stories. Kept out of the
   `Tracked by` field deliberately: an issue mentioned in passing inside that field is
   indistinguishable, to any automated ownership check, from an issue the item claims. That is the
   same use/mention problem the detectors have, one layer up, and it made the
