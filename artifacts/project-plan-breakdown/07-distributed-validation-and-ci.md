@@ -257,3 +257,31 @@ someone to lie to make the build go green.
   that EngineeringStandards owns adoption eligibility itself rather than delegating to an external
   registry, is consequential enough to record. It likely is: the question arises before a project has
   adopted anything, so answering it must not require a separate enforcement repository to be present.
+
+### Prepare a truthful Engineering adapter release candidate
+
+- **Status:** NOT_STARTED
+- **Tracked by:** GitHub issue [#77](https://github.com/mikeycdavis/EngineeringStandards/issues/77)
+- **Evidence:** Pending candidate evidence. Issue #77 is the canonical scope and acceptance record;
+  no adapter candidate, schema result, equivalence result, tag, or publication is claimed yet.
+- **Purpose:** Produce `standards-adapter.json` and EngineeringStandards-side candidate evidence for
+  `scripts/standards.mjs validate {target} --json`, supporting `project-policy.yml`, all four native
+  verdicts, and a producer-chosen passing subset. Validate the declaration and result vocabulary,
+  prove direct/adapter equivalence across the supported matrix, and refuse a missing status as a
+  typed failure.
+- **Deliverables:** The adapter declaration and candidate evidence recording the external source
+  revision, artifact hashes, schema checks, supported matrix, equivalence results, and known
+  limitations.
+- **Acceptance Criteria:** The adapter invokes the canonical validate command; supports only
+  `project-policy.yml`; maps all four native verdicts and the declared passing subset; conforms to
+  the consumer declaration and result schemas; produces equivalent direct and mediated results;
+  and refuses an invocation with no status as a typed failure.
+- **Verification:** Validate the declaration and result vocabulary, run the supported equivalence
+  matrix, exercise the no-status failure, and review candidate evidence before publication.
+- **Dependencies:** No hard backlog dependencies. In particular, this item does not depend on
+  `ST-11`.
+- **Candidate evidence detail:** record the external source revision, artifact hashes, schema checks,
+  supported matrix, equivalence results, and known limitations.
+- **Boundary:** This item prepares a candidate for review. It does not publish or tag a release,
+  implement a StandardsEnforcer feature, assign registry ownership, invent a self-SHA field, or
+  depend on `ST-11`. Acceptance and review precede any separate publication decision.
