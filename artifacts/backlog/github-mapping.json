@@ -30,5 +30,6 @@
     "ST-14": { "number": 64, "id": 5368005753, "state": "open", "parent": "FE-04" },
     "ST-15": { "number": 77, "id": 5655655705, "state": "open", "parent": "FE-03" }
   },
+  "temporarilyUnscoped": [],
   "recovery": "There were never backlog item files to restore. Recover this mapping non-destructively by reading the marked GitHub issues and their native sub-issue links; do not create item files or replace issue history."
 }

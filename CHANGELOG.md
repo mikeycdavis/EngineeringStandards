@@ -159,6 +159,13 @@ subject, the identity-versus-content substitution the submission gate already re
   compared against the policy's four rejections and reported them as cleared — a claim about the
   project derived from a defect in reading it.
 
+Added the issue-to-item ownership check (issue #49): `scripts/ownership.mjs`, `npm run ownership`. It
+classifies each open issue as claimed once, claimed twice, absent from the plan, temporarily unscoped
+or a hierarchy container, and only claimed-once issues are release-eligible. Temporary unscoped status
+is recorded as `temporarilyUnscoped` in `artifacts/backlog/github-mapping.json`. It takes a supplied
+snapshot of the open issues and reports `NOT_EVALUATED`, exit 2, without one; it is not a pipeline
+stage. No change to the framework, rule catalog, policy schema or any published contract.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
