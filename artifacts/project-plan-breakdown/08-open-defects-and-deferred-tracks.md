@@ -12,6 +12,13 @@ Engineering adapter release candidate; publication remains a separate decision. 
 `ST-13` (#63) are `IN_REVIEW`; the other current stories are `NOT_STARTED`. No issue was closed,
 assigned, or treated as complete by this ownership transition.
 
+**The issue-to-item direction is now executable.** `node scripts/ownership.mjs --issues <open-issues.json>`
+classifies every open issue as claimed once, claimed twice, absent from the plan, temporarily
+unscoped (declared in `temporarilyUnscoped` in the mapping), or a hierarchy container, and reports
+that only claimed-once issues are release-eligible. It needs a supplied snapshot of the open set and
+reports `NOT_EVALUATED` without one. The sentence further down that asserts the invariant by prose is
+left as the dated record it is.
+
 ## Canonical ownership for the formerly unclaimed release work
 
 These items bind the canonical stories to this plan without rewriting the measurements and
