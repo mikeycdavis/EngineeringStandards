@@ -421,6 +421,9 @@ export function render(report, { dryRun }) {
   out.push("");
   out.push(`  Mode: ${report.mode} [${report.modeConfidence}]`);
   for (const line of report.modeEvidence) out.push(`        ${line}`);
+  if (report.modeConfidence === "INFERRED") {
+    out.push(`        If this guess is wrong, override it: --mode=<${Object.values(MODES).join("|")}>`);
+  }
   out.push("");
 
   const label = dryRun ? "would create" : "created";
