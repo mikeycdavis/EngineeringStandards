@@ -146,7 +146,8 @@ something absent, unproven, or contradictory.
 | `detected-ai-interfaces` | Detected AI interfaces | Model/provider SDK usage, prompt files, agent or tool definitions | `info` |
 | `missing-documentation` | Missing documentation | Absence of `docs/architecture.md` or a substantive README | `warning` |
 | `missing-planning-artifacts` | Missing planning artifacts | Absence of `artifacts/project-plan-breakdown/`, or a breakdown with no `00-overview.md` | `warning` |
-| `missing-audit-infrastructure` | Missing audit infrastructure | No test suite, no CI configuration, or no logging/audit trail where the standards require one | `warning` |
+| `no-test-surface` | Verification surface | No test files found; audit-only, no rule binding | `info` |
+| `no-ci-configuration` | Verification surface | No CI configuration found; audit-only, no rule binding | `info` |
 | `unverified-functionality` | Unverified functionality | Capabilities with no corresponding test coverage | `warning` |
 | `potential-dead-code` | Potential dead code | Unreferenced modules, unreachable routes, exports with no importer | `info` |
 | `potential-unfinished-features` | Potential unfinished features | `TODO`/`FIXME`/`HACK`/`XXX` markers, stubs, `NotImplemented` paths, skipped tests, disabled feature flags | `warning` |

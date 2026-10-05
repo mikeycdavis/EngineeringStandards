@@ -117,6 +117,7 @@ fact.
 
 **No skill implements this standard.** It constrains application design.
 
-`standards audit` reports `missing-audit-infrastructure`, but that finding is about test and CI
-coverage — it does not inspect whether an application writes audit events, which fields they carry,
-or whether secrets reach them. Conformance is established by review.
+`standards audit` does not inspect whether an application writes audit events, which fields they
+carry, or whether secrets reach them, so `audit.business-state` is reported not-evaluated. Its test
+and CI observations (`no-test-surface`, `no-ci-configuration`) are about verification, not about this
+standard, and carry no rule binding. Conformance is established by review.
