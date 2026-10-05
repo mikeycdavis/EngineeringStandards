@@ -680,6 +680,9 @@ function usage(stream = process.stderr) {
       "  --force-overwrite=<path>   init only: approve replacing one existing file.\n" +
       "  --json         Emit the structured report on stdout instead of the readable one.\n" +
       "  --dir=<path>   Target a directory other than the resolved project root.\n" +
+      "  --mode=<greenfield|existing-with-plan|reconstruction-required>\n" +
+      "                 init only: override the detected mode. Records the mode as\n" +
+      "                 CONFIRMED_BY_OWNER instead of INFERRED.\n" +
       "  --max-total-read-bytes=<n>   audit and validate: bound the total file\n" +
       "                 content one run retains. Defaults to 256 MB. `init` returns\n" +
       "                 before the walk, so a valid value is inert there; an unusable\n" +
