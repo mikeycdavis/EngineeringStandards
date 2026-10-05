@@ -17,7 +17,8 @@
     "diagrams": "node scripts/diagrams.mjs",
     "links": "node scripts/links.mjs",
     "audit:strict": "node scripts/standards.mjs audit . --strict",
-    "pipeline": "node scripts/pipeline.mjs list"
+    "pipeline": "node scripts/pipeline.mjs list",
+    "ownership": "node scripts/ownership.mjs"
   },
   "engines": {
     "node": ">=18"
