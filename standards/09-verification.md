@@ -91,7 +91,9 @@ Implemented in part by the **`pre-push`** skill, which runs a project's formatte
 checker, tests, and standards review before code is pushed — covering the build, test, static
 analysis, and linting entries of R2.
 
-`standards audit` reports `missing-audit-infrastructure` when a repository has no test suite or no CI
-configuration, and `unverified-functionality` when capabilities exist with no tests at all. Neither
-establishes that any particular piece of work was verified, which is the substance of R1 and remains
-a claim someone has to make honestly.
+`standards audit` reports `no-test-surface` when a repository has no test files and
+`no-ci-configuration` when it has no CI configuration. Both are informational findings with no rule
+binding, so they inform an audit and never change a `validate` verdict. It reports
+`unverified-functionality` when capabilities exist with no tests at all. None of these establishes
+that any particular piece of work was verified, which is the substance of R1 and remains a claim
+someone has to make honestly.
