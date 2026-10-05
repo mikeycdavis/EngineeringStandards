@@ -143,6 +143,43 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // normally and typically lands on not-evaluated. Silently ignoring it would be worse.
     }
 
+    // An exception is a recorded, dated, attributable human decision about a rule, so it can be
+    // read without a detector finding (ST-04). The branch further down only ever sees a rule that a
+    // check examined and found violated, and a manual-review rule never reaches it — which left the
+    // fourth way to establish a forbidden rule, `except it`, schema-valid and silently inert for
+    // precisely the rules the policy template steers adopters toward excepting.
+    //
+    // Scoped to forbidden manual-review rules: that is the case the owner decided. Where this sits
+    // matters. It is AFTER the attestation verdict, so an approved attestation still establishes the
+    // rule and a rejected or contradicted one still fails — a waiver never hides a recorded human
+    // finding — and BEFORE not-evaluated, which is the dead end it replaces. `activeExceptions`
+    // already excludes non-exemptible rules (rejected) and expired entries (failed), unchanged.
+    //
+    // Never `passed`: a waiver is not evidence the rule is met. It is `skipped`, so it stays out of
+    // the required-rule score and its denominator, and `excepted`, so it leaves the unestablished
+    // prohibitions (which count only `not-evaluated`) and the verdict reads COMPLIANT_WITH_EXCEPTIONS.
+    const manualException = activeExceptions.get(rule.id);
+    if (manualException && rule.validationType === "manual-review" && level === "forbidden") {
+      const result = base(
+        rule,
+        level,
+        RESULT.skipped,
+        "excepted",
+        `${rule.id} is excepted by ${manualException.approvedBy} (approved ${manualException.approvedAt}): ${manualException.reason}`,
+      );
+      result.evidence = ["project-policy.yml"];
+      result.files = ["project-policy.yml"];
+      result.exception = {
+        reason: manualException.reason,
+        approvedBy: manualException.approvedBy,
+        approvedAt: manualException.approvedAt,
+        expires: manualException.expires ?? null,
+        reference: manualException.reference ?? null,
+      };
+      results.push(result);
+      continue;
+    }
+
     // A manual-review rule is never established by an automated run. Without a valid attestation it
     // is not-evaluated, even if the evaluator claims to have examined it and found nothing —
     // "no automated finding" is not evidence for a requirement whose evaluator is a human. Reaching

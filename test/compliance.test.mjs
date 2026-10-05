@@ -901,3 +901,212 @@ test("a forbidden failure changes the verdict and leaves the required score unto
   assert.equal(withFailure.score, baseline.score, "a forbidden failure moved the required-rule score");
   assert.equal(withFailure.denominator.scored, baseline.denominator.scored, "it moved the denominator");
 });
+
+// --- ST-04: an exception on a manual-review forbidden rule is read, not ignored -------------------
+//
+// An exception was only ever consulted after a detector produced a finding, and a manual-review rule
+// never does — so the template's fourth way to establish a forbidden rule (`except it`) was
+// well-formed, schema-valid, and silently inert for exactly the rules it steered adopters toward.
+// The owner decided (2026-10-01) that an active approved exception on an exemptible manual-review
+// forbidden rule is `excepted`: evidence retained, removed from the unestablished prohibitions, and
+// NEVER represented as `passed` or counted in the required-rule score.
+
+const manualException = (over = {}) => ({
+  rule: FORBIDDEN_MANUAL,
+  reason: "Legacy data copies predate the policy; forward policy is in the ADR.",
+  approvedBy: "project-owner",
+  approvedAt: TODAY,
+  expires: "2027-01-01",
+  reference: "docs/adr/0003.md",
+  ...over,
+});
+
+const manualPolicy = (over = {}) =>
+  unestablishing(FORBIDDEN_MANUAL, { rules: { [FORBIDDEN_MANUAL]: { level: "forbidden" } }, ...over });
+
+test("an active exception on an exemptible manual-review forbidden rule is excepted, not unread", () => {
+  assert.equal(resolve(catalog, FORBIDDEN_MANUAL).nonExemptible, false);
+  const verdict = run({ policy: manualPolicy({ exceptions: [manualException()] }) });
+  const result = verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+  assert.equal(result.disposition, "excepted");
+  assert.equal(result.level, "forbidden");
+  assert.deepEqual(result.exception, {
+    reason: "Legacy data copies predate the policy; forward policy is in the ADR.",
+    approvedBy: "project-owner",
+    approvedAt: TODAY,
+    expires: "2027-01-01",
+    reference: "docs/adr/0003.md",
+  });
+  assert.deepEqual(result.evidence, ["project-policy.yml"], "the approval evidence must be retained");
+  assert.deepEqual(result.files, ["project-policy.yml"]);
+  assert.deepEqual(verdict.unestablishedProhibitions, []);
+  assert.equal(verdict.status, STATUS.COMPLIANT_WITH_EXCEPTIONS);
+});
+
+test("an excepted manual-review rule is never passed and never enters the required score", () => {
+  const baseline = run({ policy: manualPolicy() });
+  const excepted = run({ policy: manualPolicy({ exceptions: [manualException()] }) });
+  const result = excepted.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+  assert.equal(result.disposition, "excepted", "anti-vacuity: the exception must be applied");
+  assert.notEqual(result.status, "passed", "a waiver was represented as a pass");
+  assert.equal(excepted.summary.passed, baseline.summary.passed, "an exception raised the passed count");
+  assert.equal(excepted.score, baseline.score);
+  assert.equal(excepted.denominator.scored, baseline.denominator.scored);
+  assert.equal(excepted.denominator.applicable, baseline.denominator.applicable);
+  assert.equal(excepted.assurance.manualReview, baseline.assurance.manualReview, "a waiver is not a review");
+  assert.equal(
+    excepted.assurance.automated + excepted.assurance.manualReview + excepted.assurance.notEvaluated,
+    excepted.denominator.applicable,
+    "assurance must still account for every applicable rule",
+  );
+});
+
+test("an exception on a manual-review rule applies only to the rule it names", () => {
+  const other = [...catalog.rules.values()].find(
+    (r) => r.level === "forbidden" && r.validationType === "manual-review" && !r.nonExemptible && r.id !== FORBIDDEN_MANUAL,
+  );
+  const p = manualPolicy({ exceptions: [manualException({ rule: other.id })] });
+  delete p.applicability[other.id];
+  p.rules[other.id] = { level: "forbidden" };
+  const verdict = run({ policy: p });
+  assert.equal(verdict.results.find((r) => r.ruleId === other.id).disposition, "excepted");
+  assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL).disposition, "not-evaluated");
+  assert.deepEqual(verdict.unestablishedProhibitions, [FORBIDDEN_MANUAL]);
+  assert.equal(verdict.status, STATUS.COMPLIANT_WITH_EXCEPTIONS);
+});
+
+test("an expired exception on a manual-review forbidden rule is not excepted", () => {
+  const verdict = run({ policy: manualPolicy({ exceptions: [manualException({ expires: "2026-08-07" })] }) });
+  assert.ok(!verdict.results.some((r) => r.disposition === "excepted"), "an expired waiver was applied");
+  assert.ok(verdict.results.some((r) => r.disposition === "expired-exception" && r.ruleId === FORBIDDEN_MANUAL));
+  assert.equal(
+    verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL && r.status === "skipped").disposition,
+    "not-evaluated",
+  );
+  assert.deepEqual(verdict.unestablishedProhibitions, [FORBIDDEN_MANUAL]);
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+});
+
+test("an exception expiring today is still active on a manual-review forbidden rule", () => {
+  const verdict = run({ policy: manualPolicy({ exceptions: [manualException({ expires: TODAY })] }) });
+  assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL).disposition, "excepted");
+});
+
+test("an exception with no expiry stays active and reports expires: null", () => {
+  const e = manualException();
+  delete e.expires;
+  delete e.reference;
+  const verdict = run({ policy: manualPolicy({ exceptions: [e] }) });
+  const result = verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+  assert.equal(result.disposition, "excepted");
+  assert.equal(result.exception.expires, null);
+  assert.equal(result.exception.reference, null);
+});
+
+test("an exception on a non-exemptible manual-review rule is still rejected, never excepted", () => {
+  assert.equal(resolve(catalog, FORBIDDEN_LOCKED).nonExemptible, true);
+  const verdict = run({
+    policy: unestablishing(FORBIDDEN_LOCKED, {
+      rules: { [FORBIDDEN_LOCKED]: { level: "forbidden" } },
+      exceptions: [manualException({ rule: FORBIDDEN_LOCKED })],
+    }),
+  });
+  assert.ok(!verdict.results.some((r) => r.disposition === "excepted"));
+  assert.ok(verdict.results.some((r) => r.disposition === "rejected-exception" && r.ruleId === FORBIDDEN_LOCKED));
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+});
+
+test("a valid attestation outranks an exception on the same manual-review rule", () => {
+  const verdict = run({
+    policy: manualPolicy({
+      attestations: { [FORBIDDEN_MANUAL]: attest() },
+      exceptions: [manualException()],
+    }),
+  });
+  const result = verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+  assert.equal(result.disposition, "attested");
+  assert.equal(result.status, "passed");
+  assert.equal(verdict.status, STATUS.COMPLIANT);
+});
+
+test("a rejected attestation is not hidden by an exception on the same manual-review rule", () => {
+  const verdict = run({
+    policy: manualPolicy({
+      attestations: { [FORBIDDEN_MANUAL]: attest({ status: "rejected" }) },
+      exceptions: [manualException()],
+    }),
+  });
+  assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL).disposition, "attested-rejected");
+  assert.equal(verdict.status, STATUS.NON_COMPLIANT);
+});
+
+test("an exception does not turn an automated rule with no finding into an excepted one", () => {
+  // The waiver is for what a human must judge. A detector that examined the rule and found nothing
+  // has established it, and an exception beside that is not a reason to relabel the result.
+  const verdict = run({
+    policy: policy({
+      rules: { [FORBIDDEN]: { level: "forbidden" } },
+      exceptions: [manualException({ rule: FORBIDDEN })],
+    }),
+  });
+  const result = verdict.results.find((r) => r.ruleId === FORBIDDEN);
+  assert.equal(result.disposition, "evaluated");
+  assert.equal(result.status, "passed");
+  assert.equal(verdict.status, STATUS.COMPLIANT);
+});
+
+test("an exception on a required manual-review rule is outside this behaviour and not applied", () => {
+  // ST-04's decision covers forbidden rules. A required manual-review rule is still not-evaluated
+  // under an exception, which is the existing behaviour and is pinned here so widening it is a
+  // decision rather than an accident.
+  const required = [...catalog.rules.values()].find(
+    (r) => r.level === "required" && r.validationType === "manual-review" && !r.nonExemptible,
+  );
+  const verdict = run({
+    policy: policy({ rules: { [required.id]: { level: "required" } }, exceptions: [manualException({ rule: required.id })] }),
+  });
+  assert.equal(verdict.results.find((r) => r.ruleId === required.id).disposition, "not-evaluated");
+});
+
+test("the exception on a manual-review rule reaches the validate CLI output and JSON", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const os = await import("node:os");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st04-"));
+  try {
+    await writeFile(path.join(dir, "README.md"), "# Fixture\n");
+    await writeFile(
+      path.join(dir, "project-policy.yml"),
+      [
+        'standardVersion: "2.0.0"',
+        'project: "Fixture"',
+        "rules:",
+        "  data.migration-rollback:",
+        "    level: forbidden",
+        "exceptions:",
+        "  - rule: data.migration-rollback",
+        '    reason: "Legacy DML corpus; forward policy adopted."',
+        '    approvedBy: "project-owner"',
+        '    approvedAt: "2026-08-10"',
+        '    expires: "2999-01-01"',
+        '    reference: "docs/adr/0003.md"',
+        "",
+      ].join("\n"),
+    );
+    const cli = (args) =>
+      spawnSync(process.execPath, [path.join(ROOT, "scripts", "standards.mjs"), "validate", ".", ...args, `--dir=${dir}`], {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      });
+    const json = JSON.parse(cli(["--json"]).stdout);
+    const result = json.results.find((r) => r.ruleId === "data.migration-rollback");
+    assert.equal(result.disposition, "excepted");
+    assert.ok(!json.unestablishedProhibitions.includes("data.migration-rollback"));
+    const text = cli([]).stdout;
+    assert.match(text, /Excepted:\s*\n\s+data\.migration-rollback — Legacy DML corpus/);
+    const unestablished = (text.split("Unestablished prohibitions")[1] ?? "").split("Excepted:")[0];
+    assert.ok(!/data\.migration-rollback/.test(unestablished), "an excepted rule was listed as unestablished");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

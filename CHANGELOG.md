@@ -159,6 +159,19 @@ subject, the identity-versus-content substitution the submission gate already re
   compared against the policy's four rejections and reported them as cleared — a claim about the
   project derived from a defect in reading it.
 
+**`validate` now reads an exception recorded against a manual-review forbidden rule** (ST-04,
+issue #10). The exception was consulted only after a detector produced a finding, and a manual-review
+rule never does, so a well-formed, in-date exception on an exemptible rule was accepted by the policy
+check and then ignored by `validate`: the rule stayed `not-evaluated` and stayed in
+`unestablishedProhibitions`, with no mention of the exception. An active exception now yields
+`disposition: "excepted"` with the approval retained in `exception`, removes the rule from
+`unestablishedProhibitions`, and lets the verdict read `COMPLIANT_WITH_EXCEPTIONS`. It is never
+`passed`, and it stays out of the required-rule score and its denominator. Unchanged: a non-exemptible
+rule's exception is still `rejected-exception`, an expired one is still `expired-exception` and does
+not except, and an attestation (approved, rejected or contradicted) still takes precedence over an
+exception on the same rule. This changes what `validate` reports for such a policy; the policy schema
+and the rule catalog are unchanged. Exceptions on a `required` manual-review rule are not covered.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
