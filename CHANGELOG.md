@@ -42,6 +42,12 @@ actual `.yml`/`.yaml` workflow in `.github/workflows` rather than the directory 
 `no-ci-configuration` now counts only a workflow whose extension is the literal lowercase `.yml`/`.yaml` (GitHub does not run `CI.YML`),
 and is withheld rather than emitted when a candidate workflow entry cannot be statted (follow-up to Codex review of #88).
 
+The ownership check's `Tracked by` value now ends only at a line the canonical plan-field grammar reads as a field (or a malformed
+attempt at one), not at any bold list item, so a bold issue-link list item is a claim again; and an issue URL after emphasis, HTML
+quoting or closing, or a `,`/`;` separator is a claim, as before the embedded-URL boundary of #89, unless the token already began with a URL
+(then it is part of that URL, and two bare URLs joined by a bare separator are one token, so only the first is read). The value also ends at a
+bold bullet naming a plan field with no colon or with a wrapped label, as `parsePlanItems` reads it (follow-up to Codex review of #89 and #93).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 

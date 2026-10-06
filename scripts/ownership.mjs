@@ -75,7 +75,54 @@ export const CLASS = Object.freeze({
 
 const PLAN_DIR = "artifacts/project-plan-breakdown";
 const MAPPING = "artifacts/backlog/github-mapping.json";
-const ISSUE_LINK = /(?<![^\s(<\[])https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
+/**
+ * A bullet that tried to be a field and missed the grammar, the way `parsePlanItems` notices them
+ * (`- **Evidence**: x`, `* **Evidence:** x`): a bold run of plain label text closed by a colon. It ends the
+ * value just as a field does, so a neighbouring field's links are never read as this item's claims. A bold
+ * list item that is a link or URL (`  - **<issue link>**`) has brackets or a slash and is not matched.
+ */
+const FIELD_ATTEMPT = /^\s*[-*]\s+\*\*[^*[\]()/]*?(?::\*\*|\*\*\s*:)/;
+
+/**
+ * The field names scripts/standards.mjs reads (its PLAN_FIELDS and `Tracked by`). `parsePlanItems` reports a
+ * bold bullet naming one of them as malformed field syntax even with no colon (`- **Purpose** x`) or with the
+ * label wrapped across lines (`- **Purpose`), so ownership ends the value there too. Mirrors that list; the
+ * canonical module does not export it.
+ */
+const PLAN_FIELD_NAMES = ["Status", "Purpose", "Deliverables", "Acceptance Criteria", "Verification", "Dependencies", "Tracked by", "TrackedBy"];
+const BOLD_OPEN = /^\s*[-*]\s+\*\*(.*)$/;
+const NEAR_SEPARATOR = /^(?:\s*[–—]\s*|\s+-\s+)/;
+
+/** Does this line open a bold run that names a plan field, the way parsePlanItems' BOLD_OPEN branch reads it? */
+function namesPlanField(line) {
+  const bold = line.match(BOLD_OPEN);
+  if (!bold) return false;
+  const label = bold[1].split("**")[0].replace(/:\s*$/, "");
+  const key = canonicalFieldKey(label);
+  if (PLAN_FIELD_NAMES.includes(key)) return true;
+  const trimmed = label.trim();
+  return PLAN_FIELD_NAMES.some((name) => {
+    if (!trimmed.startsWith(name)) return false;
+    const rest = trimmed.slice(name.length);
+    return rest.trim() !== "" && NEAR_SEPARATOR.test(rest);
+  });
+}
+
+/**
+ * Is the `https://github.com/...` at `index` a standalone link rather than part of a longer one? It must start
+ * the value or follow whitespace, `(`, `<` or `[`. After `*`, a quote, `>`, `,` or `;` it still counts, unless
+ * the token it sits in already began with a URL (`https://x/?next;https://github.com/...`): inside an
+ * enclosing URL those are ordinary characters, and reading the inner link as a claim could pass a check falsely.
+ * Two bare URLs joined by a separator with no space are one token, so only the first is read.
+ */
+function atUrlBoundary(value, index) {
+  if (index === 0 || /[\s(<[]/.test(value[index - 1])) return true;
+  if (!/[*"'>,;]/.test(value[index - 1])) return false;
+  let start = index;
+  while (start > 0 && !/[\s(<[]/.test(value[start - 1])) start--;
+  return !value.slice(start, index).includes("://");
+}
+const ISSUE_LINK = /https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
 
 /** The repository the mapping's issue numbers belong to, or throws: a link cannot be judged without it. */
 function mappedRepository(root) {
@@ -99,8 +146,12 @@ function mappedRepository(root) {
  * Every (item, issue) claim in the plan files.
  *
  * An item is a heading of level 2-4 and its body up to the next such heading. The `Tracked by` value
- * is the field's line plus continuation lines, up to the next field (indented or not) or a blank line.
- * An issue URL counts only at a URL boundary: start of value, whitespace, or just after `(`, `<` or `[`.
+ * is the field's line plus continuation lines, up to the next field or a blank line. A next field is
+ * a line the canonical plan-field grammar reads as one (`FIELD_LINE`, indented or not) or a malformed
+ * attempt at one (`FIELD_ATTEMPT`, or a bold run naming a plan field, `namesPlanField`); a bold list item that is not a field, such as `  - **<issue link>**`,
+ * continues the value.
+ * An issue URL counts only at a URL boundary (`atUrlBoundary`): start of value, whitespace, just after `(`,
+ * `<` or `[`, or after emphasis, quoting or a separator (`*`, `"`, `'`, `>`, `,`, `;`) outside an enclosing URL.
  */
 export function collectPlanClaims(root) {
   const dir = path.join(root, PLAN_DIR);
@@ -123,11 +174,12 @@ export function collectPlanClaims(root) {
       if (key !== "Tracked by" && key !== "TrackedBy") continue;
       let value = field[2];
       for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j].trim() === "" || /^\s*-\s+\*\*/.test(lines[j]) || /^#/.test(lines[j])) break;
+        if (lines[j].trim() === "" || FIELD_LINE.test(lines[j]) || FIELD_ATTEMPT.test(lines[j]) || namesPlanField(lines[j]) || /^#/.test(lines[j])) break;
         value += `\n${lines[j]}`;
       }
       const seen = new Set();
       for (const m of value.matchAll(ISSUE_LINK)) {
+        if (!atUrlBoundary(value, m.index)) continue;
         repository ??= mappedRepository(root);
         if (`${m[1]}/${m[2]}`.toLowerCase() !== repository) continue;
         const issue = Number(m[3]);

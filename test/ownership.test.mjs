@@ -602,3 +602,121 @@ test("issue URLs at a URL boundary still claim: bare, bracketed, parenthesised, 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// --- repair of the Codex review of #89 -------------------------------------------------------------
+
+test("a bold list item under Tracked by is a continuation, not a next field", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### Indented\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n  - **[#11](${URL(11)})**\n\n` +
+      `### Unindented\n\n- **Tracked by:**\n- **[#12](${URL(12)})**\n\n` +
+      `### Tabbed, CRLF\r\n\r\n- **Tracked by:**\r\n\t- **[#13](${URL(13)})**\r\n\r\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11, 12, 13]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the value still ends at a line the canonical grammar reads as a field, after bold list items", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n  - **Evidence:** discussed [#20](${URL(20)})\n  - **[#21](${URL(21)})**\n\n` +
+      `### B\n\n- **Tracked by:**\n  - **[#11](${URL(11)})**\n- **Evidence — qualified:** [#22](${URL(22)})\n\n` +
+      `### C\n\n- **Tracked by:**\n  - **[#12](${URL(12)})**\n- **Purpose:** [#23](${URL(23)})\n\n` +
+      `### D\n\n- **Tracked by:**\n  - **[#14](${URL(14)})**\n- **Verification (CI/local):** [#24](${URL(24)})\n\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11, 12, 14]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a malformed field attempt ends the value, and a bold link item with trailing text does not", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**: parent\n- **Evidence**: discussed [#20](${URL(20)})\n\n` +
+      `### B\n\n- **Tracked by:** [#11](${URL(11)})\n* **Evidence:** discussed [#21](${URL(21)})\n\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an issue URL after emphasis, HTML quoting or closing, or a list separator is still a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `**${URL(10)}**`) +
+      withTracked("**Tracked by:**", `<a href="${URL(12)}">x</a>`) +
+      withTracked("**Tracked by:**", `<b>${URL(13)}</b>`) +
+      withTracked("**Tracked by:**", `'${URL(14)}'`) +
+      withTracked("**Tracked by:**", `free,${URL(15)} and;${URL(16)}`),
+  });
+  try {
+    assert.deepEqual(
+      collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y),
+      [10, 12, 13, 14, 15, 16],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a URL embedded after path, query, word or colon characters is still not a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `https://x.example/?u=${URL(10)}`) +
+      withTracked("**Tracked by:**", `https://x.example/${URL(11)}`) +
+      withTracked("**Tracked by:**", `xhttps://github.com/o/r/issues/12`) +
+      withTracked("**Tracked by:**", `https://x.example/a-${URL(13)}`) +
+      withTracked("**Tracked by:**", `key=${URL(14)}`) +
+      withTracked("**Tracked by:**", `dir/${URL(15)}`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// --- repair of the Codex review of #93 -------------------------------------------------------------
+
+test("a colon-less or wrapped malformed known field ends the value, as the canonical parser reads it", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n- **Purpose** discussion [#20](${URL(20)})\n\n` +
+      `### B\n\n- **Tracked by:** [#11](${URL(11)})\n  - **Verification** [#21](${URL(21)})\n\n` +
+      `### C\n\n- **Tracked by:** [#12](${URL(12)})\n* **Purpose\n  wrapped [#22](${URL(22)})\n\n` +
+      `### D\n\n- **Tracked by:** [#13](${URL(13)})\n- **Acceptance Criteria - amended** [#23](${URL(23)})\n\n` +
+      `### E\n\n- **Tracked by:** [#14](${URL(14)})\n- **Status** — blocked [#24](${URL(24)})\n\n` +
+      `### F\n\n- **Tracked by:**\n  - **Purposeful reading** [#15](${URL(15)})\n  - **[#16](${URL(16)})** parent\n\n` +
+      `### G\n\n- **Tracked by:** [#17](${URL(17)})\n- **Tracked by** [#25](${URL(25)})\n\n` +
+      `### H\n\n- **Tracked by:** [#18](${URL(18)})\n- **Status** [#26](${URL(26)})\n\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a separator inside an already-started URL does not make the URL after it a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `[redirect](https://redirect.example/?next;${URL(10)})`) +
+      withTracked("**Tracked by:**", `[redirect](https://redirect.example/?next,${URL(11)})`) +
+      withTracked("**Tracked by:**", `https://redirect.example/?next="${URL(12)}`) +
+      withTracked("**Tracked by:**", `https://redirect.example/?next=*${URL(13)}`) +
+      withTracked("**Tracked by:**", `https://redirect.example/?next>${URL(14)}`) +
+      withTracked("**Tracked by:**", `${URL(15)},${URL(16)}`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
