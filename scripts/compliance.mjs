@@ -93,6 +93,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
   }
 
   const results = [];
+  const silencedRules = new Set();
   for (const rule of catalog.rules.values()) {
     const level = levelOf(rule);
     const applies = applicability[rule.id];
@@ -212,6 +213,26 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       continue;
     }
 
+    // Standard 18 R3: an `optional` rule carries "no expectation either way", and its outcome on
+    // violation is SILENT. Silent means ABSENT, not neutral: no result entry, so no status, no
+    // disposition, no message and no count — a `passed` record that said a departure happened (or
+    // said anything at all about it) would still be a user-visible trace of the violation.
+    //
+    // Accounting. A rule examined and found departed from is neither passed, failed nor warned, so it
+    // is counted in no `summary` bucket, in no `assurance` bucket and not in `denominator`; the
+    // assurance buckets still sum to the applicable count, because both are derived from the same
+    // results. A rule with NO violation keeps its ordinary `passed`/`evaluated` entry — only the
+    // violation is silenced. The rule id is returned in `silencedRules` (never part of the envelope)
+    // so the caller can withhold that rule's findings from user-visible output as well.
+    //
+    // An ACTIVE exception keeps the exception path below (owner-pinned, unchanged): the human
+    // decision about the rule is its own recorded, visible fact. Required, forbidden and recommended
+    // levels do not reach this branch.
+    if (level === "optional" && !activeExceptions.has(rule.id)) {
+      silencedRules.add(rule.id);
+      continue;
+    }
+
     const exception = activeExceptions.get(rule.id);
     const outcome = level === "required" || level === "forbidden" ? RESULT.failed : RESULT.warning;
     const result = base(rule, level, outcome, exception ? "excepted" : "evaluated", hits[0].message);
@@ -278,7 +299,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     });
   }
 
-  return summarise(results, policy);
+  return { ...summarise(results, policy), silencedRules };
 }
 
 /**
