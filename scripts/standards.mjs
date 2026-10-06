@@ -1500,19 +1500,35 @@ function hasCiConfiguration(root, c) {
   } catch {
     return false; // not there at all
   }
+  let names;
   try {
-    // statSync follows a symlink, so a linked workflow counts and a directory named *.yml does not.
-    return readdirSync(dir).some((name) => /\.ya?ml$/i.test(name) && statSyncIsFile(path.join(dir, name)));
+    names = readdirSync(dir);
   } catch {
     return null;
   }
+  // GitHub requires the literal lowercase `.yml`/`.yaml`; on a case-sensitive path `CI.YML` is a
+  // different, non-runnable file. Entries are inspected one by one: a candidate that cannot be
+  // statted (listable directory without search permission) is unknown, not absent.
+  let unknown = false;
+  for (const name of names) {
+    if (!/\.ya?ml$/.test(name)) continue;
+    const isFile = statSyncIsFile(path.join(dir, name));
+    if (isFile === true) return true;
+    if (isFile === null) unknown = true;
+  }
+  return unknown ? null : false;
 }
 
+/**
+ * `true`/`false`, or `null` when the entry could not be inspected. statSync follows a symlink, so a
+ * linked workflow counts and a directory named *.yml does not. A dangling link (ENOENT/ENOTDIR) is
+ * a real "not a file"; any other failure (EACCES, ELOOP, EIO...) is not evidence of absence.
+ */
 function statSyncIsFile(p) {
   try {
     return statSync(p).isFile();
-  } catch {
-    return false;
+  } catch (e) {
+    return e && (e.code === "ENOENT" || e.code === "ENOTDIR") ? false : null;
   }
 }
 

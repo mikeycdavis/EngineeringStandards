@@ -18,8 +18,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { mkdtemp, mkdir, writeFile, rm, cp, chmod } from "node:fs/promises";
+import { readdirSync, statSync } from "node:fs";
+import { mkdtemp, mkdir, writeFile, rm, cp, chmod, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -252,6 +252,8 @@ test("no-test-surface still fires when the only loss is a repository-declared ex
     assert.deepEqual(idsOf(audit.findings.filter((f) => f.id === NO_TESTS)), [NO_TESTS]);
   }));
 
+const WORKFLOW = ["name: ci", "on: [push]", "jobs: {}", ""].join(String.fromCharCode(10));
+
 const ciOnly = async (dir, files) => {
   await mkdir(path.join(dir, ".github", "workflows"), { recursive: true });
   for (const [name, text] of Object.entries(files)) await writeFile(path.join(dir, ".github", "workflows", name), text);
@@ -268,13 +270,54 @@ test("no-ci-configuration fires for an empty .github/workflows directory", () =>
     assert.deepEqual(idsOf(await ciOnly(dir, {})), [NO_CI]);
   }));
 
-test("no-ci-configuration is withheld for a .yml or .yaml workflow, in any letter case", async () => {
-  for (const name of ["ci.yml", "ci.yaml", "CI.YML"]) {
+test("no-ci-configuration is withheld for a lowercase .yml or .yaml workflow", async () => {
+  for (const name of ["ci.yml", "ci.yaml"]) {
     await bare(async (dir) => {
-      assert.deepEqual(await ciOnly(dir, { [name]: "name: ci\non: [push]\njobs: {}\n" }), [], name);
+      assert.deepEqual(await ciOnly(dir, { [name]: WORKFLOW }), [], name);
     });
   }
 });
+
+test("an uppercase or mixed-case extension is not a GitHub workflow", async () => {
+  // GitHub requires the literal `.yml`/`.yaml`; `CI.YML` is not runnable on a case-sensitive path.
+  for (const name of ["CI.YML", "ci.YML", "ci.Yaml", "ci.yAml"]) {
+    await bare(async (dir) => {
+      assert.deepEqual(idsOf(await ciOnly(dir, { [name]: WORKFLOW })), [NO_CI], name);
+    });
+  }
+});
+
+test("a lowercase workflow beside an uppercase one still counts", () =>
+  bare(async (dir) => {
+    assert.deepEqual(await ciOnly(dir, { "CI.YML": WORKFLOW, "real.yml": WORKFLOW }), []);
+  }));
+
+test("no-ci-configuration is withheld when a candidate workflow is listable but cannot be statted", () =>
+  bare(async (dir) => {
+    if (process.platform === "win32") return; // no read-without-search directory mode to apply here
+    const workflows = path.join(dir, ".github", "workflows");
+    await mkdir(workflows, { recursive: true });
+    await writeFile(path.join(workflows, "ci.yml"), WORKFLOW);
+    await chmod(workflows, 0o444); // read, no search: names are listed, entries cannot be statted
+    try {
+      assert.deepEqual(readdirSync(workflows), ["ci.yml"], "precondition: the directory must still list");
+      let statted = true;
+      try { statSync(path.join(workflows, "ci.yml")); } catch { statted = false; }
+      if (statted) return; // privileges that ignore the mode (root): this test would prove nothing
+      assert.deepEqual(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI), [], "absence claimed over an entry nobody could inspect");
+    } finally {
+      await chmod(workflows, 0o755);
+    }
+  }));
+
+test("a dangling workflow symlink is a real absence, not an unknown", () =>
+  bare(async (dir) => {
+    if (process.platform === "win32") return; // symlink creation needs privileges there
+    const workflows = path.join(dir, ".github", "workflows");
+    await mkdir(workflows, { recursive: true });
+    await symlink(path.join(dir, "nowhere.yml"), path.join(workflows, "ci.yml"));
+    assert.deepEqual(idsOf(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI)), [NO_CI]);
+  }));
 
 test("a file that merely ends in yml, without the dot, is not a workflow", () =>
   bare(async (dir) => {
