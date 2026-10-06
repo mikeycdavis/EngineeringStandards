@@ -2025,7 +2025,7 @@ const PLAN_FIELDS = ["Status", "Purpose", "Deliverables", "Acceptance Criteria",
 const READABLE_FIELDS = new Set([...PLAN_FIELDS, "Tracked by", "TrackedBy"]);
 
 /** A well-formed field line, unchanged from the form every existing plan already uses. */
-const FIELD_LINE = /^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/;
+export const FIELD_LINE = /^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/;
 
 /**
  * A bullet that OPENS a bold run. Deliberately looser than FIELD_LINE in three ways, because its
@@ -2043,7 +2043,7 @@ const BOLD_OPEN = /^\s*[-*]\s+\*\*(.*)$/;
 const NEAR_SEPARATOR = /^(?:\s*[–—]\s*|\s+-\s+)/;
 
 /** The text before the first separator. The qualifier after it is for people, and is discarded. */
-function canonicalFieldKey(label) {
+export function canonicalFieldKey(label) {
   const at = label.indexOf(FIELD_SEPARATOR);
   return (at === -1 ? label : label.slice(0, at)).trim();
 }

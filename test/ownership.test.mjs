@@ -21,6 +21,7 @@ const item = (title, tracked) =>
   `### ${title}\n\n- **Status:** NOT_STARTED\n- **Tracked by:** ${tracked}\n- **Purpose:** x\n\n`;
 
 async function scratch(files = {}) {
+  if (!(MAP in files)) files = { ...files, [MAP]: JSON.stringify({ target: "o/r" }) };
   const root = await mkdtemp(path.join(tmpdir(), "ownership-"));
   for (const [rel, text] of Object.entries(files)) {
     const full = path.join(root, rel);
@@ -438,6 +439,119 @@ test("each declaration field is validated on its own", async () => {
     const u = readUnscoped(root);
     assert.equal(u.malformed.length, 2);
     assert.deepEqual(u.entries.map((e) => e.number), [3]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// --- repair of the Codex review of #82 -------------------------------------------------------------
+
+const withTracked = (label, value) =>
+  `### T\n\n- **Status:** NOT_STARTED\n- ${label} ${value}\n- **Purpose:** x\n\n`;
+
+test("a qualified Tracked by field is a claim, the same as the plain one", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]: withTracked("**Tracked by — external authority:**", `[#10](${URL(10)})`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a label that only resembles Tracked by is not a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by us:**", `[#10](${URL(10)})`) +
+      withTracked("**Not Tracked by:**", `[#11](${URL(11)})`) +
+      withTracked("**Tracked by - dash:**", `[#12](${URL(12)})`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a link to another repository with a matching issue number is not a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", "[#10](https://github.com/other/repo/issues/10)") +
+      withTracked("**Tracked by:**", "[#11](https://example.com/o/r/issues/11)") +
+      withTracked("**Tracked by:**", `[#12](${URL(12)})`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [12]);
+    const r = checkOwnership({ openIssues: [10], claims: collectPlanClaims(root), unscoped: [] });
+    assert.equal(r.issues[0].classification, CLASS.absent, "a foreign-repository link made #10 look owned");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the repository match ignores case and a leading www, and is exact on owner and repo", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", "[#10](https://GitHub.com/O/R/issues/10)") +
+      withTracked("**Tracked by:**", "[#11](https://www.github.com/o/r/issues/11)") +
+      withTracked("**Tracked by:**", "[#12](https://github.com/o/r2/issues/12)") +
+      withTracked("**Tracked by:**", "[#13](https://github.com/xo/r/issues/13)"),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("with no mapped repository, an issue link cannot be judged and the read fails rather than guessing", async () => {
+  const root = await scratch({
+    [MAP]: JSON.stringify({ items: {} }),
+    [`${PLAN}/a.md`]: item("A", `[#10](${URL(10)})`),
+  });
+  const bare = await scratch({ [MAP]: JSON.stringify({ items: {} }), [`${PLAN}/a.md`]: item("A", "none yet") });
+  try {
+    assert.throws(() => collectPlanClaims(root), /target/);
+    assert.deepEqual(collectPlanClaims(bare), [], "no link, so nothing needed the repository");
+  } finally {
+    for (const r of [root, bare]) await rm(r, { recursive: true, force: true });
+  }
+});
+
+test("a hierarchy container named by exactly one plan item is a violation, never release-eligible", () => {
+  const r = checkOwnership({
+    openIssues: [70],
+    claims: [{ file: "a.md", title: "A", issue: 70 }],
+    unscoped: [],
+    containers: [70],
+  });
+  assert.equal(r.issues[0].classification, CLASS.containerClaimed);
+  assert.equal(r.issues[0].releaseEligible, false);
+  assert.equal(r.ok, false);
+  assert.equal(r.releaseReady, false);
+  assert.equal(r.issues[0].owners.length, 1, "the offending item is named");
+});
+
+test("CLI: a plan item claiming a container exits 1 and names the class", async () => {
+  const root = await scratch({
+    [MAP]: JSON.stringify({ target: "o/r", items: { "FE-01": { number: 70 } } }),
+    [`${PLAN}/a.md`]: withTracked("**Tracked by — mistaken:**", `[#70](${URL(70)})`),
+    "issues.json": JSON.stringify([70]),
+  });
+  try {
+    const r = run(root, "--issues", path.join(root, "issues.json"));
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /container-claimed/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the canonical TrackedBy spelling is a claim too", async () => {
+  const root = await scratch({ [`${PLAN}/a.md`]: withTracked("**TrackedBy:**", `[#10](${URL(10)})`) });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
