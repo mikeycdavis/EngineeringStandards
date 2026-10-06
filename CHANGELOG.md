@@ -21,6 +21,10 @@ is repository tooling: nothing an adopting project consumes is affected, and `VE
 `standards init` now refuses a `--mode` value outside the documented three (and an empty `--mode=`) with exit 2, instead of
 recording the typo as `CONFIRMED_BY_OWNER` (follow-up to Codex review of #80).
 
+The audit-only `no-test-surface` observation is now withheld when the file walk could not see everywhere a test might be
+(file cap reached, a directory could not be listed, or a framework-excluded directory), and `no-ci-configuration` now requires an
+actual `.yml`/`.yaml` workflow in `.github/workflows` rather than the directory alone (follow-up to Codex review of #83).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 

@@ -18,7 +18,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm, cp } from "node:fs/promises";
+import { readdirSync } from "node:fs";
+import { mkdtemp, mkdir, writeFile, rm, cp, chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -172,4 +173,137 @@ test("validate yields no verdict from the no-test-surface observation", () =>
       );
     }
     assert.deepEqual(v.findings.filter((f) => f.id === NO_TESTS && f.rule), []);
+  }));
+
+// ---------------------------------------------------------------------------------------------
+// Codex review of #83. Two absence claims were stronger than the evidence under them.
+// ---------------------------------------------------------------------------------------------
+
+/** A repository with source and nothing else, for building the incomplete-walk cases by hand. */
+async function bare(body) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-vsurface-gap-"));
+  try {
+    await mkdir(path.join(dir, "src"), { recursive: true });
+    await writeFile(path.join(dir, "src", "index.js"), "export const add = (a, b) => a + b;\n");
+    return await body(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("no-test-surface is withheld when a framework-excluded directory holds the tests", () =>
+  bare(async (dir) => {
+    // `fixtures` is in SKIP_DIRS: the walk never enters it, so a test there is invisible to `files`.
+    await mkdir(path.join(dir, "fixtures", "test"), { recursive: true });
+    await writeFile(path.join(dir, "fixtures", "test", "a.test.js"), "// real tests live here\n");
+    const audit = cli("audit", dir).json;
+    assert.equal(audit.evidenceSurface.complete, false, "precondition: the surface must report itself incomplete");
+    assert.deepEqual(idsOf(audit.findings.filter((f) => f.id === NO_TESTS)), [], "a categorical no-tests claim over an incomplete walk");
+  }));
+
+// The same real-permission harness `audit.test.mjs` uses, verified to bite rather than skipped.
+const denyListing = async (target) => {
+  if (process.platform === "win32") spawnSync("icacls", [target, "/deny", `${process.env.USERNAME}:(OI)(CI)(RD,RX)`], { encoding: "utf8" });
+  else await chmod(target, 0o000);
+};
+const restoreListing = async (target) => {
+  if (process.platform === "win32") spawnSync("icacls", [target, "/remove:d", process.env.USERNAME], { encoding: "utf8" });
+  else await chmod(target, 0o755);
+};
+
+test("no-test-surface is withheld when a directory cannot be listed", () =>
+  bare(async (dir) => {
+    const locked = path.join(dir, "locked");
+    await mkdir(path.join(locked, "test"), { recursive: true });
+    await writeFile(path.join(locked, "test", "a.test.js"), "//\n");
+    await denyListing(locked);
+    try {
+      assert.throws(() => readdirSync(locked), "could not make the directory unlistable; this test would prove nothing");
+      const audit = cli("audit", dir).json;
+      assert.deepEqual(audit.evidenceSurface.unreadableDirectories, ["locked"], "precondition: the directory is reported unlistable");
+      assert.deepEqual(audit.findings.filter((f) => f.id === NO_TESTS), []);
+    } finally {
+      await restoreListing(locked);
+    }
+  }));
+
+test("no-test-surface is withheld when the walk stopped at the file cap", () =>
+  bare(async (dir) => {
+    // MAX_FILES is 20000; the cap is reached only by really creating that many files.
+    const many = path.join(dir, "docs");
+    await mkdir(many);
+    for (let start = 0; start < 20010; start += 1000) {
+      await Promise.all(Array.from({ length: 1000 }, (_, i) => writeFile(path.join(many, `f${start + i}.txt`), "x")));
+    }
+    const audit = cli("audit", dir).json;
+    assert.equal(audit.evidenceSurface.fileCapReached, true, "precondition: the cap must be hit");
+    assert.deepEqual(audit.findings.filter((f) => f.id === NO_TESTS), []);
+  }));
+
+test("no-test-surface still fires when the only loss is a repository-declared exclusion", () =>
+  bare(async (dir) => {
+    // Content the project itself marked ignored was never owed to the run (see `complete`).
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    await writeFile(path.join(dir, ".gitignore"), "generated/\n");
+    await mkdir(path.join(dir, "generated"), { recursive: true });
+    await writeFile(path.join(dir, "generated", "x.test.js"), "//\n");
+    const audit = cli("audit", dir).json;
+    assert.equal(audit.evidenceSurface.complete, true, "precondition: a repository-declared exclusion is not incompleteness");
+    assert.deepEqual(idsOf(audit.findings.filter((f) => f.id === NO_TESTS)), [NO_TESTS]);
+  }));
+
+const ciOnly = async (dir, files) => {
+  await mkdir(path.join(dir, ".github", "workflows"), { recursive: true });
+  for (const [name, text] of Object.entries(files)) await writeFile(path.join(dir, ".github", "workflows", name), text);
+  return cli("audit", dir).json.findings.filter((f) => f.id === NO_CI);
+};
+
+test("no-ci-configuration fires when .github/workflows holds no workflow file", () =>
+  bare(async (dir) => {
+    assert.deepEqual(idsOf(await ciOnly(dir, { "README.md": "# not a workflow\n" })), [NO_CI]);
+  }));
+
+test("no-ci-configuration fires for an empty .github/workflows directory", () =>
+  bare(async (dir) => {
+    assert.deepEqual(idsOf(await ciOnly(dir, {})), [NO_CI]);
+  }));
+
+test("no-ci-configuration is withheld for a .yml or .yaml workflow, in any letter case", async () => {
+  for (const name of ["ci.yml", "ci.yaml", "CI.YML"]) {
+    await bare(async (dir) => {
+      assert.deepEqual(await ciOnly(dir, { [name]: "name: ci\non: [push]\njobs: {}\n" }), [], name);
+    });
+  }
+});
+
+test("a file that merely ends in yml, without the dot, is not a workflow", () =>
+  bare(async (dir) => {
+    assert.deepEqual(idsOf(await ciOnly(dir, { xyml: "name: ci\n", notyaml: "name: ci\n" })), [NO_CI]);
+  }));
+
+test("a workflow-named directory is not a workflow file", () =>
+  bare(async (dir) => {
+    await mkdir(path.join(dir, ".github", "workflows", "nested.yml"), { recursive: true });
+    assert.deepEqual(idsOf(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI)), [NO_CI]);
+  }));
+
+test("another CI system's file still suppresses no-ci-configuration alongside an empty workflows directory", () =>
+  bare(async (dir) => {
+    await mkdir(path.join(dir, ".github", "workflows"), { recursive: true });
+    await writeFile(path.join(dir, "Jenkinsfile"), "pipeline {}\n");
+    assert.deepEqual(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI), []);
+  }));
+
+test("no-ci-configuration is withheld when .github/workflows exists but cannot be listed", () =>
+  bare(async (dir) => {
+    const workflows = path.join(dir, ".github", "workflows");
+    await mkdir(workflows, { recursive: true });
+    await writeFile(path.join(workflows, "ci.yml"), "name: ci\non: [push]\njobs: {}\n");
+    await denyListing(workflows);
+    try {
+      assert.throws(() => readdirSync(workflows), "could not make the directory unlistable; this test would prove nothing");
+      assert.deepEqual(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI), [], "absence claimed over a directory nobody could read");
+    } finally {
+      await restoreListing(workflows);
+    }
   }));
