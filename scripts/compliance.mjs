@@ -132,10 +132,15 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       continue;
     }
     const attestation = currentReview(rule.id, record);
+    // A verdict that says the attestation did not establish the rule (freshness), held rather than
+    // pushed, so a live exception on the same forbidden manual-review rule can still be read below.
+    let nonEstablishing = null;
     if (attestation) {
       const hits = byRule.get(rule.id) ?? [];
       const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);
-      if (verdict) {
+      if (verdict?.disposition === "not-evaluated" && verdict.freshness) {
+        nonEstablishing = verdict;
+      } else if (verdict) {
         results.push(verdict);
         continue;
       }
@@ -152,7 +157,9 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // Scoped to forbidden manual-review rules: that is the case the owner decided. Where this sits
     // matters. It is AFTER the attestation verdict, so an approved attestation still establishes the
     // rule and a rejected or contradicted one still fails — a waiver never hides a recorded human
-    // finding — and BEFORE not-evaluated, which is the dead end it replaces. `activeExceptions`
+    // finding. An attestation whose freshness does not establish the rule establishes nothing, so it
+    // does not pre-empt a live exception (as an expired attestation never did). The exception is also
+    // BEFORE not-evaluated, which is the dead end it replaces. `activeExceptions`
     // already excludes non-exemptible rules (rejected) and expired entries (failed), unchanged.
     //
     // Never `passed`: a waiver is not evidence the rule is met. It is `skipped`, so it stays out of
@@ -177,6 +184,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         reference: manualException.reference ?? null,
       };
       results.push(result);
+      continue;
+    }
+
+    // The exception branch above did not apply, so the non-establishing attestation verdict stands: it
+    // carries the freshness reason, which the generic not-evaluated result below would drop.
+    if (nonEstablishing) {
+      results.push(nonEstablishing);
       continue;
     }
 

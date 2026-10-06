@@ -1040,6 +1040,77 @@ test("a rejected attestation is not hidden by an exception on the same manual-re
   assert.equal(verdict.status, STATUS.NON_COMPLIANT);
 });
 
+// An approved attestation whose freshness does not establish the rule establishes nothing, so a live
+// exception on the same forbidden manual-review rule must still apply — as it already does when the
+// attestation has expired. Precedence is unchanged for attested, rejected, contradicted and invalid.
+const NON_ESTABLISHING = [
+  ["stale", "committed content changed since review"],
+  ["legacy-unverifiable", "digest recorded under working-tree-bytes-sha256-v1"],
+  ["evidence-unavailable", "not a git repository"],
+];
+const staleAttest = () =>
+  attest({ reviewedAgainst: { paths: ["scripts/init.mjs"], digest: "abcdef1234567890" } });
+
+test("a live exception applies after a non-establishing attestation on a manual-review forbidden rule", () => {
+  for (const [state, detail] of NON_ESTABLISHING) {
+    const verdict = run({
+      freshness: new Map([[FORBIDDEN_MANUAL, { state, detail }]]),
+      policy: manualPolicy({
+        attestations: { [FORBIDDEN_MANUAL]: staleAttest() },
+        exceptions: [manualException()],
+      }),
+    });
+    const result = verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+    assert.equal(result.disposition, "excepted", `${state}: the live exception was ignored`);
+    assert.equal(result.status, "skipped");
+    assert.equal(result.exception.approvedBy, "project-owner");
+    assert.deepEqual(verdict.unestablishedProhibitions, [], `${state}: still listed as unestablished`);
+    assert.equal(verdict.status, STATUS.COMPLIANT_WITH_EXCEPTIONS);
+  }
+});
+
+test("a non-establishing attestation without an exception keeps its freshness verdict", () => {
+  for (const [state, detail] of NON_ESTABLISHING) {
+    const verdict = run({
+      freshness: new Map([[FORBIDDEN_MANUAL, { state, detail }]]),
+      policy: manualPolicy({ attestations: { [FORBIDDEN_MANUAL]: staleAttest() } }),
+    });
+    const result = verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL);
+    assert.equal(result.disposition, "not-evaluated", state);
+    assert.equal(result.freshness, state, "the freshness reason must survive");
+    assert.match(result.message, /was reviewed by/);
+    assert.deepEqual(verdict.unestablishedProhibitions, [FORBIDDEN_MANUAL]);
+  }
+});
+
+test("a non-establishing attestation with an expired exception stays unestablished", () => {
+  const verdict = run({
+    freshness: new Map([[FORBIDDEN_MANUAL, { state: "stale", detail: "committed content changed since review" }]]),
+    policy: manualPolicy({
+      attestations: { [FORBIDDEN_MANUAL]: staleAttest() },
+      exceptions: [manualException({ expires: "2026-08-07" })],
+    }),
+  });
+  assert.ok(!verdict.results.some((r) => r.disposition === "excepted"));
+  assert.equal(
+    verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL && r.status === "skipped").freshness,
+    "stale",
+  );
+  assert.deepEqual(verdict.unestablishedProhibitions, [FORBIDDEN_MANUAL]);
+});
+
+test("a contradicted attestation is not hidden by an exception even when its freshness is stale", () => {
+  const verdict = run({
+    freshness: new Map([[FORBIDDEN_MANUAL, { state: "stale", detail: "x" }]]),
+    findings: [{ rule: FORBIDDEN_MANUAL, message: "found", evidence: ["a"] }],
+    policy: manualPolicy({
+      attestations: { [FORBIDDEN_MANUAL]: staleAttest() },
+      exceptions: [manualException()],
+    }),
+  });
+  assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL).disposition, "contradicted-attestation");
+});
+
 test("an exception does not turn an automated rule with no finding into an excepted one", () => {
   // The waiver is for what a human must judge. A detector that examined the rule and found nothing
   // has established it, and an exception beside that is not a reason to relabel the result.

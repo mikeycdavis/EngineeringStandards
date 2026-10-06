@@ -168,8 +168,11 @@ check and then ignored by `validate`: the rule stayed `not-evaluated` and stayed
 `unestablishedProhibitions`, and lets the verdict read `COMPLIANT_WITH_EXCEPTIONS`. It is never
 `passed`, and it stays out of the required-rule score and its denominator. Unchanged: a non-exemptible
 rule's exception is still `rejected-exception`, an expired one is still `expired-exception` and does
-not except, and an attestation (approved, rejected or contradicted) still takes precedence over an
-exception on the same rule. This changes what `validate` reports for such a policy; the policy schema
+not except, and an attestation that establishes the rule, or fails it (rejected, contradicted or
+invalid), still takes precedence over an exception on the same rule. An attestation whose freshness
+does not establish the rule (`stale`, `legacy-unverifiable`, `evidence-unavailable`) establishes
+nothing, so a live exception on the same rule still applies, as it does after an expired attestation;
+without one the rule keeps its `freshness` reason and stays unestablished. This changes what `validate` reports for such a policy; the policy schema
 and the rule catalog are unchanged. Exceptions on a `required` manual-review rule are not covered.
 
 ## 2.0.0 — 2026-08-09
