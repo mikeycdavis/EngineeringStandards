@@ -162,6 +162,22 @@ subject, the identity-versus-content substitution the submission gate already re
   compared against the policy's four rejections and reported them as cleared — a claim about the
   project derived from a defect in reading it.
 
+**`validate` now reads an exception recorded against a manual-review forbidden rule** (ST-04,
+issue #10). The exception was consulted only after a detector produced a finding, and a manual-review
+rule never does, so a well-formed, in-date exception on an exemptible rule was accepted by the policy
+check and then ignored by `validate`: the rule stayed `not-evaluated` and stayed in
+`unestablishedProhibitions`, with no mention of the exception. An active exception now yields
+`disposition: "excepted"` with the approval retained in `exception`, removes the rule from
+`unestablishedProhibitions`, and lets the verdict read `COMPLIANT_WITH_EXCEPTIONS`. It is never
+`passed`, and it stays out of the required-rule score and its denominator. Unchanged: a non-exemptible
+rule's exception is still `rejected-exception`, an expired one is still `expired-exception` and does
+not except, and an attestation that establishes the rule, or fails it (rejected, contradicted or
+invalid), still takes precedence over an exception on the same rule. An attestation whose freshness
+does not establish the rule (`stale`, `legacy-unverifiable`, `evidence-unavailable`) establishes
+nothing, so a live exception on the same rule still applies, as it does after an expired attestation;
+without one the rule keeps its `freshness` reason and stays unestablished. This changes what `validate` reports for such a policy; the policy schema
+and the rule catalog are unchanged. Exceptions on a `required` manual-review rule are not covered.
+
 Added the issue-to-item ownership check (issue #49): `scripts/ownership.mjs`, `npm run ownership`. It
 classifies each open issue as claimed once, claimed twice, absent from the plan, temporarily unscoped
 or a hierarchy container, and only claimed-once issues are release-eligible. Temporary unscoped status
