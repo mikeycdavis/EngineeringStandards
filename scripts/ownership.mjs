@@ -75,7 +75,14 @@ export const CLASS = Object.freeze({
 
 const PLAN_DIR = "artifacts/project-plan-breakdown";
 const MAPPING = "artifacts/backlog/github-mapping.json";
-const ISSUE_LINK = /(?<![^\s(<\[])https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
+/**
+ * A bullet that tried to be a field and missed the grammar, the way `parsePlanItems` notices them
+ * (`- **Evidence**: x`, `* **Evidence:** x`): a bold run of plain label text closed by a colon. It ends the
+ * value just as a field does, so a neighbouring field's links are never read as this item's claims. A bold
+ * list item that is a link or URL (`  - **<issue link>**`) has brackets or a slash and is not matched.
+ */
+const FIELD_ATTEMPT = /^\s*[-*]\s+\*\*[^*[\]()/]*?(?::\*\*|\*\*\s*:)/;
+const ISSUE_LINK = /(?<![^\s(<\[*"'>,;])https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
 
 /** The repository the mapping's issue numbers belong to, or throws: a link cannot be judged without it. */
 function mappedRepository(root) {
@@ -99,8 +106,12 @@ function mappedRepository(root) {
  * Every (item, issue) claim in the plan files.
  *
  * An item is a heading of level 2-4 and its body up to the next such heading. The `Tracked by` value
- * is the field's line plus continuation lines, up to the next field (indented or not) or a blank line.
- * An issue URL counts only at a URL boundary: start of value, whitespace, or just after `(`, `<` or `[`.
+ * is the field's line plus continuation lines, up to the next field or a blank line. A next field is
+ * a line the canonical plan-field grammar reads as one (`FIELD_LINE`, indented or not) or a malformed
+ * attempt at one (`FIELD_ATTEMPT`); a bold list item that is not a field, such as `  - **<issue link>**`,
+ * continues the value.
+ * An issue URL counts only at a URL boundary: start of value, whitespace, markdown emphasis or HTML
+ * quoting and closing (`*`, `"`, `'`, `>`), a list separator (`,`, `;`), or just after `(`, `<` or `[`.
  */
 export function collectPlanClaims(root) {
   const dir = path.join(root, PLAN_DIR);
@@ -123,7 +134,7 @@ export function collectPlanClaims(root) {
       if (key !== "Tracked by" && key !== "TrackedBy") continue;
       let value = field[2];
       for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j].trim() === "" || /^\s*-\s+\*\*/.test(lines[j]) || /^#/.test(lines[j])) break;
+        if (lines[j].trim() === "" || FIELD_LINE.test(lines[j]) || FIELD_ATTEMPT.test(lines[j]) || /^#/.test(lines[j])) break;
         value += `\n${lines[j]}`;
       }
       const seen = new Set();
