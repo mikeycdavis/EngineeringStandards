@@ -18,6 +18,9 @@ All notable changes to this framework. Versioning follows
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+`standards init` now refuses a `--mode` value outside the documented three (and an empty `--mode=`) with exit 2, instead of
+recording the typo as `CONFIRMED_BY_OWNER` (follow-up to Codex review of #80).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 

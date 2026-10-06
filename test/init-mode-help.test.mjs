@@ -5,7 +5,8 @@ import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { MODES, plan, render } from "../scripts/init.mjs";
+import { existsSync } from "node:fs";
+import { MODES, plan, render, detectMode } from "../scripts/init.mjs";
 
 /**
  * Issue #9 (ST-03): `--mode` is the only override for a decision the tool itself labels INFERRED,
@@ -83,4 +84,36 @@ test("the CLI's readable init output carries the hint end to end; --json is unch
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// Codex review of #80: the help names a closed enumeration, so the parser has to enforce it. Before
+// this, a mistyped value was recorded as CONFIRMED_BY_OWNER and the greenfield next step was shown.
+test("an unknown or empty --mode value is refused with a usage error and writes nothing", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-mode-bad-"));
+  try {
+    await writeFile(path.join(dir, "package.json"), "{}\n", "utf8");
+    for (const bad of ["reconstruction-requred", "GREENFIELD", "", "greenfield "]) {
+      for (const extra of [["--dry-run"], [], ["--json"]]) {
+        const r = spawnSync(process.execPath, [CLI, "init", dir, `--mode=${bad}`, ...extra], { encoding: "utf8" });
+        const label = `--mode=${JSON.stringify(bad)} ${extra.join(" ")}`;
+        assert.equal(r.status, 2, `${label}: invocation error expected, got ${r.status}`);
+        assert.equal(r.stdout, "", `${label}: nothing may be reported as a result`);
+        assert.match(r.stderr, /unknown --mode/, label);
+        for (const value of Object.values(MODES)) assert.ok(r.stderr.includes(value), `${label}: error must name ${value}`);
+      }
+    }
+    assert.ok(!existsSync(path.join(dir, "project-policy.yml")), "a refused run must not have created anything");
+    for (const good of Object.values(MODES)) {
+      const r = spawnSync(process.execPath, [CLI, "init", dir, `--mode=${good}`, "--dry-run"], { encoding: "utf8" });
+      assert.equal(r.status, 0, `--mode=${good} must still be accepted`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("detectMode itself rejects a value outside MODES, so no caller can label a typo CONFIRMED_BY_OWNER", () => {
+  assert.throws(() => detectMode(os.tmpdir(), "reconstruction-requred"), /unknown --mode/);
+  assert.throws(() => detectMode(os.tmpdir(), ""), /unknown --mode/);
+  assert.equal(detectMode(os.tmpdir(), MODES.GREENFIELD).confidence, "CONFIRMED_BY_OWNER");
 });
