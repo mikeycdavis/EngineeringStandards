@@ -161,6 +161,17 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       continue;
     }
 
+    // Standard 18 R3: an `optional` rule carries "no expectation either way", and its outcome on
+    // violation is SILENT. The rule keeps its result so it is still accounted for, but a departure
+    // from it is neither a warning nor a failure and is not carried into the verdict. An active
+    // exception is left on its own path below, so the exception machinery is unchanged.
+    if (level === "optional" && !activeExceptions.has(rule.id)) {
+      results.push(
+        base(rule, level, RESULT.passed, "evaluated", `${rule.id} is optional in this policy; a departure from it is not reported.`),
+      );
+      continue;
+    }
+
     const exception = activeExceptions.get(rule.id);
     const outcome = level === "required" || level === "forbidden" ? RESULT.failed : RESULT.warning;
     const result = base(rule, level, outcome, exception ? "excepted" : "evaluated", hits[0].message);

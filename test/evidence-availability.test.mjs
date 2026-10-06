@@ -96,6 +96,10 @@ const POLICY = [
   "    level: required",
   "  reconstruction.open-questions:",
   "    level: required",
+  // Raised from its optional default: an optional violation is silent (Standard 18 R3), and the GUARD
+  // that governed content still reaches its verdict needs this rule to reach a visible one.
+  "  quality.dead-code:",
+  "    level: recommended",
   "",
 ].join("\n");
 

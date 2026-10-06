@@ -7,9 +7,9 @@
  * ("never a failure at its catalogued level"), and the mechanism is pinned so a later change cannot
  * quietly make either half untrue:
  *
- *   * at the catalogued `optional` level an orphan never fails the run. Standard 18 R3 defines the
- *     outcome of an `optional` violation as silence, so this suite does not pin which non-failing
- *     status the engine reports (today `warning`); it pins only that the level does not fail;
+ *   * at the catalogued `optional` level an orphan is SILENT: Standard 18 R3 defines the outcome of an
+ *     `optional` violation as silence, so it is neither a failure nor a warning (owner decision A;
+ *     the optional-versus-required matrix is test/optional-silent.test.mjs);
  *   * the same fixture under a policy that changes ONLY the level to `required` is a `failed` that
  *     decides the run's status. That is a feature of the contract, not a defect, so a severity cap
  *     must break this suite.
@@ -99,9 +99,11 @@ async function resultAt(level) {
   }
 }
 
-test("at the catalogued optional level an orphan never fails the run", async () => {
+test("at the catalogued optional level an orphan is silent: not a failure and not a warning", async () => {
   const { result, json } = await resultAt("optional");
   assert.notEqual(result.status, "failed", `optional orphan reported status "${result.status}"`);
+  assert.notEqual(result.status, "warning", "an optional orphan was reported as a warning; Standard 18 R3 says silent");
+  assert.equal(result.status, "passed");
   assert.ok(!failedRules(json).includes(RULE), "an optional orphan was counted as a failed rule");
 });
 
