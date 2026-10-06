@@ -18,6 +18,9 @@ All notable changes to this framework. Versioning follows
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+`standards init` now refuses a `--mode` value outside the documented three (and an empty `--mode=`) with exit 2, instead of
+recording the typo as `CONFIRMED_BY_OWNER` (follow-up to Codex review of #80).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 
@@ -174,6 +177,13 @@ does not establish the rule (`stale`, `legacy-unverifiable`, `evidence-unavailab
 nothing, so a live exception on the same rule still applies, as it does after an expired attestation;
 without one the rule keeps its `freshness` reason and stays unestablished. This changes what `validate` reports for such a policy; the policy schema
 and the rule catalog are unchanged. Exceptions on a `required` manual-review rule are not covered.
+
+Added the issue-to-item ownership check (issue #49): `scripts/ownership.mjs`, `npm run ownership`. It
+classifies each open issue as claimed once, claimed twice, absent from the plan, temporarily unscoped
+or a hierarchy container, and only claimed-once issues are release-eligible. Temporary unscoped status
+is recorded as `temporarilyUnscoped` in `artifacts/backlog/github-mapping.json`. It takes a supplied
+snapshot of the open issues and reports `NOT_EVALUATED`, exit 2, without one; it is not a pipeline
+stage. No change to the framework, rule catalog, policy schema or any published contract.
 
 ## 2.0.0 — 2026-08-09
 

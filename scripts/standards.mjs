@@ -680,6 +680,9 @@ function usage(stream = process.stderr) {
       "  --force-overwrite=<path>   init only: approve replacing one existing file.\n" +
       "  --json         Emit the structured report on stdout instead of the readable one.\n" +
       "  --dir=<path>   Target a directory other than the resolved project root.\n" +
+      "  --mode=<greenfield|existing-with-plan|reconstruction-required>\n" +
+      "                 init only: override the detected mode. Records the mode as\n" +
+      "                 CONFIRMED_BY_OWNER instead of INFERRED.\n" +
       "  --max-total-read-bytes=<n>   audit and validate: bound the total file\n" +
       "                 content one run retains. Defaults to 256 MB. `init` returns\n" +
       "                 before the walk, so a valid value is inert there; an unusable\n" +
@@ -1766,6 +1769,49 @@ function detectUnverifiedFunctionality(files, run) {
 }
 
 /**
+ * Two observations, deliberately separate and deliberately unbound: the repository has no test
+ * surface, and it has no CI configuration (ST-14, #64).
+ *
+ * They were one finding, `missing-audit-infrastructure`, bound to `audit.business-state`, until #62
+ * withdrew it: that rule's subject is whether business mutations are recorded, and neither signal is
+ * evidence about that. The observation itself was true, so it returns here under no rule at all.
+ *
+ *   - `rule` is absent, which `addFinding` records as `null`. `validate` builds its verdict from
+ *     findings that carry a rule, so these cannot fail, pass or withdraw any rule. Binding them to
+ *     whichever rule they happen to fit is the defect #62 removed.
+ *   - `info`, because `audit --strict` fails on anything else, and a repository without CI is not
+ *     thereby non-compliant with a rule nobody has bound it to. The owner decided these have no
+ *     compliance effect.
+ *   - `verification.before-completion` is not widened: `detectUnverifiedFunctionality` is untouched
+ *     and still needs a detected capability before it speaks.
+ */
+function detectVerificationSurface(files, run) {
+  const { rel, has, addFinding } = run;
+  if (!files.some((f) => TEST_RE.test(rel(f)))) {
+    addFinding({
+      id: "no-test-surface",
+      category: "Verification surface",
+      severity: "info",
+      label: "INFERRED",
+      evidence: ["(no test files found)"],
+      message: "The repository has no test files; nothing here mechanically verifies its behavior.",
+      standardRef: R.done,
+    });
+  }
+  if (!CI_FILES.some((c) => has(c))) {
+    addFinding({
+      id: "no-ci-configuration",
+      category: "Verification surface",
+      severity: "info",
+      label: "OBSERVED",
+      evidence: CI_FILES,
+      message: "The repository has no CI configuration; nothing runs its checks automatically.",
+      standardRef: R.done,
+    });
+  }
+}
+
+/**
  * Markers are a *comment* convention — that is what a TODO is. Scanned against commentsOf(), so a
  * test named "a Markdown file naming TODO" and a sentence in a design document are both invisible to
  * it, without needing either to be excluded by hand.
@@ -1979,7 +2025,7 @@ const PLAN_FIELDS = ["Status", "Purpose", "Deliverables", "Acceptance Criteria",
 const READABLE_FIELDS = new Set([...PLAN_FIELDS, "Tracked by", "TrackedBy"]);
 
 /** A well-formed field line, unchanged from the form every existing plan already uses. */
-const FIELD_LINE = /^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/;
+export const FIELD_LINE = /^\s*-\s+\*\*([^:*]+):\*\*\s*(.*)$/;
 
 /**
  * A bullet that OPENS a bold run. Deliberately looser than FIELD_LINE in three ways, because its
@@ -1997,7 +2043,7 @@ const BOLD_OPEN = /^\s*[-*]\s+\*\*(.*)$/;
 const NEAR_SEPARATOR = /^(?:\s*[–—]\s*|\s+-\s+)/;
 
 /** The text before the first separator. The qualifier after it is for people, and is discarded. */
-function canonicalFieldKey(label) {
+export function canonicalFieldKey(label) {
   const at = label.indexOf(FIELD_SEPARATOR);
   return (at === -1 ? label : label.slice(0, at)).trim();
 }
@@ -3480,6 +3526,7 @@ export async function main(args) {
   detectArchitectureArtifacts(files, run);
   detectMissingPlanningArtifacts(files, run);
   detectUnverifiedFunctionality(files, run);
+  detectVerificationSurface(files, run);
   detectUnfinished(files, run);
   detectDeadCode(files, run);
   detectOpenQuestions(files, run);

@@ -59,7 +59,7 @@
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "Reachability is not computed. Findings are naming-convention guesses, INFERRED and never a failure."
+      "$assuranceNote": "Reachability is not computed. Findings are naming-convention guesses, INFERRED and never a failure at its catalogued level. A project policy may raise the level, and the finding is then reported at that level, up to a failure."
     }
   ]
 }
