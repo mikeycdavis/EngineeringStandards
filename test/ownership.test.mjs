@@ -654,12 +654,12 @@ test("an issue URL after emphasis, HTML quoting or closing, or a list separator 
       withTracked("**Tracked by:**", `<a href="${URL(12)}">x</a>`) +
       withTracked("**Tracked by:**", `<b>${URL(13)}</b>`) +
       withTracked("**Tracked by:**", `'${URL(14)}'`) +
-      withTracked("**Tracked by:**", `${URL(15)},${URL(16)};${URL(17)}`),
+      withTracked("**Tracked by:**", `free,${URL(15)} and;${URL(16)}`),
   });
   try {
     assert.deepEqual(
       collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y),
-      [10, 12, 13, 14, 15, 16, 17],
+      [10, 12, 13, 14, 15, 16],
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -672,10 +672,50 @@ test("a URL embedded after path, query, word or colon characters is still not a 
       withTracked("**Tracked by:**", `https://x.example/?u=${URL(10)}`) +
       withTracked("**Tracked by:**", `https://x.example/${URL(11)}`) +
       withTracked("**Tracked by:**", `xhttps://github.com/o/r/issues/12`) +
-      withTracked("**Tracked by:**", `https://x.example/a-${URL(13)}`),
+      withTracked("**Tracked by:**", `https://x.example/a-${URL(13)}`) +
+      withTracked("**Tracked by:**", `key=${URL(14)}`) +
+      withTracked("**Tracked by:**", `dir/${URL(15)}`),
   });
   try {
     assert.deepEqual(collectPlanClaims(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// --- repair of the Codex review of #93 -------------------------------------------------------------
+
+test("a colon-less or wrapped malformed known field ends the value, as the canonical parser reads it", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n- **Purpose** discussion [#20](${URL(20)})\n\n` +
+      `### B\n\n- **Tracked by:** [#11](${URL(11)})\n  - **Verification** [#21](${URL(21)})\n\n` +
+      `### C\n\n- **Tracked by:** [#12](${URL(12)})\n* **Purpose\n  wrapped [#22](${URL(22)})\n\n` +
+      `### D\n\n- **Tracked by:** [#13](${URL(13)})\n- **Acceptance Criteria - amended** [#23](${URL(23)})\n\n` +
+      `### E\n\n- **Tracked by:** [#14](${URL(14)})\n- **Status** — blocked [#24](${URL(24)})\n\n` +
+      `### F\n\n- **Tracked by:**\n  - **Purposeful reading** [#15](${URL(15)})\n  - **[#16](${URL(16)})** parent\n\n` +
+      `### G\n\n- **Tracked by:** [#17](${URL(17)})\n- **Tracked by** [#25](${URL(25)})\n\n` +
+      `### H\n\n- **Tracked by:** [#18](${URL(18)})\n- **Status** [#26](${URL(26)})\n\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a separator inside an already-started URL does not make the URL after it a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `[redirect](https://redirect.example/?next;${URL(10)})`) +
+      withTracked("**Tracked by:**", `[redirect](https://redirect.example/?next,${URL(11)})`) +
+      withTracked("**Tracked by:**", `https://redirect.example/?next="${URL(12)}`) +
+      withTracked("**Tracked by:**", `https://redirect.example/?next=*${URL(13)}`) +
+      withTracked("**Tracked by:**", `https://redirect.example/?next>${URL(14)}`) +
+      withTracked("**Tracked by:**", `${URL(15)},${URL(16)}`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
