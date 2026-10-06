@@ -720,3 +720,36 @@ test("a separator inside an already-started URL does not make the URL after it a
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// --- third repair of the ownership grammar: the Codex review of #93 --------------------------------
+
+test("a misplaced-colon field whose label has parentheses or a slash ends the value; bold link and URL items do not", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### A\n\n- **Tracked by:** [#10](${URL(10)})\n- **Verification (CI/local)**: [#20](${URL(20)})\n\n` +
+      `### B\n\n- **Tracked by:** [#11](${URL(11)})\n* **Purpose (a/b)**: [#21](${URL(21)})\n\n` +
+      `### C\n\n- **Tracked by:**\n  - **[#12](${URL(12)})**: parent\n  - **${URL(13)}**: note\n\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an issue URL inside a non-hierarchical URL (data:, mailto:, urn:, javascript:) is not a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `[payload](data:text/plain,${URL(10)})`) +
+      withTracked("**Tracked by:**", `[mail](mailto:a@b.example?body=x;${URL(11)})`) +
+      withTracked("**Tracked by:**", `[u](urn:x:y,${URL(12)})`) +
+      withTracked("**Tracked by:**", `javascript:go("${URL(13)}")`) +
+      withTracked("**Tracked by:**", `data:text/plain;base64,${URL(14)}`) +
+      withTracked("**Tracked by:**", `free,${URL(15)}`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

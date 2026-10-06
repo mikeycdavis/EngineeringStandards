@@ -48,6 +48,10 @@ quoting or closing, or a `,`/`;` separator is a claim, as before the embedded-UR
 (then it is part of that URL, and two bare URLs joined by a bare separator are one token, so only the first is read). The value also ends at a
 bold bullet naming a plan field with no colon or with a wrapped label, as `parsePlanItems` reads it (follow-up to Codex review of #89 and #93).
 
+The ownership check now also ends a `Tracked by` value at a misplaced-colon field whose label has parentheses or a slash
+(`- **Verification (CI/local)**: x`), and treats a token that already began with any `scheme:` (`data:`, `mailto:`, `urn:`), not only
+`://`, as an enclosing URL (follow-up to Codex review of #93).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 
