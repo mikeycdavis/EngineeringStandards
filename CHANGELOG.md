@@ -39,6 +39,9 @@ The audit-only `no-test-surface` observation is now withheld when the file walk 
 (file cap reached, a directory could not be listed, or a framework-excluded directory), and `no-ci-configuration` now requires an
 actual `.yml`/`.yaml` workflow in `.github/workflows` rather than the directory alone (follow-up to Codex review of #83).
 
+`no-ci-configuration` now counts only a workflow whose extension is the literal lowercase `.yml`/`.yaml` (GitHub does not run `CI.YML`),
+and is withheld rather than emitted when a candidate workflow entry cannot be statted (follow-up to Codex review of #88).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 
