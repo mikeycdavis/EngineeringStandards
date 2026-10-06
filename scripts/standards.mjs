@@ -18,7 +18,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
-import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
+import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
@@ -3912,7 +3912,10 @@ export async function main(args) {
   if (cli.json) {
     // Standard 25's envelope. `findings` is additive detail beyond the contract Standard 31 R2
     // guarantees — a consumer joins on results[].ruleId, never on a finding category.
-    emit(JSON.stringify({ ...report, findings }, null, 2) + "\n");
+    // Standard 18 R3: a violation of an effectively-`optional` rule is silent, so the finding that
+    // evidences it is withheld here too. `audit` (policy-independent evidence, ADR 0004) is unchanged.
+    const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
+    emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
     emit(renderVerdict(report, policy) + "\n");
     // Report the current digest for any attestation that lacks one, so it can be recorded rather

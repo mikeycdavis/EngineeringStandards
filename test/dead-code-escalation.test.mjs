@@ -85,8 +85,14 @@ async function resultAt(level) {
   try {
     const { json, exit } = validate(root);
     const result = (json.results ?? []).find((x) => x.ruleId === RULE);
-    assert.ok(result, `no result for ${RULE}`);
-    const orphans = (json.findings ?? [])
+    // The precondition is read from `audit`, which is policy-independent evidence: an optional
+    // violation is withheld from validate's own findings (Standard 18 R3), so validate cannot prove it.
+    const audit = spawnSync(
+      process.execPath,
+      [CLI, "audit", `--dir=${root}`, "--json", `--max-total-read-bytes=${AMPLE}`],
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    );
+    const orphans = (JSON.parse(audit.stdout).findings ?? [])
       .filter((f) => f.rule === RULE)
       .flatMap((f) => f.evidence ?? []);
     assert.ok(
@@ -99,17 +105,16 @@ async function resultAt(level) {
   }
 }
 
-test("at the catalogued optional level an orphan is silent: not a failure and not a warning", async () => {
+test("at the catalogued optional level an orphan is absent: no result, no warning, no failure, no finding", async () => {
   const { result, json } = await resultAt("optional");
-  assert.notEqual(result.status, "failed", `optional orphan reported status "${result.status}"`);
-  assert.notEqual(result.status, "warning", "an optional orphan was reported as a warning; Standard 18 R3 says silent");
-  assert.equal(result.status, "passed");
+  assert.equal(result, undefined, "an optional orphan left a result entry; Standard 18 R3 (ST-16) says absent");
   assert.ok(!failedRules(json).includes(RULE), "an optional orphan was counted as a failed rule");
+  assert.ok(!(json.findings ?? []).some((f) => f.rule === RULE), "an optional orphan's finding is in validate's output");
 });
 
 test("the same specimen at required is a failure: escalation is not capped", async () => {
   const { result, json, exit } = await resultAt("required");
-  assert.equal(result.status, "failed", `required orphan reported status "${result.status}"; a severity cap was added`);
+  assert.equal(result?.status, "failed", `required orphan reported status "${result.status}"; a severity cap was added`);
   assert.equal(json.status, "NON_COMPLIANT");
   assert.equal(exit, 1, "a required-level failure must exit 1");
   // The specimen has unrelated failures of its own, so the run is NON_COMPLIANT at both levels and
@@ -122,11 +127,12 @@ test("the same specimen at required is a failure: escalation is not capped", asy
   );
 });
 
-test("the level is the only variable: the finding is identical at both levels", async () => {
+test("the level is the only variable: required shows the finding that optional withholds", async () => {
   const a = await resultAt("optional");
   const b = await resultAt("required");
   const msg = (r) => (r.json.findings ?? []).filter((f) => f.rule === RULE).map((f) => f.evidence);
-  assert.deepEqual(msg(a), msg(b), "the evidence differed, so the level was not the only variable");
+  assert.deepEqual(msg(a), [], "optional surfaced the orphan");
+  assert.deepEqual(msg(b), [["src/other.js", "src/widgetrenderer.js"]], "required lost or changed the orphan evidence");
 });
 
 test("the catalogue does not claim the rule is unconditionally never a failure", () => {

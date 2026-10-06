@@ -21,14 +21,19 @@ is repository tooling: nothing an adopting project consumes is affected, and `VE
 `standards init` now refuses a `--mode` value outside the documented three (and an empty `--mode=`) with exit 2, instead of
 recording the typo as `CONFIRMED_BY_OWNER` (follow-up to Codex review of #80).
 
-`validate` now treats an `optional` rule's violation as silent, as [Standard 18](standards/18-machine-readable-project-policy.md)
-R3 already states: the result is `passed`, no warning or failure is counted, and the status and exit
-code are unaffected (owner decision A). This corrects the engine to the standard; the standard, the
-rule catalog and the policy schema are unchanged. `recommended` still warns, `required` and
-`forbidden` still fail, and an active exception on an optional rule is handled as before. The
-descriptive `audit` findings are not policy-level output and are unchanged. Of the catalog, only
-`quality.dead-code` is catalogued `optional`, so a project that left it at that level no longer sees
-its warning; raising it to `recommended` or above restores one.
+`validate` now treats an `optional` rule's violation as SILENT, as [Standard 18](standards/18-machine-readable-project-policy.md)
+R3 states, and "silent" means ABSENT (ST-16, #91; owner decision): the violation leaves no result entry,
+no warning, no disposition, no message and no count, and `validate --json` withholds the finding that
+evidences it. The aggregate status, score and exit code are unaffected. A neutral `passed` record is
+deliberately not used, because it is itself a visible trace of the violation. An optional rule that
+was examined and found departed from is neither passed, failed nor warned: it is in no `summary` or
+`assurance` bucket and not in `denominator`, and the assurance buckets still sum to the applicable
+count. An optional rule with no violation keeps its ordinary `passed` entry. `recommended` still
+warns, `required` and `forbidden` still fail, and an active exception on an optional rule keeps the
+exception path unchanged. `audit` is policy-independent evidence (ADR 0004) and is unchanged. This
+corrects the engine to the standard; the standard, the rule catalog and the policy schema are
+unchanged. Of the catalog, only `quality.dead-code` is catalogued `optional`, so a project that left it
+at that level no longer sees it in `validate`; raising it to `recommended` or above restores it.
 
 The audit-only `no-test-surface` observation is now withheld when the file walk could not see everywhere a test might be
 (file cap reached, a directory could not be listed, or a framework-excluded directory), and `no-ci-configuration` now requires an

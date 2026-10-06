@@ -93,6 +93,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
   }
 
   const results = [];
+  const silencedRules = new Set();
   for (const rule of catalog.rules.values()) {
     const level = levelOf(rule);
     const applies = applicability[rule.id];
@@ -213,13 +214,22 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     }
 
     // Standard 18 R3: an `optional` rule carries "no expectation either way", and its outcome on
-    // violation is SILENT. The rule keeps its result so it is still accounted for, but a departure
-    // from it is neither a warning nor a failure and is not carried into the verdict. An active
-    // exception is left on its own path below, so the exception machinery is unchanged.
+    // violation is SILENT. Silent means ABSENT, not neutral: no result entry, so no status, no
+    // disposition, no message and no count — a `passed` record that said a departure happened (or
+    // said anything at all about it) would still be a user-visible trace of the violation.
+    //
+    // Accounting. A rule examined and found departed from is neither passed, failed nor warned, so it
+    // is counted in no `summary` bucket, in no `assurance` bucket and not in `denominator`; the
+    // assurance buckets still sum to the applicable count, because both are derived from the same
+    // results. A rule with NO violation keeps its ordinary `passed`/`evaluated` entry — only the
+    // violation is silenced. The rule id is returned in `silencedRules` (never part of the envelope)
+    // so the caller can withhold that rule's findings from user-visible output as well.
+    //
+    // An ACTIVE exception keeps the exception path below (owner-pinned, unchanged): the human
+    // decision about the rule is its own recorded, visible fact. Required, forbidden and recommended
+    // levels do not reach this branch.
     if (level === "optional" && !activeExceptions.has(rule.id)) {
-      results.push(
-        base(rule, level, RESULT.passed, "evaluated", `${rule.id} is optional in this policy; a departure from it is not reported.`),
-      );
+      silencedRules.add(rule.id);
       continue;
     }
 
@@ -289,7 +299,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     });
   }
 
-  return summarise(results, policy);
+  return { ...summarise(results, policy), silencedRules };
 }
 
 /**
