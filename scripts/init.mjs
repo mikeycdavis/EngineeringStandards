@@ -259,6 +259,12 @@ function hasContent(root, p) {
  */
 export function detectMode(root, override = null) {
   const evidence = [];
+  // The override is a closed enumeration (the help says so). An unrecognised value is refused rather
+  // than recorded as CONFIRMED_BY_OWNER: a typo would otherwise pick the greenfield next step for an
+  // existing project. `""` is refused too — `--mode=` is a mistyped value, not an absent one.
+  if (override !== null && override !== undefined && !Object.values(MODES).includes(override)) {
+    throw new Error(`unknown --mode value ${JSON.stringify(override)}; expected one of: ${Object.values(MODES).join(", ")}`);
+  }
   if (override) {
     return { mode: override, evidence: ["--mode was given explicitly"], confidence: "CONFIRMED_BY_OWNER" };
   }
