@@ -132,15 +132,66 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       continue;
     }
     const attestation = currentReview(rule.id, record);
+    // A verdict that says the attestation did not establish the rule (freshness), held rather than
+    // pushed, so a live exception on the same forbidden manual-review rule can still be read below.
+    let nonEstablishing = null;
     if (attestation) {
       const hits = byRule.get(rule.id) ?? [];
       const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);
-      if (verdict) {
+      if (verdict?.disposition === "not-evaluated" && verdict.freshness) {
+        nonEstablishing = verdict;
+      } else if (verdict) {
         results.push(verdict);
         continue;
       }
       // Falls through: the attestation did not establish the requirement, so the rule is evaluated
       // normally and typically lands on not-evaluated. Silently ignoring it would be worse.
+    }
+
+    // An exception is a recorded, dated, attributable human decision about a rule, so it can be
+    // read without a detector finding (ST-04). The branch further down only ever sees a rule that a
+    // check examined and found violated, and a manual-review rule never reaches it — which left the
+    // fourth way to establish a forbidden rule, `except it`, schema-valid and silently inert for
+    // precisely the rules the policy template steers adopters toward excepting.
+    //
+    // Scoped to forbidden manual-review rules: that is the case the owner decided. Where this sits
+    // matters. It is AFTER the attestation verdict, so an approved attestation still establishes the
+    // rule and a rejected or contradicted one still fails — a waiver never hides a recorded human
+    // finding. An attestation whose freshness does not establish the rule establishes nothing, so it
+    // does not pre-empt a live exception (as an expired attestation never did). The exception is also
+    // BEFORE not-evaluated, which is the dead end it replaces. `activeExceptions`
+    // already excludes non-exemptible rules (rejected) and expired entries (failed), unchanged.
+    //
+    // Never `passed`: a waiver is not evidence the rule is met. It is `skipped`, so it stays out of
+    // the required-rule score and its denominator, and `excepted`, so it leaves the unestablished
+    // prohibitions (which count only `not-evaluated`) and the verdict reads COMPLIANT_WITH_EXCEPTIONS.
+    const manualException = activeExceptions.get(rule.id);
+    if (manualException && rule.validationType === "manual-review" && level === "forbidden") {
+      const result = base(
+        rule,
+        level,
+        RESULT.skipped,
+        "excepted",
+        `${rule.id} is excepted by ${manualException.approvedBy} (approved ${manualException.approvedAt}): ${manualException.reason}`,
+      );
+      result.evidence = ["project-policy.yml"];
+      result.files = ["project-policy.yml"];
+      result.exception = {
+        reason: manualException.reason,
+        approvedBy: manualException.approvedBy,
+        approvedAt: manualException.approvedAt,
+        expires: manualException.expires ?? null,
+        reference: manualException.reference ?? null,
+      };
+      results.push(result);
+      continue;
+    }
+
+    // The exception branch above did not apply, so the non-establishing attestation verdict stands: it
+    // carries the freshness reason, which the generic not-evaluated result below would drop.
+    if (nonEstablishing) {
+      results.push(nonEstablishing);
+      continue;
     }
 
     // A manual-review rule is never established by an automated run. Without a valid attestation it
