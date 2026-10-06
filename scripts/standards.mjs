@@ -15,7 +15,7 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage } from "./catalog.mjs";
@@ -1485,6 +1485,37 @@ const CI_FILES = [
   ".circleci/config.yml", ".travis.yml", "bitbucket-pipelines.yml",
 ];
 
+/**
+ * Is there CI configuration at `c`? A single-file system is present when its file is. GitHub Actions
+ * is a directory, and the directory proves nothing: a runnable workflow is a `.yml`/`.yaml` file
+ * directly inside it (GitHub does not read subdirectories), so a bare directory, or one holding only
+ * a README, is not configuration. Returns `true`/`false`, or `null` when the directory exists and
+ * cannot be listed — the caller must not claim absence from that.
+ */
+function hasCiConfiguration(root, c) {
+  if (c !== ".github/workflows") return existsSync(path.join(root, c));
+  const dir = path.join(root, c);
+  try {
+    if (!statSync(dir).isDirectory()) return false;
+  } catch {
+    return false; // not there at all
+  }
+  try {
+    // statSync follows a symlink, so a linked workflow counts and a directory named *.yml does not.
+    return readdirSync(dir).some((name) => /\.ya?ml$/i.test(name) && statSyncIsFile(path.join(dir, name)));
+  } catch {
+    return null;
+  }
+}
+
+function statSyncIsFile(p) {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function detectMissingDocs(files, run) {
   const { rel, addFinding } = run;
   const missing = [];
@@ -1784,10 +1815,22 @@ function detectUnverifiedFunctionality(files, run) {
  *     compliance effect.
  *   - `verification.before-completion` is not widened: `detectUnverifiedFunctionality` is untouched
  *     and still needs a detected capability before it speaks.
+ *
+ * Both are claims of absence, so each is made only on evidence that could have shown the opposite
+ * (Standard 44 R12; Codex review of #83):
+ *
+ *   - "no test files" is a statement about the walked file list, so it is withheld unless the walk
+ *     could see everywhere a test might be. `pathsComplete` is false when the walk hit the file cap,
+ *     could not list a directory, or skipped a directory the framework (not the repository) chose to
+ *     skip. It is deliberately NOT `evidenceSurface.complete`: unreadable, truncated or unsearched
+ *     content does not change whether a test *path* exists. Withheld rather than qualified — the
+ *     incompleteness itself is already reported in `evidenceSurface` and the header.
+ *   - "no CI configuration" requires an actual workflow file, not the `.github/workflows` directory,
+ *     and is withheld when that directory exists but cannot be listed.
  */
-function detectVerificationSurface(files, run) {
-  const { rel, has, addFinding } = run;
-  if (!files.some((f) => TEST_RE.test(rel(f)))) {
+function detectVerificationSurface(files, run, { pathsComplete }) {
+  const { rel, addFinding } = run;
+  if (pathsComplete && !files.some((f) => TEST_RE.test(rel(f)))) {
     addFinding({
       id: "no-test-surface",
       category: "Verification surface",
@@ -1798,7 +1841,8 @@ function detectVerificationSurface(files, run) {
       standardRef: R.done,
     });
   }
-  if (!CI_FILES.some((c) => has(c))) {
+  const ci = CI_FILES.map((c) => hasCiConfiguration(run.root, c));
+  if (ci.every((present) => present === false)) {
     addFinding({
       id: "no-ci-configuration",
       category: "Verification surface",
@@ -3526,7 +3570,9 @@ export async function main(args) {
   detectArchitectureArtifacts(files, run);
   detectMissingPlanningArtifacts(files, run);
   detectUnverifiedFunctionality(files, run);
-  detectVerificationSurface(files, run);
+  detectVerificationSurface(files, run, {
+    pathsComplete: !surfaceLoss.capped && !surfaceLoss.dirs.length && !frameworkExcluded.length,
+  });
   detectUnfinished(files, run);
   detectDeadCode(files, run);
   detectOpenQuestions(files, run);

@@ -30,6 +30,10 @@ descriptive `audit` findings are not policy-level output and are unchanged. Of t
 `quality.dead-code` is catalogued `optional`, so a project that left it at that level no longer sees
 its warning; raising it to `recommended` or above restores one.
 
+The audit-only `no-test-surface` observation is now withheld when the file walk could not see everywhere a test might be
+(file cap reached, a directory could not be listed, or a framework-excluded directory), and `no-ci-configuration` now requires an
+actual `.yml`/`.yaml` workflow in `.github/workflows` rather than the directory alone (follow-up to Codex review of #83).
+
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:
 
