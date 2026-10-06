@@ -556,3 +556,49 @@ test("the canonical TrackedBy spelling is a claim too", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// --- repair of the Codex review of #87 -------------------------------------------------------------
+
+test("the Tracked by value ends at an indented next field, as at an unindented one", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### Indented\n\n  - **Tracked by:** none\n  - **Evidence:** discussed [#20](${URL(20)})\n\n` +
+      `### Mixed\n\n- **Tracked by:** [#10](${URL(10)})\n  - **Evidence:** discussed [#21](${URL(21)})\n\n`,
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an issue URL embedded inside a longer URL or word is not a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `[x](https://redirect.example/?next=${URL(10)})`) +
+      withTracked("**Tracked by:**", `[y](https://redirect.example/${URL(11)})`) +
+      withTracked("**Tracked by:**", `see xhttps://github.com/o/r/issues/12`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("issue URLs at a URL boundary still claim: bare, bracketed, parenthesised, angle-bracketed", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `${URL(10)}`) +
+      withTracked("**Tracked by:**", `[#11](${URL(11)})`) +
+      withTracked("**Tracked by:**", `<${URL(12)}>`) +
+      withTracked("**Tracked by:**", `([${URL(13)}](${URL(13)}))`) +
+      withTracked("**Tracked by:**", `first\n  ${URL(14)}`) +
+      withTracked("**Tracked by:**", `[${URL(15)}]`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
