@@ -24,6 +24,9 @@
  *                       and no plan item claims it. Legal and does not block release: plan items
  *                       are stories, and a container is owned by the mapping's parent links, not by
  *                       a plan item. Not release-eligible work in itself.
+ *   container-claimed   the mapping records it as a hierarchy container AND exactly one plan item
+ *                       names it. Violation: a plan item cannot own a container, and the claim must
+ *                       not make it release-eligible. (Two or more claims is claimed-twice.)
  *
  * REPRESENTATION. The state is recorded as `temporarilyUnscoped` in
  * `artifacts/backlog/github-mapping.json`: a list of `{ number, since, reason }`. The mapping is
@@ -33,6 +36,10 @@
  * "never release-eligible in that state" is enforced rather than merely stated.
  *
  * WHAT A CLAIM IS. An item's `Tracked by` field, and only that, read as the issue links it contains.
+ * The field is recognised by the canonical plan-field grammar (scripts/standards.mjs), so the
+ * qualified form `- **Tracked by — <qualifier>:**` counts as well as the plain one. A link counts
+ * only when it points at the mapping's `target` repository on github.com: an issue number in
+ * another repository says nothing about this one.
  * An issue mentioned in prose or another field is not a claim (ADR 0009, the use/mention
  * distinction), and a pull request link is not an issue claim.
  *
@@ -50,6 +57,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { FIELD_LINE, canonicalFieldKey } from "./standards.mjs";
 
 const EXIT_OK = 0;
 const EXIT_VIOLATION = 1;
@@ -62,11 +70,30 @@ export const CLASS = Object.freeze({
   temporaryUnscoped: "temporary-unscoped",
   staleDeclaration: "stale-declaration",
   hierarchyContainer: "hierarchy-container",
+  containerClaimed: "container-claimed",
 });
 
 const PLAN_DIR = "artifacts/project-plan-breakdown";
 const MAPPING = "artifacts/backlog/github-mapping.json";
-const ISSUE_LINK = /\/issues\/(\d+)\b/g;
+const ISSUE_LINK = /https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
+
+/** The repository the mapping's issue numbers belong to, or throws: a link cannot be judged without it. */
+function mappedRepository(root) {
+  const file = path.join(root, MAPPING);
+  let data = null;
+  if (existsSync(file)) {
+    try {
+      data = JSON.parse(readFileSync(file, "utf8"));
+    } catch (e) {
+      throw new Error(`could not read ${MAPPING}: ${e.message}`);
+    }
+  }
+  const target = data?.target;
+  if (typeof target !== "string" || !/^[^/\s]+\/[^/\s]+$/.test(target)) {
+    throw new Error(`${MAPPING} names no \`target\` repository (owner/repo), so plan issue links cannot be matched to it`);
+  }
+  return target.toLowerCase();
+}
 
 /**
  * Every (item, issue) claim in the plan files.
@@ -78,6 +105,7 @@ export function collectPlanClaims(root) {
   const dir = path.join(root, PLAN_DIR);
   if (!existsSync(dir)) return [];
   const claims = [];
+  let repository = null;
   for (const name of readdirSync(dir).filter((f) => f.endsWith(".md")).sort()) {
     const file = `${PLAN_DIR}/${name}`;
     const lines = readFileSync(path.join(dir, name), "utf8").split(/\r?\n/);
@@ -88,16 +116,20 @@ export function collectPlanClaims(root) {
         title = heading[1];
         continue;
       }
-      const field = lines[i].match(/^-\s+\*\*Tracked by:\*\*\s*(.*)$/);
+      const field = lines[i].match(FIELD_LINE);
       if (!field || title === null) continue;
-      let value = field[1];
+      const key = canonicalFieldKey(field[1].trim());
+      if (key !== "Tracked by" && key !== "TrackedBy") continue;
+      let value = field[2];
       for (let j = i + 1; j < lines.length; j++) {
         if (lines[j].trim() === "" || /^-\s+\*\*/.test(lines[j]) || /^#/.test(lines[j])) break;
         value += `\n${lines[j]}`;
       }
       const seen = new Set();
       for (const m of value.matchAll(ISSUE_LINK)) {
-        const issue = Number(m[1]);
+        repository ??= mappedRepository(root);
+        if (`${m[1]}/${m[2]}`.toLowerCase() !== repository) continue;
+        const issue = Number(m[3]);
         if (seen.has(issue)) continue;
         seen.add(issue);
         claims.push({ file, title, issue });
@@ -192,6 +224,7 @@ export function checkOwnership({ openIssues, claims, unscoped, malformed = [], c
     const isContainer = containerSet.has(number);
     let classification;
     if (owners.length > 1) classification = CLASS.claimedTwice;
+    else if (owners.length === 1 && isContainer) classification = CLASS.containerClaimed;
     else if (owners.length === 1) classification = isDeclared ? CLASS.staleDeclaration : CLASS.claimedOnce;
     else if (isContainer) classification = CLASS.hierarchyContainer;
     else classification = isDeclared ? CLASS.temporaryUnscoped : CLASS.absent;
@@ -210,7 +243,7 @@ export function checkOwnership({ openIssues, claims, unscoped, malformed = [], c
     };
   });
 
-  const violations = new Set([CLASS.claimedTwice, CLASS.absent, CLASS.staleDeclaration]);
+  const violations = new Set([CLASS.claimedTwice, CLASS.absent, CLASS.staleDeclaration, CLASS.containerClaimed]);
   const ok = problems.length === 0 && issues.every((i) => !violations.has(i.classification));
   const releaseReady =
     ok && issues.every((i) => i.releaseEligible || i.classification === CLASS.hierarchyContainer);
