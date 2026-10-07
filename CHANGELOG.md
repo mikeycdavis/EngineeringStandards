@@ -18,6 +18,12 @@ All notable changes to this framework. Versioning follows
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+Correction to the entry below, after Codex review of #101 and #99: an empty `##` or `#` heading now ends ownership
+attribution like any other; a plan directory the audit walk skipped on the framework's say-so (`fixtures`, `vendor`,
+`build`, a vendored tree) under the plan tree makes the ownership check `NOT_EVALUATED` instead of silently dropping
+those plans; and a `](` inside a token that began with a scheme is a link destination only when that `]` closes a `[`
+(`data:text/plain,](<issue url>)` is no longer a claim).
+
 The ownership check (`npm run ownership`) now reads plan items through the one canonical plan-item parser and the
 one canonical audit file collector instead of its own copies (ST-20, #98; owner decisions Q1-A to Q5-A of
 2026-10-07). The grammar and every deliberate difference are recorded in

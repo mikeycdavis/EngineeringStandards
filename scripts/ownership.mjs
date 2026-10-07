@@ -86,7 +86,7 @@ const ISSUE_LINK = /https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/is
  * The issue links in one `Tracked by` value that are standalone links rather than parts of longer ones.
  *
  * A link must start the value, follow whitespace, or follow the `(` of a markdown link destination (a `(`
- * right after `]`). After any other `(`, `<`, `[`, `*`, a quote, `>`, `,` or `;` it still counts, unless the
+ * right after a `]` that closes a `[`; a `](` with no label before it is just characters). After any other `(`, `<`, `[`, `*`, a quote, `>`, `,` or `;` it still counts, unless the
  * whitespace-delimited token it sits in already holds a `scheme:` (`https://x/?next;https://github.com/...`,
  * `data:text/plain,https://github.com/...`, `mailto:`, `urn:`): inside an enclosing URL those are ordinary
  * characters, and reading the inner link as a claim could pass a check falsely. A token is a run without
@@ -106,6 +106,8 @@ export function extractIssueLinks(value, stats = null) {
   let pos = 0;
   let tokenScheme = false;
   let runHasLetter = false;
+  let openLabels = 0; // `[` not yet closed
+  let labelClosedAt = -1; // index of the last `]` that closed a `[`
   for (const m of value.matchAll(ISSUE_LINK)) {
     for (; pos < m.index; pos++) {
       if (stats) stats.steps++;
@@ -118,6 +120,15 @@ export function extractIssueLinks(value, stats = null) {
         runHasLetter = false;
       } else if (/[A-Za-z]/.test(c)) {
         runHasLetter = true;
+      } else if (c === "[") {
+        openLabels++;
+        runHasLetter = false;
+      } else if (c === "]") {
+        if (openLabels > 0) {
+          openLabels--;
+          labelClosedAt = pos;
+        }
+        runHasLetter = false;
       } else if (!SCHEME_CHAR.test(c)) {
         runHasLetter = false;
       }
@@ -127,7 +138,7 @@ export function extractIssueLinks(value, stats = null) {
     const standalone =
       m.index === 0 ||
       /\s/.test(prev) ||
-      (prev === "(" && value[m.index - 2] === "]") || // a markdown link destination
+      (prev === "(" && labelClosedAt === m.index - 2) || // a Markdown link destination: that `]` closed a `[`
       (/[(<[*"'>,;]/.test(prev) && !tokenScheme);
     if (standalone) out.push({ owner: m[1], repo: m[2], issue: Number(m[3]) });
   }
@@ -181,10 +192,18 @@ export async function collectPlanOwnership(root, { surface = null } = {}) {
 
   const incomplete = [];
   if (surfaceLoss.capped) incomplete.push("the file walk stopped at its file cap, so plan files may be missing");
+  // A path is "on the plan tree" when it is the plan directory, inside it, or a parent of it.
+  const onPlanTree = (r) => r === "" || r === PLAN_DIR || PLAN_DIR.startsWith(`${r}/`) || r.startsWith(`${PLAN_DIR}/`);
   for (const dir of surfaceLoss.dirs) {
     const r = run.rel(dir);
-    if (r === "" || r === PLAN_DIR || PLAN_DIR.startsWith(`${r}/`) || r.startsWith(`${PLAN_DIR}/`)) {
-      incomplete.push(`directory ${r || "."} could not be listed, so plan files may be missing`);
+    if (onPlanTree(r)) incomplete.push(`directory ${r || "."} could not be listed, so plan files may be missing`);
+  }
+  // A directory the walk skipped on the FRAMEWORK's say-so (a conventional name such as fixtures, vendor or
+  // build, or a vendored-tree marker) is evidence nobody declared disposable. One the repository declared
+  // ignored is the project's own decision and is honoured, as the audit honours it.
+  for (const e of surfaceLoss.excluded) {
+    if (e.authorizedBy === "framework" && onPlanTree(e.path)) {
+      incomplete.push(`${e.path} was excluded by the audit walk (${e.reason}), so plan files under it were not read`);
     }
   }
   for (const f of planFiles) {

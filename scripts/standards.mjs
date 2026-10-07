@@ -2208,7 +2208,7 @@ export function parsePlanDocument(text, file) {
       continue;
     }
     // A `#` or `##` heading ends the item for attribution. Canonical parsing is unchanged: `current` stays.
-    if (/^#{1,2}\s/.test(line)) attributable = false;
+    if (/^#{1,2}(?:\s|$)/.test(line)) attributable = false; // an empty `##` is a heading too
     const target = current ?? orphan;
     const span = (kind, key, label, value, text) => {
       const s = { kind, key, label, line: lineNumber, endLine: lineNumber, value, text, duplicate: false, attributed: current !== null && attributable };

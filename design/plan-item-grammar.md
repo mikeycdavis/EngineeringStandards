@@ -17,7 +17,7 @@ A plan file is read line by line (`\r?\n`; a lone CR is not a line break).
 | Element | Rule |
 | --- | --- |
 | Plan item | A `###` heading, `^###\s+(.*)$`; the item is titled by the trimmed text. Only `###` defines an item. |
-| Item end for attribution | A `#` or `##` heading ends the item for ownership attribution. It is not a plan item. Canonical `fields`/`syntax` still attach later field lines to the preceding `###` item, exactly as before. |
+| Item end for attribution | A `#` or `##` heading (including an empty one, a bare `##` or `#`) ends the item for ownership attribution. It is not a plan item. Canonical `fields`/`syntax` still attach later field lines to the preceding `###` item, exactly as before. |
 | `####` and deeper | Stay inside the current `###` item. |
 | Field line | `- **<key>:** value` or `- **<key> — <qualifier>:** value` (space, em dash, space). The key is matched exactly after trimming. |
 | Read keys | `Status`, `Purpose`, `Deliverables`, `Acceptance Criteria`, `Verification`, `Dependencies`, `Tracked by`, `TrackedBy`. Other keys are stored and read by nothing. |
@@ -42,13 +42,15 @@ A claim is the first `Tracked by` / `TrackedBy` field (the two spellings are one
 as the issue links in its span text that point at the mapping's `target` repository. Link extraction
 (`extractIssueLinks`) is ownership semantics over the span text, not plan grammar, and runs in one forward
 pass: a link counts at the start of the value, after whitespace, after the `(` of a markdown link
-destination (a `(` directly after a `]`), or after `( < [ * " ' > , ;` unless the whitespace-delimited token already holds a
+destination (a `(` directly after a `]` that closes a `[` opened earlier; a `](` with no label before it is only characters), or after `( < [ * " ' > , ;` unless the whitespace-delimited token already holds a
 `scheme:`. The accepted syntax is that of #99; only the algorithm changed (Q5).
 
 Plan files are the canonical collector's set: `.md` files anywhere under the plan directory, through the
 repository's ignore set and the framework exclusions, with the 400,000-byte per-file cap, the aggregate
 read budget and the file-count cap. If a plan file was unreadable, truncated, or skipped by the budget, or the
-walk could not reach the plan directory, the ownership check ends `NOT_EVALUATED` (exit 2).
+walk could not reach the plan directory, or the walk skipped a directory on the plan tree on the framework's say-so
+(a conventional name such as `fixtures`, `vendor` or `build`, or a vendored-tree marker), the ownership check ends
+`NOT_EVALUATED` (exit 2). A directory the repository itself declared ignored is honoured, as the audit honours it.
 
 ## Dispositions and compatibility changes
 

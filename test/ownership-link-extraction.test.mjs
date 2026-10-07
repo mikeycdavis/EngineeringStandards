@@ -62,22 +62,63 @@ function lcg(seed) {
   };
 }
 
-test("equivalence: the linear extractor reads exactly what the legacy backward-scanning extractor read", () => {
+/**
+ * The reference reading, written the slow obvious way (a backward scan per link) with the #99 P2 correction:
+ * a `](` exempts a link from the enclosing-scheme check only when that `]` closes a `[` opened earlier.
+ */
+function referenceExtract(value) {
+  const out = [];
+  const SCHEME = /[A-Za-z][A-Za-z0-9+.-]*:/;
+  for (const m of value.matchAll(/https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi)) {
+    const i = m.index;
+    let ok;
+    if (i === 0 || /\s/.test(value[i - 1])) ok = true;
+    else if (value[i - 1] === "(" && value[i - 2] === "]" && closesLabel(value, i - 2)) ok = true;
+    else if (!/[(<[*"'>,;]/.test(value[i - 1])) ok = false;
+    else {
+      let s = i;
+      while (s > 0 && !/\s/.test(value[s - 1])) s--;
+      ok = !SCHEME.test(value.slice(s, i));
+    }
+    if (ok) out.push({ owner: m[1], repo: m[2], issue: Number(m[3]) });
+  }
+  return out;
+}
+function closesLabel(value, at) {
+  let depth = 0;
+  for (let k = 0; k <= at; k++) {
+    if (value[k] === "[") depth++;
+    else if (value[k] === "]" && depth > 0) {
+      depth--;
+      if (k === at) return true;
+    }
+  }
+  return false;
+}
+
+test("equivalence: the linear extractor reads exactly what the reference (backward-scanning, label-verified) reader reads", () => {
   const pieces = [
     `${BASE}1`, `${BASE}22`, "https://github.com/x/y/issues/3", "http://www.github.com/o/r/issues/4", " ", "\t", "\n",
-    "(", ")", "[", "]", "<", ">", "*", '"', "'", ",", ";", ":", "a", "Z", "1", ".", "+", "-", "x:", "mailto:", "data:", "](", "/", "~", "`", " ", "​",
+    "(", ")", "[", "]", "<", ">", "*", '"', "'", ",", ";", ":", "a", "Z", "1", ".", "+", "-", "x:", "mailto:", "data:", "](", "/", "~", "`", "\u00a0", "\u200b",
   ];
   const rnd = lcg(20261007);
   let judged = 0;
-  for (let i = 0; i < 6000; i++) {
+  let legacyOnly = 0;
+  for (let i = 0; i < 8000; i++) {
     const n = 1 + Math.floor(rnd() * 14);
     let value = "";
     for (let j = 0; j < n; j++) value += pieces[Math.floor(rnd() * pieces.length)];
-    const want = legacyExtractLinks(value);
+    const want = referenceExtract(value);
     judged += want.length;
     assert.deepEqual(extractIssueLinks(value), want, JSON.stringify(value));
+    // Before the #99 P2 correction the two differed only through the `](` shortcut, so without `](` they must agree.
+    if (!value.includes("](")) {
+      legacyOnly++;
+      assert.deepEqual(extractIssueLinks(value), legacyExtractLinks(value), JSON.stringify(value));
+    }
   }
   assert.ok(judged > 1000, `the fuzz must actually accept links (${judged})`);
+  assert.ok(legacyOnly > 1000, `the legacy comparison must actually run (${legacyOnly})`);
 });
 
 test("equivalence at scale: a 300-link star-joined value and a 300-link spaced value agree with the legacy extractor", () => {
