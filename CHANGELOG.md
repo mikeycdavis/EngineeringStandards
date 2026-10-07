@@ -50,7 +50,8 @@ bold bullet naming a plan field with no colon or with a wrapped label, as `parse
 
 The ownership check now also ends a `Tracked by` value at a misplaced-colon field whose label has parentheses or a slash
 (`- **Verification (CI/local)**: x`), and treats a token that already began with any `scheme:` (`data:`, `mailto:`, `urn:`), not only
-`://`, as an enclosing URL (follow-up to Codex review of #93).
+`://`, as an enclosing URL (follow-up to Codex review of #93), and does so also when the inner URL directly follows `(`, `<` or `[`
+(`data:text/plain,(<url>)`); only a markdown link destination (a `(` right after `]`) is accepted without that check (follow-up to Codex review of #94).
 
 Added the complete CI pipeline as a containerized local run, and made pull request submission depend
 on it:

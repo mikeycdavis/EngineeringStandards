@@ -753,3 +753,25 @@ test("an issue URL inside a non-hierarchical URL (data:, mailto:, urn:, javascri
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// --- fourth repair of the ownership grammar: the Codex review of #94 -------------------------------
+
+test("an issue URL right after ( < [ inside a token that began with a scheme is not a claim", async () => {
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      withTracked("**Tracked by:**", `data:text/plain,(${URL(10)})`) +
+      withTracked("**Tracked by:**", `data:text/plain,<${URL(11)}>`) +
+      withTracked("**Tracked by:**", `data:text/plain,[${URL(12)}]`) +
+      withTracked("**Tracked by:**", `https://x.example/?q=(${URL(13)})`) +
+      withTracked("**Tracked by:**", `[p](data:text/plain,(${URL(14)}))`) +
+      withTracked("**Tracked by:**", `note(${URL(15)})`) +
+      withTracked("**Tracked by:**", `[#16](${URL(16)}) and [#17](${URL(17)})`) +
+      withTracked("**Tracked by:**", `([${URL(18)}](${URL(18)}))`) +
+      withTracked("**Tracked by:**", `[${URL(19)}](${URL(20)})`),
+  });
+  try {
+    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15, 16, 17, 18, 19, 20]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
