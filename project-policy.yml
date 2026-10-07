@@ -1048,6 +1048,23 @@ attestations:
           revision: "77730e4"
           digestAlgorithm: "git-blob-set-sha256-v1"
           digest: "8a45848fdd6c1a0ec69e9e2e3c1abcd2"
+      - id: "review-architecture-no-boundary-bypass-006"
+        supersedes: "review-architecture-no-boundary-bypass-005"
+        status: approved
+        reviewedBy: "project-owner"
+        reviewedAt: "2026-10-06"
+        evidence: "RE-REVIEWED 2026-10-06 against committed repository content at bc7afaa1d9da789afe6c437e5f6804f7f1168eb6 (tree ff81d2bf34247f47aab2f491db08d68decac5425), by Michael Davis as project owner, who reviewed and approved the content of the four paths named below at that revision; the attested blobs are scripts/compliance.mjs a8b9f04f61b060bbfeb9b3e543676a8ea3d8de32, scripts/catalog.mjs 9ff2dc2559b46e3a1efe1f4d4114c5dfe1f3682f, test/compliance.test.mjs 495e4a0c7793ec1fae04e62c8226ef9cc5a53706 and standards/51-architecture-integrity.md babcf19795a1d4127bbe514cc305e515cd670b52, and the recorded digest is the repository digest of that blob set. THIS IS A FRESH REVIEW OF THE CHANGED SURFACE AND INHERITS NOTHING FROM EVENT 005: the prior approval is superseded rather than extended. Of the four paths, scripts/compliance.mjs and test/compliance.test.mjs changed since 77730e4; scripts/catalog.mjs and the standards document are byte-identical by blob. The changed evaluator surface is two branches in scripts/compliance.mjs: the manual-review exception branch of PR 84 (a recorded exception on a forbidden manual-review rule yields a skipped, excepted result that is never passed, placed after attestation judgement so a recorded human finding still wins) and the silencedRules branch of PR 90 (an optional-rule violation with no active exception produces no result entry, adds no import and no catalog or policy dependency, and constructs no result). The three-way separation holds: the catalog still owns rule identity and metadata, the policy still owns applicability and exceptions, and the evaluator still produces evidence. PRESERVED LIMITS: (i) the for convenience qualifier in this rule is a claim about intent that the available evidence does not reach, so this approval establishes the structural separation and not the motive behind any future breach; (ii) the behavioural tests of PR 90 live outside test/compliance.test.mjs, in test/optional-silent.test.mjs and test/dead-code-escalation.test.mjs, and are not pinned by this attestation, and the silenced-findings filter in scripts/standards.mjs is outside the four paths; (iii) the approved clean-optional side channel, where a clean optional rule keeps its passed entry and a violated one is silent, is an owner decision about output and not a boundary claim; (iv) the four recorded owner rejections and the three unexamined prohibitions remain independent of this approval and unchanged by it; (v) in an excepted result the evidence entry project-policy.yml is provenance for a recorded waiver, naming the policy input that holds the human decision, and is not evidence that the boundary invariant passed."
+        reference: "standards/51-architecture-integrity.md"
+        reviewedAgainst:
+          source: git
+          paths:
+            - scripts/compliance.mjs
+            - scripts/catalog.mjs
+            - test/compliance.test.mjs
+            - standards/51-architecture-integrity.md
+          revision: "bc7afaa1d9da789afe6c437e5f6804f7f1168eb6"
+          digestAlgorithm: "git-blob-set-sha256-v1"
+          digest: "1a6a1c7ab05a1ea8343efd94e00ce37e"
 
   # Checkpoint item 10, the third REJECTED entry. Judged by the same standard as item 11: the
   # prohibited conduct occurred and reached shared history, and being caught does not unmake it.
