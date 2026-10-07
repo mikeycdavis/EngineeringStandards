@@ -87,6 +87,14 @@ test("the additive members describe the items without changing them", () => {
   }
 });
 
+/**
+ * Probes where a legacy CLAIM is dropped with no problem, on purpose: the claim was a false positive (#99 Codex P2,
+ * corrected after #101): a `](` inside a token that began with a scheme, with no `[` before it, is not a
+ * Markdown link destination, so the link is inside the enclosing URL like every other enclosing-scheme case.
+ * That turns a false claim into absence, the direction fail-closed requires; it never turns absence into a claim.
+ */
+const FALSE_POSITIVE_CORRECTIONS = new Set(["U26 stray ]( inside a scheme token", "U27 stray ]( inside a mailto token"]);
+
 /** Pinned new behaviour for every probe whose ownership result differs from the legacy one. */
 const APPROVED_DIFFERENCES = {
   "H1 level-2 heading item": { claims: [], problems: ["plan-claim-outside-item"] },
@@ -97,6 +105,10 @@ const APPROVED_DIFFERENCES = {
   "H6 no space after hashes": { claims: [], problems: ["plan-claim-outside-item"] },
   "H8 #### inside a ### item": { claims: ["1@A"], problems: [] },
   "H9 ### item then #### with its own Tracked by": { claims: ["1@A"], problems: ["plan-tracked-by-duplicate"] },
+  "H14 empty ## heading after a ### item": { claims: [], problems: ["plan-claim-outside-item"] },
+  "H15 empty # heading after a ### item": { claims: [], problems: ["plan-claim-outside-item"] },
+  "U26 stray ]( inside a scheme token": { claims: [], problems: [] },
+  "U27 stray ]( inside a mailto token": { claims: [], problems: [] },
   "H11 level-1 heading after a ### item": { claims: ["1@A"], problems: ["plan-claim-outside-item"] },
   "D1 duplicate Tracked by": { claims: ["1@A"], problems: ["plan-tracked-by-duplicate"] },
   "D2 duplicate via qualified and plain": { claims: ["1@A"], problems: ["plan-tracked-by-duplicate"] },
@@ -166,8 +178,10 @@ test("ownership parity: every probe matches the legacy claims, or is a pinned ap
 
 test("monotonic fail-closed: no new claim, and every dropped legacy claim is replaced by a reported problem", async () => {
   const files = {};
+  const corrected = new Set();
   [...PROBES.map((p) => p.text), ...literals].forEach((text, i) => {
     files[`c-${String(i).padStart(3, "0")}.md`] = text;
+    if (i < PROBES.length && FALSE_POSITIVE_CORRECTIONS.has(PROBES[i].id)) corrected.add(`c-${String(i).padStart(3, "0")}.md`);
   });
   const root = await scratch(files);
   try {
@@ -182,7 +196,7 @@ test("monotonic fail-closed: no new claim, and every dropped legacy claim is rep
       for (const issue of N) assert.ok(L.includes(issue), `${name}: #${issue} is a claim now and was not before`);
       const count = (xs, n) => xs.filter((x) => x === n).length;
       for (const issue of new Set(L)) {
-        if (count(N, issue) < count(L, issue)) {
+        if (count(N, issue) < count(L, issue) && !corrected.has(name)) {
           assert.ok(P.length > 0, `${name}: a legacy claim for #${issue} disappeared with no problem reported`);
         }
       }
