@@ -114,7 +114,8 @@ const URL_SCHEME = /[A-Za-z][A-Za-z0-9+.-]*:/;
 
 /**
  * Is the `https://github.com/...` at `index` a standalone link rather than part of a longer one? It must start
- * the value or follow whitespace, `(`, `<` or `[`. After `*`, a quote, `>`, `,` or `;` it still counts, unless
+ * the value, follow whitespace, or follow the `(` of a markdown link destination (a `(` right after `]`). After any other `(`, `<`,
+ * `[`, `*`, a quote, `>`, `,` or `;` it still counts, unless
  * the token it sits in already began with a URL or any `scheme:` (`https://x/?next;https://github.com/...`,
  * `data:text/plain,https://github.com/...`, `mailto:`, `urn:`): inside an
  * enclosing URL those are ordinary characters, and reading the inner link as a claim could pass a check falsely.
@@ -122,8 +123,9 @@ const URL_SCHEME = /[A-Za-z][A-Za-z0-9+.-]*:/;
  * Two bare URLs joined by a separator with no space are one token, so only the first is read.
  */
 function atUrlBoundary(value, index) {
-  if (index === 0 || /[\s(<[]/.test(value[index - 1])) return true;
-  if (!/[*"'>,;]/.test(value[index - 1])) return false;
+  if (index === 0 || /\s/.test(value[index - 1])) return true;
+  if (value[index - 1] === "(" && value[index - 2] === "]") return true; // a markdown link destination
+  if (!/[(<[*"'>,;]/.test(value[index - 1])) return false;
   let start = index;
   while (start > 0 && !/\s/.test(value[start - 1])) start--;
   return !URL_SCHEME.test(value.slice(start, index));
