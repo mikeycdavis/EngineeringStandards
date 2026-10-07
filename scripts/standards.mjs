@@ -2123,7 +2123,59 @@ function intendedKey(label) {
 }
 
 /**
- * Parse `### Title` items and their field lines out of a plan-breakdown file.
+ * The keys that declare a plan item's tracked authority. `Tracked by` and `TrackedBy` are two
+ * canonical spellings of one field (`detectPlanDiscrepancies` reads `Tracked by` then `TrackedBy`).
+ */
+export const TRACKED_BY_KEYS = Object.freeze(["Tracked by", "TrackedBy"]);
+
+/**
+ * A bullet that tried to be a field and missed the grammar (`- **Evidence**: x`, `* **Evidence:** x`): a
+ * bold run of plain label text closed by a colon. It ends a field's value just as a field does, so a
+ * neighbouring field's text is never read as this field's continuation. A bold list item that is a link or
+ * URL (`  - **<issue link>**`) has brackets or `://` and is not matched. Parentheses and slashes are
+ * allowed in the label (`- **Verification (CI/local)**: x`). Moved here from the ownership check
+ * (ST-20): the value-boundary rule is part of the plan grammar and is defined once.
+ */
+const FIELD_ATTEMPT = /^\s*[-*]\s+\*\*(?![^*]*:\/\/)[^*[\]]*?(?::\*\*|\*\*\s*:)/;
+
+/** The readable field a bold-opening bullet names or tried to name (no colon, wrapped label, near separator), or null. */
+function boldFieldAttempt(line) {
+  const bold = line.match(BOLD_OPEN);
+  if (!bold) return null;
+  const label = bold[1].split("**")[0].replace(/:\s*$/, "");
+  const key = canonicalFieldKey(label);
+  const intended = READABLE_FIELDS.has(key) ? key : intendedKey(label);
+  return intended ? { key: intended, label: label.trim() } : null;
+}
+
+/**
+ * Does this line end a field's value? A blank line, a heading (any line starting `#`), a line the field
+ * grammar reads as a field, a malformed attempt at one, or a bold run naming a plan field. A bold list
+ * item that is none of those continues the value.
+ */
+function endsFieldValue(line) {
+  return line.trim() === "" || line.startsWith("#") || FIELD_LINE.test(line) || FIELD_ATTEMPT.test(line) || boldFieldAttempt(line) !== null;
+}
+
+/**
+ * Parse a plan-breakdown file into `###` items, and report what sits outside them.
+ *
+ * Returns `{ items, orphans }`. `items` is exactly what `parsePlanItems` always returned (title, file,
+ * fields, syntax, in the same order and with the same content) plus three ADDITIVE members: `line` and
+ * `level` (the heading, always level 3: only `###` defines a plan item) and `spans`, one record per
+ * occurrence of a readable field or an attempt at one:
+ *
+ *   { kind: "field" | "separator" | "syntax", key, label, line, endLine, value, text, duplicate, attributed }
+ *
+ * `value` is the canonical (trimmed first-line) value, `text` is the field's line value plus its
+ * continuation lines (the continuation rule is `endsFieldValue`), `duplicate` marks a later occurrence of
+ * a key (first wins in `fields`), and `attributed` is false once a `#` or `##` heading has ended the item:
+ * the canonical `fields` and `syntax` still attach such a line to the preceding `###` item (unchanged),
+ * but a consumer that needs to know who owns it can see it does not belong to the item.
+ * `orphans` holds the same records for lines before the first `###` heading, which `items` never held.
+ *
+ * Fenced code is NOT recognised: a fenced heading or field line is read as plan syntax (accepted
+ * behaviour, ST-20 Q2).
  *
  * Each item also carries `syntax`: labels that were trying to be a field and failed. That list is
  * the point of the reader rather than a by-product. Before it existed, a malformed label was
@@ -2133,18 +2185,36 @@ function intendedKey(label) {
  * and a qualified `Tracked by` deleted the cached-status disclosure so a delegated status read as
  * established. Rejecting malformed syntax is right; converting it into absence is not.
  */
-function parsePlanItems(text, file) {
+export function parsePlanDocument(text, file) {
   const items = [];
+  const orphan = { fields: new Map(), syntax: [], spans: [] };
   let current = null;
+  let attributable = false;
+  let open = null; // the span still accepting continuation lines
   for (const [index, line] of text.split(/\r?\n/).entries()) {
+    const lineNumber = index + 1;
+    if (open) {
+      if (endsFieldValue(line)) open = null;
+      else {
+        open.text += `\n${line}`;
+        open.endLine = lineNumber;
+      }
+    }
     const heading = line.match(/^###\s+(.*)$/);
     if (heading) {
       if (current) items.push(current);
-      current = { title: heading[1].trim(), file, fields: new Map(), syntax: [] };
+      current = { title: heading[1].trim(), file, fields: new Map(), syntax: [], line: lineNumber, level: 3, spans: [] };
+      attributable = true;
       continue;
     }
-    if (!current) continue;
-    const lineNumber = index + 1;
+    // A `#` or `##` heading ends the item for attribution. Canonical parsing is unchanged: `current` stays.
+    if (/^#{1,2}\s/.test(line)) attributable = false;
+    const target = current ?? orphan;
+    const span = (kind, key, label, value, text) => {
+      const s = { kind, key, label, line: lineNumber, endLine: lineNumber, value, text, duplicate: false, attributed: current !== null && attributable };
+      target.spans.push(s);
+      return s;
+    };
 
     const field = line.match(FIELD_LINE);
     if (field) {
@@ -2154,32 +2224,40 @@ function parsePlanItems(text, file) {
         // First occurrence wins. Canonicalisation makes two labels able to collide where the raw
         // strings could not, and silently overwriting one with the other would let a qualified
         // duplicate replace the field a reader can see.
-        if (current.fields.has(key)) {
-          current.syntax.push({ line: lineNumber, key, kind: "duplicate", label });
+        const s = span("field", key, label, field[2].trim(), field[2]);
+        if (target.fields.has(key)) {
+          s.duplicate = true;
+          target.syntax.push({ line: lineNumber, key, kind: "duplicate", label });
         } else {
-          current.fields.set(key, field[2].trim());
+          target.fields.set(key, field[2].trim());
         }
+        open = s;
         continue;
       }
       const intended = intendedKey(label);
-      if (intended) current.syntax.push({ line: lineNumber, key: intended, kind: "separator", label });
+      if (intended) {
+        target.syntax.push({ line: lineNumber, key: intended, kind: "separator", label });
+        span("separator", intended, label, "", "");
+      }
       // An unknown key is not an error. `Evidence` is a house convention on most items here, and a
       // label nothing reads is a label nothing reads — it is stored exactly as before.
-      else current.fields.set(label, field[2].trim());
+      else target.fields.set(label, field[2].trim());
       continue;
     }
 
-    const bold = line.match(BOLD_OPEN);
-    if (!bold) continue;
-    // Strip a closing `**` and a trailing colon, so `- **Status**:` and `* **Status:**` are seen as
-    // broken field syntax rather than read as ordinary prose.
-    const label = bold[1].split("**")[0].replace(/:\s*$/, "");
-    const key = canonicalFieldKey(label);
-    const intended = READABLE_FIELDS.has(key) ? key : intendedKey(label);
-    if (intended) current.syntax.push({ line: lineNumber, key: intended, kind: "syntax", label: label.trim() });
+    const attempt = boldFieldAttempt(line);
+    if (attempt) {
+      target.syntax.push({ line: lineNumber, key: attempt.key, kind: "syntax", label: attempt.label });
+      span("syntax", attempt.key, attempt.label, "", "");
+    }
   }
   if (current) items.push(current);
-  return items;
+  return { items, orphans: orphan.spans };
+}
+
+/** The `###` items of a plan file with their fields and field-syntax problems (see `parsePlanDocument`). */
+export function parsePlanItems(text, file) {
+  return parsePlanDocument(text, file).items;
 }
 
 /**
@@ -3306,50 +3384,18 @@ function renderHuman(fileCount, surface, run) {
   return lines.join("\n");
 }
 
-// ---------------------------------------------------------------------------
-// Main — one invocation, start to finish
-//
-// Every mutable object below is created here and dies here (ADR 0014). `main` returns an exit code
-// rather than calling process.exit, so it can be called twice, called concurrently, and compared
-// against a fresh-process run. Only the CLI boundary at the foot of this file terminates anything.
-// ---------------------------------------------------------------------------
-
-export async function main(args) {
-  /**
-   * Returns `{ exitCode, stdout, run, surface }`, not a bare code.
-   *
-   * The extra fields exist so independence can be *falsified*. A concurrency test that compares
-   * against a globally patched `process.stdout.write` cannot distinguish two independent runs from
-   * two interleaved ones, so each invocation hands back the bytes it wrote and the objects it owned,
-   * and the test compares those. They are observation, not CLI surface: the rendered JSON envelope
-   * is unchanged, and no consumer reads these.
-   */
-  const written = [];
-  const emit = (s) => {
-    written.push(String(s));
-    return process.stdout.write(s);
-  };
-  let run = null;
-  let surface = null;
-  const done = (exitCode) => ({ exitCode, stdout: written.join(""), run, surface });
-
-  const cli = parseArgs(args);
-  const invalid = checkInvocation(cli);
-  if (invalid !== null) return done(invalid);
-
-  if (cli.subcommand === "init") return done(await runInit(cli, emit));
-
-  const target = cli.dirFlag ?? cli.positional ?? ".";
-  if (!existsSync(target)) {
-    process.stderr.write(`standards: no such directory: ${target}\n`);
-    return done(EXIT_INVOCATION);
-  }
-  const root = cli.dirFlag ? path.resolve(cli.dirFlag) : findRoot(target);
-  const validating = cli.subcommand === "validate";
-
-  run = createRun({ root, strict: cli.strict, json: cli.json });
-  const { rel, findings, addFinding } = run;
-
+/**
+ * Walk the repository and read its text files: the ONE collector, shared by `audit`/`validate` and by
+ * any other command that must judge the same evidence surface (the ownership check, ST-20).
+ *
+ * Applies the repository's ignore set, the framework exclusions, `MAX_FILES`, the per-file
+ * `MAX_READ_BYTES` cap, the aggregate read budget and the unreadable/truncated bookkeeping, and
+ * retains each text through `run.retain`. It returns the record of what was and was not read; it never
+ * decides what that means, so every consumer must branch on `run.textOf(f).available`,
+ * `run.truncated` and the loss record rather than treat an unread file as an empty one.
+ */
+async function loadSurface(run, root, maxTotalReadBytes) {
+  const { rel } = run;
   // Created here, by the invocation that uses it, and carrying the budget this invocation was given
   // rather than one read from the process — ADR 0014.
   const surfaceLoss = {
@@ -3358,7 +3404,7 @@ export async function main(args) {
     excluded: [],
     excludedFiles: { count: 0, sample: [] },
     budget: {
-      limitBytes: cli.maxTotalReadBytes === undefined ? DEFAULT_MAX_TOTAL_READ_BYTES : Number(cli.maxTotalReadBytes),
+      limitBytes: maxTotalReadBytes === undefined ? DEFAULT_MAX_TOTAL_READ_BYTES : Number(maxTotalReadBytes),
       retainedBytes: 0,
       exhausted: false,
       unreadFiles: 0,
@@ -3375,10 +3421,6 @@ export async function main(args) {
     files: new Set(ignored.ok ? ignored.files : []),
   };
   const files = await collectFiles(root, [], surfaceLoss, exclusions, run);
-  // The repository surface this invocation measured. Named so two runs can be compared by identity.
-  // It carries the file list and the loss record; the retained text is reachable only through the
-  // run's accessors, which is the point of the seam rather than an omission.
-  surface = { files, surfaceLoss };
   const unreadableFiles = [];
   const truncatedFiles = [];
   // The same event, kept twice on purpose: `truncatedFiles` is the sentence a reader sees and
@@ -3447,6 +3489,68 @@ export async function main(args) {
     // The derived `sources` entry is proportional to the same text, so one accounting bounds both.
     budget.retainedBytes += cost;
   }
+
+  return { files, surfaceLoss, unreadableFiles, truncatedFiles, truncatedPaths, ignored };
+}
+
+/**
+ * The shared collector for a command that is not `audit`: a fresh run, the same walk and the same reads.
+ * Returns `{ run, files, surfaceLoss, unreadableFiles, truncatedFiles, truncatedPaths }`.
+ */
+export async function collectSurface(root, { maxTotalReadBytes } = {}) {
+  const run = createRun({ root, strict: false, json: false });
+  return { run, ...(await loadSurface(run, root, maxTotalReadBytes)) };
+}
+
+// ---------------------------------------------------------------------------
+// Main — one invocation, start to finish
+//
+// Every mutable object below is created here and dies here (ADR 0014). `main` returns an exit code
+// rather than calling process.exit, so it can be called twice, called concurrently, and compared
+// against a fresh-process run. Only the CLI boundary at the foot of this file terminates anything.
+// ---------------------------------------------------------------------------
+
+export async function main(args) {
+  /**
+   * Returns `{ exitCode, stdout, run, surface }`, not a bare code.
+   *
+   * The extra fields exist so independence can be *falsified*. A concurrency test that compares
+   * against a globally patched `process.stdout.write` cannot distinguish two independent runs from
+   * two interleaved ones, so each invocation hands back the bytes it wrote and the objects it owned,
+   * and the test compares those. They are observation, not CLI surface: the rendered JSON envelope
+   * is unchanged, and no consumer reads these.
+   */
+  const written = [];
+  const emit = (s) => {
+    written.push(String(s));
+    return process.stdout.write(s);
+  };
+  let run = null;
+  let surface = null;
+  const done = (exitCode) => ({ exitCode, stdout: written.join(""), run, surface });
+
+  const cli = parseArgs(args);
+  const invalid = checkInvocation(cli);
+  if (invalid !== null) return done(invalid);
+
+  if (cli.subcommand === "init") return done(await runInit(cli, emit));
+
+  const target = cli.dirFlag ?? cli.positional ?? ".";
+  if (!existsSync(target)) {
+    process.stderr.write(`standards: no such directory: ${target}\n`);
+    return done(EXIT_INVOCATION);
+  }
+  const root = cli.dirFlag ? path.resolve(cli.dirFlag) : findRoot(target);
+  const validating = cli.subcommand === "validate";
+
+  run = createRun({ root, strict: cli.strict, json: cli.json });
+  const { rel, findings, addFinding } = run;
+
+  const { files, surfaceLoss, unreadableFiles, truncatedFiles, truncatedPaths, ignored } = await loadSurface(run, root, cli.maxTotalReadBytes);
+  // The repository surface this invocation measured. Named so two runs can be compared by identity.
+  // It carries the file list and the loss record; the retained text is reachable only through the
+  // run's accessors, which is the point of the seam rather than an omission.
+  surface = { files, surfaceLoss };
 
   // Evidence-surface findings: what the audit could NOT search.
   //

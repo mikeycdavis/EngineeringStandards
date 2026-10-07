@@ -35,9 +35,10 @@
  * invented: `since` records when, and releaseReady stays false while any entry exists, which is how
  * "never release-eligible in that state" is enforced rather than merely stated.
  *
- * WHAT A CLAIM IS. An item's `Tracked by` field, and only that, read as the issue links it contains.
- * The field is recognised by the canonical plan-field grammar (scripts/standards.mjs), so the
- * qualified form `- **Tracked by — <qualifier>:**` counts as well as the plain one. A link counts
+ * WHAT A CLAIM IS. A `###` plan item's first `Tracked by` field, and only that, read as the issue links it contains.
+ * Items, fields and value boundaries come from the one canonical plan grammar (scripts/standards.mjs,
+ * design/plan-item-grammar.md), so the qualified form `- **Tracked by — <qualifier>:**` counts as well as the
+ * plain one, and a `Tracked by` the grammar will not read as a claim is a reported problem, never silence. A link counts
  * only when it points at the mapping's `target` repository on github.com: an issue number in
  * another repository says nothing about this one.
  * An issue mentioned in prose or another field is not a claim (ADR 0009, the use/mention
@@ -54,10 +55,10 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FIELD_LINE, canonicalFieldKey } from "./standards.mjs";
+import { collectSurface, parsePlanDocument, TRACKED_BY_KEYS } from "./standards.mjs";
 
 const EXIT_OK = 0;
 const EXIT_VIOLATION = 1;
@@ -75,62 +76,63 @@ export const CLASS = Object.freeze({
 
 const PLAN_DIR = "artifacts/project-plan-breakdown";
 const MAPPING = "artifacts/backlog/github-mapping.json";
-/**
- * A bullet that tried to be a field and missed the grammar, the way `parsePlanItems` notices them
- * (`- **Evidence**: x`, `* **Evidence:** x`): a bold run of plain label text closed by a colon. It ends the
- * value just as a field does, so a neighbouring field's links are never read as this item's claims. A bold
- * list item that is a link or URL (`  - **<issue link>**`) has brackets or `://` and is not matched. Parentheses and
- * slashes are allowed in the label (`- **Verification (CI/local)**: x`).
- */
-const FIELD_ATTEMPT = /^\s*[-*]\s+\*\*(?![^*]*:\/\/)[^*[\]]*?(?::\*\*|\*\*\s*:)/;
+/** The plan files the canonical audit reads (`detectPlanDiscrepancies`): `.md` anywhere under the plan directory. */
+const PLAN_FILE = /^artifacts\/project-plan-breakdown\/.+\.md$/;
 
-/**
- * The field names scripts/standards.mjs reads (its PLAN_FIELDS and `Tracked by`). `parsePlanItems` reports a
- * bold bullet naming one of them as malformed field syntax even with no colon (`- **Purpose** x`) or with the
- * label wrapped across lines (`- **Purpose`), so ownership ends the value there too. Mirrors that list; the
- * canonical module does not export it.
- */
-const PLAN_FIELD_NAMES = ["Status", "Purpose", "Deliverables", "Acceptance Criteria", "Verification", "Dependencies", "Tracked by", "TrackedBy"];
-const BOLD_OPEN = /^\s*[-*]\s+\*\*(.*)$/;
-const NEAR_SEPARATOR = /^(?:\s*[–—]\s*|\s+-\s+)/;
-
-/** Does this line open a bold run that names a plan field, the way parsePlanItems' BOLD_OPEN branch reads it? */
-function namesPlanField(line) {
-  const bold = line.match(BOLD_OPEN);
-  if (!bold) return false;
-  const label = bold[1].split("**")[0].replace(/:\s*$/, "");
-  const key = canonicalFieldKey(label);
-  if (PLAN_FIELD_NAMES.includes(key)) return true;
-  const trimmed = label.trim();
-  return PLAN_FIELD_NAMES.some((name) => {
-    if (!trimmed.startsWith(name)) return false;
-    const rest = trimmed.slice(name.length);
-    return rest.trim() !== "" && NEAR_SEPARATOR.test(rest);
-  });
-}
-
-/** Any `scheme:` start; a token holding one is already inside some URL, hierarchical or not. */
-const URL_SCHEME = /[A-Za-z][A-Za-z0-9+.-]*:/;
-
-/**
- * Is the `https://github.com/...` at `index` a standalone link rather than part of a longer one? It must start
- * the value, follow whitespace, or follow the `(` of a markdown link destination (a `(` right after `]`). After any other `(`, `<`,
- * `[`, `*`, a quote, `>`, `,` or `;` it still counts, unless
- * the token it sits in already began with a URL or any `scheme:` (`https://x/?next;https://github.com/...`,
- * `data:text/plain,https://github.com/...`, `mailto:`, `urn:`): inside an
- * enclosing URL those are ordinary characters, and reading the inner link as a claim could pass a check falsely.
- * A token is a run without whitespace, so `go("<url>")` after `javascript:` is inside it too.
- * Two bare URLs joined by a separator with no space are one token, so only the first is read.
- */
-function atUrlBoundary(value, index) {
-  if (index === 0 || /\s/.test(value[index - 1])) return true;
-  if (value[index - 1] === "(" && value[index - 2] === "]") return true; // a markdown link destination
-  if (!/[(<[*"'>,;]/.test(value[index - 1])) return false;
-  let start = index;
-  while (start > 0 && !/\s/.test(value[start - 1])) start--;
-  return !URL_SCHEME.test(value.slice(start, index));
-}
+const SCHEME_CHAR = /[A-Za-z0-9+.-]/;
 const ISSUE_LINK = /https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
+
+/**
+ * The issue links in one `Tracked by` value that are standalone links rather than parts of longer ones.
+ *
+ * A link must start the value, follow whitespace, or follow the `(` of a markdown link destination (a `(`
+ * right after `]`). After any other `(`, `<`, `[`, `*`, a quote, `>`, `,` or `;` it still counts, unless the
+ * whitespace-delimited token it sits in already holds a `scheme:` (`https://x/?next;https://github.com/...`,
+ * `data:text/plain,https://github.com/...`, `mailto:`, `urn:`): inside an enclosing URL those are ordinary
+ * characters, and reading the inner link as a claim could pass a check falsely. A token is a run without
+ * whitespace, so `go("<url>")` after `javascript:` is inside it too. Two bare URLs joined by a separator
+ * with no space are one token, so only the first is read.
+ *
+ * LINEAR TIME (ST-20, Q5). Whether the token holds a scheme depends only on the characters before the
+ * match, so one forward pass keeps it (`tokenScheme`: a `:` was seen in this token right after a run of
+ * scheme characters holding a letter) and the matches, which arrive in ascending order, read it at their
+ * index. Nothing scans backwards. `stats`, when given, counts the characters passed (`steps`) and the links
+ * judged (`links`) so a test can bound the work deterministically: `steps` never exceeds `value.length`.
+ *
+ * Returns `[{ owner, repo, issue }]` in order, for every standalone link to any repository.
+ */
+export function extractIssueLinks(value, stats = null) {
+  const out = [];
+  let pos = 0;
+  let tokenScheme = false;
+  let runHasLetter = false;
+  for (const m of value.matchAll(ISSUE_LINK)) {
+    for (; pos < m.index; pos++) {
+      if (stats) stats.steps++;
+      const c = value[pos];
+      if (/\s/.test(c)) {
+        tokenScheme = false;
+        runHasLetter = false;
+      } else if (c === ":") {
+        if (runHasLetter) tokenScheme = true;
+        runHasLetter = false;
+      } else if (/[A-Za-z]/.test(c)) {
+        runHasLetter = true;
+      } else if (!SCHEME_CHAR.test(c)) {
+        runHasLetter = false;
+      }
+    }
+    if (stats) stats.links++;
+    const prev = value[m.index - 1];
+    const standalone =
+      m.index === 0 ||
+      /\s/.test(prev) ||
+      (prev === "(" && value[m.index - 2] === "]") || // a markdown link destination
+      (/[(<[*"'>,;]/.test(prev) && !tokenScheme);
+    if (standalone) out.push({ owner: m[1], repo: m[2], issue: Number(m[3]) });
+  }
+  return out;
+}
 
 /** The repository the mapping's issue numbers belong to, or throws: a link cannot be judged without it. */
 function mappedRepository(root) {
@@ -151,53 +153,120 @@ function mappedRepository(root) {
 }
 
 /**
- * Every (item, issue) claim in the plan files.
+ * Every (item, issue) claim in the plan files, and every plan-grammar problem that stopped a `Tracked by`
+ * from being read as one.
  *
- * An item is a heading of level 2-4 and its body up to the next such heading. The `Tracked by` value
- * is the field's line plus continuation lines, up to the next field or a blank line. A next field is
- * a line the canonical plan-field grammar reads as one (`FIELD_LINE`, indented or not) or a malformed
- * attempt at one (`FIELD_ATTEMPT`, or a bold run naming a plan field, `namesPlanField`); a bold list item that is not a field, such as `  - **<issue link>**`,
- * continues the value.
- * An issue URL counts only at a URL boundary (`atUrlBoundary`): start of value, whitespace, just after `(`,
- * `<` or `[`, or after emphasis, quoting or a separator (`*`, `"`, `'`, `>`, `,`, `;`) outside an enclosing URL.
+ * Plan items, fields, spans and value boundaries come from the canonical parser (`parsePlanDocument` in
+ * scripts/standards.mjs); the file set and read state come from the canonical audit collector
+ * (`collectSurface`): `.md` files anywhere under the plan directory, the repository's exclusions, the
+ * per-file read cap, the total read budget. If any plan file could not be read whole (unreadable, truncated
+ * at the cap, or skipped once the budget was spent), or the walk could not reach the plan directory, this
+ * THROWS, and the caller reports NOT_EVALUATED: a plan that was not fully read never yields a clean result.
+ *
+ * A plan item is a `###` heading; a `#` or `##` heading ends it for attribution. The claim is the item's
+ * FIRST `Tracked by` / `TrackedBy` field: its line plus continuation lines, read as the issue links it
+ * names (`extractIssueLinks`), kept only when they point at the mapped repository. Everything else that
+ * names `Tracked by` is a reported problem, never a claim and never silence:
+ *   plan-claim-outside-item     a `Tracked by` before the first item or after a `#`/`##` heading
+ *   plan-tracked-by-malformed   a `Tracked by` written in a form the plan grammar rejects (separator or syntax)
+ *   plan-tracked-by-duplicate   a later `Tracked by` on the same item
+ *   plan-claim-untitled-item    a `Tracked by` under a `###` heading with no title (it cannot be named as an owner)
+ * Fenced code is not recognised, as in the canonical parser (accepted behaviour, ST-20 Q2).
  */
-export function collectPlanClaims(root) {
-  const dir = path.join(root, PLAN_DIR);
-  if (!existsSync(dir)) return [];
-  const claims = [];
-  let repository = null;
-  for (const name of readdirSync(dir).filter((f) => f.endsWith(".md")).sort()) {
-    const file = `${PLAN_DIR}/${name}`;
-    const lines = readFileSync(path.join(dir, name), "utf8").split(/\r?\n/);
-    let title = null;
-    for (let i = 0; i < lines.length; i++) {
-      const heading = lines[i].match(/^#{2,4}\s+(.*\S)\s*$/);
-      if (heading) {
-        title = heading[1];
-        continue;
-      }
-      const field = lines[i].match(FIELD_LINE);
-      if (!field || title === null) continue;
-      const key = canonicalFieldKey(field[1].trim());
-      if (key !== "Tracked by" && key !== "TrackedBy") continue;
-      let value = field[2];
-      for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j].trim() === "" || FIELD_LINE.test(lines[j]) || FIELD_ATTEMPT.test(lines[j]) || namesPlanField(lines[j]) || /^#/.test(lines[j])) break;
-        value += `\n${lines[j]}`;
-      }
-      const seen = new Set();
-      for (const m of value.matchAll(ISSUE_LINK)) {
-        if (!atUrlBoundary(value, m.index)) continue;
-        repository ??= mappedRepository(root);
-        if (`${m[1]}/${m[2]}`.toLowerCase() !== repository) continue;
-        const issue = Number(m[3]);
-        if (seen.has(issue)) continue;
-        seen.add(issue);
-        claims.push({ file, title, issue });
-      }
+export async function collectPlanOwnership(root, { surface = null } = {}) {
+  // `surface` is the collector's result for a caller that already holds one (and for tests that need a
+  // degraded one: a spent budget, a capped walk); otherwise the collector runs here.
+  const { run, files, surfaceLoss } = surface ?? (await collectSurface(root));
+  const planFiles = files.filter((f) => PLAN_FILE.test(run.rel(f))).sort((a, b) => (run.rel(a) < run.rel(b) ? -1 : 1));
+
+  const incomplete = [];
+  if (surfaceLoss.capped) incomplete.push("the file walk stopped at its file cap, so plan files may be missing");
+  for (const dir of surfaceLoss.dirs) {
+    const r = run.rel(dir);
+    if (r === "" || r === PLAN_DIR || PLAN_DIR.startsWith(`${r}/`) || r.startsWith(`${PLAN_DIR}/`)) {
+      incomplete.push(`directory ${r || "."} could not be listed, so plan files may be missing`);
     }
   }
-  return claims;
+  for (const f of planFiles) {
+    const text = run.textOf(f);
+    if (!text.available) incomplete.push(`${run.rel(f)} was not read (${text.reason})`);
+    else if (run.truncated.has(f)) incomplete.push(`${run.rel(f)} was read only in part (over the read cap)`);
+  }
+  if (incomplete.length > 0) {
+    throw new Error(`plan files were not fully read, so no ownership claim can be made: ${incomplete.join("; ")}`);
+  }
+
+  const claims = [];
+  const problems = [];
+  let repository = null;
+  for (const f of planFiles) {
+    const file = run.rel(f);
+    const { items, orphans } = parsePlanDocument(run.textOf(f).text, file);
+    const outside = (s, title) =>
+      problems.push({
+        kind: "plan-claim-outside-item",
+        file,
+        line: s.line,
+        title,
+        message: `${file}:${s.line} :: ${title === null ? "(before the first item)" : `(after item "${title}")`} :: ${s.key} is outside a \`###\` plan item (before the first item or after a \`#\`/\`##\` heading), so it was not read as a claim`,
+      });
+    for (const s of orphans) if (TRACKED_BY_KEYS.includes(s.key)) outside(s, null);
+    for (const item of items) {
+      const tracked = item.spans.filter((s) => TRACKED_BY_KEYS.includes(s.key));
+      if (item.title === "") {
+        // An item with no title cannot be named as an owner, so nothing under it is read as a claim.
+        for (const s of tracked) {
+          problems.push({
+            kind: "plan-claim-untitled-item",
+            file,
+            line: s.line,
+            title: item.title,
+            message: `${file}:${s.line} :: (untitled item) :: ${s.key} is under a ### heading with no title, so it was not read as a claim`,
+          });
+        }
+        continue;
+      }
+      const readable = [];
+      for (const s of tracked) {
+        if (!s.attributed) outside(s, item.title);
+        else if (s.kind !== "field") {
+          problems.push({
+            kind: "plan-tracked-by-malformed",
+            file,
+            line: s.line,
+            title: item.title,
+            message: `${file}:${s.line} :: ${item.title} :: ${s.key} written in a form the plan grammar does not accept (${s.kind}: ${s.label}), so it was not read as a claim`,
+          });
+        } else readable.push(s);
+      }
+      readable.forEach((s, i) => {
+        if (i > 0) {
+          problems.push({
+            kind: "plan-tracked-by-duplicate",
+            file,
+            line: s.line,
+            title: item.title,
+            message: `${file}:${s.line} :: ${item.title} :: a second Tracked by field; only the first is read as this item's claim`,
+          });
+          return;
+        }
+        const seen = new Set();
+        for (const link of extractIssueLinks(s.text)) {
+          repository ??= mappedRepository(root);
+          if (`${link.owner}/${link.repo}`.toLowerCase() !== repository) continue;
+          if (seen.has(link.issue)) continue;
+          seen.add(link.issue);
+          claims.push({ file, title: item.title, issue: link.issue });
+        }
+      });
+    }
+  }
+  return { claims, problems };
+}
+
+/** The claims alone (see `collectPlanOwnership` for the problems that were reported instead of claims). */
+export async function collectPlanClaims(root) {
+  return (await collectPlanOwnership(root)).claims;
 }
 
 /**
@@ -257,13 +326,14 @@ export function parseIssueSnapshot(data) {
  * `ok` means no violation. `releaseReady` is stricter and is the half of the pair that keeps
  * "legal" from becoming "shippable": it requires ok AND every open issue claimed once.
  */
-export function checkOwnership({ openIssues, claims, unscoped, malformed = [], containers = [] }) {
+export function checkOwnership({ openIssues, claims, unscoped, malformed = [], containers = [], planProblems = [] }) {
   const open = [...new Set(openIssues)].sort((a, b) => a - b);
   const declared = new Map();
   const containerSet = new Set(containers);
   const problems = [];
 
   for (const m of malformed) problems.push({ kind: "malformed-declaration", message: m });
+  for (const p of planProblems) problems.push(p);
   for (const d of unscoped) {
     if (declared.has(d.number)) {
       problems.push({ kind: "duplicate-declaration", issue: d.number, message: `#${d.number} is declared unscoped twice` });
@@ -328,7 +398,7 @@ function render(result, claimCount) {
   return out.join("\n");
 }
 
-function main(argv) {
+async function main(argv) {
   let root = process.cwd();
   let issuesFile = null;
   let json = false;
@@ -352,11 +422,13 @@ function main(argv) {
   }
   let result;
   let claims;
+  let owned;
   try {
     const openIssues = parseIssueSnapshot(JSON.parse(readFileSync(path.resolve(issuesFile), "utf8")));
-    claims = collectPlanClaims(root);
+    owned = await collectPlanOwnership(root);
+    claims = owned.claims;
     const { entries, malformed, containers } = readUnscoped(root);
-    result = checkOwnership({ openIssues, claims, unscoped: entries, malformed, containers });
+    result = checkOwnership({ openIssues, claims, unscoped: entries, malformed, containers, planProblems: owned.problems });
   } catch (e) {
     process.stderr.write(`NOT_EVALUATED: ${e.message}\n`);
     return EXIT_NOT_EVALUATED;
@@ -366,5 +438,5 @@ function main(argv) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exit(main(process.argv.slice(2)));
+  process.exit(await main(process.argv.slice(2)));
 }

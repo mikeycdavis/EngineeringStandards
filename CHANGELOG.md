@@ -18,6 +18,24 @@ All notable changes to this framework. Versioning follows
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+The ownership check (`npm run ownership`) now reads plan items through the one canonical plan-item parser and the
+one canonical audit file collector instead of its own copies (ST-20, #98; owner decisions Q1-A to Q5-A of
+2026-10-07). The grammar and every deliberate difference are recorded in
+[design/plan-item-grammar.md](design/plan-item-grammar.md). `scripts/standards.mjs` now exports
+`parsePlanDocument` / `parsePlanItems` and `collectSurface`; the parser's `fields` and `syntax` are unchanged, and
+`line`, `level`, `spans` and `orphans` are added. Ownership behaviour that changes, each as a reported problem or
+`NOT_EVALUATED` and never as silence: a `Tracked by` under a `#`/`##` heading or before the first `###` item, or under
+an untitled `###` heading, is not a claim (`plan-claim-outside-item`, `plan-claim-untitled-item`); a `####` heading no
+longer starts an item, so a claim under it takes the `###` item's title; only the first `Tracked by` / `TrackedBy` on an
+item is a claim and later ones are `plan-tracked-by-duplicate` (no `claimed-twice` from one item); a malformed
+`Tracked by` (en dash, hyphen, misplaced colon, colon-less, `*` bullet) is `plan-tracked-by-malformed` instead of
+`absent-from-plan` with no explanation; plan files come from the audit collector (`.md` anywhere under the plan
+directory, 400,000-byte per-file cap, read budget), and a plan that was unreadable, truncated or skipped ends
+`NOT_EVALUATED` (exit 2). Link extraction is linear in the value size (it took about 139 s on one 20,000-link value
+before), with the accepted syntax unchanged. Fenced code is still read as plan text (accepted behaviour). The
+programmatic `collectPlanClaims` is now `async`; the CLI, its exit codes and the `issues[]` JSON are unchanged and
+`problems[]` may carry the new kinds.
+
 `standards init` now refuses a `--mode` value outside the documented three (and an empty `--mode=`) with exit 2, instead of
 recording the typo as `CONFIRMED_BY_OWNER` (follow-up to Codex review of #80).
 
