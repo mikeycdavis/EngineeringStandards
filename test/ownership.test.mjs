@@ -146,7 +146,7 @@ test("a claim is the Tracked by field, not a mention in prose or another field",
       `### Mentions only\n\n- **Status:** NOT_STARTED\n- **Purpose:** see [#11](${URL(11)}) and #12\n\nSee ${URL(13)}.\n`,
   });
   try {
-    const claims = collectPlanClaims(root);
+    const claims = await collectPlanClaims(root);
     assert.deepEqual(claims.map((c) => c.issue), [10]);
     assert.equal(claims[0].title, "Owner");
   } finally {
@@ -159,7 +159,7 @@ test("a multi-line Tracked by field yields every issue it names, once per item",
     [`${PLAN}/04.md`]: item("Two", `GitHub issues\n  [#10](${URL(10)}) and\n  [#11](${URL(11)}) and again [#10](${URL(10)})`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort(), [10, 11]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue).sort(), [10, 11]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -170,7 +170,7 @@ test("a pull request reference in Tracked by is not an issue claim", async () =>
     [`${PLAN}/08.md`]: item("PR", "[PR #15](https://github.com/o/r/pull/15), **merged**"),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root), []);
+    assert.deepEqual(await collectPlanClaims(root), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -182,7 +182,7 @@ test("claims in two different files for one issue are both found", async () => {
     [`${PLAN}/08.md`]: item("B", `[#10](${URL(10)})`),
   });
   try {
-    const claims = collectPlanClaims(root);
+    const claims = await collectPlanClaims(root);
     assert.equal(claims.length, 2);
     const r = checkOwnership({ openIssues: [10], claims, unscoped: [] });
     assert.equal(r.issues[0].classification, CLASS.claimedTwice);
@@ -322,10 +322,10 @@ test("CLI: --json emits the machine-readable result", async () => {
   }
 });
 
-test("this repository's own mapping and plan parse cleanly", () => {
+test("this repository's own mapping and plan parse cleanly", async () => {
   const u = readUnscoped(ROOT);
   assert.deepEqual(u.malformed, []);
-  assert.ok(collectPlanClaims(ROOT).length > 10);
+  assert.ok((await collectPlanClaims(ROOT)).length > 10);
 });
 
 // --- hierarchy containers: owned by the mapping, not claimable by a plan item --------------------
@@ -407,7 +407,7 @@ test("the Tracked by value ends at the next field, a blank line or a heading", a
       `### Heading\n\n- **Tracked by:** [#12](${URL(12)})\n### Other\n[#22](${URL(22)})\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -419,7 +419,7 @@ test("a Tracked by line before any heading, and non-markdown files, are not clai
     [`${PLAN}/notes.txt`]: item("Text", `[#12](${URL(12)})`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [11]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [11]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -454,7 +454,7 @@ test("a qualified Tracked by field is a claim, the same as the plain one", async
     [`${PLAN}/a.md`]: withTracked("**Tracked by — external authority:**", `[#10](${URL(10)})`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -468,7 +468,7 @@ test("a label that only resembles Tracked by is not a claim", async () => {
       withTracked("**Tracked by - dash:**", `[#12](${URL(12)})`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root), []);
+    assert.deepEqual(await collectPlanClaims(root), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -482,8 +482,8 @@ test("a link to another repository with a matching issue number is not a claim",
       withTracked("**Tracked by:**", `[#12](${URL(12)})`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [12]);
-    const r = checkOwnership({ openIssues: [10], claims: collectPlanClaims(root), unscoped: [] });
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [12]);
+    const r = checkOwnership({ openIssues: [10], claims: await collectPlanClaims(root), unscoped: [] });
     assert.equal(r.issues[0].classification, CLASS.absent, "a foreign-repository link made #10 look owned");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -499,7 +499,7 @@ test("the repository match ignores case and a leading www, and is exact on owner
       withTracked("**Tracked by:**", "[#13](https://github.com/xo/r/issues/13)"),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10, 11]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -512,8 +512,8 @@ test("with no mapped repository, an issue link cannot be judged and the read fai
   });
   const bare = await scratch({ [MAP]: JSON.stringify({ items: {} }), [`${PLAN}/a.md`]: item("A", "none yet") });
   try {
-    assert.throws(() => collectPlanClaims(root), /target/);
-    assert.deepEqual(collectPlanClaims(bare), [], "no link, so nothing needed the repository");
+    await assert.rejects(() => collectPlanClaims(root), /target/);
+    assert.deepEqual(await collectPlanClaims(bare), [], "no link, so nothing needed the repository");
   } finally {
     for (const r of [root, bare]) await rm(r, { recursive: true, force: true });
   }
@@ -551,7 +551,7 @@ test("CLI: a plan item claiming a container exits 1 and names the class", async 
 test("the canonical TrackedBy spelling is a claim too", async () => {
   const root = await scratch({ [`${PLAN}/a.md`]: withTracked("**TrackedBy:**", `[#10](${URL(10)})`) });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -566,7 +566,7 @@ test("the Tracked by value ends at an indented next field, as at an unindented o
       `### Mixed\n\n- **Tracked by:** [#10](${URL(10)})\n  - **Evidence:** discussed [#21](${URL(21)})\n\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -580,7 +580,7 @@ test("an issue URL embedded inside a longer URL or word is not a claim", async (
       withTracked("**Tracked by:**", `see xhttps://github.com/o/r/issues/12`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root), []);
+    assert.deepEqual(await collectPlanClaims(root), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -597,7 +597,7 @@ test("issue URLs at a URL boundary still claim: bare, bracketed, parenthesised, 
       withTracked("**Tracked by:**", `[${URL(15)}]`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -613,7 +613,7 @@ test("a bold list item under Tracked by is a continuation, not a next field", as
       `### Tabbed, CRLF\r\n\r\n- **Tracked by:**\r\n\t- **[#13](${URL(13)})**\r\n\r\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11, 12, 13]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10, 11, 12, 13]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -628,7 +628,7 @@ test("the value still ends at a line the canonical grammar reads as a field, aft
       `### D\n\n- **Tracked by:**\n  - **[#14](${URL(14)})**\n- **Verification (CI/local):** [#24](${URL(24)})\n\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11, 12, 14]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10, 11, 12, 14]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -641,7 +641,7 @@ test("a malformed field attempt ends the value, and a bold link item with traili
       `### B\n\n- **Tracked by:** [#11](${URL(11)})\n* **Evidence:** discussed [#21](${URL(21)})\n\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [10, 11]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10, 11]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -658,7 +658,7 @@ test("an issue URL after emphasis, HTML quoting or closing, or a list separator 
   });
   try {
     assert.deepEqual(
-      collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y),
+      (await collectPlanClaims(root)).map((c) => c.issue).sort((x, y) => x - y),
       [10, 12, 13, 14, 15, 16],
     );
   } finally {
@@ -677,7 +677,7 @@ test("a URL embedded after path, query, word or colon characters is still not a 
       withTracked("**Tracked by:**", `dir/${URL(15)}`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root), []);
+    assert.deepEqual(await collectPlanClaims(root), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -698,7 +698,7 @@ test("a colon-less or wrapped malformed known field ends the value, as the canon
       `### H\n\n- **Tracked by:** [#18](${URL(18)})\n- **Status** [#26](${URL(26)})\n\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13, 14, 15, 16, 17, 18]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -715,7 +715,7 @@ test("a separator inside an already-started URL does not make the URL after it a
       withTracked("**Tracked by:**", `${URL(15)},${URL(16)}`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [15]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -731,7 +731,7 @@ test("a misplaced-colon field whose label has parentheses or a slash ends the va
       `### C\n\n- **Tracked by:**\n  - **[#12](${URL(12)})**: parent\n  - **${URL(13)}**: note\n\n`,
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue).sort((x, y) => x - y), [10, 11, 12, 13]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -748,7 +748,7 @@ test("an issue URL inside a non-hierarchical URL (data:, mailto:, urn:, javascri
       withTracked("**Tracked by:**", `free,${URL(15)}`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [15]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -770,7 +770,7 @@ test("an issue URL right after ( < [ inside a token that began with a scheme is 
       withTracked("**Tracked by:**", `[${URL(19)}](${URL(20)})`),
   });
   try {
-    assert.deepEqual(collectPlanClaims(root).map((c) => c.issue), [15, 16, 17, 18, 19, 20]);
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [15, 16, 17, 18, 19, 20]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
