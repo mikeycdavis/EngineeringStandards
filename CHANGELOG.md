@@ -19,10 +19,10 @@ All notable changes to this framework. Versioning follows
 catalog, the policy schema, or any published contract.** Every other entry in this section is repository
 tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
-### Added — path-scoped justifications (ADR 0016)
+### Added — path-scoped justifications (ADR 0017)
 
 The policy schema gains an optional `justifications` list: one rule knowingly unmet at one exact tracked
-file ([ADR 0016](artifacts/adr/0016-path-scoped-justification-is-not-an-exception.md)). It exists for
+file ([ADR 0017](artifacts/adr/0017-path-scoped-justification-is-not-an-exception.md)). It exists for
 frozen, digest-locked copies that carry an empty catch block, where a rule-wide `exceptions[]` entry would
 also waive `errors.no-swallowed-exceptions` for every other file. **This is an additive change to the policy
 schema** (an optional section; no existing policy changes meaning). `VERSION` is **not** bumped here: a bump

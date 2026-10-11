@@ -1,5 +1,5 @@
 /**
- * Path-scoped justifications ([ADR 0016](../artifacts/adr/0016-path-scoped-justification-is-not-an-exception.md)).
+ * Path-scoped justifications ([ADR 0017](../artifacts/adr/0017-path-scoped-justification-is-not-an-exception.md)).
  *
  * A justification records that ONE rule is knowingly unmet at ONE exact repository path, with who
  * approved it, why, what decision carries it, and what condition removes it. It is not an exception
@@ -17,7 +17,7 @@
  * what it subtracted. Every other rule still inspects every file.
  */
 
-import { lstatSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { repositoryAvailable, trackedMatching } from "./repository.mjs";
 
@@ -29,6 +29,8 @@ import { repositoryAvailable, trackedMatching } from "./repository.mjs";
  */
 export const JUSTIFIABLE_RULES = Object.freeze(["errors.no-swallowed-exceptions"]);
 
+const MAX_PATH_LENGTH = 1024;
+const MAX_SEGMENT_LENGTH = 255;
 const WILDCARD = /[*?[\]{}]/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const DRIVE = /^[A-Za-z]:/;
@@ -65,6 +67,26 @@ export function pathFormProblem(input) {
   if (input.includes("\\")) {
     return { code: "path-backslash", message: `path '${input}' contains a backslash; use forward slashes` };
   }
+  // A colon names an NTFS alternate data stream (`a.js::$DATA`) or a drive-relative path. Neither is a
+  // file in the repository, and the filesystem would resolve some of them to the file itself.
+  if (input.includes(":")) {
+    return { code: "path-colon", message: `path '${input}' contains ':' (alternate data stream or drive form); it must name a plain file` };
+  }
+  if (input.length > MAX_PATH_LENGTH || input.split("/").some((seg) => seg.length > MAX_SEGMENT_LENGTH)) {
+    return {
+      code: "path-too-long",
+      message: `path exceeds ${MAX_PATH_LENGTH} characters or a segment exceeds ${MAX_SEGMENT_LENGTH}; no tracked file needs that`,
+    };
+  }
+  // Compared by code point sequence, so one spelling of a name is one justification. A decomposed
+  // (NFD) name never equals the composed (NFC) one in git, and silently normalising would let a
+  // spelling that names no tracked file match one that does.
+  if (input !== input.normalize("NFC")) {
+    return {
+      code: "path-non-canonical",
+      message: `path ${JSON.stringify(input)} is not Unicode NFC; write ${JSON.stringify(input.normalize("NFC"))}`,
+    };
+  }
   const segments = input.split("/");
   if (segments.includes("..")) {
     return { code: "path-traversal", message: `path '${input}' contains a '..' segment` };
@@ -96,6 +118,42 @@ function isCalendarDate(value) {
   if (typeof value !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
   const d = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * Does `rel` exist under `root` spelled exactly this way, through no link?
+ *
+ * `lstat` alone is not an answer: on a case-insensitive filesystem `Examples/X.mjs` resolves to
+ * `examples/x.mjs`, and on NTFS a trailing dot or a short name resolves to the file as well. So each
+ * segment is looked up by the name the directory actually lists, and each prefix is checked for
+ * being a link (symlink or junction), through which the same bytes could be reached by a path no
+ * tracked file has. Returns `null` when the spelling is exact and link-free, else `{ code, message }`.
+ */
+function exactEntryProblem(root, rel) {
+  const segments = rel.split("/");
+  let dir = root;
+  for (let i = 0; i < segments.length; i += 1) {
+    let names;
+    try {
+      names = readdirSync(dir);
+    } catch (error) {
+      return { code: "path-nonexistent", message: `path '${rel}' cannot be listed (${error.code ?? "unreadable"})` };
+    }
+    if (!names.includes(segments[i])) {
+      return {
+        code: "path-not-exact",
+        message: `path '${rel}' does not match a directory entry exactly (case, trailing dot or alias spelling): '${segments[i]}'`,
+      };
+    }
+    dir = path.join(dir, segments[i]);
+    if (i < segments.length - 1 && lstatSync(dir).isSymbolicLink()) {
+      return {
+        code: "path-symlink-in-path",
+        message: `path '${rel}' passes through a symlink or junction at '${segments.slice(0, i + 1).join("/")}'`,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -191,6 +249,9 @@ export function justificationProblems(entries, { catalog, root, tracked }) {
         add("path", "path-directory", `path '${p}' resolves to a directory; a justification names a file`);
       } else if (!stat.isFile()) {
         add("path", "path-not-regular-file", `path '${p}' is not a regular file`);
+      } else if (exactEntryProblem(root, p)) {
+        const problem = exactEntryProblem(root, p);
+        add("path", problem.code, problem.message);
       } else if (!tracked.has(p)) {
         add(
           "path",

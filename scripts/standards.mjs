@@ -3871,7 +3871,7 @@ export async function main(args) {
   }
 
   /**
-   * Path-scoped justifications (ADR 0016).
+   * Path-scoped justifications (ADR 0017).
    *
    * Validated here, after the version guard and before any finding is read by the verdict, because a
    * justification that is malformed must fail the CONFIGURATION (exit 2, no verdict), never be

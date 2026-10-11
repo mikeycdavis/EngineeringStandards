@@ -1,4 +1,4 @@
-# 0016 — A path-scoped justification is not an exception
+# 0017 — A path-scoped justification is not an exception
 
 - **Status:** Accepted
 - **Date:** 2026-10-11
@@ -70,6 +70,27 @@ justifications:
    entries produce byte-identical reports.
 9. **`audit` is unchanged.** It is policy-independent evidence (ADR 0004) and reports the raw
    finding. Justifications are a `validate` concern.
+
+### Limits, stated rather than discovered
+
+- **A justification is whole-file.** It is bound to a path, not to a catch site and not to a content
+  digest. If the justified file later gains a second empty catch, it stays suppressed until the
+  justification is removed. A test pins this (`known limit: a justification is whole-file...`).
+- **Stated use: digest-locked copied fixtures**, meaning files whose bytes are frozen elsewhere, so the
+  contents the justification was written against cannot drift unnoticed. It is not a general way to
+  waive a rule for code that is still being edited; use a comment at the catch site (Standard 48 R1)
+  or fix the code.
+- **No digest binding is added in this change.** Binding each entry to a blob digest (as attestations
+  do, ADR 0011) would make a changed file un-justify itself, which is the right property. It was left
+  out to keep this change narrow and fully testable; it is the recommended follow-up if the mechanism
+  is used on files that are not frozen.
+- **Exact spelling.** A path must match the directory entry byte for byte (case, no trailing dot), be
+  Unicode NFC, contain no `:`, exceed no 1024-character path or 255-character segment, and pass
+  through no symlink or junction. These are checked on the filesystem as well as against the git
+  index, so the standalone `policy` command cannot report a green the engine run rejects.
+- **Evidence loss still withdraws the rule.** If a file in scope was truncated, unreadable, or
+  excluded by the framework, the rule is `not-evaluated` once its violations are all justified;
+  subtraction never turns an unsearched surface into a pass.
 
 ## Consequences
 

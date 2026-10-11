@@ -1,5 +1,5 @@
 /**
- * Path-scoped justifications ([ADR 0016](../artifacts/adr/0016-path-scoped-justification-is-not-an-exception.md)).
+ * Path-scoped justifications ([ADR 0017](../artifacts/adr/0017-path-scoped-justification-is-not-an-exception.md)).
  *
  * The motivating shape: four tracked files under `examples/` are frozen, digest-locked copies, each
  * carrying an empty catch block. A rule-wide exception would also waive the rule for every other
@@ -20,7 +20,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,7 +50,7 @@ const entry = (p, over = {}) => ({
   reason: "Frozen evaluated copy; its bytes are digest-locked.",
   approvedBy: "project-owner",
   approvedAt: "2026-10-11",
-  reference: "ADR-0016 / owner decision",
+  reference: "ADR-0017 / owner decision",
   removeWhen: "The frozen copy is regenerated or deleted.",
   ...over,
 });
@@ -471,4 +471,117 @@ test("pathFormProblem: an exact canonical file path is the only accepted form", 
 test("only errors.no-swallowed-exceptions is admitted today", () => {
   assert.deepEqual([...JUSTIFIABLE_RULES], [RULE]);
   assert.throws(() => JUSTIFIABLE_RULES.push("security.no-cert-bypass"), TypeError, "the allowlist must be frozen");
+});
+
+// --- Spellings that reach the same bytes by another name ---------------------------------------
+//
+// The standalone `policy` command has no git index to be exact for it, so its filesystem basis must
+// itself be exact. Otherwise it reports a false green that the engine run then rejects.
+
+async function policyCodes(entries, files, { useGit }) {
+  const dir = await build({ files, entries, useGit });
+  try {
+    const r = await checkPolicy(path.join(dir, "project-policy.yml"), SCHEMA, TODAY, { root: dir });
+    return { status: r.status, codes: (r.justifications?.problems ?? []).map((p) => p.code), r, dir };
+  } finally {
+    await cleanup(dir);
+  }
+}
+
+const ONE = { "examples/alpha/one.mjs": EMPTY_CATCH };
+
+test("a case variant is rejected on both the git and the filesystem basis", async () => {
+  for (const useGit of [true, false]) {
+    const { status, codes } = await policyCodes([entry("Examples/Alpha/ONE.mjs")], ONE, { useGit });
+    assert.equal(status, "invalid", `case variant accepted (useGit=${useGit})`);
+    assert.ok(
+      codes.some((c) => ["path-not-exact", "path-nonexistent", "path-untracked"].includes(c)),
+      JSON.stringify(codes),
+    );
+  }
+});
+
+test("a trailing dot is rejected (NTFS would otherwise resolve it to the file)", async () => {
+  for (const useGit of [true, false]) {
+    const { status } = await policyCodes([entry("examples/alpha/one.mjs.")], ONE, { useGit });
+    assert.equal(status, "invalid", `trailing dot accepted (useGit=${useGit})`);
+  }
+});
+
+test("an NTFS alternate data stream is rejected as a colon form", async () => {
+  for (const p of ["examples/alpha/one.mjs::$DATA", "examples/alpha/one.mjs:stream"]) {
+    const { status, codes } = await policyCodes([entry(p)], ONE, { useGit: false });
+    assert.equal(status, "invalid");
+    assert.deepEqual(codes, ["path-colon"]);
+  }
+});
+
+test("a decomposed (NFD) spelling is rejected even when the composed (NFC) file exists", async () => {
+  const nfc = "examples/café.mjs";
+  const nfd = "examples/café.mjs";
+  const accepted = await policyCodes([entry(nfc)], { [nfc]: EMPTY_CATCH }, { useGit: false });
+  assert.equal(accepted.status, "ok", "the NFC spelling of an existing file must still be accepted");
+  const rejected = await policyCodes([entry(nfd)], { [nfc]: EMPTY_CATCH }, { useGit: false });
+  assert.equal(rejected.status, "invalid");
+  assert.ok(rejected.codes.includes("path-non-canonical"), JSON.stringify(rejected.codes));
+});
+
+test("an over-long path is rejected before it reaches the filesystem", async () => {
+  const long = `${"d/".repeat(600)}x.mjs`;
+  const { status, codes } = await policyCodes([entry(long)], ONE, { useGit: false });
+  assert.equal(status, "invalid");
+  assert.deepEqual(codes, ["path-too-long"]);
+  const wide = `examples/${"n".repeat(300)}.mjs`;
+  assert.deepEqual((await policyCodes([entry(wide)], ONE, { useGit: false })).codes, ["path-too-long"]);
+});
+
+test("a path through a symlink or junction is rejected (skipped where one cannot be created)", async (t) => {
+  const dir = await build({ files: ONE, entries: [entry("examples/link/one.mjs")], useGit: false });
+  try {
+    try {
+      await symlink(path.join(dir, "examples/alpha"), path.join(dir, "examples/link"), "junction");
+    } catch (error) {
+      t.skip(`cannot create a directory link here: ${error.code}`);
+      return;
+    }
+    const r = await checkPolicy(path.join(dir, "project-policy.yml"), SCHEMA, TODAY, { root: dir });
+    assert.equal(r.status, "invalid");
+    assert.ok(
+      r.justifications.problems.some((p) => p.code === "path-symlink-in-path"),
+      JSON.stringify(r.justifications.problems),
+    );
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+// --- Evidence loss and the whole-file limit ----------------------------------------------------
+
+test("truncation: justified files plus an unsearched tail give not-evaluated, never passed", async () => {
+  // A clean file beyond the per-file read cap was only searched in part, so "nothing found" over it
+  // is a statement about the run. Before the justification the rule failed (a violation was
+  // confirmed); once every violating path is justified nothing confirms it, and the honest answer is
+  // not-evaluated.
+  const big = "export const x = 1;\n".repeat(25_000); // ~475 KB, over the 400,000-byte cap
+  const files = { ...fourFiles(), "src/big.mjs": big };
+  await withRepo({ files, entries: FOUR.map((p) => entry(p)) }, (dir) => {
+    const { json } = validate(dir);
+    const r = result(json, RULE);
+    assert.notEqual(r.status, "passed", "a rule over an unsearched tail must not pass");
+    assert.equal(r.status, "skipped");
+    assert.equal(r.disposition, "not-evaluated");
+    assert.equal(json.justifications.applied.length, 4, "the justifications themselves are still reported");
+  });
+});
+
+test("known limit: a justification is whole-file, so a second empty catch in the same file stays suppressed", async () => {
+  // Documented in ADR 0017. It is bound to a path, not to a digest or a site, which is why its stated
+  // use is digest-locked copies whose bytes cannot change. This test pins the limit so widening or
+  // narrowing it is a deliberate change rather than a surprise.
+  const twice = `${EMPTY_CATCH}export function h() {\n  try {\n    g();\n  } catch (error) {}\n}\n`;
+  await withRepo({ files: { "examples/alpha/one.mjs": twice }, entries: [entry("examples/alpha/one.mjs")] }, (dir) => {
+    const { json } = validate(dir);
+    assert.equal(result(json, RULE).status, "passed");
+    assert.equal(json.justifications.applied.length, 1);
+  });
 });

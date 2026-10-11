@@ -36,7 +36,7 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  * @param justified path-scoped justifications the caller already subtracted from `findings` (ADR
- *                  0016), each `{ rule, path, reason, reference, approvedBy, approvedAt, removeWhen }`.
+ *                  0017), each `{ rule, path, reason, reference, approvedBy, approvedAt, removeWhen }`.
  *                  The engine does not subtract; it makes the subtraction VISIBLE on the rule's
  *                  result, so a rule that passes because paths were justified can never read as one
  *                  that simply had nothing to find.

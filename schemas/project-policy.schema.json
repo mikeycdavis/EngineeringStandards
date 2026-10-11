@@ -41,7 +41,7 @@
     },
 
     "justifications": {
-      "description": "Path-scoped justifications (ADR 0016, added after 2.0.0): one rule knowingly unmet at one exact repository path. NOT an exception — an exception waives a rule project-wide, a justification suppresses exactly one rule at exactly one tracked file and nothing else. Only rules the engine explicitly admits may be justified; today that is errors.no-swallowed-exceptions alone. Paths are exact, canonical, repository-relative and forward-slash: no wildcards, directories, absolute paths, traversal, backslashes or non-canonical forms, and the file must be tracked. Every other rule still inspects the file, and a justification whose path no longer violates the rule is reported as stale.",
+      "description": "Path-scoped justifications (ADR 0017, added after 2.0.0): one rule knowingly unmet at one exact repository path. NOT an exception — an exception waives a rule project-wide, a justification suppresses exactly one rule at exactly one tracked file and nothing else. Only rules the engine explicitly admits may be justified; today that is errors.no-swallowed-exceptions alone. Paths are exact, canonical, repository-relative and forward-slash: no wildcards, directories, absolute paths, traversal, backslashes or non-canonical forms, and the file must be tracked. Every other rule still inspects the file, and a justification whose path no longer violates the rule is reported as stale.",
       "type": "array",
       "items": { "$ref": "#/$defs/justification" }
     },

@@ -231,7 +231,7 @@ different claim and it is permitted.
 
 **A justification is narrower than an exception.** When one frozen file departs from one rule and an
 exception would waive that rule for the whole project, record a path-scoped justification instead
-([ADR 0016](artifacts/adr/0016-path-scoped-justification-is-not-an-exception.md)):
+([ADR 0017](artifacts/adr/0017-path-scoped-justification-is-not-an-exception.md)):
 
 ```yaml
 justifications:
