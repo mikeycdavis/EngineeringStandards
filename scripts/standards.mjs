@@ -305,7 +305,7 @@ function renderVerdict(report, policy, justifications = null) {
     out.push("");
   }
   if (justifications?.unverified?.length) {
-    out.push("  Unverified justifications (the path could not be read this run):");
+    out.push("  Unverified justifications (the path was not read in full this run):");
     for (const j of justifications.unverified) out.push(`    ${j.rule} @ ${j.path}`);
     out.push("");
   }
@@ -3171,7 +3171,12 @@ function detectSwallowedExceptions(files, run) {
     const structure = view.text;
     const raw = source.text;
     if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
-    examined.push(rel(f));
+    // A file read only up to the cap was searched in part: a violation in its prefix is real, but "no
+    // violation" over it says nothing about the tail. It is therefore not "examined" for the purpose
+    // of calling a justification stale; it is unverified, and the rule itself is withdrawn by the
+    // truncation term in the verdict.
+    if (run.truncated.has(f)) unreadable.push(rel(f));
+    else examined.push(rel(f));
 
     // Constructed here, so their `lastIndex` cannot outlive this file's turn through the loop.
     const catchOpen = new RegExp(CATCH_OPEN_SOURCE, "g");

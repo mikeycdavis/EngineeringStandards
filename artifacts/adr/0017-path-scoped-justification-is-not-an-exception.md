@@ -88,6 +88,15 @@ justifications:
   Unicode NFC, contain no `:`, exceed no 1024-character path or 255-character segment, and pass
   through no symlink or junction. These are checked on the filesystem as well as against the git
   index, so the standalone `policy` command cannot report a green the engine run rejects.
+- **Standalone `policy` cannot establish tracked-ness outside a git work tree.** There it does not
+  know the audited file set, so it can accept a regular file under the root (for example under
+  `node_modules/`, `vendor/` or `dist/`) that `validate` rejects as `path-untracked`. It says so in
+  its output (`NOTE justifications: tracked-ness was not established`) and in `--json`
+  (`trackedBasis`, `trackedNote`); only `standards validate` is authoritative there. Inside a git
+  work tree both use `git ls-files` and agree.
+- **A truncated file is unverified, not stale.** A file read only up to the per-file cap may still hold
+  a violation past the prefix, so a justification for it that matched nothing in the prefix is
+  reported as unverified and raises no removal warning.
 - **Evidence loss still withdraws the rule.** If a file in scope was truncated, unreadable, or
   excluded by the framework, the rule is `not-evaluated` once its violations are all justified;
   subtraction never turns an unsearched surface into a pass.

@@ -264,6 +264,12 @@ async function main() {
     for (const error of result.errors) {
       process.stdout.write(`  ${error.path || "(document)"}: ${error.message}\n`);
     }
+    if (result.justifications && result.justifications.trackedBasis !== "git-index") {
+      process.stdout.write(
+        `  NOTE justifications: tracked-ness was not established (basis: ${result.justifications.trackedBasis}). ` +
+          `${result.justifications.trackedNote}\n\n`,
+      );
+    }
     for (const finding of result.findings) {
       process.stdout.write(`  ${finding.severity.toUpperCase()} ${finding.id}: ${finding.message}\n`);
       process.stdout.write(`        ${finding.remediation}\n`);

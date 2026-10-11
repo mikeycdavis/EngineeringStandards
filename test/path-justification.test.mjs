@@ -585,3 +585,126 @@ test("known limit: a justification is whole-file, so a second empty catch in the
     assert.equal(json.justifications.applied.length, 1);
   });
 });
+
+// --- Partial reads, the evidence cap, and mixed outcomes ---------------------------------------
+
+test("a justified file read only to the cap is unverified, not stale, and the rule is not-evaluated", async () => {
+  // The catch sits after the 400,000-byte prefix, so the run never saw it. "No violation in the
+  // prefix" must not be read as "the justification is unneeded": telling the owner to remove it would
+  // be advice built on evidence nobody has.
+  const prefix = "export const x = 1;\n".repeat(21_000); // 420,000 bytes
+  const files = { "examples/tail.mjs": prefix + EMPTY_CATCH };
+  await withRepo({ files, entries: [entry("examples/tail.mjs")] }, (dir) => {
+    const { json } = validate(dir);
+    assert.deepEqual(json.justifications.unverified.map((u) => u.path), ["examples/tail.mjs"]);
+    assert.deepEqual(json.justifications.stale, []);
+    assert.ok(!json.findings.some((f) => f.id === "stale-justification"), "a removal warning was emitted");
+    const r = result(json, RULE);
+    assert.equal(r.status, "skipped");
+    assert.equal(r.disposition, "not-evaluated");
+  });
+});
+
+test("more violators than the evidence cap: a justified one beyond the cap is still subtracted", async () => {
+  const names = Array.from({ length: 15 }, (_, i) => `examples/v${String(i).padStart(2, "0")}.mjs`);
+  const files = Object.fromEntries(names.map((p) => [p, EMPTY_CATCH]));
+
+  // Sorted evidence lists v00..v11 under the cap of 12; v14 is past it and so is not in `evidence`.
+  await withRepo({ files, entries: [entry(names[14])] }, (dir) => {
+    const { json } = validate(dir);
+    const r = result(json, RULE);
+    assert.equal(r.status, "failed");
+    assert.match(r.message, /^14 file\(s\)/, r.message);
+    assert.equal(json.justifications.applied.length, 1);
+    assert.ok(!r.evidence.includes(names[14]));
+    assert.equal(r.justified.length, 1);
+  });
+
+  // Two justified, both past the cap: the count is exact, and the rule still fails on the other 13.
+  await withRepo({ files, entries: [entry(names[13]), entry(names[14])] }, (dir) => {
+    const r = result(validate(dir).json, RULE);
+    assert.equal(r.status, "failed");
+    assert.match(r.message, /^13 file\(s\)/, r.message);
+    assert.equal(r.justified.length, 2);
+  });
+
+  // All fifteen justified: passes, and all fifteen are reported.
+  await withRepo({ files, entries: names.map((p) => entry(p)) }, (dir) => {
+    const { json } = validate(dir);
+    assert.equal(result(json, RULE).status, "passed");
+    assert.equal(json.justifications.applied.length, 15);
+  });
+});
+
+test("justified violators, one unjustified violator and an unread justified file stay failed", async () => {
+  // Total read budget sized to hold exactly the first three files, so the fourth is collected and
+  // never opened. The confirmed violation must survive the loss, and the unread justified file must
+  // be reported as unverified rather than applied or stale.
+  const size = Buffer.byteLength(EMPTY_CATCH);
+  const files = {
+    "a1.mjs": EMPTY_CATCH,
+    "a2.mjs": EMPTY_CATCH,
+    "b-unjustified.mjs": EMPTY_CATCH,
+    "c-unread.mjs": EMPTY_CATCH,
+  };
+  const entries = [entry("a1.mjs"), entry("a2.mjs"), entry("c-unread.mjs")];
+  await withRepo({ files, entries }, (dir) => {
+    const r0 = spawnSync(
+      process.execPath,
+      [CLI, "validate", dir, "--json", `--max-total-read-bytes=${size * 3 + 4}`],
+      { encoding: "utf8", windowsHide: true },
+    );
+    const json = JSON.parse(r0.stdout);
+    const r = result(json, RULE);
+    assert.equal(r.status, "failed", JSON.stringify(r));
+    assert.deepEqual(r.evidence, ["b-unjustified.mjs"]);
+    assert.deepEqual(json.justifications.applied.map((j) => j.path), ["a1.mjs", "a2.mjs"]);
+    assert.deepEqual(json.justifications.unverified.map((j) => j.path), ["c-unread.mjs"]);
+    assert.deepEqual(json.justifications.stale, []);
+  });
+});
+
+test("stale reasons differ: an examined clean file versus a file the rule does not read", async () => {
+  const files = { "src/clean.mjs": CLEAN, "src/data.json": "{}\n", "src/v.mjs": EMPTY_CATCH };
+  const entries = [entry("src/clean.mjs"), entry("src/data.json"), entry("src/v.mjs")];
+  await withRepo({ files, entries }, (dir) => {
+    const { json } = validate(dir);
+    const byPath = Object.fromEntries(json.justifications.stale.map((s) => [s.path, s.why]));
+    assert.match(byPath["src/clean.mjs"], /no violation of this rule was observed/);
+    assert.match(byPath["src/data.json"], /did not examine the path/);
+    assert.equal(Object.keys(byPath).length, 2, "the genuinely violating file must not be stale");
+    assert.equal(json.findings.filter((f) => f.id === "stale-justification").length, 2);
+  });
+});
+
+// --- The standalone command is not authoritative outside git ----------------------------------
+
+test("standalone policy says tracked-ness is not established outside a git work tree", async () => {
+  await withRepo({ files: ONE, entries: [entry("examples/alpha/one.mjs")], useGit: false }, async (dir) => {
+    const r = await checkPolicy(path.join(dir, "project-policy.yml"), SCHEMA, TODAY, { root: dir });
+    assert.equal(r.status, "ok");
+    assert.equal(r.justifications.trackedBasis, "filesystem");
+    assert.match(r.justifications.trackedNote, /NOT established/);
+    assert.match(r.justifications.trackedNote, /only 'standards validate' is authoritative/);
+
+    const cli = spawnSync(
+      process.execPath,
+      [path.join(ROOT, "scripts/policy.mjs"), path.join(dir, "project-policy.yml"), "--root", dir],
+      { encoding: "utf8", windowsHide: true },
+    );
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.match(cli.stdout, /NOTE justifications: tracked-ness was not established/);
+  });
+});
+
+test("standalone policy inside a git work tree carries no such caveat", async () => {
+  await withRepo({ files: ONE, entries: [entry("examples/alpha/one.mjs")] }, (dir) => {
+    const cli = spawnSync(
+      process.execPath,
+      [path.join(ROOT, "scripts/policy.mjs"), path.join(dir, "project-policy.yml"), "--root", dir],
+      { encoding: "utf8", windowsHide: true },
+    );
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.doesNotMatch(cli.stdout, /tracked-ness was not established/);
+  });
+});

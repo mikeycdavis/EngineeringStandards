@@ -187,7 +187,9 @@ export function trackedProvider(root, discovered = null) {
   }
   return {
     basis: "filesystem",
-    note: `${reason}; a path is accepted when it is a regular file under the root`,
+      note:
+        `${reason}; tracked-ness is NOT established by this command and only 'standards validate' is authoritative ` +
+        `(it knows the audited file set); a path is accepted here when it is a regular file under the root`,
     has: () => true, // existence and file-ness are established by lstat in `justificationProblems`
   };
 }
@@ -329,7 +331,7 @@ export function applyJustifications(entries, observations) {
         applied.push(entry);
         justifiedPaths.add(entry.path);
       } else if (unreadable.has(entry.path)) {
-        unverified.push({ ...entry, why: "the path could not be read this run, so the justification was neither used nor shown to be unneeded" });
+        unverified.push({ ...entry, why: "the path was not read in full this run (unreadable or truncated), so the justification was neither used nor shown to be unneeded" });
       } else if (examined.has(entry.path)) {
         stale.push({ ...entry, why: "no violation of this rule was observed at this path; the justification is no longer needed" });
       } else {
