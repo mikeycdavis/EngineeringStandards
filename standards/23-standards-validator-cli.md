@@ -83,6 +83,11 @@ build on advisory findings gets disabled, and then nothing is checked at all.
 | Unknown subcommand, bad flag, missing target | `2` |
 | Unhandled internal error | `2` |
 
+`--strict` promotes only what the command it is given reports. `standards audit --strict` exits `1`
+on any finding that is not `info`, including audit-only findings that carry no rule and have no
+compliance effect, such as a committed conflict-marker group; `standards validate` never reads
+those findings, so they cannot change its status, score or exit code with or without `--strict`.
+
 ### R4 — JSON output is a versioned contract
 
 `--format json` (or an equivalent flag) MUST emit a document carrying **its own schema version**, and

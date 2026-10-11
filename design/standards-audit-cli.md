@@ -148,6 +148,7 @@ something absent, unproven, or contradictory.
 | `missing-planning-artifacts` | Missing planning artifacts | Absence of `artifacts/project-plan-breakdown/`, or a breakdown with no `00-overview.md` | `warning` |
 | `no-test-surface` | Verification surface | No test files found; audit-only, no rule binding | `info` |
 | `no-ci-configuration` | Verification surface | No CI configuration found; audit-only, no rule binding | `info` |
+| `committed-conflict-markers` | Unresolved merge conflicts | A conflict-marker group (opener, separator and terminator, each at column 0 and exactly seven characters) in a tracked file the audit reads, outside Markdown fenced blocks; audit-only, no rule binding, `INFERRED` | `warning` |
 | `unverified-functionality` | Unverified functionality | Capabilities with no corresponding test coverage | `warning` |
 | `potential-dead-code` | Potential dead code | Unreferenced modules, unreachable routes, exports with no importer | `info` |
 | `potential-unfinished-features` | Potential unfinished features | `TODO`/`FIXME`/`HACK`/`XXX` markers, stubs, `NotImplemented` paths, skipped tests, disabled feature flags | `warning` |
@@ -155,6 +156,28 @@ something absent, unproven, or contradictory.
 | `doc-code-discrepancies` | Documentation/code discrepancies | README or ADR claims contradicted by the implementation | `error` |
 | `open-reconstruction-questions` | Open reconstruction questions | Unanswered entries in `artifacts/project-baseline/open-questions.md` | `warning` |
 | `standards-violations` | Standards violations | Any requirement `RN` of any standard that the repository fails | `error` |
+
+### Committed conflict markers are audit-only evidence, and they fail `--strict`
+
+Owner decision, issue [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58): committed
+conflict-marker detection is **permanently audit-only**. The finding carries `rule: null`, so it is
+unbound to any catalog rule and has no compliance effect: `validate` never reads it, and its
+status, score, per-rule results and exit code are the same with or without the marker. Standard 46
+was measured and rejected as its home, and the live working-tree conflict preflight is a separate
+proposition that lives outside the catalog.
+
+Its severity is `warning`, and that is part of the contract rather than an accident. `audit --strict`
+exits 1 on any finding that is not `info`, so a repository with a committed marker group fails a
+strict audit while a default audit exits 0. The only thing `--strict` promotes here is the
+observation; nothing is added to a verdict.
+
+**Limitation, retained and disclosed in the finding's own message.** A well-formed group is
+lexically identical to documentation of one, so Markdown fenced blocks are excluded. A genuine
+group inside a fence is therefore **not reported**, and neither is one in a file type the audit
+does not read. A clean result is not proof that none exists. The unfenced specimen is reported, the
+canonical fenced documentation is not, and the genuine group inside a fence is a known miss;
+`test/conflict-markers.test.mjs` asserts all three outcomes, and also pins the severity, the absent
+rule, the strict exit codes and the unchanged `validate` verdict.
 
 ## Required: the use/mention rule
 
