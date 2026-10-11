@@ -18,6 +18,12 @@ All notable changes to this framework. Versioning follows
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+Correction to the entries below, after Codex review of #102 (#104): a backslash before ASCII punctuation makes that
+character literal, so an escaped `[` opens no label and an escaped `]` closes none, and the `](` shortcut applies only
+when that `]` closes a `[` that is itself unescaped (`data:\[x](<issue url>)` and `data:[x\](<issue url>)` are no
+longer claims). A backslash before whitespace is not an escape, `\\` is an escaped backslash that leaves a following
+bracket real, and link extraction stays linear.
+
 Correction to the entry below, after Codex review of #101 and #99: an empty `##` or `#` heading now ends ownership
 attribution like any other; a plan directory the audit walk skipped on the framework's say-so (`fixtures`, `vendor`,
 `build`, a vendored tree) under the plan tree makes the ownership check `NOT_EVALUATED` instead of silently dropping
