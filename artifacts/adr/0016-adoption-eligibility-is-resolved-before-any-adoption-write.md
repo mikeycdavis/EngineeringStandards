@@ -99,7 +99,7 @@ is implemented until chosen:
 
 #### What `IN_SCOPE` does and does not say
 
-`IN_SCOPE` means: every listed source was readable and none of the listed signals fired. It is not a
+`IN_SCOPE` means: every file matching a listed source name was readable and none of the listed signals fired. It is not a
 claim that the repository is archived-free, and it cannot be, because the vocabulary is closed. A
 repository that is frozen only by an announcement in a wiki, an issue, or a differently worded file
 is `IN_SCOPE` to this tool. That is a stated limit of D1, and it is why D5 puts the same question to
@@ -161,7 +161,11 @@ it was.
 standards eligibility [<dir>] [--format json] [--override-signal=<id>]...
 ```
 
-It reads at most the two sources in the vocabulary, performs no write of any kind, runs no process
+It reads only root entries whose case-folded name is one of the two source names in the vocabulary
+(`FROZEN.md`, `README.md`), and reads **every** such entry: the count of two names is not a bound on
+the count of files read. Each file is subject to the per-file read cap (over it is `INDETERMINATE`),
+and no other ceiling on the number of matching entries is introduced; an incomplete root listing is
+`INDETERMINATE`, never a silent stop after some entries. It performs no write of any kind, runs no process
 and makes no network call. It does not run the audit scan, load a policy, or require one: eligibility
 must be answerable in a repository that has adopted nothing.
 
