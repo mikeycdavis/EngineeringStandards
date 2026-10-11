@@ -80,6 +80,8 @@ const MAPPING = "artifacts/backlog/github-mapping.json";
 const PLAN_FILE = /^artifacts\/project-plan-breakdown\/.+\.md$/;
 
 const SCHEME_CHAR = /[A-Za-z0-9+.-]/;
+/** The characters a Markdown backslash escapes (CommonMark: any ASCII punctuation). */
+const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
 const ISSUE_LINK = /https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/issues\/(\d+)\b/gi;
 
 /**
@@ -92,6 +94,9 @@ const ISSUE_LINK = /https?:\/\/(?:www\.)?github\.com\/([^/\s)]+)\/([^/\s)]+)\/is
  * characters, and reading the inner link as a claim could pass a check falsely. A token is a run without
  * whitespace, so `go("<url>")` after `javascript:` is inside it too. Two bare URLs joined by a separator
  * with no space are one token, so only the first is read.
+ *
+ * A backslash before ASCII punctuation makes that character literal (#102): an escaped `[` opens no label
+ * and an escaped `]` closes none, so `\[x]` and `[x\]` before a `(` are not a label for the `](` shortcut.
  *
  * LINEAR TIME (ST-20, Q5). Whether the token holds a scheme depends only on the characters before the
  * match, so one forward pass keeps it (`tokenScheme`: a `:` was seen in this token right after a run of
@@ -112,7 +117,14 @@ export function extractIssueLinks(value, stats = null) {
     for (; pos < m.index; pos++) {
       if (stats) stats.steps++;
       const c = value[pos];
-      if (/\s/.test(c)) {
+      if (c === "\\" && pos + 1 < m.index && ASCII_PUNCT.test(value[pos + 1])) {
+        // A backslash escape: the punctuation after it is literal text, so an escaped `[` opens no label and an
+        // escaped `]` closes none (`\\[` is an escaped backslash and a real bracket). The pair is passed in one move and
+        // cannot reach the link itself (`pos + 1 < m.index`), so the work stays one step per character.
+        if (stats) stats.steps++;
+        pos++;
+        runHasLetter = false;
+      } else if (/\s/.test(c)) {
         tokenScheme = false;
         runHasLetter = false;
       } else if (c === ":") {

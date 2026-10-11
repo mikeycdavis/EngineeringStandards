@@ -39,6 +39,17 @@ test("work scales linearly: one pass at every size, whatever the value's length"
   }
 });
 
+test("backslash escapes are still one step per character: an escaped pair is two steps, never more", () => {
+  const B = "\\";
+  for (const n of [1000, 4000]) {
+    const value = Array.from({ length: n }, (_, i) => `${B}[${B}]${B}${B}x*${BASE}${i + 1}`).join("");
+    const stats = { steps: 0, links: 0 };
+    extractIssueLinks(value, stats);
+    assert.equal(stats.links, n);
+    assert.equal(stats.steps, value.lastIndexOf("https://"), `n=${n}`);
+  }
+});
+
 test("other adversarial shapes stay within one step per character", () => {
   const shapes = {
     "unspaced comma run": Array.from({ length: 5000 }, (_, i) => `,${BASE}${i + 1}`).join(""),
@@ -85,6 +96,8 @@ function referenceExtract(value) {
   return out;
 }
 function closesLabel(value, at) {
+  // A backslash before ASCII punctuation makes that character literal (#102 P2): blank the pair, keeping indexes.
+  value = value.replace(/\\[!-/:-@[-`{-~]/g, "  ");
   let depth = 0;
   for (let k = 0; k <= at; k++) {
     if (value[k] === "[") depth++;
@@ -99,7 +112,7 @@ function closesLabel(value, at) {
 test("equivalence: the linear extractor reads exactly what the reference (backward-scanning, label-verified) reader reads", () => {
   const pieces = [
     `${BASE}1`, `${BASE}22`, "https://github.com/x/y/issues/3", "http://www.github.com/o/r/issues/4", " ", "\t", "\n",
-    "(", ")", "[", "]", "<", ">", "*", '"', "'", ",", ";", ":", "a", "Z", "1", ".", "+", "-", "x:", "mailto:", "data:", "](", "/", "~", "`", "\u00a0", "\u200b",
+    "(", ")", "[", "]", "<", ">", "*", '"', "'", ",", ";", ":", "a", "Z", "1", ".", "+", "-", "x:", "mailto:", "data:", "](", "\\", "\\[", "\\]", "/", "~", "`", "\u00a0", "\u200b",
   ];
   const rnd = lcg(20261007);
   let judged = 0;
