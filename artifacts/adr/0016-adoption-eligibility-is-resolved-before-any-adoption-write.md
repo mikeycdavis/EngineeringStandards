@@ -76,7 +76,13 @@ record from a local copy of that repository (README line 3, and the closing para
 
 Filename comparison is case-insensitive on the directory listing, because a differently cased file is
 the same signal on the platforms this repository targets and treating it as absent would be the
-unsafe direction. Matching is on the repository root only; nested directories are not searched,
+unsafe direction. On a case-sensitive filesystem the root can hold several entries that fold to
+the same name (`FROZEN.md` and `frozen.md`, or `README.md` and `Readme.md`). **Every** case-folded
+match is inspected, none is chosen in preference to another, and each is a source in its own right:
+any match whose signal fired controls the result as a fired signal, and any match that is
+indeterminate (unreadable, not a regular file, over the read cap, not UTF-8) makes the result
+`INDETERMINATE`, whatever the other matches say. A benign sibling never clears a fired or
+indeterminate one. Matching is on the repository root only; nested directories are not searched,
 because a nested `FROZEN.md` describes a subtree and not the repository.
 
 **Candidates not evidenced — `UNDECIDED`, not in the vocabulary.** #16 and plan item 07 name the
@@ -222,6 +228,12 @@ adopted project; there is no project for a rule to apply to until the answer is 
 implementation pull requests MUST carry a guarantee, as a test, that the rule catalog is
 byte-identical and that `validate` output for every existing fixture is unchanged, so "no catalog
 rule" is demonstrated and not merely stated.
+
+The implementation pull requests MUST also carry a fixture with both spellings in one root: a benign
+`frozen.md` beside a `FROZEN.md` that fires, a benign `README.md` beside a `Readme.md` that carries
+the banner, and each of those with the signalling or unreadable spelling listed first and last, so
+the result cannot depend on directory order. Each asserts `OUT_OF_SCOPE` or `INDETERMINATE`, never
+`IN_SCOPE`.
 
 ## Alternatives considered
 
