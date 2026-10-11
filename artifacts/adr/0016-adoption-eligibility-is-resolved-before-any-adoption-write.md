@@ -158,7 +158,7 @@ it was.
 ### D3 — A new read-only `eligibility` subcommand
 
 ```text
-standards eligibility [<dir>] [--format json] [--override-signal=<id>]...
+standards eligibility [<dir>] [--json] [--override-signal=<id>]...
 ```
 
 It reads only root entries whose case-folded name is one of the two source names in the vocabulary
@@ -207,9 +207,84 @@ and defines `2` as "could not reach a verdict". `eligibility` uses that set and 
 | unknown flag, unknown signal id in an override, missing target, internal error | `2` | invocation error |
 
 Only `0` permits proceeding, so every uncertain path fails closed. `1` and `2` are told apart by the
-`state` field of `--format json`, which carries `IN_SCOPE`, `OUT_OF_SCOPE`, `INDETERMINATE` or, for
-an invocation error, no state at all. A caller must not infer eligibility from the absence of a
-non-zero exit that it did not read.
+`state` field of the `--json` output (specified next), which carries `IN_SCOPE`, `OUT_OF_SCOPE`,
+`INDETERMINATE` or, for an invocation error, no `state` key at all. A caller must not infer
+eligibility from the absence of a non-zero exit that it did not read.
+
+The existing CLI spells the machine-output flag `--json` (`parseArgs` in `scripts/standards.mjs`);
+`eligibility` uses the same spelling rather than the `--format json` form that some prose uses.
+
+#### The `--json` document (normative)
+
+Without `--json` the output is human text and carries no contract (ADR 0004, "explicitly not
+frozen"). With `--json`, stdout is exactly one JSON object, UTF-8, followed by a newline, and
+nothing else; human diagnostics go to stderr. Two shapes exist, told apart by which of `state` and
+`error` is present; exactly one is.
+
+**Success (exit `0`, `1` or `2`; `state` present, `error` absent):**
+
+| Key | Type | Allowed values / meaning |
+| --- | --- | --- |
+| `schemaVersion` | string | `"1.0.0"`, semantic, independent of the audit/validate envelope's own value (ADR 0004) |
+| `command` | string | always `"eligibility"` |
+| `state` | string | `"IN_SCOPE"`, `"OUT_OF_SCOPE"`, `"INDETERMINATE"` |
+| `exitCode` | integer | `0` for `IN_SCOPE`, `1` for `OUT_OF_SCOPE`, `2` for `INDETERMINATE`; always equals the process exit code |
+| `target` | string | the resolved absolute directory that was examined |
+| `listing` | string | `"complete"` or `"incomplete"`; `"incomplete"` forces `state` `"INDETERMINATE"` |
+| `signals` | array | exactly one record per vocabulary signal, in vocabulary order, whether or not it matched anything |
+| `overrides` | object | see below |
+
+Each `signals[]` record:
+
+| Key | Type | Allowed values / meaning |
+| --- | --- | --- |
+| `id` | string | a vocabulary signal id: `"frozen-file"`, `"readme-frozen-banner"` |
+| `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"`; `INDETERMINATE` if any entry is, else `FIRED` if any entry fired, else `NOT_FIRED` (including when no entry matched) |
+| `overridden` | boolean | `true` only when `result` is `"FIRED"` and the id was named in an override; never `true` for any other `result` |
+| `entries` | array | one record per root entry whose case-folded name matches this signal's source name, in no guaranteed order |
+
+Each `entries[]` record:
+
+| Key | Type | Allowed values / meaning |
+| --- | --- | --- |
+| `name` | string | the entry's name exactly as listed, with its original case |
+| `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"` |
+| `reason` | string or null | `null` unless `result` is `"INDETERMINATE"`, then one of `"unreadable"`, `"not-regular-file"`, `"over-read-cap"`, `"not-utf8"`, `"no-listed-phrase"` |
+
+`overrides` object:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `requested` | array of string | signal ids named by the caller, in the order given, de-duplicated |
+| `applied` | array of string | the requested ids that matched a `FIRED` signal |
+| `unused` | array of string | the requested ids that were valid but whose signal did not fire (reported, never silently ignored) |
+
+`state` is derived from the records and nothing else: `INDETERMINATE` if `listing` is
+`"incomplete"` or any signal `result` is `"INDETERMINATE"`; otherwise `OUT_OF_SCOPE` if any signal
+is `"FIRED"` with `overridden` `false`; otherwise `IN_SCOPE`. An override can therefore never change
+an `INDETERMINATE`.
+
+**Invocation error (exit `2`; `error` present, `state` absent):**
+
+| Key | Type | Allowed values / meaning |
+| --- | --- | --- |
+| `schemaVersion` | string | `"1.0.0"` |
+| `command` | string | `"eligibility"` |
+| `exitCode` | integer | `2` |
+| `error` | object | `{ "code": string, "message": string }`; `code` is one of `"unknown-flag"`, `"unknown-signal-id"`, `"no-such-directory"`, `"internal-error"`; `message` is human text with no contract |
+
+A caller reading this shape MUST treat the absence of `state` as not eligible. When the arguments
+are so malformed that the tool cannot tell that `--json` was requested, nothing is written to stdout
+and the diagnostic is on stderr only; exit is still `2`.
+
+**Proposed shape, owner to confirm.** D1-D5 fix the states, the per-signal override, the exit codes
+and the `state` field. They do not fix the following, which this record supplies so that two
+implementations cannot both claim to conform; each is open to the owner's change before release:
+the key names `signals`, `entries`, `overrides`, `listing`, `target`; the closed `reason` and
+`error.code` lists; `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
+per-file override reporting (`applied` / `unused`); and `--json` as the flag spelling. Adding a key
+later is additive; renaming or removing one, or widening an allowed value list, is `MAJOR` once
+released.
 
 ### D4 — This record precedes implementation
 
@@ -233,11 +308,24 @@ implementation pull requests MUST carry a guarantee, as a test, that the rule ca
 byte-identical and that `validate` output for every existing fixture is unchanged, so "no catalog
 rule" is demonstrated and not merely stated.
 
-The implementation pull requests MUST also carry a fixture with both spellings in one root: a benign
-`frozen.md` beside a `FROZEN.md` that fires, a benign `README.md` beside a `Readme.md` that carries
-the banner, and each of those with the signalling or unreadable spelling listed first and last, so
-the result cannot depend on directory order. Each asserts `OUT_OF_SCOPE` or `INDETERMINATE`, never
-`IN_SCOPE`.
+The implementation pull requests MUST also test the both-spellings rule, in two layers, because a
+directory holding `FROZEN.md` and `frozen.md` together cannot exist on a case-insensitive volume
+(Windows, default macOS):
+
+1. **Injected listing, on every platform.** The directory-enumeration and collision logic takes its
+   listing and its file reads through an injected interface, and is tested against a mocked listing
+   containing both spellings: a benign `frozen.md` beside a `FROZEN.md` that fires, a benign
+   `README.md` beside a `Readme.md` that carries the banner, and a benign sibling beside an
+   unreadable one. Each case is run with the signalling or unreadable spelling listed first and
+   last, so the result cannot depend on directory order, and asserts `OUT_OF_SCOPE` or
+   `INDETERMINATE`, never `IN_SCOPE`. This layer is not skippable.
+2. **Real filesystem, only where it can exist.** The on-disk both-spellings fixture is created in a
+   temporary directory and run only after detecting that the temporary filesystem is case-sensitive
+   (create one file, test whether its other-cased name resolves). On a case-insensitive volume the
+   test is reported as an explicit skip naming that reason, never as a pass, and layer 1 still runs.
+
+All other fixtures (a single `FROZEN.md`, banner, unreadable, over-cap, no-phrase, absent) are
+portable and run everywhere.
 
 ## Alternatives considered
 
