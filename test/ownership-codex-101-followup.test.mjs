@@ -5,6 +5,8 @@
  *   #101 P2 scripts/ownership.mjs:184   a framework-excluded directory inside the plan tree is incomplete evidence
  *   #99  P2 scripts/ownership.mjs:127   `](` exempts a destination from the enclosing-scheme check only when
  *                                       that `]` closes a Markdown label
+ *   #102 P2 scripts/ownership.mjs:125   a backslash-escaped `[` opens no label and a backslash-escaped `]`
+ *                                       closes none, so an escaped label before a parenthesised destination is still inside the enclosing URL
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -107,6 +109,51 @@ test("#99 P2 (ownership.mjs:127): end to end, a stray `](` inside a scheme token
   });
   try {
     assert.deepEqual((await collectPlanClaims(root)).map((c) => `${c.issue}@${c.title}`), ["11@Good"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("#102 P2 (ownership.mjs:125): a backslash-escaped bracket opens or closes no label, so the `](` shortcut does not fire", () => {
+  const issues = (v) => extractIssueLinks(v).map((l) => l.issue);
+  const B = "\\"; // one backslash
+  // firing: escaped brackets hide the label, the destination stays inside the enclosing scheme token
+  assert.deepEqual(issues(`data:${B}[x](${U(20)})`), []);
+  assert.deepEqual(issues(`data:${B}[x${B}](${U(21)})`), []);
+  assert.deepEqual(issues(`data:[x${B}](${U(22)})`), []); // the `[` is real but never closed
+  assert.deepEqual(issues(`data:${B}${B}${B}[x](${U(23)})`), []); // an escaped backslash, then an escaped `[`
+  assert.deepEqual(issues(`data:${B}]${B}[x](${U(24)})`), []);
+  assert.deepEqual(issues(`data:[a${B}[b]](${U(25)})`), []); // one real label, closed once, then an unbalanced `]`
+  assert.deepEqual(issues(`x:${B}${B}](${U(26)})`), []); // two backslashes are an escaped backslash; the `]` has no label
+  // non-firing: a real label is still a label
+  assert.deepEqual(issues(`data:${B}${B}[x](${U(30)})`), [30]); // an escaped backslash, then a real `[x]`
+  assert.deepEqual(issues(`data:[a${B}]](${U(31)})`), [31]); // the escaped `]` is text; the second one closes
+  assert.deepEqual(issues(`x:[#7](${U(7)})`), [7]);
+  // neighbouring forms: outside an enclosing scheme the destination is a plain link whatever the escapes
+  assert.deepEqual(issues(`${B}[x](${U(32)})`), [32]);
+  assert.deepEqual(issues(`[x${B}](${U(33)})`), [33]);
+  // an escaped `(` or an escaped first character of the destination is not a destination at all
+  assert.deepEqual(issues(`data:[x]${B}(${U(34)})`), []);
+  assert.deepEqual(issues(`data:[x](${B}${U(35)})`), []);
+  // an escape does not carry the scheme run across it: `x` then an escaped `[` then `:` is not a scheme
+  assert.deepEqual(issues(`x${B}[:*${U(38)}`), [38]);
+  assert.deepEqual(issues(`x:*${U(39)}`), []);
+  // a backslash before whitespace is not an escape: the whitespace still ends the token (and its scheme)
+  assert.deepEqual(issues(`data:${B} *${U(40)}`), [40]);
+  assert.deepEqual(issues(`data:${B}\n*${U(41)}`), [41]);
+  // a later, genuine link in the same value is read independently
+  assert.deepEqual(issues(`data:[x${B}](${U(36)}) y [z](${U(37)})`), [37]);
+});
+
+test("#102 P2 (ownership.mjs:125): end to end, an escaped label opener inside a scheme token is not a claim", async () => {
+  const B = "\\";
+  const root = await scratch({
+    [`${PLAN}/a.md`]:
+      `### Bad\n- **Tracked by:** data:${B}[x](${U(20)})\n` +
+      `### Good\n- **Tracked by:** data:[x](${U(21)})\n`,
+  });
+  try {
+    assert.deepEqual((await collectPlanClaims(root)).map((c) => `${c.issue}@${c.title}`), ["21@Good"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
