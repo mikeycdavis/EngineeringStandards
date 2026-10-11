@@ -229,6 +229,26 @@ declare this in the catalog, and an exception against either is **rejected, not 
 such a rule genuinely has no subject in your project, declare it `not-applicable`; that is a
 different claim and it is permitted.
 
+**A justification is narrower than an exception.** When one frozen file departs from one rule and an
+exception would waive that rule for the whole project, record a path-scoped justification instead
+([ADR 0016](artifacts/adr/0016-path-scoped-justification-is-not-an-exception.md)):
+
+```yaml
+justifications:
+  - rule: errors.no-swallowed-exceptions   # only rules the engine admits; today, this one
+    path: examples/x/y.mjs                 # one exact tracked file: no wildcard, directory or ./
+    reason: "Frozen evaluated copy; bytes are digest-locked."
+    approvedBy: "project-owner"
+    approvedAt: "2026-10-11"
+    reference: "ADR-0004"
+    removeWhen: "The frozen copy is regenerated or deleted."
+```
+
+It suppresses that rule at that path and nothing else: every other rule still inspects the file, an
+unlisted file still fails, and the justification is listed in the `validate` report. One that no
+longer matches a violation is reported as stale, so remove it. A malformed entry is a configuration
+error (exit 2), not a partial waiver.
+
 Two things to resist:
 
 - **Do not waive an inconvenient rule.** A visible failure is worth more than an approved one, because

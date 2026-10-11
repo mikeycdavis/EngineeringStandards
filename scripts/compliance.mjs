@@ -35,8 +35,13 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  A rule absent from this set was not checked, and reporting it as passing
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
+ * @param justified path-scoped justifications the caller already subtracted from `findings` (ADR
+ *                  0016), each `{ rule, path, reason, reference, approvedBy, approvedAt, removeWhen }`.
+ *                  The engine does not subtract; it makes the subtraction VISIBLE on the rule's
+ *                  result, so a rule that passes because paths were justified can never read as one
+ *                  that simply had nothing to find.
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, justified }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -91,6 +96,17 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       expiredExceptions.push({ ...entry, rule: rule.id, ...metaOf(rule) });
     else activeExceptions.set(rule.id, entry);
   }
+
+  const justifiedByRule = new Map();
+  for (const entry of justified ?? []) {
+    const rule = resolve(catalog, entry.rule);
+    if (!rule) continue;
+    if (!justifiedByRule.has(rule.id)) justifiedByRule.set(rule.id, []);
+    justifiedByRule.get(rule.id).push(entry);
+  }
+  // Sorted so the report is a function of the set of justifications, never of the order written.
+  const justifiedFor = (rule) =>
+    [...(justifiedByRule.get(rule.id) ?? [])].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   const results = [];
   const silencedRules = new Set();
@@ -209,7 +225,25 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
     const hits = byRule.get(rule.id) ?? [];
     if (hits.length === 0) {
-      results.push(base(rule, level, RESULT.passed, "evaluated", `No violation of ${rule.id} was observed.`));
+      const covered = justifiedFor(rule);
+      if (covered.length === 0) {
+        results.push(base(rule, level, RESULT.passed, "evaluated", `No violation of ${rule.id} was observed.`));
+      } else {
+        // Passed because every violating path is justified — and saying so is the whole control. The
+        // message and the `justified` list travel with the result so this can never read as a clean
+        // rule.
+        const result = base(
+          rule,
+          level,
+          RESULT.passed,
+          "evaluated",
+          `No unjustified violation of ${rule.id} was observed; ${covered.length} path(s) are justified by project-policy.yml.`,
+        );
+        result.justified = covered.map(justifiedShape);
+        result.evidence = covered.map((e) => e.path);
+        result.files = result.evidence;
+        results.push(result);
+      }
       continue;
     }
 
@@ -254,6 +288,10 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
     result.evidence = hits.flatMap((h) => h.evidence ?? []);
     result.files = result.evidence;
+    // Some paths were justified and others were not: the rule still fails, over ONLY the unjustified
+    // ones (they are the evidence above), and the justified ones stay visible beside it.
+    const alsoJustified = justifiedFor(rule);
+    if (alsoJustified.length > 0) result.justified = alsoJustified.map(justifiedShape);
     if (exception) {
       result.exception = {
         reason: exception.reason,
@@ -418,6 +456,17 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
       reference: attestation.reference ?? null,
       expires: attestation.expires ?? null,
     },
+  };
+}
+
+function justifiedShape(entry) {
+  return {
+    path: entry.path,
+    reason: entry.reason,
+    reference: entry.reference,
+    approvedBy: entry.approvedBy,
+    approvedAt: entry.approvedAt,
+    removeWhen: entry.removeWhen,
   };
 }
 

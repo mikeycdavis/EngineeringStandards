@@ -15,8 +15,36 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
-**No change to the framework, the rule catalog, the policy schema, or any published contract.** This
-is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+**Apart from the path-scoped justification entry directly below, no change to the framework, the rule
+catalog, the policy schema, or any published contract.** Every other entry in this section is repository
+tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+
+### Added — path-scoped justifications (ADR 0016)
+
+The policy schema gains an optional `justifications` list: one rule knowingly unmet at one exact tracked
+file ([ADR 0016](artifacts/adr/0016-path-scoped-justification-is-not-an-exception.md)). It exists for
+frozen, digest-locked copies that carry an empty catch block, where a rule-wide `exceptions[]` entry would
+also waive `errors.no-swallowed-exceptions` for every other file. **This is an additive change to the policy
+schema** (an optional section; no existing policy changes meaning). `VERSION` is **not** bumped here: a bump
+makes every consumer's pinned `standardVersion` a `VERSION_MISMATCH`, so the release level is the owner's
+decision ([Standard 21](standards/21-versioning.md)).
+
+- Each entry requires `rule`, `path`, `reason`, `approvedBy`, `approvedAt`, `reference` and `removeWhen`;
+  unknown keys are rejected.
+- Only rules in an explicit allowlist in `scripts/justifications.mjs` may be justified, initially
+  `errors.no-swallowed-exceptions` alone. Unknown, legacy-alias, non-exemptible and non-allowlisted rules are
+  rejected with distinct codes.
+- Paths are exact and canonical. Wildcards, directories, absolute/drive-letter/UNC paths, `..`, backslashes,
+  non-canonical forms (`./x`, `a//b`, surrounding whitespace), duplicates, nonexistent files and untracked files
+  are each rejected with their own code. Tracked-ness is `git ls-files` in the audited root; outside a git work
+  tree it falls back to the discovered file set and the result says which basis answered.
+- `validate` subtracts only the justified path's evidence from that one rule. Remaining violations still fail
+  the rule, and every other rule still inspects the file. Applied justifications are listed in the human
+  report, in `justifications` of `validate --json`, and as `justified` on the rule's result; one whose path no
+  longer violates is a `stale-justification` warning. Any invalid entry is exit 2 (`NOT_EVALUATED`) and none is
+  applied.
+- `npm run policy` validates the same entries (`--root <dir>` selects the repository the paths resolve
+  against). `audit` is unchanged: it remains policy-independent evidence.
 
 Correction to the entry below, after Codex review of #101 and #99: an empty `##` or `#` heading now ends ownership
 attribution like any other; a plan directory the audit walk skipped on the framework's say-so (`fixtures`, `vendor`,
