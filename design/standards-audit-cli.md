@@ -161,8 +161,9 @@ something absent, unproven, or contradictory.
 
 Owner decision, issue [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58): committed
 conflict-marker detection is **permanently audit-only**. The finding carries `rule: null`, so it is
-unbound to any catalog rule and has no compliance effect: `validate` never reads it, and its
-status, score, per-rule results and exit code are the same with or without the marker. Standard 46
+unbound to any catalog rule and has no compliance effect: `validate --json` still lists it among
+its findings, but the compliance engine skips findings with no rule, so its status, score, per-rule
+results and exit code are the same with or without the marker. Standard 46
 was measured and rejected as its home, and the live working-tree conflict preflight is a separate
 proposition that lives outside the catalog.
 

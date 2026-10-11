@@ -366,7 +366,8 @@ test("a repository with no markers raises nothing", async () => {
 // conflict-marker detection is permanently audit-only evidence. It is unbound to a catalog rule and
 // has no compliance effect. Its severity is `warning`, which is deliberate rather than accidental:
 // `audit --strict` exits 1 on any non-`info` finding, so a committed group fails a strict audit,
-// while the default audit and every `validate` verdict ignore it. The tests below pin each half of
+// while the default audit and every `validate` verdict ignore it (`validate --json` still lists the
+// finding, but with no rule the compliance engine skips it). The tests below pin each half of
 // that, because the contract is as much what the finding must NOT do as what it reports.
 
 const COMPLIANT = path.join(HERE, "fixtures", "compliant");
@@ -474,10 +475,16 @@ for (const [name, skip] of [
         validate: shape(run("validate", root)),
         strictValidate: shape(run("validate", root, ["--strict"])),
         audited: markerEvidence(run("audit", root).json),
+        listed: findingsById(run("validate", root).json, "committed-conflict-markers"),
       }));
     const [with_, without] = [await view(true), await view(false)];
     // The pair must differ in exactly the one thing under test, and the verdict must be a real one.
     assert.deepEqual(with_.audited, ["src/merged.mjs:2-6"], "the group must be present in the variant");
+    // validate --json lists the finding, unbound: present in the variant, absent from the control,
+    // and the verdict below is nonetheless identical.
+    assert.equal(with_.listed.length, 1, "validate --json should list the finding");
+    assert.equal(with_.listed[0].rule, null, "the listed finding must stay unbound");
+    assert.deepEqual(without.listed, []);
     assert.deepEqual(without.audited, [], "the control must not carry the group");
     assert.notEqual(with_.validate.code, 2, "validate must reach a verdict, not an invocation error");
     assert.equal(with_.validate.status, skip === null ? "NOT_EVALUATED" : "NON_COMPLIANT");

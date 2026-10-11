@@ -85,8 +85,9 @@ build on advisory findings gets disabled, and then nothing is checked at all.
 
 `--strict` promotes only what the command it is given reports. `standards audit --strict` exits `1`
 on any finding that is not `info`, including audit-only findings that carry no rule and have no
-compliance effect, such as a committed conflict-marker group; `standards validate` never reads
-those findings, so they cannot change its status, score or exit code with or without `--strict`.
+compliance effect, such as a committed conflict-marker group. `standards validate --json` still
+lists those findings, but they carry no rule, so they have no effect on its status, score, per-rule
+results or exit code, with or without `--strict`.
 
 ### R4 — JSON output is a versioned contract
 
