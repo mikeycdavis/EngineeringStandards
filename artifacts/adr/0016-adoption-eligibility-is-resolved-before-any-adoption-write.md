@@ -182,9 +182,10 @@ release. This record interprets that as follows, and asks the owner to confirm t
   "new backward-compatible rule or capability" as `MINOR`, and a currently compliant project is
   unaffected. The subcommand is not a rule, and D5 binds no rule, so no project can newly fail.
 - What the addition does do is create **new frozen surface**: once released, `eligibility`'s name,
-  its three states, its exit codes and its JSON field names are frozen in the ADR 0004 sense, and
-  changing any is `MAJOR`. That is why the vocabulary-as-data and the states are specified here
-  before code exists.
+  its three states, its exit codes and the `--json` document specified in "The `--json` document
+  (normative)" below, with its key names, value types and closed value lists, are frozen in the ADR
+  0004 sense, and changing any is `MAJOR`. That is why the vocabulary, the states and the document
+  are specified here before code exists.
 - `eligibility` is neither an `audit` nor a `validate`. It produces no finding, score, assurance or
   compliance status, so ADR 0004's "never letting `audit` grow a compliance verdict" is not engaged.
 - Honest precedent note: `init` is listed in the 1.0.0 surface itself in the changelog, so there is
@@ -271,7 +272,14 @@ an `INDETERMINATE`.
 | `schemaVersion` | string | `"1.0.0"` |
 | `command` | string | `"eligibility"` |
 | `exitCode` | integer | `2` |
-| `error` | object | `{ "code": string, "message": string }`; `code` is one of `"unknown-flag"`, `"unknown-signal-id"`, `"no-such-directory"`, `"internal-error"`; `message` is human text with no contract |
+| `error` | object | `{ "code": string, "message": string }`; `code` is one of `"unknown-flag"`, `"unknown-signal-id"`, `"no-such-directory"`, `"not-a-directory"`, `"internal-error"`; `message` is human text with no contract |
+
+Mapping for the target argument, so implementations cannot disagree: a path that does not exist
+(including a dangling symlink) is `no-such-directory`; a path that exists but is not a directory,
+including a symlink that resolves to a regular file, is `not-a-directory`; a path that is a
+directory but whose entries cannot be listed completely is **not** an invocation error, it is the
+success shape with `listing` `"incomplete"` and `state` `"INDETERMINATE"`. `internal-error` is only
+for a fault outside these cases, and a caller that sees it must treat the repository as not eligible.
 
 A caller reading this shape MUST treat the absence of `state` as not eligible. When the arguments
 are so malformed that the tool cannot tell that `--json` was requested, nothing is written to stdout
@@ -281,7 +289,7 @@ and the diagnostic is on stderr only; exit is still `2`.
 and the `state` field. They do not fix the following, which this record supplies so that two
 implementations cannot both claim to conform; each is open to the owner's change before release:
 the key names `signals`, `entries`, `overrides`, `listing`, `target`; the closed `reason` and
-`error.code` lists; `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
+`error.code` lists (including `not-a-directory`); `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
 per-file override reporting (`applied` / `unused`); and `--json` as the flag spelling. Adding a key
 later is additive; renaming or removing one, or widening an allowed value list, is `MAJOR` once
 released.
@@ -324,8 +332,15 @@ directory holding `FROZEN.md` and `frozen.md` together cannot exist on a case-in
    (create one file, test whether its other-cased name resolves). On a case-insensitive volume the
    test is reported as an explicit skip naming that reason, never as a pass, and layer 1 still runs.
 
-All other fixtures (a single `FROZEN.md`, banner, unreadable, over-cap, no-phrase, absent) are
-portable and run everywhere.
+Every condition that depends on permissions, links or platform file modes is exercised through the
+injected read and stat interface of layer 1 on every platform, never by an on-disk fixture that must
+run everywhere: `unreadable` (the injected read fails), `not-regular-file` (the injected stat reports
+a directory or link), `over-read-cap`, `not-utf8`, and an incomplete listing. A real-permission test
+(`chmod 000` file, a real symlink) is separate and capability-probed: it runs only after confirming
+the platform enforces the condition (a mode-bit denial is actually observed by the test process, so
+Windows and privileged root processes skip; the platform can create the link), and otherwise is an
+explicit reported skip naming the reason, never a pass. Fixtures that are portable on every platform
+(a single `FROZEN.md`, a banner, no-phrase, absent, a directory named `FROZEN.md`) run everywhere.
 
 ## Alternatives considered
 
