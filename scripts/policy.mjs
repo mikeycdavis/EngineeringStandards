@@ -21,6 +21,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseYaml, YamlError } from "./yaml.mjs";
 import { validate, assertSchemaSupported, SchemaError } from "./jsonschema.mjs";
+import { checkEntries } from "./fixture-exemptions.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -104,6 +105,18 @@ function complianceFindings(document, today, catalog) {
         remediation: "Renew the exception with a new approval, or satisfy the rule.",
       });
     }
+  }
+
+  // Fixture exemptions (ST-19a, ADR 0016): the same validator the audit uses, so an entry that would
+  // be ignored at run time is an error here and an adopter learns it from `standards policy`.
+  const fixtureCheck = checkEntries(document.fixtureExemptions, { catalog, today });
+  for (const problem of fixtureCheck.problems) {
+    findings.push({
+      id: `policy.${problem.id}`.replace("policy.fixture-exemption-", "fixture-exemption-"),
+      severity: "error",
+      message: `fixtureExemptions[${problem.index}]: ${problem.message}`,
+      remediation: "Correct the entry, re-pin it after review, or remove it. An entry that does not validate waives nothing.",
+    });
   }
 
   // An exception says the rule applies and is knowingly unmet; not-applicable says the rule has no

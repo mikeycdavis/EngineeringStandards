@@ -15,8 +15,26 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
-**No change to the framework, the rule catalog, the policy schema, or any published contract.** This
-is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+**Fixtures are exempted by exact path, content digest and rule, not skipped by name** (ST-19a, #110;
+[ADR 0016](artifacts/adr/0016-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md)).
+`fixtures` is removed from `SKIP_DIRS`: every file beneath a `fixtures/` directory is an ordinary scanned
+file, and the evidence surface is no longer marked incomplete for the directory's name. A deliberately
+violating fixture is waived by an entry in the new optional `fixtureExemptions` section of
+`project-policy.yml` — exact path, SHA-256 of the content (CRLF read as LF), one rule, reason, owner, and
+`expires` or `reviewWhen`. It applies only while all three of path, digest and rule match; any other
+path, changed byte or rule is inspected as ordinary content, and an entry that stops matching is reported
+stale. A rule whose only violations are waived reports `excepted`, never `passed`; a waiver is applied to
+a violation a detector observed, so it cannot turn an unread file into a result. Entries that do not
+validate waive nothing and are reported by `audit`, `validate` and `standards policy`.
+`security.no-secrets-in-artifacts` is non-exemptible and stays so, so its fixture bait is built at run
+time instead of committed. The human `Failing:` list no longer repeats rules already shown under
+`Excepted:`. **Consequence for adopters:** a consumer's deliberately violating fixtures now produce live
+findings until they carry exact entries. **Schema:** `fixtureExemptions` is an additive optional
+property of the policy schema; `VERSION` is NOT bumped here and whether the addition is a framework
+MINOR is left to the owner. Other `SKIP_DIRS` names are unchanged.
+
+**No change to the rule catalog or the rule set.** Apart from the entry above this is repository tooling:
+nothing else an adopting project consumes is affected, and `VERSION` is unchanged.
 
 Correction to the entries below, after Codex review of #102 (#104): a backslash before ASCII punctuation makes that
 character literal, so an escaped `[` opens no label and an escaped `]` closes none, and the `](` shortcut applies only

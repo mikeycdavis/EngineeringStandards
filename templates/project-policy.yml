@@ -162,3 +162,23 @@ exceptions: []
   #   approvedAt: "2026-01-01"
   #   expires: "2026-12-31"
   #   reference: "ADR-0004"
+
+# Deliberately violating test fixtures, waived EXACTLY (ADR 0016).
+#
+# `fixtures/` directories are scanned like any other. A fixture that violates a rule on purpose is
+# waived by naming ONE file, pinning its content digest, and naming ONE rule. The waiver applies only
+# while path, digest and rule all match: a copy at another path, a changed byte, or another rule is
+# inspected as ordinary content, and an entry that stops matching is reported as stale. The rule
+# reports EXCEPTED, never passed. No wildcard, directory or glob is accepted, and a non-exemptible
+# rule (such as security.no-secrets-in-artifacts) cannot be waived here either: build that bait at run
+# time instead of committing it.
+#
+# `sha256` is the file's SHA-256 with CRLF read as LF, 64 lower-case hex characters. Exactly one of
+# `expires` or `reviewWhen` is required.
+fixtureExemptions: []
+  # - path: "test/fixtures/never-violations/src/tls.js"
+  #   sha256: "<64 hex characters>"
+  #   rule: "security.no-cert-bypass"
+  #   reason: "Positive control: the detector must find this bypass."
+  #   owner: "project-owner"
+  #   reviewWhen: "The fixture is rewritten, renamed, or the detector's definition of a bypass changes."
