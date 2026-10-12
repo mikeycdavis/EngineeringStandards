@@ -384,13 +384,18 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   - Where the platform or runtime cannot provide such a binding, `init` **does not write**: it
     refuses with exit `2`, naming `target-changed` where an identity mismatch was observed and
     `unreadable` otherwise. This refusal cannot be satisfied by "check, then write by path".
-  - **Windows is required** (see the platform requirement). This record does not prescribe the
-    call and does not claim that a mechanism exists. The implementation must find one within the
-    zero-third-party-dependency decision; examples of the kind of mechanism that could meet the
-    property, none asserted to be available, are a handle-based native route, resolving the
-    directory once to a non-link path and verifying that no reparse point is on the target
-    component before writing only through that resolved path, or staging the writes and applying them
-    by atomic rename inside a held directory.
+  - **Windows is required** (see the platform requirement). The Windows implementation must use
+    the held handle, or another operation that atomically binds **each** write to the verified
+    identity; a mechanism that verifies a path (or a path component) and then writes by path does not
+    qualify, because a rename or replacement of the directory or of any ancestor after the check
+    redirects later writes, and verifying only the target component cannot protect replaceable
+    ancestors. This record does not prescribe the call and does not claim that a mechanism exists.
+    The implementation must find one within the zero-third-party-dependency decision; the kinds of
+    mechanism that would meet the property, none asserted to be available, are limited to those that
+    actually bind: a handle-based native route, handle-relative creation and write, or a staged
+    write plus a rename performed relative to the held directory handle. Where none can be shown,
+    the fail-closed refusal above applies to `init` on that platform; this does not change the
+    separate requirement of a Windows-safe `eligibility` in 3.0.0.
 - **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
   pre-write refusal.** `init` refuses with exit `2`, writes nothing, and leaves the tree unchanged.
   `target-changed` is raised only when the identity from the held handle differs from the
