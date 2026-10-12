@@ -205,7 +205,7 @@ and defines `2` as "could not reach a verdict". `eligibility` uses that set and 
 | `IN_SCOPE` | `0` | completed; nothing forbids adoption |
 | `OUT_OF_SCOPE` | `1` | completed; the repository declares itself not adoptable |
 | `INDETERMINATE` | `2` | the tool could not reach a verdict |
-| unknown flag, unknown signal id in an override, missing target, internal error | `2` | invocation error |
+| any invocation error: `unknown-flag`, `missing-flag-value`, `unknown-signal-id`, `wrong-argument-count`, `no-such-directory`, `not-a-directory`, `internal-error` (see the `--json` document) | `2` | invocation error |
 
 Only `0` permits proceeding, so every uncertain path fails closed. `1` and `2` are told apart by the
 `state` field of the `--json` output (specified next), which carries `IN_SCOPE`, `OUT_OF_SCOPE`,
@@ -272,7 +272,26 @@ an `INDETERMINATE`.
 | `schemaVersion` | string | `"1.0.0"` |
 | `command` | string | `"eligibility"` |
 | `exitCode` | integer | `2` |
-| `error` | object | `{ "code": string, "message": string }`; `code` is one of `"unknown-flag"`, `"unknown-signal-id"`, `"no-such-directory"`, `"not-a-directory"`, `"internal-error"`; `message` is human text with no contract |
+| `error` | object | `{ "code": string, "message": string }`; `code` is one of `"unknown-flag"`, `"missing-flag-value"`, `"unknown-signal-id"`, `"wrong-argument-count"`, `"no-such-directory"`, `"not-a-directory"`, `"internal-error"`; `message` is human text with no contract |
+
+**Argument grammar (closed).** `eligibility` does not reuse the lenient `parseArgs` of `audit` and
+`validate`, which takes the first non-flag token and ignores unknown flags; silently accepting one
+of several paths, or ignoring a flag, is the unsafe direction here. After the subcommand name the
+accepted tokens are exactly these, in any order:
+
+| Token | Rule | Violation |
+| --- | --- | --- |
+| `<dir>` (a token not starting with `-`) | at most one; none means the current working directory, as for `audit`; an empty string is a path, and does not exist | two or more: `wrong-argument-count` |
+| `--json` | recognised by exact match; repeated occurrences are idempotent and collapsed | none |
+| `--override-signal=<id>` | `<id>` is non-empty and one of the vocabulary ids; repeatable; duplicates collapsed | `--override-signal` with no `=`, or `--override-signal=` with an empty id: `missing-flag-value`; an id not in the vocabulary: `unknown-signal-id` |
+| `--help` / `-h` | prints usage to stdout, exit `0`, no JSON document, and wins over every other token | none |
+| anything else beginning with `-`, including `--dir=...`, `--strict`, `--max-total-read-bytes=...`, `--`, and a value given as a separate token (`--override-signal frozen-file` leaves `frozen-file` as a second `<dir>`) | not accepted | `unknown-flag` (a separate-token value is reported as `missing-flag-value` first, since the flag has no `=`) |
+
+Evaluation is order-independent and reports exactly one error, chosen by this fixed precedence
+and, within one class, by the first offending token in argument order: `unknown-flag`, then
+`missing-flag-value`, then `unknown-signal-id`, then `wrong-argument-count`, then the target checks
+(`no-such-directory`, `not-a-directory`). No directory is examined when any argument error exists,
+so an invalid invocation never reads the target.
 
 Mapping for the target argument, so implementations cannot disagree: a path that does not exist
 (including a dangling symlink) is `no-such-directory`; a path that exists but is not a directory,
@@ -281,15 +300,16 @@ directory but whose entries cannot be listed completely is **not** an invocation
 success shape with `listing` `"incomplete"` and `state` `"INDETERMINATE"`. `internal-error` is only
 for a fault outside these cases, and a caller that sees it must treat the repository as not eligible.
 
-A caller reading this shape MUST treat the absence of `state` as not eligible. When the arguments
-are so malformed that the tool cannot tell that `--json` was requested, nothing is written to stdout
-and the diagnostic is on stderr only; exit is still `2`.
+A caller reading this shape MUST treat the absence of `state` as not eligible. `--json` is
+recognised by exact token match anywhere after the subcommand, before any other validation, so every
+invalid invocation that contains it yields the JSON error shape above and never stdout prose. An
+invalid invocation without `--json` writes its diagnostic to stderr only; exit is `2` in both.
 
 **Proposed shape, owner to confirm.** D1-D5 fix the states, the per-signal override, the exit codes
 and the `state` field. They do not fix the following, which this record supplies so that two
 implementations cannot both claim to conform; each is open to the owner's change before release:
 the key names `signals`, `entries`, `overrides`, `listing`, `target`; the closed `reason` and
-`error.code` lists (including `not-a-directory`); `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
+`error.code` lists (including `not-a-directory`, `missing-flag-value` and `wrong-argument-count`), the closed argument grammar (including that no `<dir>` means the current working directory) and error precedence above; `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
 per-file override reporting (`applied` / `unused`); and `--json` as the flag spelling. Adding a key
 later is additive; renaming or removing one, or widening an allowed value list, is `MAJOR` once
 released.
@@ -331,6 +351,18 @@ directory holding `FROZEN.md` and `frozen.md` together cannot exist on a case-in
    temporary directory and run only after detecting that the temporary filesystem is case-sensitive
    (create one file, test whether its other-cased name resolves). On a case-insensitive volume the
    test is reported as an explicit skip naming that reason, never as a pass, and layer 1 still runs.
+
+The implementation pull requests MUST also carry one test per invocation case, each asserting exit
+`2`, the exact `error.code`, no `state` key, and that the target directory was never read: two
+`<dir>` tokens (`wrong-argument-count`, with `--json` before, between and after them); an unknown
+flag (`--bogus`), `--dir=x`, `--strict`, `--max-total-read-bytes=1` and bare `--` (`unknown-flag`);
+`--override-signal`, `--override-signal=` and `--override-signal frozen-file`
+(`missing-flag-value`); `--override-signal=nope` (`unknown-signal-id`); a nonexistent target
+(`no-such-directory`); a regular file and a symlink to a regular file (`not-a-directory`); two
+simultaneous errors to pin the precedence order; repeated `--json` and a repeated identical
+`--override-signal` (accepted, collapsed); `--help` with `--json` (usage, exit `0`); and the same
+cases without `--json` (stderr only, same exit). The injected-interface layer covers all but the
+symlink case on every platform.
 
 Every condition that depends on permissions, links or platform file modes is exercised through the
 injected read and stat interface of layer 1 on every platform, never by an on-disk fixture that must
