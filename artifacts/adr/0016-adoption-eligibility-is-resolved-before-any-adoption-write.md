@@ -58,7 +58,7 @@ not be cited, because it would not have fired on the evidenced README (see "The 
 | Q3 | Override carrier | A | repeatable per-invocation `--override-signal=<id>`; nothing persisted; binding rules 1-7 under D2 |
 | Q4 | `FROZEN.md` with no listed phrase | A | INDETERMINATE (`no-listed-phrase`), not overridable |
 | Q5 | Machine-readable output | C | only the three state names and exit codes 0, 1, 2 are frozen; **no JSON property name, nesting, ordering, optional field, evidence shape or serialisation detail is frozen**; the complete machine-readable contract is deferred to a later, separately approved ADR and work item |
-| Q6 | Frozen-surface reading | A | additive `MINOR` (2.0.0 to 2.1.0); the new frozen surface is the command name, the three state names, and the exit codes |
+| Q6 | Frozen-surface reading | A, **reclassified by the owner on 2026-10-12T17:51:57Z (option A of the `init` compatibility question)** | adding `eligibility` alone would be `MINOR`, but `init` refusing a repository it previously bootstrapped changes a frozen command's semantics, so the complete ST-06 change is classified **`MAJOR`, 3.0.0** (the owner's classification; `VERSION`, tags and releases are not authorised by this record); the new frozen surface is the command name, the three state names, and the exit codes |
 | Q7 | Matching rules | A | ASCII-case-insensitive filenames, every case-folded match inspected, root only, target is the directory given with no walk-up |
 
 Decisions D1-D5 of 2026-10-11 stand and are restated where they apply: D1 closed file-based
@@ -313,19 +313,29 @@ caller that needs only to proceed or stop uses the exit code. Because no machine
 collide with a meaning an earlier release gave it. Material from review of an earlier draft is
 preserved in the appendix as input to that ADR, and is not normative.
 
-#### The frozen-surface interpretation (Q6 A)
+#### The frozen-surface interpretation (Q6 A) and the version classification
 
 [ADR 0004](0004-audit-and-validate-are-separate-commands.md) freezes "CLI command names and their
 high-level semantics" and "exit-code meanings", and makes any change to the frozen list a `MAJOR`
 release. This record interprets that as follows:
 
-- The frozen items are the **existing** commands' names, high-level semantics and exit-code
-  meanings. `audit`, `validate` and `init` keep every one of them. (`init` gains a refusal for a
-  repository carrying a listed signal, a case that had no defined behaviour before; every previously
-  classified fixture is unchanged.)
-- **Adding** a subcommand is additive: [Standard 21](../../standards/21-versioning.md) R2 classes
-  "new backward-compatible rule or capability" as `MINOR`, and no currently compliant project can
-  newly fail, since D5 binds no rule. The addition ships as framework `MINOR`, 2.0.0 to 2.1.0.
+- **Adding `eligibility` alone is additive.** [Standard 21](../../standards/21-versioning.md) R2
+  classes "new backward-compatible rule or capability" as `MINOR`, and D5 binds no rule, so the
+  subcommand by itself would be a `MINOR` change.
+- **`init` refusing a repository it previously bootstrapped is not additive.** `runInit` has no
+  eligibility check today: it bootstraps or converges regardless of repository status, and ADR 0004
+  freezes `init`'s high-level semantics. Making `init` exit `2` and write nothing for a target that
+  previously succeeded changes an existing frozen command's semantics, and an already-adopted
+  repository or existing automation can carry a listed signal. There is no "undefined case" to rely
+  on. The earlier wording that this was a case with no defined behaviour is withdrawn.
+- **Classification (owner, 2026-10-12T17:51:57Z): the complete ST-06 change requires `MAJOR`.** The
+  owner kept the approved rule that `init` refuses a frozen repository (Q2 A) and classified the
+  change as `MAJOR`, version **3.0.0**, under ADR 0004 and Standard 21. This is a compatibility
+  classification only. **This record does not authorise changing `VERSION`, creating, moving or
+  publishing a tag, or making a release;** each is a separate owner act.
+- The frozen items remain the **existing** commands' names, high-level semantics and exit-code
+  meanings; the `init` refusal is the one change to them, and it is why the classification is
+  `MAJOR`. `audit` and `validate` are unchanged.
 - The addition creates **new frozen surface**: once released, the command name `eligibility`, the
   three state names, and the exit codes `0`, `1` and `2` with the meanings in the table above are
   frozen in the ADR 0004 sense, and changing any is `MAJOR`. Nothing else is frozen: flag spellings,
@@ -335,8 +345,8 @@ release. This record interprets that as follows:
 - Honest precedent note: `init` is listed in the 1.0.0 surface itself in the changelog, so this
   repository has **no** precedent of a `standards` subcommand added after a release. The reading
   rests on Standard 21 R2, not on a prior case.
-- This record releases nothing. `VERSION` and `CHANGELOG.md` belong to the implementation pull
-  request that adds the command, and the release is a separate owner act.
+- This record releases nothing. `VERSION`, `CHANGELOG.md`, any tag and any release belong to later
+  work and to separate owner acts.
 
 #### Invocation errors (human diagnostics, exit `2`)
 
@@ -384,8 +394,10 @@ for every existing fixture is unchanged.
 
 ## Implementation slicing
 
-Each is its own pull request after this record is accepted, and none changes the frozen surface of
-`audit` or `validate`.
+Each is its own pull request after this record is accepted. None changes `audit` or `validate`;
+slice 2 changes the frozen semantics of `init`, which is why the complete change is classified
+`MAJOR` (3.0.0, the owner's classification above). No slice authorises a `VERSION` change, tag or
+release.
 
 1. **Resolver and `eligibility` subcommand with fixtures.** `scripts/standards.mjs` (`COMMANDS`,
    usage naming every accepted flag, dispatch before the scan like `init`), a new module holding no
@@ -499,7 +511,7 @@ override leaves no sanctioned way to adopt a repository with an out-of-date bann
 with an answer that fails closed; and `init` refuses on its own. The owner can allow a specific
 repository by naming exactly what is overridden.
 
-**Makes harder.** A new frozen surface (the name, three states and exit codes). A closed vocabulary
+**Makes harder.** A `MAJOR` classification (3.0.0) because `init` now refuses a repository it previously bootstrapped, so existing automation that ran `init` against a repository carrying a listed signal sees exit `2`. A new frozen surface (the name, three states and exit codes). A closed vocabulary
 will miss a repository frozen in a way it does not list, and growing it is a reviewed change. A
 repository whose `README.md` is a symlink, or whose `FROZEN.md` is hand-written without a listed
 phrase, cannot be adopted until the owner changes it.
