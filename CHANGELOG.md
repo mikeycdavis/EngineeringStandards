@@ -265,6 +265,17 @@ named baseline checkout with `ES_GOLDEN_BASE`. The README and nested-file classi
 part of this change (ST-24 part B): a `README.md` or a nested file with a `###` heading and a `Status` is still an
 executable item today.
 
+Fixed a fail-open in `planning.item-fields` (ST-25, #118, truncation half): a plan file larger than the 400,000-byte
+read cap was parsed from its prefix and the rule reported `passed` over items after the cap that nobody read, while
+`planning.plan-code-consistency` over the same bytes was withdrawn. The rule is now `not-evaluated` when a plan file
+(`isPlanFile`) was read only up to the cap, and a violation confirmed in the prefix still fails and carries only that
+finding. It is recorded at the read site, not by adding the rule to `CONTENT_DERIVED_RULES`, so a fully read plan
+beside a `fixtures/` directory, or a repository with no plan directory, is unchanged. A truncated Markdown file
+outside the plan directory does not withdraw it. Unreadable and read-budget-exhausted behaviour is unchanged. The
+withdrawn rule still carries the generic message `No implemented check evaluates ...`; correcting that sentence for
+a rule whose detector ran is the remaining half of #118 and is not part of this change. A truncated `README.md` in
+the plan directory withdraws the rule today because `isPlanFile` still accepts it; ST-24 part B narrows that.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
