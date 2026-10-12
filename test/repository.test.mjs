@@ -996,7 +996,6 @@ test("validate compares review history with the repository's own merge-base and 
     assert.equal(rewritten.finding?.severity, "error", JSON.stringify(rewritten.finding));
     assert.match(rewritten.finding.message, /was rewritten/);
     assert.notEqual(rewritten.rule.disposition, "attested");
-    assert.notEqual(rewritten.rule.disposition, "attested-rejected");
 
     // 5. Replacing the history with a fresh genesis is also a violation.
     await writeFile(policyFile, policyText([{ ...genesis, id: "fresh-genesis" }]));
@@ -1094,7 +1093,6 @@ test("a COMMITTED rewrite of an unanchored history on a feature branch is a viol
     assert.match(run.finding.message, /was rewritten/);
     assert.ok(run.finding.message.includes(base), "the finding must name the merge-base commit");
     assert.notEqual(run.rule.disposition, "attested");
-    assert.notEqual(run.rule.disposition, "attested-rejected");
   } finally {
     await cleanup(fx.root);
   }
@@ -1342,6 +1340,204 @@ test("a shallow clone that lacks the base is NOT_EVALUATED and its attestations 
     const inventory = runAttestations(shallow);
     assert.equal(inventory.json.historyIntegrity.status, "not-evaluated");
     assert.equal(inventory.json.attestations.filter((row) => row.current).length, 0);
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Removing recorded history is a violation even when the head records no attestation at all, and
+// negative evidence (a recorded rejection) is never withdrawn for want of a comparison.
+// ---------------------------------------------------------------------------------------------
+
+const IDENTITY_LABEL = "asserted, not authenticated";
+const IDENTITY_NOTE_TEXT =
+  "reviewedBy and reviewerRole are ASSERTED by the policy text, not authenticated; no signature or " +
+  "trusted-actor mechanism verifies them.";
+const REJECTED_RULE = "ai.propose-execute";
+
+/** The single-rule policy plus a recorded rejection for a second, unanchored rule. */
+function twoRulePolicy(digest, { withRejection = true } = {}) {
+  const base = policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]);
+  if (!withRejection) return base;
+  return (
+    base +
+    [
+      `  ${REJECTED_RULE}:`,
+      `    reviews:`,
+      `      - id: "p1"`,
+      `        status: rejected`,
+      `        reviewedBy: "synthetic-reviewer"`,
+      `        reviewedAt: "2026-10-01"`,
+      `        evidence: "synthetic rejection"`,
+      ``,
+    ].join("\n")
+  );
+}
+
+const policyWithoutAttestations = (text) => text.slice(0, text.indexOf("attestations:"));
+
+test("validate and attestations detect removal of recorded history, and keep recorded rejections effective", async () => {
+  const mutations = {
+    "truncated at the attestations line": (text) => policyWithoutAttestations(text),
+    "attestations: (empty value)": (text) => `${policyWithoutAttestations(text)}attestations:
+`,
+    "one rule key removed": (text) => text.slice(0, text.indexOf(`  ${REJECTED_RULE}:`)),
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const fx = await originFixture((digest) => twoRulePolicy(digest));
+    try {
+      git(fx.work, "checkout", "-q", "-b", "feature/remove");
+      const original = readFileSync(path.join(fx.work, "project-policy.yml"), "utf8");
+      const mutated = mutate(original);
+      assert.notEqual(mutated, original, name);
+      await writeFile(path.join(fx.work, "project-policy.yml"), mutated);
+      commitAll(fx.work, `remove history: ${name}`);
+
+      const validate = runValidate(fx.work);
+      assert.equal(validate.finding?.severity, "error", `${name}: ${JSON.stringify(validate.finding)}`);
+      assert.match(validate.finding.message, /was rewritten/, name);
+      assert.notEqual(validate.rule.disposition, "attested", `${name}: an approval stayed effective`);
+
+      const inventory = runAttestations(fx.work);
+      assert.equal(inventory.status, 1, `${name}: ${inventory.stderr}`);
+      assert.equal(inventory.json.historyIntegrity.status, "violated", name);
+      assert.equal(inventory.json.attestations.filter((row) => row.current).length, 0, name);
+
+      const migrate = runAttestations(fx.work, "--migrate");
+      assert.notEqual(migrate.status, 0, `${name}: migrate was not refused`);
+      assert.equal(await readFile(path.join(fx.work, "project-policy.yml"), "utf8"), mutated, `${name}: written`);
+
+      if (name === "truncated at the attestations line") {
+        // The rejection recorded at the trusted base stays effective although the head removed it.
+        const rejected = validate.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+        assert.equal(rejected.disposition, "attested-rejected", `${name}: ${JSON.stringify(rejected)}`);
+        assert.equal(rejected.status, "failed");
+      }
+    } finally {
+      await cleanup(fx.root);
+    }
+  }
+});
+
+test("an emptied reviews list and a deleted policy file are violations", async () => {
+  {
+    const fx = await originFixture((digest) => twoRulePolicy(digest, { withRejection: false }));
+    try {
+      git(fx.work, "checkout", "-q", "-b", "feature/empty-reviews");
+      const original = readFileSync(path.join(fx.work, "project-policy.yml"), "utf8");
+      const emptied = `${original.slice(0, original.indexOf("    reviews:"))}    reviews: []\n`;
+      await writeFile(path.join(fx.work, "project-policy.yml"), emptied);
+      commitAll(fx.work, "empty the reviews list");
+      const inventory = runAttestations(fx.work);
+      assert.equal(inventory.json.historyIntegrity.status, "violated", inventory.stderr);
+      assert.equal(inventory.status, 1);
+      assert.notEqual(runAttestations(fx.work, "--migrate").status, 0);
+    } finally {
+      await cleanup(fx.root);
+    }
+  }
+  {
+    const fx = await originFixture((digest) => twoRulePolicy(digest));
+    try {
+      git(fx.work, "checkout", "-q", "-b", "feature/delete-policy");
+      git(fx.work, "rm", "-q", "project-policy.yml");
+      git(fx.work, "commit", "-qm", "delete the policy file");
+      const inventory = runAttestations(fx.work);
+      assert.equal(inventory.status, 1, inventory.stderr);
+      assert.equal(inventory.json.historyIntegrity.status, "violated");
+      assert.notEqual(runAttestations(fx.work, "--migrate").status, 0);
+      // Moved rather than deleted: the policy is gone from its path, which is the same violation.
+      git(fx.work, "reset", "-q", "--hard", "HEAD~1");
+      git(fx.work, "mv", "project-policy.yml", "project-policy.moved.yml");
+      git(fx.work, "commit", "-qm", "move the policy file");
+      const moved = runAttestations(fx.work);
+      assert.equal(moved.json.historyIntegrity.status, "violated", moved.stderr);
+    } finally {
+      await cleanup(fx.root);
+    }
+  }
+});
+
+test("without a determinable base approvals are disregarded but recorded rejections stay effective", async () => {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    await writeFile(path.join(dir, "project-policy.yml"), twoRulePolicy(digest));
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy with an approval and a rejection");
+
+    const run = runValidate(dir);
+    assert.equal(run.finding?.severity, "warning", JSON.stringify(run.finding));
+    assert.match(run.finding.message, /NOT_EVALUATED/);
+    assert.match(run.finding.message, /1 recorded rejection\(s\) stay effective/);
+    assert.notEqual(run.rule.disposition, "attested", "an approval stayed effective without a base");
+    const rejected = run.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+    assert.equal(rejected.disposition, "attested-rejected");
+    assert.equal(rejected.status, "failed");
+
+    const inventory = runAttestations(dir);
+    assert.equal(inventory.json.attestations.filter((row) => row.current).length, 0);
+    const rejectionRow = inventory.json.attestations.find((row) => row.rule === REJECTED_RULE);
+    assert.equal(rejectionRow.rejectionEffective, true);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("the asserted-identity label is pinned exactly on every surface", async () => {
+  const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
+  try {
+    const run = runValidate(fx.work);
+    assert.equal(run.rule.disposition, "attested");
+    assert.equal(run.rule.attestation.identity, IDENTITY_LABEL);
+    assert.ok(run.finding.message.includes(IDENTITY_NOTE_TEXT), run.finding.message);
+
+    const human = spawnSync(process.execPath, [STANDARDS_CLI, "validate", fx.work], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.ok(human.stdout.includes("Reviewer identities are asserted by the policy text, not authenticated."));
+
+    const inventory = runAttestations(fx.work);
+    assert.equal(inventory.json.identityNote, IDENTITY_NOTE_TEXT);
+    for (const row of inventory.json.attestations) assert.equal(row.identity, IDENTITY_LABEL);
+    const table = spawnSync(process.execPath, [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${fx.work}`], {
+      encoding: "utf8",
+    });
+    assert.ok(table.stdout.includes(IDENTITY_NOTE_TEXT));
+    assert.ok(table.stdout.includes("(asserted, not authenticated)"));
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("replacing the attestations section with a flow mapping yields no verdict and no attestation command output as valid", async () => {
+  const fx = await originFixture((digest) => twoRulePolicy(digest));
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/flow-empty");
+    const original = readFileSync(path.join(fx.work, "project-policy.yml"), "utf8");
+    const mutated = `${policyWithoutAttestations(original)}attestations: {}\n`;
+    await writeFile(path.join(fx.work, "project-policy.yml"), mutated);
+    commitAll(fx.work, "replace attestations with an empty flow mapping");
+
+    const validate = spawnSync(process.execPath, [STANDARDS_CLI, "validate", fx.work, "--json"], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.equal(validate.status, 2, "a policy that cannot be parsed produces no verdict");
+    assert.ok(!/"disposition":\s*"attested"/.test(validate.stdout), "an approval was reported as established");
+
+    const inventory = runAttestations(fx.work);
+    assert.equal(inventory.status, 2, inventory.stderr);
+    assert.equal(inventory.json, null);
+    const migrate = runAttestations(fx.work, "--migrate");
+    assert.notEqual(migrate.status, 0);
+    assert.equal(await readFile(path.join(fx.work, "project-policy.yml"), "utf8"), mutated);
   } finally {
     await cleanup(fx.root);
   }

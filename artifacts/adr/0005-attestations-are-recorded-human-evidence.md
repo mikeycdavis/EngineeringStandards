@@ -116,3 +116,13 @@ letting one live indefinitely without re-review.
 **Version impact.** `MINOR` — `1.1.0`. Every change is a widening: an optional policy section, an
 optional catalog field, and new `disposition` values. Nothing frozen at
 [1.0.0](../../CHANGELOG.md) changes meaning, and a 1.0.0 policy remains valid.
+
+## Amendment (ST-17, #95): history integrity
+
+An attestation is only as good as the history it sits in. `validate` and `npm run attestations` compare the
+policy with its merge-base with the default branch and treat a rewrite or removal of recorded history as a
+violation. When that comparison is violated or cannot be made (no remote ref, shallow history), **approvals are
+disregarded and recorded rejections stay effective**: negative evidence may be contributed by a human at any time and is
+never removed because a comparison was unavailable. This is an owner-reviewable choice. Reviewer identity is
+asserted by the policy text, not authenticated. A genesis event may omit its digest (the first-pass workflow above);
+that is bootstrap behaviour and not authenticated history.

@@ -192,3 +192,17 @@ test("the validate job runs the authoritative command and propagates its status"
   // making the verdict conditional on green tests would suppress it exactly when something is wrong.
   assert.doesNotMatch(validateJob, /needs:/, "compliance evaluation is suppressed when tests fail");
 });
+
+test("every checkout in ci.yml fetches full history so the review-history base can be determined", async () => {
+  // A shallow default checkout cannot supply merge-base(HEAD, origin default branch), so the
+  // history-integrity check would report NOT_EVALUATED and disregard approvals in the very job that
+  // runs `validate`. fetch-depth: 0 also creates refs/remotes/origin/* for every branch.
+  const text = (await read(path.join(ROOT, ".github/workflows/ci.yml"))).replaceAll("\r\n", "\n");
+  const blocks = text.split("\n").reduce((found, line, index, lines) => {
+    if (/uses:\s*actions\/checkout@/.test(line)) found.push(lines.slice(index, index + 4).join("\n"));
+    return found;
+  }, []);
+  assert.ok(blocks.length >= 2, "ci.yml no longer checks out in both jobs");
+  for (const block of blocks) assert.match(block, /fetch-depth:\s*0\b/, `a checkout is shallow:\n${block}`);
+  assert.match(text, /npm run validate/);
+});
