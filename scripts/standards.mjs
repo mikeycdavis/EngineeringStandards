@@ -2378,6 +2378,17 @@ async function detectPlanDiscrepancies(files, run) {
       `plan file read only up to the ${MAX_READ_BYTES}-byte cap, so its remaining items were not checked`,
     );
   }
+  // The item a truncated file ends inside. The cap cuts it at an arbitrary byte, so a field that is
+  // present after the cap looks absent, and a label cut before its colon looks malformed. Reporting
+  // either is a violation nobody observed: a valid plan would FAIL. That item is therefore UNKNOWN
+  // (the rule is already withdrawn above), and it contributes no finding of any kind except a
+  // syntax problem that ends before the cut line. Every earlier item is read whole and reports as usual.
+  const cutItems = new Map();
+  for (const d of read.documents) {
+    if (!read.truncated.includes(d.file) || d.items.length === 0) continue;
+    const f = read.planFiles.find((p) => run.rel(p) === d.file);
+    cutItems.set(d.items[d.items.length - 1], run.textOf(f).text.split(/\r?\n/).length);
+  }
   const { items } = read;
   // BEFORE the executable filter, and before its early return, because a malformed `Status` is
   // exactly what stops an item being executable. A diagnostic that ran after this point could not
@@ -2388,6 +2399,7 @@ async function detectPlanDiscrepancies(files, run) {
   const malformed = [];
   for (const item of items) {
     for (const problem of item.syntax) {
+      if (cutItems.has(item) && problem.line >= cutItems.get(item)) continue; // the label the cap cut
       const what =
         problem.kind === "duplicate"
           ? `a second ${problem.key} field`
@@ -2431,6 +2443,7 @@ async function detectPlanDiscrepancies(files, run) {
   const backlog = discoverBacklog(root);
 
   for (const item of executable) {
+    if (cutItems.has(item)) continue; // straddles the read cap: unknown, not a violation
     for (const field of PLAN_FIELDS) {
       if (!item.fields.has(field)) incomplete.push(`${item.file} :: ${item.title} (no ${field})`);
     }

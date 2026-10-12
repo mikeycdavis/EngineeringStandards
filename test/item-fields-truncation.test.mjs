@@ -187,6 +187,65 @@ test("a bad item BEFORE the cap in a truncated plan still FAILS with only the co
   });
 });
 
+/** `tail` starts `before` bytes ahead of the cap, so the cap lands `before` bytes into it. */
+const straddle = (head, tail, before) => sized(head, CAP - before, tail);
+
+test("an item the cap cuts through is UNKNOWN: a valid plan is not-evaluated, never failed", async () => {
+  const last = GOOD("Cut item");
+  // The cap lands after Purpose, so Deliverables, Acceptance Criteria and Verification are past it.
+  const at = last.indexOf("- **Deliverables:**");
+  const text = straddle(GOOD("First"), last, at + 5);
+  assert.equal(Buffer.byteLength(text) - (CAP - (at + 5)), last.length);
+  await withRepo({ [`${PLAN}/00-overview.md`]: OVERVIEW, [PLAN_FILE]: text }, async (root) => {
+    const json = cli("validate", root);
+    assert.equal(shape(json, RULE), "not-evaluated/skipped");
+    assert.deepEqual(findingsFor(json, RULE), [], "the cut item was reported as missing fields it has");
+  });
+});
+
+test("a field label the cap cuts before its colon is not a syntax violation", async () => {
+  const last = GOOD("Cut item");
+  const at = last.indexOf("- **Acceptance Criteria:**") + "- **Acceptance Criteria".length;
+  const text = straddle(GOOD("First"), last, at);
+  await withRepo({ [`${PLAN}/00-overview.md`]: OVERVIEW, [PLAN_FILE]: text }, async (root) => {
+    const json = cli("validate", root);
+    assert.equal(shape(json, RULE), "not-evaluated/skipped");
+    assert.deepEqual(findingsFor(json, RULE), []);
+  });
+});
+
+test("an earlier real violation still FAILS beside a cut item, carrying only that finding", async () => {
+  const last = GOOD("Cut item");
+  const at = last.indexOf("- **Deliverables:**");
+  const text = straddle(`${BAD("Real violation")}
+${GOOD("Fine")}`, last, at + 5);
+  await withRepo({ [`${PLAN}/00-overview.md`]: OVERVIEW, [PLAN_FILE]: text }, async (root) => {
+    const json = cli("validate", root);
+    assert.equal(shape(json, RULE), "evaluated/failed");
+    const found = findingsFor(json, RULE);
+    assert.equal(found.length, 1);
+    const evidence = found[0].evidence.join("\n");
+    assert.match(evidence, /Real violation/);
+    assert.doesNotMatch(evidence, /Cut item/);
+  });
+});
+
+test("a malformed field heading in the read part still FAILS as before, beside a cut item", async () => {
+  const last = GOOD("Cut item");
+  const at = last.indexOf("- **Deliverables:**");
+  const malformed = GOOD("Malformed").replace("- **Purpose:**", "- **Purpose - amended:**");
+  const text = straddle(`${GOOD("First")}
+${malformed}`, last, at + 5);
+  await withRepo({ [`${PLAN}/00-overview.md`]: OVERVIEW, [PLAN_FILE]: text }, async (root) => {
+    const json = cli("validate", root);
+    assert.equal(shape(json, RULE), "evaluated/failed");
+    const found = findingsFor(json, RULE);
+    assert.ok(found.length >= 1);
+    assert.ok(found.some((f) => f.id === "plan-item-field-syntax"), JSON.stringify(found.map((f) => f.id)));
+    assert.ok(found.every((f) => !/Cut item/.test(f.evidence.join("\n"))));
+  });
+});
+
 test("boundary: 399999 and 400000 bytes are read whole, 400001 is truncated", async () => {
   const expectations = [
     [CAP - 1, "evaluated/passed"],
