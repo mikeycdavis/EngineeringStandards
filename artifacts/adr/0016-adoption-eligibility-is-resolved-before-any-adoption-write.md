@@ -252,8 +252,8 @@ nothing else; human diagnostics go to stderr. Two shapes exist, told apart by wh
 | `command` | string | always `"eligibility"` |
 | `state` | string | `"IN_SCOPE"`, `"OUT_OF_SCOPE"`, `"INDETERMINATE"` |
 | `exitCode` | integer | `0` for `IN_SCOPE`, `1` for `OUT_OF_SCOPE`, `2` for `INDETERMINATE`; always equals the process exit code |
-| `target` | string | the resolved absolute directory that was examined |
-| `listing` | string | `"complete"` or `"incomplete"`; `"incomplete"` forces `state` `"INDETERMINATE"` |
+| `target` | string | the canonical absolute path of the directory examined: the result of `realpath` on the argument (symbolic links in the path resolved), with no further rewriting; see "Field derivations" |
+| `listing` | string | `"complete"` when the target's directory listing was opened and read to its end without error, else `"incomplete"` (the listing failed to open or failed part-way); `"incomplete"` forces `state` `"INDETERMINATE"`; see "Field derivations" |
 | `signals` | array | exactly one record per vocabulary signal, in vocabulary order, whether or not it matched anything |
 | `overrides` | object | see below |
 
@@ -264,13 +264,13 @@ Each `signals[]` record:
 | `id` | string | a vocabulary signal id: `"frozen-file"`, `"readme-frozen-banner"` |
 | `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"`; `INDETERMINATE` if any entry is, else `FIRED` if any entry fired, else `NOT_FIRED` (including when no entry matched) |
 | `overridden` | boolean | `true` only when `result` is `"FIRED"` and the id was named in an override; never `true` for any other `result` |
-| `entries` | array | one record per root entry whose case-folded name matches this signal's source name, in no guaranteed order |
+| `entries` | array | one record per root entry whose ASCII-lowercased name equals this signal's lowercased source name, sorted by `name` in ascending code-unit (byte-wise) order |
 
 Each `entries[]` record:
 
 | Key | Type | Allowed values / meaning |
 | --- | --- | --- |
-| `name` | string | the entry's name exactly as listed, with its original case |
+| `name` | string | the entry's name exactly as the directory listing returned it, original case; always ASCII, because only ASCII-case-fold matches are entries |
 | `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"` |
 | `reason` | string or null | `null` unless `result` is `"INDETERMINATE"`, then one of `"unreadable"`, `"not-regular-file"`, `"over-read-cap"`, `"not-utf8"`, `"no-listed-phrase"` |
 
@@ -278,9 +278,37 @@ Each `entries[]` record:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `requested` | array of string | signal ids named by the caller, in the order given, de-duplicated |
-| `applied` | array of string | the requested ids that matched a `FIRED` signal |
-| `unused` | array of string | the requested ids that were valid but whose signal did not fire (reported, never silently ignored) |
+| `requested` | array of string | signal ids named by the caller, in order of first occurrence on the command line, de-duplicated |
+| `applied` | array of string | the requested ids that matched a `FIRED` signal, in `requested` order |
+| `unused` | array of string | the requested ids that were valid but whose signal did not fire (reported, never silently ignored), in `requested` order |
+
+**Field derivations (pinned so two implementations emit the same document):**
+
+- **`target`.** The argument (or the current working directory when none was given) is passed to
+  `realpath` (the platform's native canonical form), and the string it returns is emitted unchanged.
+  A target that is itself a symlink to a directory is therefore reported as the directory it points
+  to, so repository identity is stable however it was reached; the lexical path the caller typed is
+  not reported and no second field carries it. The value has no trailing separator except for a
+  filesystem root; it uses the platform's own separators (backslashes on Windows, JSON-escaped as
+  `\\`), the on-disk letter case that `realpath` returns, and the drive letter as returned. It is not
+  normalised across platforms and a consumer must not compare it between machines. If the argument
+  exists but `realpath` fails: `ENOENT` or a symlink loop is `no-such-directory`, `ENOTDIR` is
+  `not-a-directory`, and any other failure (for example a path component that cannot be searched) is
+  `internal-error`, so the repository is never reported on an unconfirmed identity.
+- **`listing`.** `"incomplete"` only when opening the target's directory listing fails or reading
+  it fails before its end. A failure to `lstat` or read an individual matching entry is that entry's
+  `INDETERMINATE` (with its `reason`), not an incomplete listing.
+- **Entry names and matching.** The comparison lowercases ASCII letters only and compares for
+  equality with `frozen.md` or `readme.md`. Unicode case folding is not used, so names containing
+  non-ASCII characters never match and `name` is always ASCII with no encoding question. Names are
+  emitted as the listing returned them.
+- **Ordering.** `signals` is in vocabulary order (`frozen-file`, then `readme-frozen-banner`).
+  `entries` is sorted by `name`, ascending, comparing UTF-16 code units (equivalently bytes, for
+  ASCII), so `FROZEN.md` precedes `frozen.md` and `README.md` precedes `Readme.md`; the output does
+  not depend on directory enumeration order. The three `overrides` arrays follow the first-occurrence
+  order of `requested`.
+- **Serialisation.** One JSON object, UTF-8, keys as named. Key order and whitespace within the
+  document are not part of the contract; consumers must parse it.
 
 `state` is derived from the records and nothing else: `INDETERMINATE` if `listing` is
 `"incomplete"` or any signal `result` is `"INDETERMINATE"`; otherwise `OUT_OF_SCOPE` if any signal
@@ -330,7 +358,7 @@ invalid invocation without `--json` writes its diagnostic to stderr only; exit i
 **Proposed shape, owner to confirm.** D1-D5 fix the states, the per-signal override, the exit codes
 and the `state` field. They do not fix the following, which this record supplies so that two
 implementations cannot both claim to conform; each is open to the owner's change before release:
-the key names `signals`, `entries`, `overrides`, `listing`, `target`; the closed `reason` and
+the key names `signals`, `entries`, `overrides`, `listing`, `target`, with `target` as the canonical `realpath` and the ordering rules under "Field derivations"; the closed `reason` and
 `error.code` lists (including `not-a-directory`, `missing-flag-value` and `wrong-argument-count`), the closed argument grammar (including that no `<dir>` means the current working directory) and error precedence above; `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
 per-file override reporting (`applied` / `unused`); and `--json` as the flag spelling. Adding a key
 later is additive; renaming or removing one, or widening an allowed value list, is `MAJOR` once
@@ -385,6 +413,16 @@ simultaneous errors to pin the precedence order; repeated `--json` and a repeate
 `--override-signal` (accepted, collapsed); `--help` with `--json` (usage, exit `0`); and the same
 cases without `--json` (stderr only, same exit). The injected-interface layer covers all but the
 symlink case on every platform.
+
+The implementation pull requests MUST also test the pinned derivations: a target that is a symlink
+to a directory reports the canonical directory in `target` (capability-probed, with a reported skip
+where links cannot be created, and always covered through an injected `realpath` on every platform);
+`target` has no trailing separator and is never the lexical argument; the three `realpath` failure
+mappings (`ENOENT`/loop, `ENOTDIR`, other) through an injected `realpath`; `listing` `"incomplete"`
+when opening the listing fails and when reading fails part-way, and `"complete"` when one matching
+entry's `lstat` fails; ASCII-only matching (`FROZEN.md` with a non-ASCII look-alike letter is not a
+source; `FROZEN.MD` and `frozen.md` are); and `entries` sorted by code unit regardless of the
+injected listing's order, in both orders.
 
 Every condition that depends on permissions, links or platform file modes is exercised through the
 injected read and stat interface of layer 1 on every platform, never by an on-disk fixture that must
