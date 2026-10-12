@@ -2303,8 +2303,9 @@ export function isExecutableItem(item) {
  *   documents   `{ file, items, orphans }` per plan file that was read, from `parsePlanDocument`
  *   unreadable  `{ file, reason }` per plan file whose text is unavailable. It is never given text.
  *   truncated   repository-relative paths of plan files that were read only up to the read cap. They
- *               ARE parsed (that is today's behaviour; making a truncated plan withdraw its rule is
- *               #118), but they are listed so no consumer has to present them as whole.
+ *               ARE parsed (a violation in the prefix is real), but they are listed so no consumer has
+ *               to present them as whole; `detectPlanDiscrepancies` withdraws `planning.item-fields`
+ *               for each.
  *
  * No input is read twice and nothing is recorded on `run`: whether an unread file becomes an unknown
  * check is the caller's decision, because the two callers decide it differently (the audit records
@@ -2351,16 +2352,42 @@ async function detectPlanDiscrepancies(files, run) {
   if (read.planFiles.length === 0) return;
 
   // One read, two rules, and they must move together. `planning.item-fields` and
-  // `planning.plan-code-consistency` are both derived from these bytes, and today one is withdrawn
-  // by CONTENT_DERIVED_RULES while the other is not — byte-identical evidence classified two ways by
-  // a table that is not addressing the thing that varies. Recording the unknown against both is what
-  // makes the read site, rather than the table, the thing that decides.
+  // `planning.plan-code-consistency` are both derived from these bytes. Recording the unknown at the
+  // read site, rather than relying on a table, is what makes them move together for an unreadable
+  // file; a truncated file is recorded for `planning.item-fields` below, and
+  // `planning.plan-code-consistency` is withdrawn for it by `TRUNCATION_DOMAIN`.
   //
   // Files that WERE read are still parsed: a violation found in one plan file is established
   // regardless of another going unread, and aggregation keeps it.
   for (const { file, reason } of read.unreadable) {
     run.unknown("planning.item-fields", file, reason);
     run.unknown("planning.plan-code-consistency", file, reason);
+  }
+  // A plan file read only up to the cap is a partial read of exactly the evidence this rule consumes
+  // (#118). Its items before the cap are parsed and any violation among them is kept, but "no item
+  // lacks a field" cannot be said of text nobody read, so the rule is withdrawn here, at the read
+  // site, for the paths `isPlanFile` selected — the same predicate that decided which files are read.
+  // The table is not used for this on purpose: `CONTENT_DERIVED_RULES` membership would also subject
+  // `planning.item-fields` to the coarse whole-walk term (a `fixtures/` directory, an unlistable
+  // directory), withdrawing it over repositories whose plan was read whole, or that have none.
+  // `planning.plan-code-consistency` needs no record: a truncated `.md` already withdraws it.
+  for (const file of read.truncated) {
+    run.unknown(
+      "planning.item-fields",
+      file,
+      `plan file read only up to the ${MAX_READ_BYTES}-byte cap, so its remaining items were not checked`,
+    );
+  }
+  // The item a truncated file ends inside. The cap cuts it at an arbitrary byte, so a field that is
+  // present after the cap looks absent, and a label cut before its colon looks malformed. Reporting
+  // either is a violation nobody observed: a valid plan would FAIL. That item is therefore UNKNOWN
+  // (the rule is already withdrawn above), and it contributes no finding of any kind except a
+  // syntax problem that ends before the cut line. Every earlier item is read whole and reports as usual.
+  const cutItems = new Map();
+  for (const d of read.documents) {
+    if (!read.truncated.includes(d.file) || d.items.length === 0) continue;
+    const f = read.planFiles.find((p) => run.rel(p) === d.file);
+    cutItems.set(d.items[d.items.length - 1], run.textOf(f).text.split(/\r?\n/).length);
   }
   const { items } = read;
   // BEFORE the executable filter, and before its early return, because a malformed `Status` is
@@ -2372,6 +2399,7 @@ async function detectPlanDiscrepancies(files, run) {
   const malformed = [];
   for (const item of items) {
     for (const problem of item.syntax) {
+      if (cutItems.has(item) && problem.line >= cutItems.get(item)) continue; // the label the cap cut
       const what =
         problem.kind === "duplicate"
           ? `a second ${problem.key} field`
@@ -2415,6 +2443,7 @@ async function detectPlanDiscrepancies(files, run) {
   const backlog = discoverBacklog(root);
 
   for (const item of executable) {
+    if (cutItems.has(item)) continue; // straddles the read cap: unknown, not a violation
     for (const field of PLAN_FIELDS) {
       if (!item.fields.has(field)) incomplete.push(`${item.file} :: ${item.title} (no ${field})`);
     }

@@ -265,6 +265,25 @@ named baseline checkout with `ES_GOLDEN_BASE`. The README and nested-file classi
 part of this change (ST-24 part B): a `README.md` or a nested file with a `###` heading and a `Status` is still an
 executable item today.
 
+Fixed a fail-open in `planning.item-fields` (ST-25, #118, truncation half): a plan file larger than the 400,000-byte
+read cap was parsed from its leading part and the rule reported `passed` over items after the cap that nobody read, while
+`planning.plan-code-consistency` over the same bytes was withdrawn. The rule is now `not-evaluated` when a plan file
+(`isPlanFile`) was read only up to the cap. A violation confirmed in the part that was read still fails and carries only
+that finding, and an item the cap cuts through is treated as unknown: it contributes no missing-field or syntax finding
+(a field that is past the cap looks absent, a label cut before its colon looks malformed), so a valid plan whose cap falls
+mid-item is `not-evaluated` rather than `failed`. It is recorded at the read site, not by adding the rule to
+`CONTENT_DERIVED_RULES`, so a fully read plan beside a `fixtures/` directory, or a repository with no plan directory, is
+unchanged. A truncated Markdown file outside the plan directory does not withdraw it. Unreadable and read-budget-exhausted
+behaviour is unchanged.
+
+Consumer-visible consequences, for a repository with a plan file over the cap: `planning.item-fields` moves from
+`passed` / `evaluated` to `skipped` / `not-evaluated` with the generic message `No implemented check evaluates ...`;
+`assurance` (automated and notEvaluated counts), `summary` (passed and skipped counts), `denominator.scored` and `score`
+move with it (in the test corpus case, score 63 to 57, passed 10 to 9, skipped 37 to 38, scored 8 to 7); the exit code was
+unchanged in every case run. `audit` output is unchanged. The generic message is the remaining half of #118 (a rule
+withdrawn after its detector ran should say so) and is not part of this change. A truncated `README.md` in the plan
+directory withdraws the rule today because `isPlanFile` still accepts it; ST-24 part B narrows that.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
