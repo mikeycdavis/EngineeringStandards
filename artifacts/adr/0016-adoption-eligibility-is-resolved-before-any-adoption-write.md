@@ -259,6 +259,22 @@ refusal. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repos
 unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
 classify and write exactly as before (a test).
 
+*Clarification (review of #105; not a new owner decision).* What `init` writes to stdout on a refusal
+is fixed by the behaviour `init` already has when it cannot run: `runInit` writes the diagnostic to
+stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--json`
+(`scripts/standards.mjs`, the `planInit` failure path). The eligibility refusal is the same path:
+
+- `init`, `init --dry-run`, `init --json` and `init --dry-run --json` all refuse with exit `2`,
+  **empty stdout**, and a human diagnostic on stderr that names the signals or conditions. No
+  eligibility report is printed to stdout, so a consumer parsing `init --json` receives either its
+  existing structured report or nothing, never prose.
+- No field is added to the structured `init` report, in either the refusal or the success case. An
+  `IN_SCOPE` repository's `init --json` and `init --dry-run --json` output is byte-for-byte what it
+  is today. This keeps the machine-readable surface exactly as deferred by Q5 C: eligibility
+  introduces no machine field anywhere.
+- The refusal happens before `planInit` and `applyInit`, so nothing is computed from, or written to,
+  the target, and stderr is the only output.
+
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
 **No machine-readable (`--json`) output is specified or frozen by this record** (Q5 C). In this
@@ -382,6 +398,12 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `OUT_OF_SCOPE`.
 - **AC4.** The greenfield, scaffold, nested-monorepo and reconstruction-required fixtures classify
   and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`.
+- **`init` output on refusal and on success.** For a repository with a fired signal and for one with
+  an indeterminate condition, each of `init`, `init --dry-run`, `init --json` and
+  `init --dry-run --json`: exit `2`, stdout byte-empty, stderr non-empty and naming the signal or
+  condition, tree unchanged. For an `IN_SCOPE` fixture, the stdout of `init --json` and
+  `init --dry-run --json` is byte-identical to the output of the same invocation on the base
+  commit (no added key), and a before/after comparison confirms the existing write behaviour.
 - **Overrides.** Rules 1-6: a named fired signal clears only itself; an unused override is reported;
   an override never changes `INDETERMINATE`; an unknown id exits `2`; duplicates collapse.
 - **Both spellings, two layers.** A directory holding `FROZEN.md` and `frozen.md` cannot exist on a
