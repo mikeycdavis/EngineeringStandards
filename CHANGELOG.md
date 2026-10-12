@@ -19,16 +19,22 @@ All notable changes to this framework. Versioning follows
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
 ST-26 (#119): `scripts/standards.mjs` now locates the audit surface once, as an observation that is bound to no rule
-(refs #62 for history; separate from the verification-surface observations of #64). `audit` and `validate` gain one
-additive `info` finding, `detected-audit-surface`, with `rule: null`. It reports where audit-named types, tables,
-recorder calls and framework attributes appear in non-test, non-CI code of the working tree, by a small fixed idiom list
-(C#, Java/Kotlin, JavaScript/TypeScript, Python, SQL DDL), and carries a structured `detail` with `observed`, `unread`,
-`incomplete`/`incompleteReasons`, `blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. A
-comment, a string literal, Markdown or a test path is a mention and never an observation; DDL embedded in an
-application-language string literal is a declared blind spot. It is `INFERRED` and never a pass: no rule result,
-verdict, exit code or `audit --strict` outcome changes, and `audit.business-state` / `audit.actor-attribution` stay
-not-evaluated. `findings[].detail` is a new optional member (present only on this finding), and `locateAuditSurface`
-is exported for the audit detectors that will consume it (#125, #126).
+(refs #62 for history; separate from the verification-surface observations of #64). **Output delta, stated plainly:**
+`audit --json` and `validate --json` gain one `info` finding, `detected-audit-surface` (`rule: null`), in
+`findings[]` for every repository, and `findings[].detail` is a new optional member present only on that finding.
+Human `audit` output gains an "Audit surface" section. The sentence above is therefore true of rule results, verdicts,
+exit codes and `audit --strict`, which do not change, and not of the `findings[]` list, which grows by one entry.
+The finding reports where audit-named types, tables, recorder calls and framework attributes appear in non-test,
+non-CI code of the working tree (C#, Java/Kotlin, JavaScript/TypeScript, Python, SQL DDL), by a small fixed idiom list
+carried in `detail.idioms`. `detail` holds `observed`, `unread`, `unclassified`, `incomplete`/`incompleteReasons`,
+`blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. Test paths are the paths `TEST_RE`
+classifies plus a fixed audit-specific list (CI directories, `e2e`, `cypress`, `__mocks__`, `mocks`, `testing`,
+`*.Tests/`, `*Test.java`, stories); a test helper outside both is read as code and declared as a blind spot. A comment, a
+string literal, Markdown or a test path is a mention and never an observation; DDL embedded in an application-language
+string literal, Vue/Svelte/Razor components and code languages the tool does not read are declared blind spots. It is
+`INFERRED` and never a pass: `audit.business-state` and `audit.actor-attribution` stay not-evaluated.
+`locateAuditSurface(files, run, surface)` and `reportAuditSurface` are exported for the audit detectors (#125, #126),
+which must pass `{ surfaceLoss, unreadableFiles }` from `collectSurface`.
 
 Correction to ST-14 (#64, ST14-001): a single-file CI candidate (`Jenkinsfile`, `azure-pipelines.yml`, and the
 others) now counts only when it is a regular file, so a directory named `Jenkinsfile` no longer suppresses

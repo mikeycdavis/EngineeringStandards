@@ -22,7 +22,7 @@ import { mkdtemp, mkdir, writeFile, rm, cp, chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectSurface, locateAuditSurface } from "../scripts/standards.mjs";
+import { collectSurface, locateAuditSurface, reportAuditSurface } from "../scripts/standards.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..");
@@ -34,18 +34,22 @@ const ID = "detected-audit-surface";
 /** The declared blind-spot set, spelled out so a silent addition or removal is a test failure. */
 const DECLARED_BLIND_SPOTS = [
   "construct:attribute-forms-not-matched",
+  "construct:audit-named-identifiers-outside-idioms",
   "construct:database-native-audit",
   "construct:framework-configuration",
+  "construct:logging-frameworks-as-audit-trails",
   "construct:names-without-audit",
   "construct:orm-names-in-string-literals",
   "construct:string-literal-ddl",
   "language-family:go",
+  "language-family:markup-components",
   "language-family:php",
   "language-family:ruby",
   "language-family:rust",
   "language-family:shell",
-  "language-family:unmapped",
+  "language-family:unlisted-code-languages",
   "surface:non-code-files",
+  "surface:test-helper-paths-not-recognised",
 ];
 
 function cli(command, dir, extra = []) {
@@ -480,5 +484,164 @@ test("auditing the framework as the target observes nothing in its tools or test
   const f = surfaceOf(cli("audit", ROOT).json);
   const inTooling = f.detail.observed.filter((o) => o.file.startsWith("scripts/") || o.file.startsWith("test/"));
   assert.deepEqual(inTooling, [], "the framework's own tooling and tests are not an audit surface");
-  assert.equal(JSON.stringify(surfaceOf(cli("audit", ROOT).json)), JSON.stringify(f), "the self run must be deterministic");
 });
+
+test("the self run is deterministic over a private copy of the tooling", () =>
+  withRepo({}, async (dir) => {
+    // A private copy, because sibling suites create and remove scratch files inside the live tree.
+    await cp(path.join(ROOT, "scripts"), path.join(dir, "scripts"), { recursive: true, filter: (src) => !path.basename(src).startsWith(".") });
+    const a = JSON.stringify(surfaceOf(cli("audit", dir).json));
+    const b = JSON.stringify(surfaceOf(cli("audit", dir).json));
+    assert.equal(a, b);
+    assert.ok(JSON.parse(a).detail.unread.length === 0);
+  }));
+
+// --- Review follow-ups: markup components, widened names, path exclusions, unlisted languages -----
+
+test("markup components are a declared blind spot: prose, apostrophes and real script all stay unobserved", () =>
+  withRepo(
+    {
+      "web/A.vue": "<template><p>Use class AuditEvent for this.</p></template>\n<script>\nclass AuditEvent {}\n</script>\n",
+      "web/B.svelte": "<p>Don't forget: class AuditLog</p>\n<script>\nclass AuditLog {}\n</script>\n",
+      "web/C.razor": "<p>It's the class AuditEvent</p>\n@code {\n  class AuditEvent {}\n}\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(f.detail.observed, [], "markup components must not be tokenised as plain JS or C#");
+      assert.ok(f.detail.blindSpots.some((b) => b.id === "language-family:markup-components"));
+      const fam = f.detail.languageFamilies.find((x) => x.family === "markup-components");
+      assert.deepEqual(fam, { family: "markup-components", supported: false, codeFilesRead: 3 });
+    },
+  ));
+
+test("audit-named declarations beyond the suffix list are observed", () =>
+  withRepo(
+    {
+      "src/A.cs": "public interface IAuditService {}\npublic class AuditWriter {}\npublic class AuditableEntity {}\n",
+      "src/B.java": "class AuditMiddleware {}\nclass AuditInterceptor {}\nclass AuditAspect {}\nclass AuditListener {}\n",
+      "src/c.py": "class AuditMixin:\n    pass\n\nclass AuditModel:\n    pass\n",
+      "src/d.ts": "export class AuditService {}\nexport class Auditor {}\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(f.detail.observed.map((o) => o.identifier), [
+        "IAuditService", "AuditWriter", "AuditableEntity",
+        "AuditMiddleware", "AuditInterceptor", "AuditAspect", "AuditListener",
+        "AuditMixin", "AuditModel", "AuditService",
+      ]);
+    },
+  ));
+
+test("a repository whose only audit class is AuditService does not read as clean", () =>
+  withRepo({ "src/a.js": "class AuditService {}\n" }, (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.equal(f.detail.observedCount, 1);
+    assert.doesNotMatch(f.message, /^No audit-named construct/);
+  }));
+
+test("audit-shaped calls are observed, with the use-versus-mention filter intact", () =>
+  withRepo(
+    {
+      "src/a.cs": "class X {\n  void M() {\n    Audit.Record(x);\n    _audit.RecordAsync(x);\n  }\n}\n",
+      "src/b.js": "auditLogger.info('x');\nlogger.audit('y');\n// auditLogger.info('mention')\nconst s = \"AuditLog.create(z)\";\n",
+      "src/c.py": "AuditLog.objects.create(x=1)\nAuditLog.create(x)\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(sites(f), [
+        "src/a.cs:3 recorder-call Audit.Record",
+        "src/a.cs:4 recorder-call _audit.RecordAsync",
+        "src/b.js:1 recorder-call auditLogger.info",
+        "src/b.js:2 recorder-call logger.audit",
+        "src/c.py:1 recorder-call AuditLog.objects.create",
+        "src/c.py:2 recorder-call AuditLog.create",
+      ]);
+    },
+  ));
+
+test("a file with an audit-named identifier the idioms do not classify is listed and makes the search incomplete", () =>
+  withRepo({ "src/a.js": "const auditService = make();\nauditService.run();\n", "src/b.js": "export const x = 1;\n" }, (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(f.detail.observed, []);
+    assert.deepEqual(f.detail.unclassified, [{ file: "src/a.js", family: "javascript-typescript" }]);
+    assert.equal(f.detail.incomplete, true);
+    assert.deepEqual(f.detail.incompleteReasons, ["unclassified-audit-named-identifiers"]);
+    assert.deepEqual(f.evidence, [], "evidence holds paths only");
+  }));
+
+test("a method definition is not a recorder call, and a call inside a condition still is", () =>
+  withRepo(
+    {
+      "src/a.js": "const o = { writeAudit(e) { return e; } };\nif (recordAudit(x)) {\n  go();\n}\n",
+      "src/B.cs": "class B {\n  void RecordAudit(string e) { }\n  void Run() { RecordAudit(\"x\"); }\n}\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(sites(f), [
+        "src/B.cs:2 recorder-definition RecordAudit",
+        "src/B.cs:3 recorder-call RecordAudit",
+        "src/a.js:1 recorder-definition writeAudit",
+        "src/a.js:2 recorder-call recordAudit",
+      ]);
+    },
+  ));
+
+test("test helpers outside TEST_RE are excluded by the audit-specific path list", () =>
+  withRepo(
+    {
+      "src/Foo.Tests/Helpers.cs": "class AuditEvent {}\n",
+      "e2e/audit.ts": "class AuditEvent {}\n",
+      "cypress/support/audit.js": "class AuditEvent {}\n",
+      "src/__mocks__/audit.js": "class AuditEvent {}\n",
+      "src/mocks/audit.js": "class AuditEvent {}\n",
+      "testing/audit.py": "class AuditEvent:\n    pass\n",
+      "src/OrderServiceTest.java": "class AuditEvent {}\n",
+      "src/Foo.stories.tsx": "class AuditEvent {}\n",
+      "src/real.js": "export const keep = 1;\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(f.detail.observed, []);
+      assert.equal(f.detail.excluded.codeFilesExcluded, 8);
+      assert.ok(f.detail.blindSpots.some((b) => b.id === "surface:test-helper-paths-not-recognised"));
+    },
+  ));
+
+test("code languages outside the code-extension list are counted and declared, not read", () =>
+  withRepo({ "App.swift": "class AuditEvent {}\n", "main.cpp": "int main() {}\n", "src/a.js": "export const x = 1;\n" }, (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(f.detail.observed, []);
+    const u = f.detail.languageFamilies.find((x) => x.family === "unlisted-code-languages");
+    assert.deepEqual(u, { family: "unlisted-code-languages", supported: false, codeFilesRead: 0, codeFilesPresent: 2 });
+    assert.ok(f.detail.blindSpots.some((b) => b.id === "language-family:unlisted-code-languages"));
+  }));
+
+test("a file that was not read is not counted as read", () =>
+  withRepo({ "src/big.js": `x();\n${"// filler line\n".repeat(20_000)}`, "src/a.js": "export const x = 1;\n" }, (dir) => {
+    const f = surfaceOf(cli("audit", dir, ["--max-total-read-bytes=16384"]).json);
+    const js = f.detail.languageFamilies.find((x) => x.family === "javascript-typescript");
+    assert.equal(js.codeFilesRead + f.detail.unreadCount, 2, "read + unread must account for every code file exactly once");
+    assert.ok(js.codeFilesRead < 2);
+  }));
+
+test("a MySQL # comment line is a mention, and CR-only line endings keep their line numbers", () =>
+  withRepo(
+    {
+      "db/a.sql": "# CREATE TABLE audit_log (id INT);\nCREATE TABLE audit_events (id INT);\n",
+      "src/cr.js": "const a = 1;\rconst b = 2;\rclass AuditEvent {}\r",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(sites(f), ["db/a.sql:2 table audit_events", "src/cr.js:3 type AuditEvent"]);
+    },
+  ));
+
+test("the reporter itself writes exactly one unbound finding and records no unknown, even over unread files", () =>
+  withRepo({ "src/big.js": `recordAuditEvent(x);\n${"// filler line\n".repeat(20_000)}`, "src/a.js": "class AuditEvent {}\n" }, async (dir) => {
+    const s = await collectSurface(dir, { maxTotalReadBytes: 16384 });
+    reportAuditSurface(s.files, s.run, s);
+    assert.equal(s.run.unknownChecks.size, 0, "the observation must never mark a rule's check unknown");
+    assert.equal(s.run.findings.length, 1);
+    assert.equal(s.run.findings[0].rule, null);
+    assert.equal(s.run.findings[0].severity, "info");
+  }));

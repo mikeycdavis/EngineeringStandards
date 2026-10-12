@@ -266,10 +266,35 @@ requirement that produced it, so a reader can go from a finding to the rule with
       "evidence": ["artifacts/"],
       "message": "No artifacts/project-plan-breakdown/ directory exists.",
       "standardRef": "standards/44-existing-project-reconstruction.md#r4--required-artifacts-and-canonical-paths"
+    },
+    {
+      "id": "detected-audit-surface",
+      "category": "Audit surface",
+      "severity": "info",
+      "label": "INFERRED",
+      "evidence": ["src/audit.js"],
+      "message": "1 audit-named construct(s) were observed in 1 non-test code file(s) of the working tree ...",
+      "standardRef": "standards/03-auditing.md#r1--the-core-rule",
+      "rule": null,
+      "detail": {
+        "observed": [{ "file": "src/audit.js", "line": 4, "kind": "recorder-definition", "identifier": "recordAuditEvent", "family": "javascript-typescript", "idiom": "recorder.named-call" }],
+        "observedCount": 1,
+        "unread": [],
+        "unclassified": [],
+        "incomplete": false,
+        "incompleteReasons": [],
+        "blindSpots": [{ "id": "construct:string-literal-ddl", "kind": "construct", "description": "..." }],
+        "languageFamilies": [],
+        "idioms": [],
+        "excluded": {}
+      }
     }
   ]
 }
 ```
+
+`findings[].detail` is an optional member carried only by findings that need structured parts (today, only
+`detected-audit-surface`); every other finding is serialised unchanged.
 
 Every finding carries one of the Standard 44 evidence labels (`OBSERVED`, `INFERRED`,
 `CONFIRMED_BY_OWNER`, `UNKNOWN`) so that a consumer can distinguish a fact from a heuristic — the

@@ -3329,7 +3329,8 @@ function detectSqlConcat(files, run) {
  * Paths that never count as audit PRESENCE: test paths by the existing classification, plus CI
  * configuration directories. A recorder call in a test is a test of recording, not a recorder.
  */
-const AUDIT_EXCLUDED_PATH_RE = /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipelines|ci)\//i;
+const AUDIT_EXCLUDED_PATH_RE =
+  /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipelines|ci|e2e|cypress|__mocks__|mocks?|testing|testdata)\/|(^|\/)[^/]*\.tests?\/|Tests?\.(java|kt|cs|py|ts|tsx|js|jsx)$|\.(stories|story|mock|mocks)\.[jt]sx?$/i;
 
 /**
  * Code-file extensions by language family. `supported` is the contract with the idiom table below:
@@ -3338,10 +3339,11 @@ const AUDIT_EXCLUDED_PATH_RE = /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipe
  * `language-family:unmapped` rather than guessed at.
  */
 const AUDIT_LANGUAGE_FAMILIES = [
-  { family: "csharp", supported: true, exts: [".cs", ".razor"] },
+  { family: "csharp", supported: true, exts: [".cs"] },
   { family: "go", supported: false, exts: [".go"] },
   { family: "java-kotlin", supported: true, exts: [".java", ".kt"] },
-  { family: "javascript-typescript", supported: true, exts: [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte"] },
+  { family: "javascript-typescript", supported: true, exts: [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"] },
+  { family: "markup-components", supported: false, exts: [".razor", ".svelte", ".vue"] },
   { family: "php", supported: false, exts: [".php"] },
   { family: "python", supported: true, exts: [".py"] },
   { family: "ruby", supported: false, exts: [".rb"] },
@@ -3351,12 +3353,13 @@ const AUDIT_LANGUAGE_FAMILIES = [
 ];
 
 /**
- * A name that is plausibly an audit record: `audit` followed by event/entry/record/log/trail/history/
- * trace (`AuditEvent`, `audit_log`, `orderAuditTrail`), or `audit` as a whole word of a snake-case or
- * qualified name (`orders_audit`, `audit.events`). Deliberately narrower than "contains audit":
- * `Auditor` and `auditPassed` are not audit records.
+ * A declared type or table name containing `audit`, except `auditor` (`AuditEvent`, `AuditService`,
+ * `IAuditService`, `AuditableEntity`, `orders_audit`, `audit.events`). A person who audits is not an audit
+ * mechanism. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
+ * it a use, and any other identifier that merely contains the word is reported as unclassified, never
+ * as an observation.
  */
-const AUDIT_NAME_RE = /audit_?(?:event|entry|entries|record|log|trail|history|trace)|(?:^|[_.["`])audits?(?:$|[_.\]"`])/i;
+const AUDIT_NAME_RE = /audit(?!or)/i;
 
 const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
 
@@ -3373,7 +3376,7 @@ const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript"
 const AUDIT_IDIOMS = [
   { id: "csharp.type", families: ["csharp"], kind: "type", re: /\b(?:class|record|struct|interface|enum)\s+([A-Za-z_]\w*)/g, named: true },
   { id: "java-kotlin.type", families: ["java-kotlin"], kind: "type", re: /\b(?:class|interface|enum|record|object)\s+([A-Za-z_$][\w$]*)/g, named: true },
-  { id: "js.class", families: ["javascript-typescript"], exts: [".js", ".mjs", ".cjs", ".jsx", ".vue", ".svelte"], kind: "type", re: /\bclass\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "js.class", families: ["javascript-typescript"], exts: [".js", ".mjs", ".cjs", ".jsx"], kind: "type", re: /\bclass\s+([A-Za-z_$][\w$]*)/g, named: true },
   { id: "ts.type", families: ["javascript-typescript"], exts: [".ts", ".tsx"], kind: "type", re: /\b(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, named: true },
   { id: "python.class", families: ["python"], kind: "type", re: /^[ \t]*class\s+([A-Za-z_]\w*)/gm, named: true },
   {
@@ -3394,7 +3397,13 @@ const AUDIT_IDIOMS = [
     id: "recorder.audit-object-call",
     families: AUDIT_JS_TS_PY_JAVA_CS,
     kind: "recorder-call",
-    re: /(?<![A-Za-z0-9])(audit_?(?:log|logger|trail|recorder|service|events?)\s*\??\.\s*(?:record|write|append|emit|publish|log|save)\w*)\s*\(/gi,
+    re: /(?<![A-Za-z0-9])(\w*audit(?!or)\w*(?:\s*\??\.\s*\w+)*?\s*\??\.\s*(?:record|write|append|emit|publish|log|save|create|add|insert|send|track|capture|persist|info|warn|error)\w*)\s*\(/gi,
+  },
+  {
+    id: "recorder.audit-method-call",
+    families: AUDIT_JS_TS_PY_JAVA_CS,
+    kind: "recorder-call",
+    re: /(?<![A-Za-z0-9])(\w+\s*\??\.\s*audit(?:_?(?:log|event|entry|record|trail))?(?:_?async)?)\s*\(/gi,
   },
   { id: "csharp.attribute", families: ["csharp"], kind: "framework-attribute", re: /^[ \t]*\[\s*((?:Audit|Audited|Auditable|AuditLog)(?:Attribute)?)\s*[\](,]/gm },
   { id: "annotation.at-name", families: ["java-kotlin", "javascript-typescript"], kind: "framework-attribute", re: /^[ \t]*@(Audited|Auditable|Audit|AuditLog|EnableJpaAuditing)\b/gm },
@@ -3413,7 +3422,10 @@ const AUDIT_BLIND_SPOTS = [
   { id: "language-family:ruby", kind: "language-family", description: "Ruby source (.rb) has no idiom; nothing in it is read for audit mechanisms." },
   { id: "language-family:rust", kind: "language-family", description: "Rust source (.rs) has no idiom; nothing in it is read for audit mechanisms." },
   { id: "language-family:shell", kind: "language-family", description: "Shell and PowerShell (.sh, .ps1) have no idiom; nothing in them is read for audit mechanisms." },
-  { id: "language-family:unmapped", kind: "language-family", description: "A code extension this locator does not name is not read for audit mechanisms." },
+  { id: "language-family:markup-components", kind: "language-family", description: "Vue, Svelte and Razor components (.vue, .svelte, .razor) mix markup with script; they are not tokenised as plain JavaScript or C#, so none of their content is read." },
+  { id: "language-family:unlisted-code-languages", kind: "language-family", description: "Code languages outside this tool's code-extension list (for example .swift, .scala, .fs, .cpp, .c, .kts, .cshtml, .vb, .dart) are never read; their files are counted in languageFamilies but not searched." },
+  { id: "construct:audit-named-identifiers-outside-idioms", kind: "construct", description: "An identifier containing `audit` that is not a declared type, audit-table DDL, a recorder-shaped call or a listed attribute (variables, parameters, imports, DI registrations) is not classified; files holding one and no observation are listed as `unclassified` and make the search incomplete." },
+  { id: "construct:logging-frameworks-as-audit-trails", kind: "construct", description: "Audit trails written through a general logging framework, a message bus or an event store, with no audit-named construct, are not located." },
   { id: "construct:attribute-forms-not-matched", kind: "construct", description: "Audit attributes, annotations and decorators are matched only at the start of a line and, in C#, only first in an attribute list; inline and listed forms are not seen." },
   { id: "construct:database-native-audit", kind: "construct", description: "Triggers, views, stored procedures, temporal or system-versioned tables, change-data-capture and database audit extensions are not located." },
   { id: "construct:framework-configuration", kind: "construct", description: "Auditing enabled by configuration or by a dependency package (framework settings, history or versioning libraries) rather than by a named construct is not located." },
@@ -3421,7 +3433,32 @@ const AUDIT_BLIND_SPOTS = [
   { id: "construct:orm-names-in-string-literals", kind: "construct", description: "Table and entity names given as string literals to an ORM or migration DSL (for example a table-name attribute or a migration builder) are blanked in the structural view and are not located." },
   { id: "construct:string-literal-ddl", kind: "construct", description: "DDL embedded in a string literal of an application language is not located: a statement that is run cannot be told from a message that mentions one without parsing the host language." },
   { id: "surface:non-code-files", kind: "surface", description: "Markdown, YAML, JSON, TOML, XML and other non-code files are never read for audit mechanisms." },
+  { id: "surface:test-helper-paths-not-recognised", kind: "surface", description: "Test and CI paths are excluded by TEST_RE plus a fixed audit-specific path list; a test helper outside both is read as ordinary code and may be reported as a mechanism." },
 ];
+
+/** Code-language extensions this tool does not read. Counted from the file list, never searched. */
+const AUDIT_UNLISTED_CODE_EXT = new Set([
+  ".swift", ".scala", ".sc", ".fs", ".fsx", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".kts", ".cshtml", ".vb",
+  ".dart", ".m", ".mm", ".lua", ".pl", ".pm", ".r", ".jl", ".ex", ".exs", ".erl", ".clj", ".groovy", ".gradle",
+]);
+
+/**
+ * Whether the call-shaped text whose `(` is at `open` is followed, after its balanced argument list, by a body.
+ * Bounded, and answers false when the list does not close within the bound.
+ */
+function followedByBody(text, open) {
+  let depth = 0;
+  const limit = Math.min(text.length, open + 4000);
+  for (let i = open; i < limit; i += 1) {
+    const c = text[i];
+    if (c === "(") depth += 1;
+    else if (c === ")") {
+      depth -= 1;
+      if (depth === 0) return /^\s*(?::\s*[\w.<>\[\]?, |]+?)?\s*(?:\{|=>)/.test(text.slice(i + 1, i + 200));
+    }
+  }
+  return false;
+}
 
 /** Codepoint order, never locale order, so output is identical on every host. */
 const byCodepoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -3450,17 +3487,25 @@ export function locateAuditSurface(files, run, surface) {
   const observed = new Map();
   const unread = [];
   const familyCounts = new Map();
+  const unclassified = [];
   let excludedCodeFiles = 0;
+  let unlistedCodeFiles = 0;
 
   for (const { f, r } of entries) {
-    if (!isCode(f)) continue;
+    if (!isCode(f)) {
+      // A code language this tool does not list is never read, so it is counted from the file list
+      // and declared as a blind spot rather than being invisible.
+      if (!TEST_RE.test(r) && !AUDIT_EXCLUDED_PATH_RE.test(r) && AUDIT_UNLISTED_CODE_EXT.has(path.extname(f).toLowerCase())) {
+        unlistedCodeFiles += 1;
+      }
+      continue;
+    }
     if (TEST_RE.test(r) || AUDIT_EXCLUDED_PATH_RE.test(r)) {
       excludedCodeFiles += 1;
       continue;
     }
     const ext = path.extname(f);
-    const fam = familyByExt.get(ext) ?? { family: "unmapped", supported: false };
-    familyCounts.set(fam.family, (familyCounts.get(fam.family) ?? 0) + 1);
+    const fam = familyByExt.get(ext) ?? { family: "unlisted-code-languages", supported: false };
 
     const raw = textOf(f);
     if (!raw.available) {
@@ -3477,16 +3522,20 @@ export function locateAuditSurface(files, run, surface) {
       unread.push({ file: r, reason: "view-misaligned" });
       continue;
     }
+    // Counted only once the content was actually obtained: an unread file was not "read".
+    familyCounts.set(fam.family, (familyCounts.get(fam.family) ?? 0) + 1);
     const truncated = run.truncated.has(f);
     if (truncated) unread.push({ file: r, reason: "truncated" });
     if (!fam.supported) continue;
+    let fileHit = false;
 
     const structure = view.text;
     let newlines = null;
     const lineAt = (index) => {
       if (newlines === null) {
+        // LF, CRLF and a lone CR each end one line, so a CR-only file does not collapse to line 1.
         newlines = [];
-        for (let i = raw.text.indexOf("\n"); i !== -1; i = raw.text.indexOf("\n", i + 1)) newlines.push(i);
+        for (const brk of raw.text.matchAll(/\r\n|\r|\n/g)) newlines.push(brk.index + brk[0].length - 1);
       }
       let lo = 0;
       let hi = newlines.length;
@@ -3521,14 +3570,27 @@ export function locateAuditSurface(files, run, surface) {
         // A prefix ends mid-token: `class Audit` may have been `class AuditableThing`. Nothing at the
         // very end of a truncated read is a complete identifier, so it is dropped rather than reported.
         if (truncated && end >= raw.text.length) continue;
+        // MySQL writes a comment as `#`, which the SQL tokenizer does not know: a line that opens with one is
+        // a comment, so DDL on it is a mention.
+        if (fam.family === "sql") {
+          const lineStart = Math.max(raw.text.lastIndexOf("\n", at - 1), raw.text.lastIndexOf("\r", at - 1)) + 1;
+          if (/^[ \t]*#/.test(raw.text.slice(lineStart, at))) continue;
+        }
         let kind = idiom.kind;
-        if (kind === "recorder-call" && /\b(?:function\*?|def|func|fun)\s+$/.test(structure.slice(Math.max(0, at - 24), at))) {
-          kind = "recorder-definition";
+        if (kind === "recorder-call") {
+          // A definition is a recorder-shaped name introduced by a declaration keyword, or one whose
+          // argument list is followed by a body (`{` or `=>`), as in a method shorthand or a C# member.
+          const keyword = /\b(?:function\*?|def|func|fun)\s+$/.test(structure.slice(Math.max(0, at - 24), at));
+          if (keyword || followedByBody(structure, m.index + m[0].length - 1)) kind = "recorder-definition";
         }
         const o = { file: r, line: lineAt(at), kind, identifier, family: fam.family, idiom: idiom.id };
+        fileHit = true;
         observed.set(`${o.file}\u0000${o.line}\u0000${o.kind}\u0000${o.identifier}`, o);
       }
     }
+    // An audit-named identifier in a file with no observation is something the locator saw and could
+    // not classify. It is reported, and it makes the search incomplete: silence there is not absence.
+    if (!fileHit && AUDIT_NAME_RE.test(structure)) unclassified.push({ file: r, family: fam.family });
   }
 
   const observations = [...observed.values()].sort(
@@ -3546,10 +3608,12 @@ export function locateAuditSurface(files, run, surface) {
   if (surfaceLoss.capped) reasons.push("file-cap-reached");
   if ((surfaceLoss.dirs ?? []).length) reasons.push("unlistable-directories");
   if (frameworkExcluded.length) reasons.push("framework-excluded-directories");
+  if (unclassified.length) reasons.push("unclassified-audit-named-identifiers");
 
   return {
     observed: observations,
     unread,
+    unclassified: unclassified.sort((a, b) => byCodepoint(a.file, b.file)),
     incomplete: reasons.length > 0,
     incompleteReasons: reasons,
     blindSpots: AUDIT_BLIND_SPOTS.map((b) => ({ ...b })).sort((a, b) => byCodepoint(a.id, b.id)),
@@ -3557,9 +3621,10 @@ export function locateAuditSurface(files, run, surface) {
       family,
       supported,
       codeFilesRead: familyCounts.get(family) ?? 0,
-    })).concat(
-      familyCounts.has("unmapped") ? [{ family: "unmapped", supported: false, codeFilesRead: familyCounts.get("unmapped") }] : [],
-    ),
+    })).concat([
+      // Never read at all, so a count of files present rather than of files read.
+      { family: "unlisted-code-languages", supported: false, codeFilesRead: 0, codeFilesPresent: unlistedCodeFiles },
+    ]),
     idioms: AUDIT_IDIOMS.map((i) => ({
       id: i.id,
       families: [...i.families],
@@ -3586,7 +3651,7 @@ const AUDIT_PAYLOAD_MAX_UNREAD = 200;
  * `blindSpots` and `incomplete` are the content of the observation, and a run that said nothing
  * would be indistinguishable from a tool that never looked.
  */
-function reportAuditSurface(files, run, surface) {
+export function reportAuditSurface(files, run, surface) {
   const found = locateAuditSurface(files, run, surface);
   const observedFiles = uniq(found.observed.map((o) => o.file));
   const parts = [];
@@ -3602,6 +3667,11 @@ function reportAuditSurface(files, run, surface) {
         "see the declared blind spots in `detail.blindSpots`.",
     );
   }
+  if (found.unclassified.length) {
+    parts.push(
+      `${found.unclassified.length} code file(s) hold an audit-named identifier the locator could not classify (see detail.unclassified).`,
+    );
+  }
   if (found.incomplete) {
     parts.push(
       `The search was incomplete (${found.incompleteReasons.join(", ")})` +
@@ -3613,7 +3683,9 @@ function reportAuditSurface(files, run, surface) {
     category: "Audit surface",
     severity: "info",
     label: "INFERRED",
-    evidence: observedFiles.length ? observedFiles : ["(no audit-named construct observed)"],
+    // Paths only. A placeholder string here would read as a path to every consumer of `evidence`; the
+    // empty case is carried by `detail.observedCount` and the message.
+    evidence: observedFiles,
     message: parts.join(" "),
     standardRef: R.audit,
     detail: {
@@ -3623,6 +3695,8 @@ function reportAuditSurface(files, run, surface) {
       unread: found.unread.slice(0, AUDIT_PAYLOAD_MAX_UNREAD),
       unreadCount: found.unread.length,
       unreadOmitted: Math.max(0, found.unread.length - AUDIT_PAYLOAD_MAX_UNREAD),
+      unclassified: found.unclassified.slice(0, AUDIT_PAYLOAD_MAX_UNREAD),
+      unclassifiedCount: found.unclassified.length,
       incomplete: found.incomplete,
       incompleteReasons: found.incompleteReasons,
       blindSpots: found.blindSpots,
