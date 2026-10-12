@@ -34,6 +34,7 @@ import {
   FRESHNESS,
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
+import { verifyAgainstTrustedBase } from "./review-history.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -3842,14 +3843,55 @@ export async function main(args) {
       // Freshness describes what may establish the rule now, so it is computed for the newest review
       // event. Earlier events keep their own recorded provenance and are reported by
       // `npm run attestations`; they are history, and history does not go stale.
-      const against = currentReview(record, ruleId)?.reviewedAgainst;
+      const against = currentReview(ruleId, record)?.reviewedAgainst;
       if (!against?.paths?.length) continue;
       out.set(ruleId, classifyFreshness(repoRoot, against, repo));
     }
     return { states: out, repo };
   }
 
-  const { states: freshness, repo } = attestationFreshness(policy.document, root, repoAvailability);
+  /**
+   * Append-only review history against a trusted base the repository determines itself.
+   *
+   * The result is always reported when the policy records any attestation: `verified`, `violated`
+   * or `unverified` with the reason, never silently skipped. A violation withdraws every attestation
+   * from this run's evaluation (the rules fall back to what automated evidence establishes), because
+   * a history that was rewritten cannot establish anything and the comparison names the first
+   * rewrite, not all of them. `unverified` withdraws nothing: the pinned legacy manifest and the
+   * chain resolver still apply, and the finding states that the base comparison did not run.
+   */
+  let reviewHistoryBase = null;
+  if (policy.document && Object.keys(policy.document.attestations ?? {}).length > 0) {
+    reviewHistoryBase = await verifyAgainstTrustedBase({
+      repositoryPath: root,
+      policyPath: "project-policy.yml",
+      proposedPolicySource: await readFile(path.join(root, "project-policy.yml"), "utf8"),
+    });
+    const base = reviewHistoryBase;
+    addFinding({
+      id: "review-history-append-only",
+      category: "evidence-surface",
+      severity: base.status === "verified" ? "info" : base.status === "violated" ? "error" : "warning",
+      label: "OBSERVED",
+      evidence: ["project-policy.yml"],
+      message:
+        base.status === "verified"
+          ? `Review histories are append-only relative to ${base.baseCommit} (merge-base with ${base.ref}).` +
+            (base.headIsBase ? " HEAD is the base, so only uncommitted edits to the policy were compared." : "")
+          : base.status === "violated"
+            ? `Review history was rewritten relative to ${base.baseCommit} (merge-base with ${base.ref}): ` +
+              `${base.reason}. No attestation establishes any rule in this run.`
+            : `Append-only review history was NOT verified: ${base.reason}. Immutability of earlier events is ` +
+              `established only by the pinned legacy manifest and the chain rules.`,
+      standardRef: R.search,
+    });
+  }
+  const evaluationDocument =
+    reviewHistoryBase?.status === "violated" && policy.document
+      ? { ...policy.document, attestations: {} }
+      : policy.document;
+
+  const { states: freshness, repo } = attestationFreshness(evaluationDocument, root, repoAvailability);
 
   // Repository content is the source of truth for attestation freshness, and its absence is a fact
   // about the search mechanism rather than about the project (Standard 44 R12). It is reported as an
@@ -4000,7 +4042,7 @@ export async function main(args) {
 
   const verdict = evaluate({
     catalog,
-    policy: policy.document,
+    policy: evaluationDocument,
     findings,
     evaluated: evaluatedThisRun,
     today: new Date().toISOString().slice(0, 10),
@@ -4044,7 +4086,7 @@ export async function main(args) {
     // mechanism forbids — a legacy value swapped for a reproducible one without a new review.
     for (const [ruleId, state] of freshness) {
       if (state.state !== FRESHNESS.unrecorded) continue;
-      const against = currentReview(policy.document?.attestations?.[ruleId], ruleId)?.reviewedAgainst;
+      const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
       const current = repositoryDigest(root, against?.paths ?? []);
       if (!current.ok) {
         emit(

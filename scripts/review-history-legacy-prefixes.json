@@ -55,6 +55,11 @@
         { "id": "review-architecture-no-duplicate-implementations-005", "sha256": "ef8aa00498903fd0f447e4371bc44abc94863e27ce7d63ad23817a5a12f075ce" }
       ]
     },
+    "ai.no-safety-bypass": {
+      "events": [
+        { "id": "review-ai-no-safety-bypass-001", "sha256": "8e486fb4808750dd97b7f4697b5b6a1bcda5bbe23b8c6c99e851fe1e97bdf441" }
+      ]
+    },
     "testing.no-fabricated-results": {
       "events": [
         { "id": "review-testing-no-fabricated-results-001", "sha256": "ed8694870c413ecf90e0bd7b13bfc61dbf1b5583aec3e81f889b7a127faa833a" },
@@ -72,6 +77,11 @@
         { "id": "review-scm-no-shared-history-rewrite-003", "sha256": "d775321c05940c63967749bf7895808c9b84a4a35f58f9a54fc69bcd64e437b6" }
       ]
     },
+    "errors.no-false-success": {
+      "events": [
+        { "id": "review-errors-no-false-success-001", "sha256": "7e650eae968159ed05127213baac21d89dd136a06015013463d4e13b7db10a11" }
+      ]
+    },
     "architecture.no-boundary-bypass": {
       "events": [
         { "id": "review-architecture-no-boundary-bypass-001", "sha256": "8496cabbd9d1e22bf1a162a91528f5e70653b7cb37716122fe4c9f544dc80910" },
@@ -80,6 +90,11 @@
         { "id": "review-architecture-no-boundary-bypass-004", "sha256": "95d77d4af8c875158a689edf819499ad5ab4ddb12237cdf7ced8000d280ccc30" },
         { "id": "review-architecture-no-boundary-bypass-005", "sha256": "8439be9cbf032e342799cbd84d0ca639ee9e6830ce0ab5c1b5e8a0ac817e5748" },
         { "id": "review-architecture-no-boundary-bypass-006", "sha256": "cd2b57bcb17a01f48215092d3d34f401a2a89958dd09835643708b6491aa94e7" }
+      ]
+    },
+    "ai.no-fabricated-capabilities": {
+      "events": [
+        { "id": "review-ai-no-fabricated-capabilities-001", "sha256": "a53cee5a0bc6d01a124ebef8e862f588d8808ce36259aad6e80c2ca2d4026c91" }
       ]
     }
   }

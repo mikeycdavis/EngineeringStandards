@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseYaml } from "./yaml.mjs";
-import { resolveReviewHistory, reviewsOf } from "./reviews.mjs";
+import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf } from "./reviews.mjs";
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
@@ -26,6 +26,11 @@ export class ReviewHistoryVerificationError extends Error {
 
 function fail(message, details) {
   throw new ReviewHistoryVerificationError(message, details);
+}
+
+/** The proposed policy rewrites history, as opposed to the comparison being unable to run. */
+function violation(message, details = {}) {
+  throw new ReviewHistoryVerificationError(message, { ...details, violation: true });
 }
 
 function runGit(repositoryPath, args, { acceptedStatuses = [0] } = {}) {
@@ -150,27 +155,31 @@ export async function verifyReviewHistoryAppend({
     if (!priorRecord || typeof priorRecord !== "object" || Array.isArray(priorRecord)) {
       fail(`${ruleId}: base review history is not a mapping`);
     }
-    if (!Object.hasOwn(proposedHistories, ruleId)) fail(`${ruleId}: prior review history was deleted`);
+    if (!Object.hasOwn(proposedHistories, ruleId)) violation(`${ruleId}: prior review history was deleted`);
     const priorReviews = reviewsOf(priorRecord);
     const proposedRecord = proposedHistories[ruleId];
     if (!proposedRecord || typeof proposedRecord !== "object" || Array.isArray(proposedRecord)) {
-      fail(`${ruleId}: proposed review history is not a mapping`);
+      violation(`${ruleId}: proposed review history is not a mapping`);
     }
     const proposedReviews = reviewsOf(proposedRecord);
     if (proposedReviews.length < priorReviews.length) {
-      fail(`${ruleId}: prior review events were deleted`, {
+      violation(`${ruleId}: prior review events were deleted`, {
         priorLength: priorReviews.length,
         proposedLength: proposedReviews.length,
       });
     }
     for (let index = 0; index < priorReviews.length; index += 1) {
       if (!isDeepStrictEqual(priorReviews[index], proposedReviews[index])) {
-        fail(`${ruleId}: historical review at index ${index} was edited, reordered, relabeled, or reinserted`);
+        violation(`${ruleId}: historical review at index ${index} was edited, reordered, relabeled, or reinserted`);
       }
     }
     const resolution = resolveReviewHistory(ruleId, proposedRecord, { trustedPrefixLength: priorReviews.length });
+    // A rule the pinned manifest anchors must still carry its complete anchored prefix, whatever
+    // the supplied base says: a base commit is a parameter, the manifest is not.
+    const anchored = resolveRecordedReviewHistory(ruleId, proposedRecord);
+    if (!resolution.problems.length && anchored.problems.length) resolution.problems.push(...anchored.problems);
     if (resolution.problems.length) {
-      fail(`${ruleId}: proposed review chain is invalid: ${resolution.problems.join("; ")}`, {
+      violation(`${ruleId}: proposed review chain is invalid: ${resolution.problems.join("; ")}`, {
         problems: resolution.problems,
       });
     }
@@ -182,11 +191,11 @@ export async function verifyReviewHistoryAppend({
   for (const [ruleId, proposedRecord] of Object.entries(proposedHistories)) {
     if (Object.hasOwn(priorHistories, ruleId)) continue;
     if (!proposedRecord || typeof proposedRecord !== "object" || Array.isArray(proposedRecord)) {
-      fail(`${ruleId}: proposed review history is not a mapping`);
+      violation(`${ruleId}: proposed review history is not a mapping`);
     }
-    const resolution = resolveReviewHistory(ruleId, proposedRecord);
+    const resolution = resolveRecordedReviewHistory(ruleId, proposedRecord);
     if (resolution.problems.length) {
-      fail(`${ruleId}: proposed review chain is invalid: ${resolution.problems.join("; ")}`, {
+      violation(`${ruleId}: proposed review chain is invalid: ${resolution.problems.join("; ")}`, {
         problems: resolution.problems,
       });
     }
@@ -196,7 +205,7 @@ export async function verifyReviewHistoryAppend({
 
   const diff = await gitDiffEvidence(priorSource, proposedPolicySource, exactPath);
   if (appendedEvents > 0 && diff.exitCode === 0) {
-    fail("structured comparison found appended events but the exact policy-path Git diff is empty");
+    violation("structured comparison found appended events but the exact policy-path Git diff is empty");
   }
 
   return {
@@ -209,4 +218,103 @@ export async function verifyReviewHistoryAppend({
     histories,
     diff,
   };
+}
+
+const DEFAULT_BRANCH_FALLBACKS = ["origin/develop", "origin/main", "origin/master"];
+
+function tryGit(repositoryPath, args) {
+  const result = spawnSync("git", ["-C", repositoryPath, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) return null;
+  return result.stdout.trim();
+}
+
+/**
+ * Compare a proposed policy with the policy at a trusted base the repository itself determines.
+ *
+ * No caller parameter chooses the base. It is `merge-base(HEAD, <default-branch ref>)`, where the
+ * ref is `origin/HEAD` when set, otherwise the first of origin/develop, origin/main, origin/master.
+ * The result is one of:
+ *
+ * - `verified`: the base was found, the policy existed there, and no prior event was deleted,
+ *   edited, reordered, relabeled or reinserted; every appended chain is valid.
+ * - `violated`: the comparison ran and the proposed policy rewrites history (details in `reason`).
+ * - `unverified`: no trusted base could be determined (no repository, no remote default-branch ref,
+ *   no merge-base such as a shallow clone, or the policy file absent at the base). Nothing about
+ *   the history is established; the reason is always stated and never silently skipped.
+ *
+ * What it can establish: relative to that base, history was only appended. What it cannot: that the
+ * base itself was honest (the pinned manifest covers the history that existed when it was written),
+ * who authored an append, or anything when HEAD is the default branch tip (the base is then HEAD,
+ * so only uncommitted edits to the policy are visible). It is read-only apart from short-lived
+ * comparison files under the OS temp directory.
+ */
+export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, proposedPolicySource }) {
+  const unverified = (reason, extra = {}) => ({ status: "unverified", reason, ...extra });
+  const repository = path.resolve(repositoryPath ?? "");
+
+  const top = tryGit(repository, ["rev-parse", "--show-toplevel"]);
+  if (!top) return unverified("the directory is not a Git work tree, so no trusted base exists");
+  const relative = path.relative(path.resolve(top), path.resolve(repository, policyPath ?? "")).split(path.sep).join("/");
+  if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) {
+    return unverified("the policy file is outside the repository");
+  }
+
+  let ref = tryGit(repository, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (ref && tryGit(repository, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]) === null) ref = null;
+  if (!ref) {
+    ref = DEFAULT_BRANCH_FALLBACKS.find(
+      (candidate) => tryGit(repository, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]) !== null,
+    );
+  }
+  if (!ref) {
+    return unverified(
+      "no remote default-branch ref (origin/HEAD, origin/develop, origin/main, origin/master) is available",
+    );
+  }
+
+  const head = tryGit(repository, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  if (!head) return unverified("HEAD does not name a commit");
+  const baseCommit = tryGit(repository, ["merge-base", "HEAD", ref]);
+  if (!baseCommit || !OBJECT_ID.test(baseCommit)) {
+    const shallow = tryGit(repository, ["rev-parse", "--is-shallow-repository"]) === "true";
+    return unverified(
+      `no merge-base between HEAD and ${ref}${shallow ? " (shallow clone: fetch more history)" : ""}`,
+      { ref },
+    );
+  }
+  const baseTree = tryGit(repository, ["rev-parse", `${baseCommit}^{tree}`]);
+  if (!baseTree) return unverified(`the tree of base commit ${baseCommit} is not readable`, { ref, baseCommit });
+  if (tryGit(repository, ["cat-file", "-e", `${baseCommit}:${relative}`]) === null) {
+    // `cat-file -e` prints nothing on success, so an empty string is success and null is failure.
+    return unverified(`${relative} does not exist at base commit ${baseCommit}`, { ref, baseCommit });
+  }
+
+  try {
+    const result = await verifyReviewHistoryAppend({
+      repositoryPath: repository,
+      baseCommit,
+      expectedBaseTree: baseTree,
+      policyPath: relative,
+      proposedPolicySource,
+    });
+    return {
+      status: "verified",
+      ref,
+      baseCommit,
+      baseTree,
+      headIsBase: baseCommit === head,
+      appendedEvents: result.appendedEvents,
+      histories: result.histories,
+    };
+  } catch (error) {
+    if (error instanceof ReviewHistoryVerificationError) {
+      if (error.details?.violation) return { status: "violated", reason: error.message, ref, baseCommit, baseTree };
+      return unverified(error.message, { ref, baseCommit });
+    }
+    throw error;
+  }
 }

@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -346,7 +347,7 @@ test("the newest review is the one eligible to establish, and earlier ones stay 
       review({ id: "r2", reviewedAt: "2026-08-09", supersedes: "r1" }),
     ],
   };
-  assert.equal(currentReview(record, "x.y").id, "r2");
+  assert.equal(currentReview("x.y", record).id, "r2");
   assert.equal(reviewsOf(record).length, 2, "history remains fully readable");
   assert.equal(reviewsOf(record)[0].status, "rejected", "a rejected review stays rejected forever");
 });
@@ -364,43 +365,43 @@ test("appending a review leaves every earlier event byte-identical", () => {
   record.reviews.push(review({ id: "r2", reviewedAt: "2026-08-09", supersedes: "r1" }));
 
   assert.equal(JSON.stringify(record.reviews[0]), snapshot, "the predecessor must be untouched");
-  assert.equal(currentReview(record, "x.y").id, "r2");
+  assert.equal(currentReview("x.y", record).id, "r2");
 });
 
 test("a malformed history establishes nothing rather than establishing the last element", () => {
   // Selecting by array position from an unvalidated sequence would make the file's layout the
   // chronology: reorder two lines and the established review changes with nothing recording it.
   const duplicate = { reviews: [review({ id: "r1" }), review({ id: "r1", reviewedAt: "2026-08-09" })] };
-  assert.match(reviewProblems(duplicate, "x.y").join(), /duplicate review id/);
-  assert.equal(currentReview(duplicate, "x.y"), null);
+  assert.match(reviewProblems("x.y", duplicate).join(), /duplicate review id/);
+  assert.equal(currentReview("x.y", duplicate), null);
 
   const misordered = {
     reviews: [review({ id: "r1", reviewedAt: "2026-08-09" }), review({ id: "r2", reviewedAt: "2026-08-01" })],
   };
-  assert.match(reviewProblems(misordered, "x.y").join(), /chronological order/);
-  assert.equal(currentReview(misordered, "x.y"), null);
+  assert.match(reviewProblems("x.y", misordered).join(), /chronological order/);
+  assert.equal(currentReview("x.y", misordered), null);
 
   const anonymous = { reviews: [{ status: "approved", reviewedBy: "o", reviewedAt: "2026-08-01", evidence: "e" }] };
-  assert.match(reviewProblems(anonymous, "x.y").join(), /has no id/);
+  assert.match(reviewProblems("x.y", anonymous).join(), /has no id/);
 
   const dangling = { reviews: [review({ id: "r1" }), review({ id: "r2", reviewedAt: "2026-08-09", supersedes: "nope" })] };
-  assert.match(reviewProblems(dangling, "x.y").join(), /supersedes nope, which is not recorded/);
+  assert.match(reviewProblems("x.y", dangling).join(), /supersedes nope, which is not recorded/);
 });
 
 test("the legacy single-record shape is still readable during the migration window", () => {
   const legacy = { status: "approved", reviewedBy: "owner", reviewedAt: "2026-08-01", evidence: "e" };
   assert.equal(isLegacyShape(legacy), true);
   assert.equal(reviewsOf(legacy).length, 1);
-  assert.equal(currentReview(legacy, "x.y").status, "approved");
-  assert.deepEqual(reviewProblems(legacy, "x.y"), [], "an unmigrated record is not itself an error");
+  assert.equal(currentReview("x.y", legacy).status, "approved");
+  assert.deepEqual(reviewProblems("x.y", legacy), [], "an unmigrated record is not itself an error");
 });
 
 test("strict wrappers reject an incomplete appended successor and select no current review", () => {
   const successor = review({ id: "r2", supersedes: "r1", reviewedAt: "2026-08-09" });
   delete successor.reviewedAgainst.digest;
   const record = { reviews: [review({ id: "r1" }), successor] };
-  assert.match(reviewProblems(record, "x.y").join("\n"), /reviewedAgainst\.digest/);
-  assert.equal(currentReview(record, "x.y"), null);
+  assert.match(reviewProblems("x.y", record).join("\n"), /reviewedAgainst\.digest/);
+  assert.equal(currentReview("x.y", record), null);
 });
 
 test("attestation inventory marks no event current when an appended successor is incomplete", async () => {
@@ -570,18 +571,23 @@ test("the shared resolver accepts one linear successor chain, equal timestamps, 
   assert.equal(JSON.stringify(record), snapshot, "resolution must not mutate the supplied history");
 });
 
-test("the fixed Git-base manifest recognizes all eight complete legacy prefixes without mutating them", async () => {
+test("the pinned Git-base manifest anchors all eleven repository histories and recognizes them unmutated", async () => {
   const policy = parseYaml(await readFile(path.join(REPO_ROOT, "project-policy.yml"), "utf8"));
   const manifestRules = Object.entries(LEGACY_REVIEW_PREFIX_MANIFEST.histories);
   assert.equal(LEGACY_REVIEW_PREFIX_MANIFEST.baseCommit, "1e22c3a12bc42fb299712176c597b7498e944ec2");
   assert.equal(LEGACY_REVIEW_PREFIX_MANIFEST.baseTree, "3d00e25613cdf4517d725c0d2229f92f6718543b");
-  assert.equal(manifestRules.length, 8);
-  assert.equal(manifestRules.reduce((total, [, entry]) => total + entry.events.length, 0), 46);
+  assert.equal(manifestRules.length, 11);
+  assert.equal(manifestRules.reduce((total, [, entry]) => total + entry.events.length, 0), 49);
+  assert.deepEqual(
+    manifestRules.map(([ruleId]) => ruleId).sort(),
+    Object.keys(policy.attestations).sort(),
+    "every rule that has a history in the committed policy is anchored, including single-event rejections",
+  );
 
   for (const [ruleId, anchor] of manifestRules) {
     const record = policy.attestations[ruleId];
     const snapshot = JSON.stringify(record);
-    const resolution = resolveRecordedReviewHistory(record, ruleId);
+    const resolution = resolveRecordedReviewHistory(ruleId, record);
     assert.deepEqual(resolution.problems, [], ruleId);
     assert.equal(resolution.current?.id, anchor.events.at(-1).id, ruleId);
     assert.equal(JSON.stringify(record), snapshot, `${ruleId} was mutated`);
@@ -593,8 +599,8 @@ test("legacy compatibility requires the complete exact rule-scoped prefix and ke
   const ruleId = "ai.destructive-approval";
   const original = policy.attestations[ruleId];
   const expectAnchorFailure = (record, label) => {
-    const resolution = resolveRecordedReviewHistory(record, ruleId);
-    assert.match(resolution.problems.join("\n"), /legacy review prefix does not match the complete ordered prefix/, label);
+    const resolution = resolveRecordedReviewHistory(ruleId, record);
+    assert.match(resolution.problems.join("\n"), /the history must carry the complete ordered prefix anchored at/, label);
     assert.equal(resolution.current, null, label);
   };
 
@@ -619,7 +625,7 @@ test("legacy compatibility requires the complete exact rule-scoped prefix and ke
   relabeled.reviews[2].supersedes = "relabeled-event";
   expectAnchorFailure(relabeled, "relabeling");
 
-  const wrongRule = resolveRecordedReviewHistory(original, "meta.standards-not-weakened");
+  const wrongRule = resolveRecordedReviewHistory("meta.standards-not-weakened", original);
   assert.ok(wrongRule.problems.length > 0, "content from another rule received compatibility");
   assert.equal(wrongRule.current, null);
 
@@ -629,11 +635,30 @@ test("legacy compatibility requires the complete exact rule-scoped prefix and ke
       structuralReview({ id: "independent-2", supersedes: "independent-1", reviewedAt: "2026-10-02" }),
     ],
   };
-  assert.deepEqual(
-    resolveRecordedReviewHistory(independent, ruleId).problems,
-    [],
-    "a complete strict history must not be forced to impersonate this repository's legacy prefix",
-  );
+  // A fresh, internally valid history is NOT an acceptable replacement for an anchored rule: the
+  // anchored prefix is mandatory whatever ids the replacement uses.
+  const replacement = resolveRecordedReviewHistory(ruleId, independent);
+  assert.match(replacement.problems.join("\n"), /the history must carry the complete ordered prefix anchored at/);
+  assert.equal(replacement.current, null);
+  const singleGenesis = {
+    reviews: [structuralReview({ id: "fresh-genesis", reviewedAt: "2026-10-12", status: "approved" })],
+  };
+  for (const [name, candidate] of [
+    ["fresh single genesis", singleGenesis],
+    ["legacy single-record shape", { ...structuralReview({ id: undefined }), id: undefined }],
+    ["non-list reviews", { reviews: "x" }],
+    ["empty reviews", { reviews: [] }],
+    ["null record", null],
+  ]) {
+    const resolved = resolveRecordedReviewHistory(ruleId, candidate);
+    assert.ok(resolved.problems.length > 0, `${name} replaced an anchored history without a problem`);
+    assert.equal(resolved.current, null, name);
+  }
+  for (const anchoredRule of Object.keys(LEGACY_REVIEW_PREFIX_MANIFEST.histories)) {
+    const resolved = resolveRecordedReviewHistory(anchoredRule, singleGenesis);
+    assert.ok(resolved.problems.length > 0, `${anchoredRule}: fresh genesis replaced an anchored history`);
+    assert.equal(resolved.current, null, anchoredRule);
+  }
 
   const appended = structuredClone(original);
   const incomplete = structuralReview({
@@ -645,13 +670,45 @@ test("legacy compatibility requires the complete exact rule-scoped prefix and ke
   delete incomplete.reviewedAgainst.tree;
   delete incomplete.reviewedAgainst.digest;
   appended.reviews.push(incomplete);
-  const appendProblems = resolveRecordedReviewHistory(appended, ruleId).problems.join("\n");
+  const appendProblems = resolveRecordedReviewHistory(ruleId, appended).problems.join("\n");
   assert.match(appendProblems, /reviewerRole/);
   assert.match(appendProblems, /reviewedAgainst\.tree/);
   assert.match(appendProblems, /reviewedAgainst\.digest/);
 
-  assert.match(reviewProblems(original).join("\n"), /reviewerRole/, "one-argument calls must stay strict");
-  assert.equal(currentReview(original), null, "one-argument calls must never apply a manifest anchor");
+  // Argument-order mistakes cannot pass silently: the rule id is first and must be a string.
+  for (const wrong of [original, null, undefined, [], 7, ""]) {
+    assert.throws(() => reviewProblems(wrong, ruleId), TypeError);
+    assert.throws(() => currentReview(wrong, ruleId), TypeError);
+    assert.throws(() => resolveRecordedReviewHistory(wrong, ruleId), TypeError);
+  }
+  // A non-mapping record fails closed rather than resolving to an empty or accepted history.
+  for (const badRecord of ["x", null, [], 7]) {
+    assert.ok(reviewProblems("x.y", badRecord).length > 0, `record ${JSON.stringify(badRecord)}`);
+    assert.equal(currentReview("x.y", badRecord), null);
+  }
+});
+
+test("genesis and legacy-shape events outside the anchored manifest are structurally validated", () => {
+  const bad = [
+    ["bare genesis with only an id and status", { reviews: [{ id: "x1", status: "approved" }] }],
+    ["reviews that is not a list", { reviews: "x" }],
+    ["reviews that is a mapping", { reviews: { id: "x1" } }],
+    ["unknown status", { reviews: [structuralReview({ id: "x1", status: "bogus" })] }],
+    ["null status", { reviews: [structuralReview({ id: "x1", status: null })] }],
+    ["non-date reviewedAt", { reviews: [structuralReview({ id: "x1", reviewedAt: "yesterday" })] }],
+    ["missing evidence", { reviews: [structuralReview({ id: "x1", evidence: "" })] }],
+    ["legacy shape missing identity", { status: "approved", reviewedAt: "2026-08-01", evidence: "e" }],
+    ["scope present but empty", { reviews: [structuralReview({ id: "x1", reviewedAgainst: { paths: [] } })] }],
+  ];
+  for (const [name, record] of bad) {
+    assert.ok(reviewProblems("x.y", record).length > 0, `${name} resolved without a problem`);
+    assert.equal(currentReview("x.y", record), null, name);
+  }
+  const good = { reviews: [structuralReview({ id: "x1" })] };
+  assert.deepEqual(reviewProblems("x.y", good), []);
+  assert.equal(currentReview("x.y", good)?.id, "x1");
+  const legacyGood = { status: "approved", reviewedBy: "o", reviewedAt: "2026-08-01", evidence: "e" };
+  assert.deepEqual(reviewProblems("x.y", legacyGood), []);
 });
 
 test("new successors require reviewer role, reviewed commit, tree, scope, evidence, and reviewer identity", () => {
@@ -781,4 +838,172 @@ test("the attestation query retains every governed field and one resolver-derive
   for (const rule of new Set(rows.map((row) => row.rule))) {
     assert.equal(rows.filter((row) => row.rule === rule && row.current).length, 1, `${rule} must have one current event`);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// validate-level behaviour through scripts/standards.mjs. These drive the real CLI over a real
+// Git repository, because a unit test of the resolver cannot notice a consumer that passes its
+// arguments in the wrong order (the reviewer's mutation kept every other test green).
+// ---------------------------------------------------------------------------------------------
+
+const STANDARDS_CLI = path.join(REPO_ROOT, "scripts", "standards.mjs");
+const RULE = "architecture.dependency-evaluation";
+
+async function validateFixture() {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "standards-validate-history-"));
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "user.email", "synthetic@example.invalid");
+  git(dir, "config", "user.name", "Synthetic Fixture");
+  git(dir, "config", "commit.gpgsign", "false");
+  await writeFile(path.join(dir, "reviewed.txt"), "one\n");
+  return dir;
+}
+
+function policyText(events) {
+  const version = readFileSync(path.join(REPO_ROOT, "VERSION"), "utf8").trim();
+  const lines = [
+    `standardVersion: "${version}"`,
+    `project: "synthetic"`,
+    `rules:`,
+    `  ${RULE}:`,
+    `    level: required`,
+    `attestations:`,
+    `  ${RULE}:`,
+    `    reviews:`,
+  ];
+  for (const e of events) {
+    lines.push(`      - id: "${e.id}"`);
+    if (e.supersedes) lines.push(`        supersedes: "${e.supersedes}"`);
+    lines.push(`        status: ${e.status ?? "approved"}`);
+    lines.push(`        reviewedBy: "synthetic-reviewer"`);
+    if (e.reviewerRole) lines.push(`        reviewerRole: "${e.reviewerRole}"`);
+    lines.push(`        reviewedAt: "${e.reviewedAt}"`);
+    lines.push(`        evidence: "${e.evidence ?? "synthetic evidence"}"`);
+    lines.push(`        reviewedAgainst:`);
+    if (e.revision) lines.push(`          revision: "${e.revision}"`);
+    if (e.tree) lines.push(`          tree: "${e.tree}"`);
+    lines.push(`          digestAlgorithm: "${DIGEST_ALGORITHM}"`);
+    lines.push(`          digest: "${e.digest}"`);
+    lines.push(`          source: git`);
+    lines.push(`          paths:`);
+    lines.push(`            - "reviewed.txt"`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function runValidate(dir) {
+  const result = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir, "--json"], {
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const report = JSON.parse(result.stdout);
+  return {
+    report,
+    rule: report.results.find((entry) => entry.ruleId === RULE),
+    finding: report.findings.find((entry) => entry.id === "review-history-append-only"),
+  };
+}
+
+test("validate reports a changed reviewed path as stale, through the real consumer wiring", async () => {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    assert.ok(digest, "digest could not be computed");
+    await writeFile(
+      path.join(dir, "project-policy.yml"),
+      policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]),
+    );
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy");
+
+    const fresh = runValidate(dir);
+    assert.equal(fresh.rule.disposition, "attested", JSON.stringify(fresh.rule));
+    assert.notEqual(fresh.rule.freshness, "stale");
+
+    await writeFile(path.join(dir, "reviewed.txt"), "one\ntwo\n");
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content changed");
+
+    const stale = runValidate(dir);
+    assert.equal(stale.rule.freshness, "stale", JSON.stringify(stale.rule));
+    assert.equal(stale.rule.disposition, "not-evaluated");
+    assert.notEqual(stale.rule.status, "passed");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("validate compares review history with the repository's own merge-base and reports each outcome", async () => {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    const genesis = { id: "r1", reviewedAt: "2026-10-01", digest };
+    const policyFile = path.join(dir, "project-policy.yml");
+    await writeFile(policyFile, policyText([genesis]));
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy with one review");
+
+    // 1. No remote default-branch ref: reported as unverified, never skipped, nothing withdrawn.
+    const noRemote = runValidate(dir);
+    assert.equal(noRemote.finding?.severity, "warning", JSON.stringify(noRemote.finding));
+    assert.match(noRemote.finding.message, /NOT verified/);
+    assert.equal(noRemote.rule.disposition, "attested");
+
+    // 2. A remote default-branch ref at the current commit makes the base determinable.
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const verified = runValidate(dir);
+    assert.equal(verified.finding?.severity, "info", JSON.stringify(verified.finding));
+    assert.match(verified.finding.message, /append-only relative to/);
+
+    // 3. A valid appended successor is verified.
+    const tree = git(dir, "rev-parse", "HEAD^{tree}").trim();
+    const revision = git(dir, "rev-parse", "HEAD").trim();
+    const successor = {
+      id: "r2",
+      supersedes: "r1",
+      reviewedAt: "2026-10-02",
+      reviewerRole: "synthetic-role",
+      revision,
+      tree,
+      digest,
+    };
+    await writeFile(policyFile, policyText([genesis, successor]));
+    const appended = runValidate(dir);
+    assert.equal(appended.finding?.severity, "info", JSON.stringify(appended.finding));
+    assert.equal(appended.rule.disposition, "attested");
+
+    // 4. Rewriting the recorded event while keeping the chain internally valid is a violation, and
+    //    the attestation stops establishing the rule.
+    await writeFile(policyFile, policyText([{ ...genesis, status: "rejected" }]));
+    const rewritten = runValidate(dir);
+    assert.equal(rewritten.finding?.severity, "error", JSON.stringify(rewritten.finding));
+    assert.match(rewritten.finding.message, /was rewritten/);
+    assert.notEqual(rewritten.rule.disposition, "attested");
+    assert.notEqual(rewritten.rule.disposition, "attested-rejected");
+
+    // 5. Replacing the history with a fresh genesis is also a violation.
+    await writeFile(policyFile, policyText([{ ...genesis, id: "fresh-genesis" }]));
+    const replaced = runValidate(dir);
+    assert.equal(replaced.finding?.severity, "error", JSON.stringify(replaced.finding));
+    assert.notEqual(replaced.rule.disposition, "attested");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("the repository's own policy keeps every anchored history and validates its current events", () => {
+  const result = spawnSync(process.execPath, [STANDARDS_CLI, "validate", REPO_ROOT, "--json"], {
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const report = JSON.parse(result.stdout);
+  assert.ok(!report.results.some((entry) => entry.disposition === "invalid-attestation"));
+  const attested = report.results.filter((entry) => ["attested", "attested-rejected"].includes(entry.disposition));
+  assert.ok(attested.length > 0, "anchored histories must still establish or reject rules");
 });

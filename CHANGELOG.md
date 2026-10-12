@@ -17,6 +17,25 @@ All notable changes to this framework. Versioning follows
 
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+The one exception is the review-history entry directly below, which widens the policy schema.
+
+Append-only review history (ST-17, #95; split from draft PR 109). Policy schema, widening only: `reviewEvent.reviewerRole`
+and `reviewEvent.reviewedAgainst.tree` are new optional properties (a validator older than this change rejects a policy that
+uses them; no existing policy is affected). `scripts/reviews.mjs` is now the single definition of "current": every
+non-genesis event names its immediate predecessor, forks, skips, self and forward references and timestamp regressions are
+problems, and an event outside the pinned manifest must carry reviewer, a status of `approved` or `rejected`, a
+`YYYY-MM-DD` date and evidence, with successors also carrying reviewer role, commit, tree, digest and scope. The pinned
+manifest (`scripts/review-history-legacy-prefixes.json`, anchored at base `1e22c3a`) lists all eleven existing histories;
+an anchored rule must carry its complete ordered prefix, so a replacement history is a problem. Exported signatures: new
+exports `resolveReviewHistory`, `resolveRecordedReviewHistory(ruleId, record)`, `isReviewRecord`, `reviewEventSha256` and
+`LEGACY_REVIEW_PREFIX_MANIFEST`; `reviewProblems(ruleId, record)` and `currentReview(ruleId, record)` keep their argument
+order and now throw a `TypeError` when `ruleId` is not a non-empty string (an argument-order mistake), and report a problem
+rather than a history when the record is not a mapping. `validate` now compares the policy with the blob at
+`merge-base(HEAD, origin default branch)` and reports `verified`, `violated` (attestations withdrawn for that run) or
+`unverified` (reason stated) as the finding `review-history-append-only`; the JSON envelope is unchanged and the finding is
+additive. `attestations --json` rows gain `predecessor`, `status`, `reviewedBy`, `reviewerRole`, `evidence`, `reference`,
+`reviewedCommit`, `reviewedTree`, `digest`, `digestAlgorithm`, `source`, `reviewedPaths` and `scope`; every existing key and
+every `action` string is unchanged. `reviewerRole` and `reviewedBy` are recorded, not authenticated.
 
 Correction to the entries below, after Codex review of #102 (#104): a backslash before ASCII punctuation makes that
 character literal, so an escaped `[` opens no label and an escaped `]` closes none, and the `](` shortcut applies only

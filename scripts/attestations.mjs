@@ -147,7 +147,7 @@ const entries = Object.entries(document?.attestations ?? {});
 // one of them.
 const rows = entries.flatMap(([ruleId, record]) => {
   const reviews = reviewsOf(record);
-  const current = currentReview(record, ruleId);
+  const current = currentReview(ruleId, record);
   return reviews.map((attestation) => {
     const against = attestation?.reviewedAgainst;
     const algorithm = against?.digestAlgorithm ?? (against?.digest ? LEGACY_ALGORITHM : null);
@@ -188,12 +188,12 @@ const rows = entries.flatMap(([ruleId, record]) => {
         freshness === FRESHNESS.fresh
           ? "none"
           : freshness === FRESHNESS.legacyUnverifiable
-            ? "human re-review required - record a new digest, never recompute the old one"
+            ? "human re-review required — record a new digest, never recompute the old one"
             : freshness === FRESHNESS.stale
-              ? "human re-review required - reviewed content changed"
+              ? "human re-review required — reviewed content changed"
               : freshness === FRESHNESS.evidenceUnavailable
-                ? "repository evidence unavailable - establish it, then re-review"
-                : "no digest recorded - record one to make staleness detectable",
+                ? "repository evidence unavailable — establish it, then re-review"
+                : "no digest recorded — record one to make staleness detectable",
     };
   });
 });
@@ -204,7 +204,7 @@ const rows = entries.flatMap(([ruleId, record]) => {
  * for. A violation exits 1: the policy is internally inconsistent about its own provenance.
  */
 const violations = [];
-for (const [ruleId, record] of entries) violations.push(...reviewProblems(record, ruleId));
+for (const [ruleId, record] of entries) violations.push(...reviewProblems(ruleId, record));
 for (const r of rows) {
   if (r.algorithm === null && r.paths.length > 0 && r.freshness !== FRESHNESS.unrecorded) {
     violations.push(`${r.rule}: a recorded digest carries no digestAlgorithm`);
