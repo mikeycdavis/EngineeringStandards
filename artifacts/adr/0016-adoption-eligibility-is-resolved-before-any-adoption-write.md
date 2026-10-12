@@ -366,32 +366,40 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   introduces no machine field anywhere.
 - The refusal happens before `planInit` and `applyInit`, so no `planInit` report or bootstrap plan is
   computed and nothing is written; stderr is the only output.
-- **The directory checked is the directory written.** When the target is a directory symlink (valid,
-  resolved by the operating system, no canonicalisation contract), the resolver records the
-  identity of the directory it actually examined (device and inode, or the platform's file
-  identifier), and `init` verifies that the target still has that identity immediately before
-  `planInit` and again immediately before `applyInit` writes. If it differs (a link retargeted in
-  between), `init` refuses with exit `2`, writes nothing, and names the condition `target-changed`.
-  `target-changed` is an `INDETERMINATE` condition and is not overridable. This binds identity; it
-  adds no canonical-path contract and reports no path format.
-- **Binding is to a held directory, and identity is verified at use.** Two checks around a path
-  are not enough: a link retargeted after the second check, or retargeted during `planInit` and
-  restored before the second check, would still redirect a write. Planning and **every** write
-  therefore stay bound to a stable directory handle, or to an equivalent identity-preserving
-  means, for the whole of `init`:
-  - where the platform provides handle-relative operations (`openat`-style, `dirfd`-relative
-    creation, rename and write on POSIX), every read and write is performed relative to the one held
-    directory handle, never by re-resolving the target path;
-  - on Windows, every read and write is performed through a handle opened once for the directory
-    (handle-relative where the runtime supports it), or, where it does not, the directory identity
-    is verified **at each use**, immediately before each write and not only before `planInit` and
-    `applyInit`, and the write is refused if it differs;
-  - where neither handle binding nor per-write verification can be established, `init` does not
-    write and refuses with exit `2` under the same fail-closed rule (`target-changed` where an
-    identity mismatch was observed, otherwise `unreadable`).
-  If a mismatch is seen part-way through `applyInit`, the remaining writes are not made and `init`
-  exits `2` naming `target-changed`; writes already made went to the directory that was checked,
-  because they were bound to it. The condition name `target-changed` is used exactly as introduced.
+- **The directory checked is the directory written, by binding and not by checking.** A check
+  followed by a path-based write is not atomic: a directory symlink or junction can be retargeted
+  between the check and the write, and a verified identity does not bind the write. Verifying
+  identity "at each use" and then writing by path is therefore **not** an acceptable mechanism, on
+  any platform. The requirement is:
+  - `init` obtains **one held handle** to the target directory (the directory a symlink target
+    resolves to, resolved once by the operating system; no canonicalisation contract, no reported path
+    format), takes the identity of the directory from that handle (device and inode, or the
+    platform's file identifier), and requires it to equal the identity of the directory the resolver
+    examined. A mismatch is the condition `target-changed`.
+  - From that point, planning and **every** read and write are performed through the held handle, or
+    through another operation that atomically binds the verified identity to the write, and never
+    by re-resolving the target path. Nothing that happens to the path afterwards (a retarget, or a
+    transient retarget restored before any later check) can redirect a write, because no write
+    consults the path.
+  - Where the platform or runtime cannot provide such a binding, `init` **does not write**: it
+    refuses with exit `2`, naming `target-changed` where an identity mismatch was observed and
+    `unreadable` otherwise. This refusal cannot be satisfied by "check, then write by path".
+  - **Windows is required** (see the platform requirement). This record does not prescribe the
+    call and does not claim that a mechanism exists. The implementation must find one within the
+    zero-third-party-dependency decision; examples of the kind of mechanism that could meet the
+    property, none asserted to be available, are a handle-based native route, resolving the
+    directory once to a non-link path and verifying that no reparse point is on the target
+    component before writing only through that resolved path, or staging the writes and applying them
+    by atomic rename inside a held directory.
+- **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
+  pre-write refusal.** `init` refuses with exit `2`, writes nothing, and leaves the tree unchanged.
+  `target-changed` is raised only when the identity from the held handle differs from the
+  resolver's, which happens before the first write. Once the handle is held and verified, there is
+  **no** mid-apply `target-changed` and no post-write refusal for this reason: a later path change
+  is irrelevant because writes never use the path. The only failures after a first write are
+  ordinary I/O errors of the kind `init` already has, which this record does not alter.
+  `target-changed` is an `INDETERMINATE` condition, is not overridable, and keeps this name exactly
+  as introduced.
 
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
@@ -540,8 +548,9 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
 - **AC1.** A fixture with implementation files, a `FROZEN.md` carrying a listed phrase and no
   adoption artifacts: `eligibility` exits `1`; and for `init` and `init --dry-run`, exit `2`. A
   before/after tree comparison (file list and content hashes) shows zero writes.
-- **AC2.** Each `INDETERMINATE` condition above exits `2`, writes nothing, and is not cleared by
-  `--override-signal`, for `eligibility` and for `init`.
+- **AC2.** Each `INDETERMINATE` condition above, `target-changed` included, exits `2`, writes
+  nothing (tree unchanged), and is not cleared by `--override-signal`, for `eligibility` and for
+  `init`. There is no INDETERMINATE condition that is a post-write refusal.
 - **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
   whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
   no other signal: `INDETERMINATE` (`no-listed-phrase`), exit `2`, `init` refuses with exit `2`. The
@@ -586,14 +595,16 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `FROZEN.md` and shows it is not opened as a regular file. A CI account that cannot create such an
   object must be provisioned so that it can, or the gate fails; it never passes by skipping. This
   record states the requirement and does not claim that such a runner exists.
-- **Directory identity bound through `init`.** Injected: the target's identity changes between the
-  resolver and `planInit`, and between `planInit` and `applyInit`: `init` exits `2`, writes nothing,
-  reports `target-changed`; an unchanged identity proceeds as before. Also injected: the identity
-  changes **after** the second check and before a write (the write is refused or never redirected);
-  and a **transient** retarget during `planInit` that is restored before the second check (the
-  writes are still bound to the held directory and none lands in the retargeted one, or `init`
-  refuses `target-changed`). A mutation check replaces the held-handle or per-write verification
-  with a path-based write and requires these tests to fail.
+- **Directory identity bound through `init`.** Injected, each asserting exit `2`, **zero writes and
+  an unchanged tree**, and `target-changed` where an identity mismatch was observed: the target's
+  identity differs between the resolver and the held handle; and the platform reports that no
+  atomic binding is available (refusal `unreadable`, no write, and a check-then-write-by-path
+  implementation must fail this test). Also injected, asserting the writes all land in the held
+  directory and none in the retargeted one, with the normal exit: the path is retargeted **after**
+  the handle is held and verified, during `planInit`, between writes, and transiently with
+  restoration before any later check. A mutation check replaces the held-handle write with a
+  path-based write, and replaces it with "verify then write by path", and requires these tests to
+  fail on each. A matching test confirms there is no post-write `target-changed`.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
