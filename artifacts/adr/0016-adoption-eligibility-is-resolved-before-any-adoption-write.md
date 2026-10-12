@@ -203,6 +203,15 @@ is not opened, resolved or inspected.
 - Scope: the rule is about entries inside the target. The target argument itself is resolved
   normally: a symlink to a directory is a valid target; one to a regular file is not a directory.
 - A link whose name matches still counts as a source; it cannot be skipped as "not a file".
+- **No race between classification and read.** An `lstat` followed by a path-based read would follow
+  a regular file that was replaced by a link in between, and let a file outside the named
+  repository decide eligibility. The invariant "a link is never followed" is therefore enforced at
+  the read: the entry is opened with a no-follow open (`O_NOFOLLOW` or the platform equivalent), and
+  classification (`fstat`: a regular file) and the content read both use that **same open handle**.
+  Where a no-follow open is not available, the implementation compares device and inode from the
+  `lstat` with those from `fstat` on the opened handle and from a second `lstat` after the read, and
+  any difference is `INDETERMINATE` (`not-regular-file`). An open that fails because the entry is a
+  link or was replaced is `INDETERMINATE`, never a fall back to a path-based read.
 
 #### Precedence
 
@@ -272,8 +281,8 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   `IN_SCOPE` repository's `init --json` and `init --dry-run --json` output is byte-for-byte what it
   is today. This keeps the machine-readable surface exactly as deferred by Q5 C: eligibility
   introduces no machine field anywhere.
-- The refusal happens before `planInit` and `applyInit`, so nothing is computed from, or written to,
-  the target, and stderr is the only output.
+- The refusal happens before `planInit` and `applyInit`, so no `planInit` report or bootstrap plan is
+  computed and nothing is written; stderr is the only output.
 
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
@@ -443,6 +452,13 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   interface on every platform. Real `chmod 000` and real-symlink tests are separate and
   capability-probed (a denial is actually observed; the platform can create the link), with an
   explicit reported skip otherwise.
+- **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
+  `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
+  outside the target carrying the banner or a listed phrase, and to a benign file) before the read
+  is `INDETERMINATE` (`not-regular-file`), and the outside content is never read or used; the same
+  for a replacement that changes device or inode where only the identity-comparison path exists.
+  A mutation check replaces the no-follow open, and then the same-handle read, with a path-based
+  read in turn, and requires this test to fail on each.
 - **Partial listing.** A listing that yields `README.md` with the banner and then fails: exit `2`,
   the banner still reported as fired, no override changes it; and a failure before any entry: exit
   `2`.
