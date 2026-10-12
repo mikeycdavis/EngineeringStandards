@@ -12,7 +12,10 @@
  * rule" are different facts, and collapsing them reports a broken config as non-compliance
  * (Standard 30 R1).
  *
- * Usage: node scripts/policy.mjs [path/to/project-policy.yml] [--json] [--schema <path>]
+ * Usage: node scripts/policy.mjs [path/to/project-policy.yml] [--json] [--schema <path>] [--root <dir>]
+ *
+ * `--root` is the repository `justifications[].path` is resolved against (default: the policy
+ * file's directory).
  */
 
 import { readFile } from "node:fs/promises";
@@ -21,6 +24,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseYaml, YamlError } from "./yaml.mjs";
 import { validate, assertSchemaSupported, SchemaError } from "./jsonschema.mjs";
+import { justificationProblems, trackedProvider } from "./justifications.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -94,6 +98,19 @@ function complianceFindings(document, today, catalog) {
     }
   }
 
+  // A path-scoped justification past its expiry is not applied by the engine. Say so here, where an
+  // adopter looks first, rather than letting it surface only as a renewed violation.
+  for (const entry of Array.isArray(document.justifications) ? document.justifications : []) {
+    if (entry.expires && entry.expires < today) {
+      findings.push({
+        id: "policy.expired-justification",
+        severity: "error",
+        message: `justification for '${entry.rule}' at '${entry.path}' expired on ${entry.expires}`,
+        remediation: "Renew it with a new approval, or satisfy the rule at that path.",
+      });
+    }
+  }
+
   const exceptions = Array.isArray(document.exceptions) ? document.exceptions : [];
   for (const entry of exceptions) {
     if (entry.expires && entry.expires < today) {
@@ -129,11 +146,12 @@ function complianceFindings(document, today, catalog) {
 }
 
 function parseArgs(argv) {
-  const options = { policy: null, schema: DEFAULT_SCHEMA, json: false };
+  const options = { policy: null, schema: DEFAULT_SCHEMA, json: false, root: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--json") options.json = true;
     else if (arg === "--schema") options.schema = argv[++i];
+    else if (arg === "--root") options.root = argv[++i];
     else if (arg.startsWith("--")) throw new Error(`unknown flag '${arg}'`);
     else if (options.policy === null) options.policy = arg;
     else throw new Error(`unexpected argument '${arg}'`);
@@ -143,8 +161,16 @@ function parseArgs(argv) {
   return options;
 }
 
-/** Returns { status, errors, findings, aliases, document }. status is one of ok|findings|invalid. */
-export async function checkPolicy(policyPath, schemaPath, today) {
+/**
+ * Returns { status, errors, findings, aliases, document, justifications }. status is one of
+ * ok|findings|invalid.
+ *
+ * `options.root` is the audited repository root against which `justifications[].path` is resolved;
+ * it defaults to the directory holding the policy file. A justification that is malformed, names a
+ * rule that may not be path-justified, or names a path that is not an exact tracked file makes the
+ * policy `invalid` (exit 2): it is a configuration error, never a partially-applied waiver.
+ */
+export async function checkPolicy(policyPath, schemaPath, today, options = {}) {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
   assertSchemaSupported(schema);
 
@@ -170,8 +196,39 @@ export async function checkPolicy(policyPath, schemaPath, today) {
       return null; // A missing catalog disables the rule-aware checks; it never fakes a pass.
     }
   })();
+  let justifications = null;
+  if (Array.isArray(document.justifications) && document.justifications.length > 0) {
+    if (!catalog) {
+      return {
+        status: "invalid",
+        errors: [{ path: "justifications", message: "the rule catalog could not be loaded, so justifications cannot be validated" }],
+        findings: [],
+        aliases,
+        document,
+      };
+    }
+    const root = path.resolve(options.root ?? path.dirname(path.resolve(policyPath)));
+    const tracked = trackedProvider(root);
+    const problems = justificationProblems(document.justifications, { catalog, root, tracked });
+    justifications = { trackedBasis: tracked.basis, trackedNote: tracked.note, problems };
+    if (problems.length > 0) {
+      const errors = problems.map((p) => ({
+        path: `justifications[${p.index}].${p.field}`,
+        message: `[${p.code}] ${p.message}`,
+      }));
+      return { status: "invalid", errors, findings: [], aliases, document, justifications };
+    }
+  }
+
   const findings = complianceFindings(document, today, catalog);
-  return { status: findings.length > 0 ? "findings" : "ok", errors: [], findings, aliases, document };
+  return {
+    status: findings.length > 0 ? "findings" : "ok",
+    errors: [],
+    findings,
+    aliases,
+    document,
+    justifications,
+  };
 }
 
 async function main() {
@@ -186,7 +243,7 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10);
   let result;
   try {
-    result = await checkPolicy(options.policy, options.schema, today);
+    result = await checkPolicy(options.policy, options.schema, today, { root: options.root ?? undefined });
   } catch (error) {
     const detail = error instanceof SchemaError ? `schema: ${error.message}` : error.message;
     process.stderr.write(`standards policy: ${detail}\n`);
@@ -205,6 +262,7 @@ async function main() {
           errors: result.errors,
           findings: result.findings,
           legacyAliases: result.aliases,
+          justifications: result.justifications ?? null,
         },
         null,
         2,
@@ -218,6 +276,12 @@ async function main() {
     if (result.aliases.length > 0) process.stdout.write("\n");
     for (const error of result.errors) {
       process.stdout.write(`  ${error.path || "(document)"}: ${error.message}\n`);
+    }
+    if (result.justifications && result.justifications.trackedBasis !== "git-index") {
+      process.stdout.write(
+        `  NOTE justifications: tracked-ness was not established (basis: ${result.justifications.trackedBasis}). ` +
+          `${result.justifications.trackedNote}\n\n`,
+      );
     }
     for (const finding of result.findings) {
       process.stdout.write(`  ${finding.severity.toUpperCase()} ${finding.id}: ${finding.message}\n`);

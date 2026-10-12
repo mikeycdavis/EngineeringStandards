@@ -35,8 +35,16 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  A rule absent from this set was not checked, and reporting it as passing
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
+ * @param justified path-scoped justifications the caller already subtracted from `findings` (ADR
+ *                  0017), each `{ rule, path, reason, reference, approvedBy, approvedAt, removeWhen }`.
+ *                  The engine does not subtract. A rule whose every violating path is justified
+ *                  is reported `excepted`, never `passed`: it follows the existing exception
+ *                  contract (Standard 20 R1, "countably non-compliant with a named rule"), so the
+ *                  verdict is COMPLIANT_WITH_EXCEPTIONS and cannot read as a clean rule.
+ * @param expiredJustified justifications past their `expires`. They are not applied; each yields a
+ *                  failed `expired-justification` configuration result, as an expired exception does.
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, justified, expiredJustified }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -91,6 +99,17 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       expiredExceptions.push({ ...entry, rule: rule.id, ...metaOf(rule) });
     else activeExceptions.set(rule.id, entry);
   }
+
+  const justifiedByRule = new Map();
+  for (const entry of justified ?? []) {
+    const rule = resolve(catalog, entry.rule);
+    if (!rule) continue;
+    if (!justifiedByRule.has(rule.id)) justifiedByRule.set(rule.id, []);
+    justifiedByRule.get(rule.id).push(entry);
+  }
+  // Sorted so the report is a function of the set of justifications, never of the order written.
+  const justifiedFor = (rule) =>
+    [...(justifiedByRule.get(rule.id) ?? [])].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   const results = [];
   const silencedRules = new Set();
@@ -209,7 +228,33 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
     const hits = byRule.get(rule.id) ?? [];
     if (hits.length === 0) {
-      results.push(base(rule, level, RESULT.passed, "evaluated", `No violation of ${rule.id} was observed.`));
+      const covered = justifiedFor(rule);
+      if (covered.length === 0) {
+        results.push(base(rule, level, RESULT.passed, "evaluated", `No violation of ${rule.id} was observed.`));
+      } else if (level === "optional") {
+        // An optional rule's violation is SILENT (Standard 18 R3), and a justified one is a violation
+        // that was subtracted: nothing is reported, exactly as without the justification.
+        silencedRules.add(rule.id);
+      } else {
+        // EXCEPTED, never passed. Every violating path is knowingly unmet and justified, which is the
+        // shape of an active exception on a violated rule: status follows the rule's level (failed
+        // for required/forbidden, warning otherwise), disposition is `excepted`, and summarise()
+        // already reads that as COMPLIANT_WITH_EXCEPTIONS rather than NON_COMPLIANT. Reusing the
+        // disposition keeps one vocabulary; a `passed` here would have been a waiver that scores
+        // as evidence the rule is met.
+        const outcome = level === "required" || level === "forbidden" ? RESULT.failed : RESULT.warning;
+        const result = base(
+          rule,
+          level,
+          outcome,
+          "excepted",
+          `${rule.id} is excepted by ${covered.length} path-scoped justification(s); every violating path is justified.`,
+        );
+        result.justified = covered.map(justifiedShape);
+        result.evidence = covered.map((e) => e.path);
+        result.files = result.evidence;
+        results.push(result);
+      }
       continue;
     }
 
@@ -254,6 +299,10 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
     result.evidence = hits.flatMap((h) => h.evidence ?? []);
     result.files = result.evidence;
+    // Some paths were justified and others were not: the rule still fails, over ONLY the unjustified
+    // ones (they are the evidence above), and the justified ones stay visible beside it.
+    const alsoJustified = justifiedFor(rule);
+    if (alsoJustified.length > 0) result.justified = alsoJustified.map(justifiedShape);
     if (exception) {
       result.exception = {
         reason: exception.reason,
@@ -296,6 +345,27 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       evidence: ["project-policy.yml"],
       files: ["project-policy.yml"],
       remediation: "Renew the exception with a new approval, or satisfy the rule.",
+    });
+  }
+
+  // An expired justification is not applied, so the violation it covered is already a finding and
+  // the rule fails on its own evidence. This entry says WHY, as an expired exception's does, so the
+  // lapse is a named failure rather than a rule that merely started failing again.
+  for (const entry of expiredJustified ?? []) {
+    const rule = resolve(catalog, entry.rule);
+    if (!rule) continue;
+    results.push({
+      ruleId: rule.id,
+      status: RESULT.failed,
+      severity: rule.severity,
+      level: levelOf(rule),
+      validationType: "configuration",
+      assurance: "full",
+      disposition: "expired-justification",
+      message: `The justification for ${rule.id} at ${entry.path} expired on ${entry.expires}.`,
+      evidence: ["project-policy.yml", entry.path],
+      files: ["project-policy.yml", entry.path],
+      remediation: "Renew the justification with a new approval, or satisfy the rule at that path.",
     });
   }
 
@@ -421,6 +491,17 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   };
 }
 
+function justifiedShape(entry) {
+  return {
+    path: entry.path,
+    reason: entry.reason,
+    reference: entry.reference,
+    approvedBy: entry.approvedBy,
+    approvedAt: entry.approvedAt,
+    removeWhen: entry.removeWhen,
+  };
+}
+
 function base(rule, level, status, disposition, message) {
   return {
     ruleId: rule.id,
@@ -473,26 +554,45 @@ function summarise(results, policy) {
    * over an unexamined prohibition is a false green at the verdict level — Standard 38 R3's
    * principle applied to the verdict itself.
    *
-   * Placed AFTER the NON_COMPLIANT and COMPLIANT_WITH_EXCEPTIONS determinations on purpose, so it
-   * cannot intercept the exception machinery. A rule that was excepted, rejected, or declared
-   * not-applicable has been LOOKED AT; the cap exists only for the case where nothing has happened
-   * at all. `not-applicable` results are already excluded, and an excepted or failed rule is not
-   * `skipped`, so neither can reach this list.
+   * Placed AFTER the NON_COMPLIANT determination and BEFORE COMPLIANT_WITH_EXCEPTIONS (owner
+   * decision, ADR 0017). A verdict that says "compliant, with these exceptions" over a rule nobody
+   * examined says the project is compliant with something it has not been checked against; the
+   * exceptions then read as the whole story. Failure still outranks everything, because a
+   * recorded failure is a finding rather than an absence. A rule that was excepted, rejected, or
+   * declared not-applicable has been LOOKED AT and is not in this list: `not-applicable` results
+   * are excluded, and an excepted or failed rule is not `skipped`.
+   *
+   * "Lacks a detector or valid attestation" is the existing, tested definition of an unestablished
+   * rule: an applicable `forbidden` rule that is skipped and not-evaluated (Standard 45 R6). It is
+   * deliberately NOT widened to `required` rules here: `a required manual-review rule without an
+   * attestation still yields COMPLIANT` is an existing, deliberate expectation, and widening it
+   * would change the verdict of almost every project (see `unexaminedRules`, reported but not
+   * used). That wider reading is an explicit owner decision, recorded in ADR 0017.
    */
   const unestablished = applicable.filter(
     (r) => r.level === "forbidden" && r.status === RESULT.skipped && r.disposition === "not-evaluated",
   );
+  const unexamined = applicable.filter(
+    (r) => r.status === RESULT.skipped && r.disposition === "not-evaluated",
+  );
+
+  // EXCEPTED is a disposition, not a status value, so it is stated outright on the result for every
+  // consumer that reads results[] without knowing the disposition vocabulary.
+  for (const r of results) {
+    if (r.disposition === "excepted") r.verdictLabel = "EXCEPTED";
+  }
 
   let status;
   if (!policy) status = STATUS.NOT_EVALUATED;
   else if (requiredFailures.length > 0) status = STATUS.NON_COMPLIANT;
-  else if (excepted.length > 0) status = STATUS.COMPLIANT_WITH_EXCEPTIONS;
   else if (unestablished.length > 0) status = STATUS.NOT_EVALUATED;
+  else if (excepted.length > 0) status = STATUS.COMPLIANT_WITH_EXCEPTIONS;
   else status = STATUS.COMPLIANT;
 
   return {
     status,
     unestablishedProhibitions: unestablished.map((r) => r.ruleId),
+    unexaminedRules: unexamined.map((r) => r.ruleId),
     score,
     summary: counts,
     assurance,
@@ -523,6 +623,9 @@ export function envelope({ verdict, project, standardVersion, auditedAt, repo, f
     // Standard 45 R6. Present on every run, empty when nothing is unestablished, so a consumer can
     // distinguish "no prohibitions went unexamined" from "this validator predates the rule".
     unestablishedProhibitions: verdict.unestablishedProhibitions ?? [],
+    // INFORMATIONAL, not used for the verdict: every applicable rule, of any level, with no detector
+    // and no valid attestation. The verdict caps on the forbidden subset above (Standard 45 R6).
+    unexaminedRules: verdict.unexaminedRules ?? [],
     auditedAt,
     results: verdict.results,
   };

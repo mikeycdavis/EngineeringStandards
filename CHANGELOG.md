@@ -15,8 +15,57 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
-**No change to the framework, the rule catalog, the policy schema, or any published contract.** This
-is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+**Apart from the path-scoped justification entry directly below, no change to the framework, the rule
+catalog, the policy schema, or any published contract.** Every other entry in this section is repository
+tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+
+### Changed — verdict precedence: NOT_EVALUATED now outranks COMPLIANT_WITH_EXCEPTIONS (framework-wide)
+
+**This changes the verdict of existing projects that use `exceptions[]`**, not only of those that adopt
+justifications (ADR 0017, owner decision). `summarise()` previously decided `COMPLIANT_WITH_EXCEPTIONS` before
+it looked for an unexamined forbidden rule, so a live exception hid the unexamined rule in the verdict word. The
+order is now: any non-excepted failure `NON_COMPLIANT`; then any applicable forbidden rule with no detector and
+no valid attestation `NOT_EVALUATED`; then `COMPLIANT_WITH_EXCEPTIONS`; then `COMPLIANT`. Exit codes are
+unchanged (an unestablished prohibition already exited 1). Existing assertions changed: `test/compliance.test.mjs`
+"an exception on a manual-review rule applies only to the rule it names" (`COMPLIANT_WITH_EXCEPTIONS` to
+`NOT_EVALUATED`) and "the exception on a manual-review rule reaches the validate CLI output and JSON"
+(`Excepted:` section to `EXCEPTED:` with an `EXCEPTED` line label). Excepted results also carry
+`verdictLabel: "EXCEPTED"`; `unexaminedRules` (informational) is added to the envelope. Under Standard 21 a verdict
+that moves a project from exit-0-class wording to `NOT_EVALUATED` is **MAJOR**-shaped, and `VERSION` is not bumped
+here; Standard 45 R6's wording ("does not intercept the exception machinery") was not edited. Both are owner calls.
+
+### Added — path-scoped justifications (ADR 0017)
+
+The policy schema gains an optional `justifications` list: one rule knowingly unmet at one exact tracked
+file ([ADR 0017](artifacts/adr/0017-path-scoped-justification-is-not-an-exception.md)). It exists for
+frozen, digest-locked copies that carry an empty catch block, where a rule-wide `exceptions[]` entry would
+also waive `errors.no-swallowed-exceptions` for every other file. **This is an additive change to the policy
+schema** (an optional section; no existing policy changes meaning). `VERSION` is **not** bumped here: a bump
+makes every consumer's pinned `standardVersion` a `VERSION_MISMATCH`, so the release level is the owner's
+decision ([Standard 21](standards/21-versioning.md)).
+
+- Each entry requires `rule`, `path`, `reason`, `approvedBy`, `approvedAt`, `reference` and `removeWhen`;
+  unknown keys are rejected.
+- Only rules in an explicit allowlist in `scripts/justifications.mjs` may be justified, initially
+  `errors.no-swallowed-exceptions` alone. Unknown, legacy-alias, non-exemptible and non-allowlisted rules are
+  rejected with distinct codes.
+- Paths are exact and canonical. Wildcards, directories, absolute/drive-letter/UNC paths, `..`, backslashes,
+  non-canonical forms (`./x`, `a//b`, surrounding whitespace), duplicates, nonexistent files and untracked files
+  are each rejected with their own code. Tracked-ness is `git ls-files` in the audited root; outside a git work
+  tree it falls back to the discovered file set and the result says which basis answered.
+- `validate` subtracts only the justified path's evidence from that one rule. Remaining violations still fail
+  the rule, and every other rule still inspects the file. **A rule whose every violating path is justified is
+  `excepted`, never `passed`** (disposition `excepted`, the existing exception vocabulary), so the verdict is
+  `COMPLIANT_WITH_EXCEPTIONS`, not `COMPLIANT`. Applied justifications are listed in the human report (with
+  owner, expiry and an exception count), in `justifications` of `validate --json` (`exceptionCount`,
+  `justificationCount`, `exceptedRules`, `applied`, `expired`, `stale`, `unverified`), and as `justified` on the
+  rule's result; one whose path no longer violates is a `stale-justification` warning. Any invalid entry is exit 2
+  (`NOT_EVALUATED`) and none is applied.
+- Optional `expires` (ISO date). An expired justification is not applied: the violation is reported again, the
+  rule fails, and an `expired-justification` result names the lapse (as for `exceptions[]`); `npm run policy`
+  reports `policy.expired-justification`.
+- `npm run policy` validates the same entries (`--root <dir>` selects the repository the paths resolve
+  against). `audit` is unchanged: it remains policy-independent evidence.
 
 Correction to the entries below, after Codex review of #102 (#104): a backslash before ASCII punctuation makes that
 character literal, so an escaped `[` opens no label and an escaped `]` closes none, and the `](` shortcut applies only
