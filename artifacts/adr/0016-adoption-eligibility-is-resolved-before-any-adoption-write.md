@@ -374,6 +374,24 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   between), `init` refuses with exit `2`, writes nothing, and names the condition `target-changed`.
   `target-changed` is an `INDETERMINATE` condition and is not overridable. This binds identity; it
   adds no canonical-path contract and reports no path format.
+- **Binding is to a held directory, and identity is verified at use.** Two checks around a path
+  are not enough: a link retargeted after the second check, or retargeted during `planInit` and
+  restored before the second check, would still redirect a write. Planning and **every** write
+  therefore stay bound to a stable directory handle, or to an equivalent identity-preserving
+  means, for the whole of `init`:
+  - where the platform provides handle-relative operations (`openat`-style, `dirfd`-relative
+    creation, rename and write on POSIX), every read and write is performed relative to the one held
+    directory handle, never by re-resolving the target path;
+  - on Windows, every read and write is performed through a handle opened once for the directory
+    (handle-relative where the runtime supports it), or, where it does not, the directory identity
+    is verified **at each use**, immediately before each write and not only before `planInit` and
+    `applyInit`, and the write is refused if it differs;
+  - where neither handle binding nor per-write verification can be established, `init` does not
+    write and refuses with exit `2` under the same fail-closed rule (`target-changed` where an
+    identity mismatch was observed, otherwise `unreadable`).
+  If a mismatch is seen part-way through `applyInit`, the remaining writes are not made and `init`
+  exits `2` naming `target-changed`; writes already made went to the directory that was checked,
+  because they were bound to it. The condition name `target-changed` is used exactly as introduced.
 
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
@@ -561,11 +579,21 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   blocks nor acts on them (asserted with an injected open that fails the test if it receives a
   blocking or link-following request). Real-filesystem variants run on Windows and POSIX, each
   behind a capability probe that reports an explicit skip naming the reason when the platform
-  cannot create the object; the injected variants are not skippable. A release gate: the 3.0.0
-  change set must contain a passing Windows run of the file-safety tests for `eligibility`.
+  cannot create the object; the injected variants are not skippable. **A release gate that cannot
+  be satisfied by skipping:** the 3.0.0 release run must contain at least one **non-skipped** real
+  Windows test that creates a symbolic link or a reparse point (for example a symlink created
+  under developer mode or an elevated runner, or a directory junction) named `README.md` or
+  `FROZEN.md` and shows it is not opened as a regular file. A CI account that cannot create such an
+  object must be provisioned so that it can, or the gate fails; it never passes by skipping. This
+  record states the requirement and does not claim that such a runner exists.
 - **Directory identity bound through `init`.** Injected: the target's identity changes between the
   resolver and `planInit`, and between `planInit` and `applyInit`: `init` exits `2`, writes nothing,
-  reports `target-changed`; an unchanged identity proceeds as before.
+  reports `target-changed`; an unchanged identity proceeds as before. Also injected: the identity
+  changes **after** the second check and before a write (the write is refused or never redirected);
+  and a **transient** retarget during `planInit` that is restored before the second check (the
+  writes are still bound to the held directory and none lands in the retargeted one, or `init`
+  refuses `target-changed`). A mutation check replaces the held-handle or per-write verification
+  with a path-based write and requires these tests to fail.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
