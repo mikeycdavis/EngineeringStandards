@@ -447,8 +447,17 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   (`unknown-signal-id`); a nonexistent target; a regular file and a symlink to one; two simultaneous
   errors pinning the precedence; repeated identical `--override-signal` (accepted); `--help` (exit
   `0`).
-- **Read-only.** The command spawns no process and opens no file for writing, asserted by a
-  before/after snapshot.
+- **Read-only, process-free and network-free, by instrumentation.** A final-tree comparison cannot
+  show these properties (an implementation could open a file for writing without changing its bytes,
+  spawn a process, or make a network call and leave the tree identical), so the harness **injects or
+  intercepts** the three interfaces and asserts none was called: (1) every filesystem call that
+  writes, creates, removes, renames, truncates or opens with a write or append flag, and any
+  `chmod`/`utimes`-style metadata change; (2) every child-process spawn, exec and fork; (3) every
+  network, socket and name-resolution entry point. The same assertion holds for `eligibility` on every
+  outcome and for the `init` refusal paths (refusal happens before `planInit` and `applyInit`, so
+  none of the three is touched). A before/after tree snapshot (file list and content hashes) is kept as
+  a **secondary** check only. A mutation check adds a write-mode `open`, a spawn and a network call
+  in turn and requires the instrumentation, not the snapshot, to fail on each.
 - **No catalog rule.** `rules/*.json` is byte-identical and `validate` output for every existing
   fixture is unchanged.
 - **Mutation checks.** Removing the read-all rule, the INDETERMINATE override block, the ASCII
