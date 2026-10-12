@@ -40,7 +40,7 @@ observation:
       reason: "Any mention of eval or Function (including (0, eval), const e = eval and const F = Function), any .constructor access, a constructor or __proto__ index, getPrototypeOf, setPrototypeOf, __proto__, Reflect, Proxy, node:vm, process.binding, process._linkedBinding and process.dlopen are reported unless listed in knownSites. A property name assembled at run time is not examined."
       knownSites: []
     - mechanism: "network"
-      reason: "Imports of http, https, http2, net, tls, dgram or dns, and fetch, WebSocket and XMLHttpRequest, are reported unless listed in knownSites. Traffic that leaves through another program (scripts/ci-triage.mjs runs the gh CLI) is not visible."
+      reason: "Imports of http, https, http2, net, tls, dgram or dns, and direct use of fetch, WebSocket, EventSource and XMLHttpRequest, are reported unless listed in knownSites. Aliases of those globals, and traffic that leaves through another program (scripts/ci-triage.mjs runs the gh CLI), are not visible."
       knownSites: []
     - mechanism: "ambiguous-token"
       reason: "A slash after ), } or ++/-- may open a regex literal or divide: the file is read both ways and a disagreement about modules or terminations is reported. Any non-ASCII character outside strings, templates, regex literals and comments that is neither whitespace nor an identifier character, and any backslash outside them, is reported. Listed in knownSites to acknowledge."
@@ -118,7 +118,7 @@ members:
     paths:
       - scripts/boundaries.mjs
     evidence:
-      - scripts/boundaries.mjs:704
+      - scripts/boundaries.mjs:705
   - id: "validator-cli"
     kind: "process"
     description: "The audit and validate command and the ownership check. A CLI boundary: the only place, with the tool CLIs, that terminates the process."

@@ -217,6 +217,7 @@ const UNCLASSIFIED = [
   ["reflection", "const p = new Proxy({}, {});"],
   ["network", 'import http from "node:http";'],
   ["network", 'const r = await fetch("https://example.invalid");'],
+  ["network", 'const es = new EventSource("https://example.invalid");'],
   // Review round 2: aliasing and indirection
   ["termination-indirect", 'import {default as p} from "node:process";\np.exit(1);'],
   ["termination-indirect", 'import { default as q } from "process";\nq.exit(1);'],

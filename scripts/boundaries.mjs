@@ -583,6 +583,7 @@ function analyse(toks) {
         if (!afterDot && isP(k + 1, "(")) flag("network", tk.line);
         break;
       case "WebSocket":
+      case "EventSource":
       case "XMLHttpRequest":
         flag("network", tk.line);
         break;
