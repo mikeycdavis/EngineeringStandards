@@ -3842,7 +3842,7 @@ export async function main(args) {
       // Freshness describes what may establish the rule now, so it is computed for the newest review
       // event. Earlier events keep their own recorded provenance and are reported by
       // `npm run attestations`; they are history, and history does not go stale.
-      const against = currentReview(ruleId, record)?.reviewedAgainst;
+      const against = currentReview(record, ruleId)?.reviewedAgainst;
       if (!against?.paths?.length) continue;
       out.set(ruleId, classifyFreshness(repoRoot, against, repo));
     }
@@ -4044,7 +4044,7 @@ export async function main(args) {
     // mechanism forbids — a legacy value swapped for a reproducible one without a new review.
     for (const [ruleId, state] of freshness) {
       if (state.state !== FRESHNESS.unrecorded) continue;
-      const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
+      const against = currentReview(policy.document?.attestations?.[ruleId], ruleId)?.reviewedAgainst;
       const current = repositoryDigest(root, against?.paths ?? []);
       if (!current.ok) {
         emit(

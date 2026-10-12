@@ -30,7 +30,7 @@ import {
   LEGACY_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
-import { reviewsOf, currentReview, reviewProblems, isLegacyShape } from "./reviews.mjs";
+import { currentReview, reviewsOf, reviewProblems, isLegacyShape } from "./reviews.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -146,39 +146,55 @@ const entries = Object.entries(document?.attestations ?? {});
 // now" are different questions and a report that only showed the current event could answer just
 // one of them.
 const rows = entries.flatMap(([ruleId, record]) => {
-  const current = currentReview(ruleId, record);
-  return reviewsOf(record).map((attestation) => {
-  const against = attestation?.reviewedAgainst;
-  const algorithm = against?.digestAlgorithm ?? (against?.digest ? LEGACY_ALGORITHM : null);
-  const freshness = against?.paths?.length
-    ? classifyFreshness(root, against, repo).state
-    : FRESHNESS.unrecorded;
-  return {
-    rule: ruleId,
-    id: attestation?.id ?? null,
-    current: attestation === current,
-    shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
-    supersedes: attestation?.supersedes ?? null,
-    disposition: attestation?.status ?? null,
-    algorithm,
-    freshness,
-    reviewedAt: attestation?.reviewedAt ?? null,
-    revision: against?.revision ?? null,
-    paths: against?.paths ?? [],
-    // The only value this column ever takes. Stated per row rather than once at the bottom, so a
-    // reader scanning for something to automate finds the refusal beside every candidate for it.
-    autoUpgradable: false,
-    action:
-      freshness === FRESHNESS.fresh
-        ? "none"
-        : freshness === FRESHNESS.legacyUnverifiable
-          ? "human re-review required — record a new digest, never recompute the old one"
-          : freshness === FRESHNESS.stale
-            ? "human re-review required — reviewed content changed"
-            : freshness === FRESHNESS.evidenceUnavailable
-              ? "repository evidence unavailable — establish it, then re-review"
-              : "no digest recorded — record one to make staleness detectable",
-  };
+  const reviews = reviewsOf(record);
+  const current = currentReview(record, ruleId);
+  return reviews.map((attestation) => {
+    const against = attestation?.reviewedAgainst;
+    const algorithm = against?.digestAlgorithm ?? (against?.digest ? LEGACY_ALGORITHM : null);
+    const freshness = against?.paths?.length
+      ? classifyFreshness(root, against, repo).state
+      : FRESHNESS.unrecorded;
+    const paths = against?.paths ?? [];
+    return {
+      rule: ruleId,
+      id: attestation?.id ?? null,
+      current: attestation === current,
+      shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
+      predecessor: attestation?.supersedes ?? null,
+      supersedes: attestation?.supersedes ?? null,
+      status: attestation?.status ?? null,
+      disposition: attestation?.status ?? null,
+      reviewedBy: attestation?.reviewedBy ?? null,
+      reviewerRole: attestation?.reviewerRole ?? null,
+      reviewedAt: attestation?.reviewedAt ?? null,
+      evidence: attestation?.evidence ?? null,
+      reference: attestation?.reference ?? null,
+      reviewedCommit: against?.revision ?? null,
+      revision: against?.revision ?? null,
+      reviewedTree: against?.tree ?? null,
+      tree: against?.tree ?? null,
+      digest: against?.digest ?? null,
+      digestAlgorithm: algorithm,
+      algorithm,
+      source: against?.source ?? (against ? "git" : null),
+      reviewedPaths: paths,
+      scope: paths,
+      paths,
+      freshness,
+      // The only value this column ever takes. Stated per row rather than once at the bottom, so a
+      // reader scanning for something to automate finds the refusal beside every candidate for it.
+      autoUpgradable: false,
+      action:
+        freshness === FRESHNESS.fresh
+          ? "none"
+          : freshness === FRESHNESS.legacyUnverifiable
+            ? "human re-review required - record a new digest, never recompute the old one"
+            : freshness === FRESHNESS.stale
+              ? "human re-review required - reviewed content changed"
+              : freshness === FRESHNESS.evidenceUnavailable
+                ? "repository evidence unavailable - establish it, then re-review"
+                : "no digest recorded - record one to make staleness detectable",
+    };
   });
 });
 
@@ -188,7 +204,7 @@ const rows = entries.flatMap(([ruleId, record]) => {
  * for. A violation exits 1: the policy is internally inconsistent about its own provenance.
  */
 const violations = [];
-for (const [ruleId, record] of entries) violations.push(...reviewProblems(ruleId, record));
+for (const [ruleId, record] of entries) violations.push(...reviewProblems(record, ruleId));
 for (const r of rows) {
   if (r.algorithm === null && r.paths.length > 0 && r.freshness !== FRESHNESS.unrecorded) {
     violations.push(`${r.rule}: a recorded digest carries no digestAlgorithm`);
