@@ -21,12 +21,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 import {
@@ -811,7 +811,8 @@ test("the attestation query retains every governed field and one resolver-derive
     { encoding: "utf8" },
   );
   assert.equal(r.status, 0, r.stderr);
-  const rows = JSON.parse(r.stdout).attestations;
+  const parsed = JSON.parse(r.stdout);
+  const rows = parsed.attestations;
   assert.ok(rows.length > 1);
   const fields = [
     "rule",
@@ -835,8 +836,15 @@ test("the attestation query retains every governed field and one resolver-derive
     "current",
   ];
   for (const row of rows) for (const field of fields) assert.ok(Object.hasOwn(row, field), `${field} is missing`);
+  // With a determinable trusted base every rule has one current event. Without one (a shallow or
+  // remote-less checkout) the preflight is NOT_EVALUATED and no event may be listed as current.
+  const expectedCurrent = parsed.historyIntegrity.status === "verified" ? 1 : 0;
   for (const rule of new Set(rows.map((row) => row.rule))) {
-    assert.equal(rows.filter((row) => row.rule === rule && row.current).length, 1, `${rule} must have one current event`);
+    assert.equal(
+      rows.filter((row) => row.rule === rule && row.current).length,
+      expectedCurrent,
+      `${rule}: current events with history integrity ${parsed.historyIntegrity.status}`,
+    );
   }
 });
 
@@ -882,8 +890,8 @@ function policyText(events) {
     lines.push(`        reviewedAgainst:`);
     if (e.revision) lines.push(`          revision: "${e.revision}"`);
     if (e.tree) lines.push(`          tree: "${e.tree}"`);
-    lines.push(`          digestAlgorithm: "${DIGEST_ALGORITHM}"`);
-    lines.push(`          digest: "${e.digest}"`);
+    if (e.digest) lines.push(`          digestAlgorithm: "${DIGEST_ALGORITHM}"`);
+    if (e.digest) lines.push(`          digest: "${e.digest}"`);
     lines.push(`          source: git`);
     lines.push(`          paths:`);
     lines.push(`            - "reviewed.txt"`);
@@ -918,6 +926,7 @@ test("validate reports a changed reviewed path as stale, through the real consum
     );
     git(dir, "add", "project-policy.yml");
     git(dir, "commit", "-qm", "policy");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD"); // a base exists: history is verifiable
 
     const fresh = runValidate(dir);
     assert.equal(fresh.rule.disposition, "attested", JSON.stringify(fresh.rule));
@@ -948,11 +957,14 @@ test("validate compares review history with the repository's own merge-base and 
     git(dir, "add", "project-policy.yml");
     git(dir, "commit", "-qm", "policy with one review");
 
-    // 1. No remote default-branch ref: reported as unverified, never skipped, nothing withdrawn.
+    // 1. No remote default-branch ref: the history cannot be compared with a trusted base, so the
+    //    result is NOT_EVALUATED and the attestation is disregarded rather than staying effective.
     const noRemote = runValidate(dir);
     assert.equal(noRemote.finding?.severity, "warning", JSON.stringify(noRemote.finding));
-    assert.match(noRemote.finding.message, /NOT verified/);
-    assert.equal(noRemote.rule.disposition, "attested");
+    assert.match(noRemote.finding.message, /NOT_EVALUATED/);
+    assert.match(noRemote.finding.message, /ASSERTED by the policy text, not authenticated/);
+    assert.notEqual(noRemote.rule.disposition, "attested", "an attestation stayed effective without a base");
+    assert.notEqual(noRemote.rule.disposition, "attested-rejected");
 
     // 2. A remote default-branch ref at the current commit makes the base determinable.
     git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
@@ -1005,5 +1017,332 @@ test("the repository's own policy keeps every anchored history and validates its
   const report = JSON.parse(result.stdout);
   assert.ok(!report.results.some((entry) => entry.disposition === "invalid-attestation"));
   const attested = report.results.filter((entry) => ["attested", "attested-rejected"].includes(entry.disposition));
-  assert.ok(attested.length > 0, "anchored histories must still establish or reject rules");
+  const integrity = report.findings.find((entry) => entry.id === "review-history-append-only");
+  if (integrity?.severity === "warning") {
+    // No determinable base in this checkout: attestations are disregarded, which is the contract.
+    assert.equal(attested.length, 0, "an attestation stayed effective without a trusted base");
+  } else {
+    assert.ok(attested.length > 0, "anchored histories must still establish or reject rules");
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// The base is derived from the repository: merge-base(HEAD, origin default branch). These tests use
+// a real bare origin, a real clone and real commits, because a comparison against HEAD itself (the
+// working tree against its own commit) passes every uncommitted-only test and misses a committed
+// rewrite entirely.
+// ---------------------------------------------------------------------------------------------
+
+async function originFixture(policySource) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "standards-origin-history-"));
+  const origin = path.join(root, "origin.git");
+  const seed = path.join(root, "seed");
+  const work = path.join(root, "work");
+  git(root, "init", "-q", "--bare", "-b", "main", origin);
+  await mkdir(seed);
+  git(seed, "init", "-q", "-b", "main");
+  for (const [key, value] of [
+    ["user.email", "synthetic@example.invalid"],
+    ["user.name", "Synthetic Fixture"],
+    ["commit.gpgsign", "false"],
+  ]) {
+    git(seed, "config", key, value);
+  }
+  await writeFile(path.join(seed, "reviewed.txt"), "one\n");
+  git(seed, "add", "reviewed.txt");
+  git(seed, "commit", "-qm", "reviewed content");
+  const digest = repositoryDigest(seed, ["reviewed.txt"]).digest;
+  await writeFile(path.join(seed, "project-policy.yml"), policySource(digest));
+  git(seed, "add", "project-policy.yml");
+  git(seed, "commit", "-qm", "policy");
+  git(seed, "remote", "add", "origin", origin);
+  git(seed, "push", "-q", "origin", "main");
+  git(root, "clone", "-q", origin, work);
+  for (const [key, value] of [
+    ["user.email", "synthetic@example.invalid"],
+    ["user.name", "Synthetic Fixture"],
+    ["commit.gpgsign", "false"],
+  ]) {
+    git(work, "config", key, value);
+  }
+  return { root, origin, seed, work, digest };
+}
+
+const commitAll = (dir, message) => {
+  git(dir, "add", "-A");
+  git(dir, "commit", "-qm", message);
+  return git(dir, "rev-parse", "HEAD").trim();
+};
+
+test("a COMMITTED rewrite of an unanchored history on a feature branch is a violation", async () => {
+  const fx = await originFixture((digest) =>
+    policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]),
+  );
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/rewrite");
+    await writeFile(
+      path.join(fx.work, "project-policy.yml"),
+      policyText([{ id: "r1", reviewedAt: "2026-10-01", digest: fx.digest, status: "rejected" }]),
+    );
+    const head = commitAll(fx.work, "rewrite recorded review");
+    const base = git(fx.work, "merge-base", "HEAD", "origin/main").trim();
+    assert.notEqual(base, head, "the fixture must have a committed difference between HEAD and the base");
+    // The working tree is clean: only the committed rewrite distinguishes this from a valid run.
+    assert.equal(git(fx.work, "status", "--porcelain").trim(), "");
+    const run = runValidate(fx.work);
+    assert.equal(run.finding?.severity, "error", JSON.stringify(run.finding));
+    assert.match(run.finding.message, /was rewritten/);
+    assert.ok(run.finding.message.includes(base), "the finding must name the merge-base commit");
+    assert.notEqual(run.rule.disposition, "attested");
+    assert.notEqual(run.rule.disposition, "attested-rejected");
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("a COMMITTED rewrite of an anchored event on a feature branch is a violation", async () => {
+  const source = readFileSync(path.join(REPO_ROOT, "project-policy.yml"), "utf8");
+  const needle = "review-ai-no-safety-bypass-001";
+  assert.ok(source.includes(needle));
+  const fx = await originFixture(() => source);
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/rewrite-anchored");
+    const edited = source.replace(/(id: "review-ai-no-safety-bypass-001"[\s\S]*?status: )rejected/, "$1approved");
+    assert.notEqual(edited, source, "the fixture must change the recorded rejection");
+    await writeFile(path.join(fx.work, "project-policy.yml"), edited);
+    const head = commitAll(fx.work, "relabel a recorded rejection as an approval");
+    const base = git(fx.work, "merge-base", "HEAD", "origin/main").trim();
+    assert.notEqual(base, head);
+    const run = runValidate(fx.work);
+    assert.equal(run.finding?.severity, "error", JSON.stringify(run.finding));
+    assert.match(run.finding.message, /was rewritten/);
+    const safety = run.report.results.find((entry) => entry.ruleId === "ai.no-safety-bypass");
+    assert.notEqual(safety.disposition, "attested", "a relabelled rejection must never read as an acceptance");
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("a committed valid append is verified against the merge-base, and a rebase onto a moved default branch stays verified", async () => {
+  const fx = await originFixture((digest) =>
+    policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]),
+  );
+  try {
+    const mainTipBefore = git(fx.work, "rev-parse", "origin/main").trim();
+    git(fx.work, "checkout", "-q", "-b", "feature/append");
+    const tree = git(fx.work, "rev-parse", "HEAD^{tree}").trim();
+    const revision = git(fx.work, "rev-parse", "HEAD").trim();
+    await writeFile(
+      path.join(fx.work, "project-policy.yml"),
+      policyText([
+        { id: "r1", reviewedAt: "2026-10-01", digest: fx.digest },
+        {
+          id: "r2",
+          supersedes: "r1",
+          reviewedAt: "2026-10-02",
+          reviewerRole: "synthetic-role",
+          revision,
+          tree,
+          digest: fx.digest,
+        },
+      ]),
+    );
+    const head = commitAll(fx.work, "append a renewal");
+
+    const appended = runValidate(fx.work);
+    assert.equal(appended.finding?.severity, "info", JSON.stringify(appended.finding));
+    assert.ok(appended.finding.message.includes(mainTipBefore), "the base is the merge-base, not HEAD");
+    assert.ok(!appended.finding.message.includes(head), "HEAD must never be the base of a committed change");
+    assert.equal(appended.rule.disposition, "attested");
+
+    // The default branch moves on (an unrelated commit), and the feature branch is rebased onto it.
+    await writeFile(path.join(fx.seed, "unrelated.txt"), "x\n");
+    git(fx.seed, "add", "unrelated.txt");
+    git(fx.seed, "commit", "-qm", "unrelated change on main");
+    git(fx.seed, "push", "-q", "origin", "main");
+    const mainTipAfter = git(fx.seed, "rev-parse", "HEAD").trim();
+    git(fx.work, "fetch", "-q", "origin");
+    git(fx.work, "rebase", "-q", "origin/main");
+    assert.equal(git(fx.work, "merge-base", "HEAD", "origin/main").trim(), mainTipAfter);
+
+    const rebased = runValidate(fx.work);
+    assert.equal(rebased.finding?.severity, "info", JSON.stringify(rebased.finding));
+    assert.ok(rebased.finding.message.includes(mainTipAfter), "after the rebase the base is the moved tip");
+    assert.equal(rebased.rule.disposition, "attested");
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("a committed rewrite stays a violation after a rebase onto a moved default branch", async () => {
+  const fx = await originFixture((digest) =>
+    policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]),
+  );
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/rewrite-then-rebase");
+    await writeFile(
+      path.join(fx.work, "project-policy.yml"),
+      policyText([{ id: "r1", reviewedAt: "2026-10-01", digest: fx.digest, evidence: "altered" }]),
+    );
+    commitAll(fx.work, "alter the recorded evidence");
+    await writeFile(path.join(fx.seed, "unrelated.txt"), "x\n");
+    git(fx.seed, "add", "unrelated.txt");
+    git(fx.seed, "commit", "-qm", "unrelated change on main");
+    git(fx.seed, "push", "-q", "origin", "main");
+    git(fx.work, "fetch", "-q", "origin");
+    git(fx.work, "rebase", "-q", "origin/main");
+    const run = runValidate(fx.work);
+    assert.equal(run.finding?.severity, "error", JSON.stringify(run.finding));
+    assert.match(run.finding.message, /was rewritten/);
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("the digest hint for an unrecorded-freshness attestation is reached through validate with the rule id first", async () => {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    assert.ok(digest);
+    // No digest recorded: the documented first-pass workflow. validate must print the digest to record.
+    await writeFile(path.join(dir, "project-policy.yml"), policyText([{ id: "r1", reviewedAt: "2026-10-01" }]));
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy without a digest");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const result = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.match(result.stdout, new RegExp(`attestation ${RULE.replace(/\./g, "\\.")}: current digest is ${digest}`), result.stderr);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// `npm run attestations` runs the same history-integrity preflight as `validate`, before listing
+// anything as valid and before the migration writes.
+// ---------------------------------------------------------------------------------------------
+
+const runAttestations = (dir, ...extra) => {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${dir}`, "--json", ...extra],
+    { encoding: "utf8", windowsHide: true },
+  );
+  let json = null;
+  try {
+    json = JSON.parse(result.stdout);
+  } catch {
+    // --migrate refusals write to stderr and no JSON.
+  }
+  return { ...result, json };
+};
+
+test("attestations lists a verified history as current and labels identity as asserted", async () => {
+  const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
+  try {
+    const run = runAttestations(fx.work);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.json.historyIntegrity.status, "verified");
+    assert.equal(run.json.attestations.filter((row) => row.current).length, 1);
+    assert.match(run.json.identityNote, /ASSERTED by the policy text, not authenticated/);
+    for (const row of run.json.attestations) assert.equal(row.identity, "asserted, not authenticated");
+    const text = spawnSync(process.execPath, [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${fx.work}`], {
+      encoding: "utf8",
+    });
+    assert.match(text.stdout, /asserted, not authenticated/i);
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("attestations lists nothing as current and exits 1 after a committed rewrite, and refuses to migrate", async () => {
+  const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/rewrite");
+    const rewritten = policyText([{ id: "r1", reviewedAt: "2026-10-01", digest: fx.digest, status: "rejected" }]);
+    await writeFile(path.join(fx.work, "project-policy.yml"), rewritten);
+    commitAll(fx.work, "rewrite recorded review");
+    const run = runAttestations(fx.work);
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.json.historyIntegrity.status, "violated");
+    assert.equal(run.json.attestations.filter((row) => row.current).length, 0);
+    assert.match(run.json.violations.join("\n"), /review history/);
+
+    const migrate = runAttestations(fx.work, "--migrate");
+    assert.notEqual(migrate.status, 0);
+    assert.match(migrate.stderr, /Refusing to migrate/);
+    assert.equal(await readFile(path.join(fx.work, "project-policy.yml"), "utf8"), rewritten, "the policy was written");
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("attestations without a determinable base is NOT_EVALUATED: nothing is current and nothing is migrated", async () => {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    const source = policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]);
+    await writeFile(path.join(dir, "project-policy.yml"), source);
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy");
+    const run = runAttestations(dir);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.json.historyIntegrity.status, "not-evaluated");
+    assert.equal(run.json.historyIntegrity.effective, false);
+    assert.equal(run.json.attestations.filter((row) => row.current).length, 0);
+    const migrate = runAttestations(dir, "--migrate");
+    assert.notEqual(migrate.status, 0);
+    assert.equal(await readFile(path.join(dir, "project-policy.yml"), "utf8"), source);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a genesis may omit its digest (bootstrap behaviour); a successor may not", () => {
+  const genesis = structuralReview({ id: "g1" });
+  delete genesis.reviewedAgainst.digest;
+  delete genesis.reviewedAgainst.digestAlgorithm;
+  assert.deepEqual(reviewProblems("x.bootstrap", { reviews: [genesis] }), []);
+  assert.equal(currentReview("x.bootstrap", { reviews: [genesis] })?.id, "g1");
+
+  const successor = structuralReview({ id: "g2", supersedes: "g1", reviewedAt: "2026-10-02" });
+  delete successor.reviewedAgainst.digest;
+  const problems = reviewProblems("x.bootstrap", { reviews: [genesis, successor] }).join("\n");
+  assert.match(problems, /reviewedAgainst\.digest/);
+  assert.equal(currentReview("x.bootstrap", { reviews: [genesis, successor] }), null);
+});
+
+test("a shallow clone that lacks the base is NOT_EVALUATED and its attestations are disregarded", async () => {
+  const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/shallow");
+    await writeFile(path.join(fx.work, "note.txt"), "a\n");
+    commitAll(fx.work, "feature commit one");
+    await writeFile(path.join(fx.work, "note.txt"), "b\n");
+    commitAll(fx.work, "feature commit two");
+    git(fx.work, "push", "-q", "origin", "feature/shallow");
+
+    const shallow = path.join(fx.root, "shallow");
+    git(fx.root, "clone", "-q", "--depth", "1", "--no-single-branch", "--branch", "feature/shallow", pathToFileURL(fx.origin).href, shallow);
+    assert.equal(git(shallow, "rev-parse", "--is-shallow-repository").trim(), "true");
+
+    const run = runValidate(shallow);
+    assert.equal(run.finding?.severity, "warning", JSON.stringify(run.finding));
+    assert.match(run.finding.message, /NOT_EVALUATED/);
+    assert.match(run.finding.message, /shallow clone/);
+    assert.notEqual(run.rule.disposition, "attested", "an attestation stayed effective without the base");
+
+    const inventory = runAttestations(shallow);
+    assert.equal(inventory.json.historyIntegrity.status, "not-evaluated");
+    assert.equal(inventory.json.attestations.filter((row) => row.current).length, 0);
+  } finally {
+    await cleanup(fx.root);
+  }
 });

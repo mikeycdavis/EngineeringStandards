@@ -66,7 +66,7 @@ test("the workflow does not override the consumer's declared version", async () 
   assert.doesNotMatch(text, />\s*project\/.*project-policy\.yml/, "the workflow writes the consumer policy");
 });
 
-test("the dogfood caller pins a full commit SHA rather than a branch", async (t) => {
+test("the dogfood caller pins every remote reference to a full commit SHA and runs the code under test beside a pinned baseline", async (t) => {
   // There is no released tag, so the only immutable reference available is a commit SHA. Pinning to
   // develop would mean the check could change what it enforces between two runs of the same commit.
   // Skipped rather than passed while the caller does not exist. A guard that returns early reports
@@ -75,18 +75,31 @@ test("the dogfood caller pins a full commit SHA rather than a branch", async (t)
     t.skip("the dogfood caller does not exist yet; it is added once there is a revision to pin to");
     return;
   }
-  const text = await read(DOGFOOD);
-  const uses = text.match(/uses:\s*\S+standards-validate\.yml@(\S+)/);
-  assert.ok(uses, "the caller does not use the reusable workflow");
-  assert.match(uses[1], /^[0-9a-f]{40}$/, `the caller pins '${uses[1]}', which is not a commit SHA`);
+  const text = (await read(DOGFOOD)).replaceAll("\r\n", "\n");
+  const jobsSection = text.slice(text.indexOf("\njobs:\n"));
+  const jobs = jobsSection
+    .split(/\n(?= {2}[\w-]+:\n)/)
+    .slice(1)
+    .map((chunk) => ({ name: chunk.trim().split(":")[0], body: chunk }));
+  assert.ok(jobs.length >= 2, "the dogfood caller needs the code-under-test job and a pinned baseline job");
 
-  const input = text.match(/standards-ref:\s*([0-9a-f]{40})/);
-  assert.ok(input, "the caller passes no standards-ref");
-  assert.equal(
-    input[1],
-    uses[1],
-    "the workflow file and the framework it executes are pinned to different revisions",
-  );
+  // Every REMOTE reference is a full commit SHA, and the SHA it passes as standards-ref is the same.
+  const pinned = jobs.filter((job) => /uses:\s*\S+standards-validate\.yml@/.test(job.body));
+  assert.ok(pinned.length >= 1, "there is no pinned baseline job");
+  for (const job of pinned) {
+    const uses = job.body.match(/uses:\s*\S+standards-validate\.yml@(\S+)/);
+    assert.match(uses[1], /^[0-9a-f]{40}$/, `${job.name} pins '${uses[1]}', which is not a commit SHA`);
+    const input = job.body.match(/standards-ref:\s*([0-9a-f]{40})/);
+    assert.ok(input, `${job.name} passes no standards-ref`);
+    assert.equal(input[1], uses[1], `${job.name}: the workflow file and the framework it runs are pinned apart`);
+  }
+
+  // The bootstrap exception: the code-under-test job is the local workflow of the same commit, and
+  // runs that same commit as the framework. Nothing else may use a local reference.
+  const local = jobs.filter((job) => /uses:\s*\.\/\.github\/workflows\/standards-validate\.yml\s*$/m.test(job.body));
+  assert.equal(local.length, 1, "exactly one job runs the validator from the code under test");
+  assert.match(local[0].body, /standards-ref:\s*\$\{\{\s*github\.sha\s*\}\}/);
+  assert.match(text, /BOOTSTRAP RULE/, "the bootstrap rule is not stated beside the exception");
 });
 
 // --- The gate runs the whole suite, on the Node the runner actually has ------------------------

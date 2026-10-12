@@ -107,6 +107,8 @@ const DATE_ONLY = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
  * scope. A genesis event is not required to carry `reviewedAgainst`, because recording a first
  * review without a digest and having `validate` print the digest to record is the documented
  * workflow (ADR 0005); requiring it would make the digest hint unreachable.
+ * That omission is bootstrap behaviour confined to a genesis event: it is not authenticated history,
+ * and no successor may omit the digest. `reviewedBy` and `reviewerRole` are asserted, not authenticated.
  */
 function eventFieldProblems(ruleId, review, { successor }) {
   const problems = [];

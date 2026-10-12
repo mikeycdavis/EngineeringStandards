@@ -7,7 +7,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -242,7 +242,7 @@ function tryGit(repositoryPath, args) {
  * - `verified`: the base was found, the policy existed there, and no prior event was deleted,
  *   edited, reordered, relabeled or reinserted; every appended chain is valid.
  * - `violated`: the comparison ran and the proposed policy rewrites history (details in `reason`).
- * - `unverified`: no trusted base could be determined (no repository, no remote default-branch ref,
+ * - `not-evaluated`: no trusted base could be determined (no repository, no remote default-branch ref,
  *   no merge-base such as a shallow clone, or the policy file absent at the base). Nothing about
  *   the history is established; the reason is always stated and never silently skipped.
  *
@@ -253,7 +253,7 @@ function tryGit(repositoryPath, args) {
  * comparison files under the OS temp directory.
  */
 export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, proposedPolicySource }) {
-  const unverified = (reason, extra = {}) => ({ status: "unverified", reason, ...extra });
+  const unverified = (reason, extra = {}) => ({ status: "not-evaluated", reason, ...extra });
   const repository = path.resolve(repositoryPath ?? "");
 
   const top = tryGit(repository, ["rev-parse", "--show-toplevel"]);
@@ -317,4 +317,55 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
     }
     throw error;
   }
+}
+
+/** Reviewer identities in a policy are assertions of the policy text. Nothing authenticates them. */
+export const IDENTITY_NOTE =
+  "reviewedBy and reviewerRole are ASSERTED by the policy text, not authenticated; no signature or " +
+  "trusted-actor mechanism verifies them.";
+
+/**
+ * The history-integrity preflight shared by `standards validate` and `npm run attestations`.
+ *
+ * It reads the policy file at `repositoryPath` itself, so no caller can compare one text and judge
+ * another, and returns the base comparison plus the one consequence both commands apply:
+ *
+ * - `verified`: attestations are effective.
+ * - `violated`: attestations are withdrawn (the policy rewrites recorded history).
+ * - `not-evaluated`: attestations are withdrawn as well. Their validity depends on a history that
+ *   could not be compared with a trusted base, and an attestation must not stay effective merely
+ *   because the comparison was unavailable.
+ *
+ * `effective` is true only for `verified`. A policy that records no attestation returns
+ * `{ status: "not-applicable", effective: true }`: there is no history to protect.
+ *
+ * What a developer sees without a remote: the finding states `NOT_EVALUATED` with the reason and the
+ * command that supplies the missing ref (`git fetch origin`), and the rules those attestations would
+ * have established report as unreviewed. This is deliberate: a clone that cannot see the default
+ * branch cannot show that history was only appended.
+ */
+export async function reviewHistoryPreflight({ repositoryPath, policyPath = "project-policy.yml" }) {
+  const repository = path.resolve(repositoryPath ?? "");
+  let source;
+  try {
+    source = await readFile(path.resolve(repository, policyPath), "utf8");
+  } catch (error) {
+    return { status: "not-evaluated", effective: false, reason: `the policy could not be read: ${error.message}` };
+  }
+  let document;
+  try {
+    document = parseYaml(source);
+  } catch (error) {
+    return { status: "not-evaluated", effective: false, reason: `the policy could not be parsed: ${error.message}` };
+  }
+  const attestations = document?.attestations;
+  if (!attestations || typeof attestations !== "object" || Object.keys(attestations).length === 0) {
+    return { status: "not-applicable", effective: true, reason: "the policy records no attestation" };
+  }
+  const result = await verifyAgainstTrustedBase({
+    repositoryPath: repository,
+    policyPath,
+    proposedPolicySource: source,
+  });
+  return { ...result, effective: result.status === "verified" };
 }

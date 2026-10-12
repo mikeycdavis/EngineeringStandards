@@ -31,6 +31,7 @@ import {
   FRESHNESS,
 } from "./repository.mjs";
 import { currentReview, reviewsOf, reviewProblems, isLegacyShape } from "./reviews.mjs";
+import { reviewHistoryPreflight, IDENTITY_NOTE } from "./review-history.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -124,7 +125,22 @@ function migrateText(text) {
   return out.join("\n");
 }
 
+// The same history-integrity preflight `standards validate` runs, before anything is created, listed as
+// valid or migrated. An attestation is only as good as the history it sits in: when that history was
+// rewritten (violated) or could not be compared with a trusted base (not-evaluated), no event is
+// listed as current, and the migration refuses to write.
+const preflight = await reviewHistoryPreflight({ repositoryPath: root, policyPath: "project-policy.yml" });
+
 if (MIGRATE) {
+  if (!preflight.effective) {
+    process.stderr.write(
+      `Refusing to migrate: review-history integrity is ${preflight.status.toUpperCase()}: ${preflight.reason}
+` +
+        `No attestation is created, listed as valid or renewed until the history is verified.
+`,
+    );
+    process.exit(preflight.status === "violated" ? EXIT_FINDINGS : EXIT_INVOCATION);
+  }
   const file = path.join(root, "project-policy.yml");
   const original = await readFile(file, "utf8");
   const migrated = migrateText(original);
@@ -158,7 +174,8 @@ const rows = entries.flatMap(([ruleId, record]) => {
     return {
       rule: ruleId,
       id: attestation?.id ?? null,
-      current: attestation === current,
+      current: preflight.effective && attestation === current,
+      identity: "asserted, not authenticated",
       shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
       predecessor: attestation?.supersedes ?? null,
       supersedes: attestation?.supersedes ?? null,
@@ -204,6 +221,7 @@ const rows = entries.flatMap(([ruleId, record]) => {
  * for. A violation exits 1: the policy is internally inconsistent about its own provenance.
  */
 const violations = [];
+if (preflight.status === "violated") violations.push(`review history: ${preflight.reason}`);
 for (const [ruleId, record] of entries) violations.push(...reviewProblems(ruleId, record));
 for (const r of rows) {
   if (r.algorithm === null && r.paths.length > 0 && r.freshness !== FRESHNESS.unrecorded) {
@@ -225,6 +243,14 @@ if (JSON_OUT) {
     JSON.stringify(
       {
         repository: { available: repo.available, reason: repo.reason },
+        historyIntegrity: {
+          status: preflight.status,
+          effective: preflight.effective,
+          reason: preflight.reason ?? null,
+          baseCommit: preflight.baseCommit ?? null,
+          ref: preflight.ref ?? null,
+        },
+        identityNote: IDENTITY_NOTE,
         total: rows.length,
         counts,
         safelyAutoUpgradable: 0,
@@ -240,6 +266,9 @@ if (JSON_OUT) {
   const out = [];
   out.push(`${rows.length} attestation(s) in ${root}`);
   if (!repo.available) out.push(`  repository content unavailable: ${repo.reason}`);
+  out.push(`  history integrity: ${preflight.status.toUpperCase()}${preflight.reason ? ` - ${preflight.reason}` : ""}`);
+  if (!preflight.effective) out.push("  No attestation is listed as current or valid while history integrity is not verified.");
+  out.push(`  ${IDENTITY_NOTE}`);
   out.push("");
   for (const [status, n] of Object.entries(
     rows.reduce((a, r) => ((a[r.disposition] = (a[r.disposition] ?? 0) + 1), a), {}),
@@ -254,6 +283,7 @@ if (JSON_OUT) {
   for (const r of rows) {
     out.push(`  ${r.rule}`);
     out.push(`    disposition: ${r.disposition}`);
+    out.push(`    reviewer:    ${r.reviewedBy ?? "?"} (asserted, not authenticated)`);
     out.push(`    algorithm:   ${r.algorithm ?? "(none recorded)"}`);
     out.push(`    freshness:   ${r.freshness}`);
     out.push(`    reviewed:    ${r.reviewedAt ?? "?"}${r.revision ? ` at ${r.revision}` : ""}`);

@@ -34,7 +34,7 @@ import {
   FRESHNESS,
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
-import { verifyAgainstTrustedBase } from "./review-history.mjs";
+import { reviewHistoryPreflight, IDENTITY_NOTE } from "./review-history.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -289,6 +289,7 @@ function renderVerdict(report, policy) {
   if (attested.length) {
     out.push("  Attested (human review):");
     for (const r of attested) out.push(`    ${r.ruleId} — ${r.attestation.reviewedBy}, ${r.attestation.reviewedAt}`);
+    out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
     out.push("");
   }
 
@@ -3851,23 +3852,30 @@ export async function main(args) {
   }
 
   /**
-   * Append-only review history against a trusted base the repository determines itself.
+   * History-integrity preflight, shared with `npm run attestations` (reviewHistoryPreflight).
    *
-   * The result is always reported when the policy records any attestation: `verified`, `violated`
-   * or `unverified` with the reason, never silently skipped. A violation withdraws every attestation
-   * from this run's evaluation (the rules fall back to what automated evidence establishes), because
-   * a history that was rewritten cannot establish anything and the comparison names the first
-   * rewrite, not all of them. `unverified` withdraws nothing: the pinned legacy manifest and the
-   * chain resolver still apply, and the finding states that the base comparison did not run.
+   * The policy's review histories are compared with the policy at merge-base(HEAD, origin default
+   * branch). The result is always reported when the policy records any attestation, never silently
+   * skipped:
+   *   - verified:       attestations are effective.
+   *   - violated:       the policy rewrites recorded history; every attestation is withdrawn this run.
+   *   - not-evaluated:  no trusted base could be determined (no remote ref, shallow history without
+   *                     the base, not a work tree); every attestation is withdrawn this run as well,
+   *                     because an attestation must not stay effective merely because the comparison
+   *                     was unavailable. The rules fall back to what automated evidence establishes.
+   * A withdrawn rule reports as unreviewed, exactly as if no attestation had been recorded.
+   *
+   * Limits, stated rather than hidden: when HEAD is the default-branch tip the base is HEAD, so only
+   * uncommitted edits are visible (an already-rewritten tip cannot be proved against itself without
+   * an external anchor; the pinned manifest anchors only the eleven histories that existed at its
+   * base). Identities are asserted by the policy text and are not authenticated.
    */
-  let reviewHistoryBase = null;
-  if (policy.document && Object.keys(policy.document.attestations ?? {}).length > 0) {
-    reviewHistoryBase = await verifyAgainstTrustedBase({
-      repositoryPath: root,
-      policyPath: "project-policy.yml",
-      proposedPolicySource: await readFile(path.join(root, "project-policy.yml"), "utf8"),
-    });
+  const reviewHistoryBase = policy.document
+    ? await reviewHistoryPreflight({ repositoryPath: root, policyPath: "project-policy.yml" })
+    : null;
+  if (reviewHistoryBase && reviewHistoryBase.status !== "not-applicable") {
     const base = reviewHistoryBase;
+    const count = Object.keys(policy.document.attestations ?? {}).length;
     addFinding({
       id: "review-history-append-only",
       category: "evidence-surface",
@@ -3877,17 +3885,20 @@ export async function main(args) {
       message:
         base.status === "verified"
           ? `Review histories are append-only relative to ${base.baseCommit} (merge-base with ${base.ref}).` +
-            (base.headIsBase ? " HEAD is the base, so only uncommitted edits to the policy were compared." : "")
+            (base.headIsBase ? " HEAD is the base, so only uncommitted edits to the policy were compared." : "") +
+            ` ${IDENTITY_NOTE}`
           : base.status === "violated"
             ? `Review history was rewritten relative to ${base.baseCommit} (merge-base with ${base.ref}): ` +
-              `${base.reason}. No attestation establishes any rule in this run.`
-            : `Append-only review history was NOT verified: ${base.reason}. Immutability of earlier events is ` +
-              `established only by the pinned legacy manifest and the chain rules.`,
+              `${base.reason}. No attestation establishes any rule in this run (${count} withdrawn).`
+            : `Review-history immutability is NOT_EVALUATED: ${base.reason}. All ${count} attestation(s) were ` +
+              `disregarded in this run, because their validity depends on a history that could not be compared ` +
+              `with a trusted base (supply the default-branch ref, for example with git fetch origin, and ` +
+              `run again). ${IDENTITY_NOTE}`,
       standardRef: R.search,
     });
   }
   const evaluationDocument =
-    reviewHistoryBase?.status === "violated" && policy.document
+    reviewHistoryBase && !reviewHistoryBase.effective && policy.document
       ? { ...policy.document, attestations: {} }
       : policy.document;
 
@@ -4061,6 +4072,13 @@ export async function main(args) {
       return null;
     }
   })();
+
+  // Additive: wherever a reviewer identity is shown it is labelled as asserted, never authenticated.
+  for (const result of verdict.results) {
+    if (result.attestation) {
+      result.attestation = { ...result.attestation, identity: "asserted, not authenticated" };
+    }
+  }
 
   const report = envelope({
     verdict,

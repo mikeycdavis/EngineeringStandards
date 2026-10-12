@@ -32,10 +32,17 @@ exports `resolveReviewHistory`, `resolveRecordedReviewHistory(ruleId, record)`, 
 order and now throw a `TypeError` when `ruleId` is not a non-empty string (an argument-order mistake), and report a problem
 rather than a history when the record is not a mapping. `validate` now compares the policy with the blob at
 `merge-base(HEAD, origin default branch)` and reports `verified`, `violated` (attestations withdrawn for that run) or
-`unverified` (reason stated) as the finding `review-history-append-only`; the JSON envelope is unchanged and the finding is
+`not-evaluated` (reason stated) as the finding `review-history-append-only`; the JSON envelope is unchanged and the finding is
 additive. `attestations --json` rows gain `predecessor`, `status`, `reviewedBy`, `reviewerRole`, `evidence`, `reference`,
 `reviewedCommit`, `reviewedTree`, `digest`, `digestAlgorithm`, `source`, `reviewedPaths` and `scope`; every existing key and
-every `action` string is unchanged. `reviewerRole` and `reviewedBy` are recorded, not authenticated.
+every `action` string is unchanged. `reviewerRole` and `reviewedBy` are ASSERTED by the policy text, not authenticated:
+the human report, the attested result (`attestation.identity`), the `attestations` table and JSON (`identity`,
+`identityNote`) say so, additively; the fields are not renamed. When no trusted base can be determined the history check
+is `NOT_EVALUATED` and every attestation is disregarded in that run (both `validate` and `attestations`, which also
+reports `historyIntegrity`, lists nothing as current and refuses `--migrate`).
+A genesis event may still omit its digest (the ADR 0005 first-pass workflow); that is bootstrap
+behaviour and not authenticated history, and no successor may omit it. The hosted self-validation job now runs the
+validator from the code under test, with a pinned baseline job beside it (see `standards-dogfood.yml`).
 
 Correction to the entries below, after Codex review of #102 (#104): a backslash before ASCII punctuation makes that
 character literal, so an escaped `[` opens no label and an escaped `]` closes none, and the `](` shortcut applies only
