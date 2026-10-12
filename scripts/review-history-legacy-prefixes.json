@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1.0.0",
+  "baseCommit": "1e22c3a12bc42fb299712176c597b7498e944ec2",
+  "baseTree": "3d00e25613cdf4517d725c0d2229f92f6718543b",
+  "eventCanonicalization": "recursive-key-sorted-json-utf8-sha256-v1",
+  "histories": {
+    "ai.destructive-approval": {
+      "events": [
+        { "id": "review-ai-destructive-approval-001", "sha256": "4da9834e61653fa9a337d3a9e87784a5d8f7b1509f30d2c6b9ed5e96172d998b" },
+        { "id": "review-ai-destructive-approval-002", "sha256": "141cc7ef86a58e3aee27d56a307adff6c40946fe42f7536c68176fb48afea662" },
+        { "id": "review-ai-destructive-approval-003", "sha256": "39c7790f91b251ba6de111e5c17c261af828f522aa73cbe9a6b5c86d15241f45" }
+      ]
+    },
+    "meta.standards-not-weakened": {
+      "events": [
+        { "id": "review-meta-standards-not-weakened-001", "sha256": "75c3430e9f942e8310c557828d987f111ccbc4cb8960c0efd757fecf1fa9fac9" },
+        { "id": "review-meta-standards-not-weakened-002", "sha256": "b8c61592c7d50aa7e8b6e067d8aad57ff446185114bdb6e91e3c76f3941f3fcf" },
+        { "id": "review-meta-standards-not-weakened-003", "sha256": "8d7b280a276bb29a0ecf01da7867e2730611e7010752ec83d7f23f6e25be4d6e" },
+        { "id": "review-meta-standards-not-weakened-004", "sha256": "e970c67738e83d8b3947a2d742e3b32efcdf2695998b633f0d3493473a0932fd" },
+        { "id": "review-meta-standards-not-weakened-005", "sha256": "80aa9f0a519f00bfada53d4bf2e90a481f82207380453679f6972caf32966aab" },
+        { "id": "review-meta-standards-not-weakened-006", "sha256": "082f24914b3cf48f341b1eab18da4701f2556be370f9b232a2886c61048d50b0" }
+      ]
+    },
+    "testing.no-weakening-to-pass": {
+      "events": [
+        { "id": "review-testing-no-weakening-to-pass-001", "sha256": "451bd64f9c15f02a09b9fc598ef5783dc80cc3f620ad8ff460b12e107f0c6ff5" },
+        { "id": "review-testing-no-weakening-to-pass-002", "sha256": "7311234ab8b72a60721e57ae423b06328fd8b249a6fa775e17ecf251a19c7dac" },
+        { "id": "review-testing-no-weakening-to-pass-003", "sha256": "e8c8174fd10c0b6b9942446e6128d76306104b8ccb83e1f517e6a02ed8b050c8" },
+        { "id": "review-testing-no-weakening-to-pass-004", "sha256": "70672fc87520f81cdff72ef90f3ec5bbe67f380a71be7a954282034e6a5aa5d1" },
+        { "id": "review-testing-no-weakening-to-pass-005", "sha256": "26eeeead595d872cbf70bfdc8e78f724832ff66f88f76c2628b35939b1b0dfcd" }
+      ]
+    },
+    "architecture.no-hidden-global-state": {
+      "events": [
+        { "id": "review-architecture-no-hidden-global-state-001", "sha256": "14fefda7d0ea4f3c4175758673d0fb1316f1d57b0ea17b20a150b96130cf9a33" },
+        { "id": "review-architecture-no-hidden-global-state-002", "sha256": "ccfa954c45e980c72fbf82f19b5875a74621f1d71feb1517ad05a705250ae6cf" },
+        { "id": "review-architecture-no-hidden-global-state-003", "sha256": "49a9ba58151e3e2ad4c9529212deb6cbc5091597a197a7ca01f947a32bebba75" },
+        { "id": "review-architecture-no-hidden-global-state-004", "sha256": "3126dfa6ac65d31463e4bfd8a2f6f40dd62eae3ca36d4f695484ed6df5b22700" },
+        { "id": "review-architecture-no-hidden-global-state-005", "sha256": "0aa1b9a6c78bc11816bc8b9b937bc118904223f6b4770ef35e73d3e25474385b" },
+        { "id": "review-architecture-no-hidden-global-state-006", "sha256": "ba9ee2555d032d9bafd36cd2ccb9617d66bb86c14105b735e28100692127f612" },
+        { "id": "review-architecture-no-hidden-global-state-007", "sha256": "13ab9712cd9e00dffa0856d507890b13e573a611d849a840c7b375f87cec01a4" },
+        { "id": "review-architecture-no-hidden-global-state-008", "sha256": "54b0e019f76c34ba0e20cb2f053359f92a08b45999caafeb086141d566def186" },
+        { "id": "review-architecture-no-hidden-global-state-009", "sha256": "89290fa8afc40e8ff8b7c08d3531077c8091f939a894932638d47b2271f233ac" },
+        { "id": "review-architecture-no-hidden-global-state-010", "sha256": "bf6975cfe2c884ca854d51affc2c1f5b600b750e82fa9df73ef071cdac386b9e" },
+        { "id": "review-architecture-no-hidden-global-state-011", "sha256": "85448d83fe1b08740f370dfabd98468a154d7d2ac72a9b698ab681ecb71a2806" },
+        { "id": "review-architecture-no-hidden-global-state-012", "sha256": "fa14b0982ab49b1caa3c85c2d75e1ae11f485ccb6ec502e1fcd134aeecd92372" }
+      ]
+    },
+    "architecture.no-duplicate-implementations": {
+      "events": [
+        { "id": "review-architecture-no-duplicate-implementations-001", "sha256": "6ee0174d2b001fe938fccf9094e3325d833731aeefd86e49239e91e872a6cdd9" },
+        { "id": "review-architecture-no-duplicate-implementations-002", "sha256": "5e8590c959931978238eb57fd9b1f512d59047c820cec49a2c9d3ddd4b534f6f" },
+        { "id": "review-architecture-no-duplicate-implementations-003", "sha256": "49dc1d0b7b6727d73b9a308f6981473a805bf6c784cbd9ddc97f610b8765996a" },
+        { "id": "review-architecture-no-duplicate-implementations-004", "sha256": "dda424811954939161c668904469060209563f28d9a1a409c4752179c8905430" },
+        { "id": "review-architecture-no-duplicate-implementations-005", "sha256": "ef8aa00498903fd0f447e4371bc44abc94863e27ce7d63ad23817a5a12f075ce" }
+      ]
+    },
+    "testing.no-fabricated-results": {
+      "events": [
+        { "id": "review-testing-no-fabricated-results-001", "sha256": "ed8694870c413ecf90e0bd7b13bfc61dbf1b5583aec3e81f889b7a127faa833a" },
+        { "id": "review-testing-no-fabricated-results-002", "sha256": "b760a02c6e7bae8bc0cb55677da431b830d8346e4ecaa366ca415869bad81070" },
+        { "id": "review-testing-no-fabricated-results-003", "sha256": "796ba9199c7c81ae7cbf34754b4cd848d1e34045dad56437f93a81c40abc1b42" },
+        { "id": "review-testing-no-fabricated-results-004", "sha256": "f1fc35c2e1e6be1ef4c0760f7e991ec74343b4d11abbfb23f70694101eea171b" },
+        { "id": "review-testing-no-fabricated-results-005", "sha256": "4f68414fd48f8573924ca80ec94fa00fdb4977d83acef2e50374ac26f6247c06" },
+        { "id": "review-testing-no-fabricated-results-006", "sha256": "0deea57576b4f598eca6288e806399427974efd9b9389b76156fd2bfd46b4053" }
+      ]
+    },
+    "scm.no-shared-history-rewrite": {
+      "events": [
+        { "id": "review-scm-no-shared-history-rewrite-001", "sha256": "985e447255fe59a97b746a4a47f7db81876ad5e4d39284146e8697edefc6f531" },
+        { "id": "review-scm-no-shared-history-rewrite-002", "sha256": "12b2a5d527d258efd1a66e84acaa46e0ddd144011abb44ce6d668956f295fb4f" },
+        { "id": "review-scm-no-shared-history-rewrite-003", "sha256": "d775321c05940c63967749bf7895808c9b84a4a35f58f9a54fc69bcd64e437b6" }
+      ]
+    },
+    "architecture.no-boundary-bypass": {
+      "events": [
+        { "id": "review-architecture-no-boundary-bypass-001", "sha256": "8496cabbd9d1e22bf1a162a91528f5e70653b7cb37716122fe4c9f544dc80910" },
+        { "id": "review-architecture-no-boundary-bypass-002", "sha256": "8e6ae02baeb1fe28ee67df8c235ca1fb169cb5f7bcc9242007c6ec1f27049187" },
+        { "id": "review-architecture-no-boundary-bypass-003", "sha256": "fa2a9b6221008da7a737e8944f896a69f7c7a8f9891dc6b0af0823af58b337a3" },
+        { "id": "review-architecture-no-boundary-bypass-004", "sha256": "95d77d4af8c875158a689edf819499ad5ab4ddb12237cdf7ced8000d280ccc30" },
+        { "id": "review-architecture-no-boundary-bypass-005", "sha256": "8439be9cbf032e342799cbd84d0ca639ee9e6830ce0ab5c1b5e8a0ac817e5748" },
+        { "id": "review-architecture-no-boundary-bypass-006", "sha256": "cd2b57bcb17a01f48215092d3d34f401a2a89958dd09835643708b6491aa94e7" }
+      ]
+    }
+  }
+}

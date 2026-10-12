@@ -112,7 +112,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // questions — what happened historically, and what currently establishes this rule — are
     // answered independently rather than by one mutable record that the latest review overwrites.
     const record = attestations[rule.id];
-    const structural = reviewProblems(rule.id, record);
+    const structural = reviewProblems(record, rule.id);
     if (structural.length > 0) {
       // A malformed history establishes nothing rather than establishing whatever happens to be
       // last. Selecting by position from a sequence whose order is unverified would make the file's
@@ -132,7 +132,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       });
       continue;
     }
-    const attestation = currentReview(rule.id, record);
+    const attestation = currentReview(record, rule.id);
     // A verdict that says the attestation did not establish the rule (freshness), held rather than
     // pushed, so a live exception on the same forbidden manual-review rule can still be read below.
     let nonEstablishing = null;
