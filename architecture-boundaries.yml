@@ -15,26 +15,45 @@ observation:
     - ".mjs"
   cannotObserve:
     - mechanism: "dynamic-import-computed"
-      reason: "Only string-literal import() is resolved. A computed specifier is invisible to the graph."
-    - mechanism: "reflection"
-      reason: "Reflect, Proxy, eval, Function and module-namespace indirection are not examined."
-    - mechanism: "generated-code"
-      reason: "Code written to disk or evaluated at run time, and generated documentation, are not examined."
+      reason: "An import() whose argument is not a single string literal cannot be resolved. The check reports it unless the file is listed in knownSites."
+      knownSites: []
+    - mechanism: "require-call"
+      reason: "require(...) and createRequire reach modules by a path the graph does not see. The check reports any use unless the file is listed in knownSites."
+      knownSites: []
+    - mechanism: "import-meta-resolve"
+      reason: "import.meta.resolve names a module the graph does not follow. The check reports any use unless listed in knownSites."
+      knownSites: []
+    - mechanism: "url-module-path"
+      reason: "new URL(..., import.meta.url) can name a module or file the graph does not follow. The check reports any use unless listed in knownSites."
+      knownSites: []
+    - mechanism: "termination-indirect"
+      reason: "Process termination through an alias, a computed property, globalThis indexing or a renamed import of the process module is not classified. The check reports it unless listed in knownSites. process.exit, exitCode, kill and abort in their direct, optional-chained, bracketed-literal, destructured and imported forms are classified."
+      knownSites: []
     - mechanism: "subprocess"
-      reason: "The check sees which files import the child-process module, never what a subprocess runs or what it reaches. scripts/pipeline.mjs runs a caller-supplied command string through a shell."
+      reason: "The check sees which files import child_process, worker_threads or cluster (with or without the node: prefix), never what a subprocess runs or reaches. scripts/pipeline.mjs runs a caller-supplied command string through a shell."
       knownSites:
         - scripts/ci-triage.mjs
         - scripts/pipeline.mjs
         - scripts/repository.mjs
         - scripts/test.mjs
+    - mechanism: "reflection"
+      reason: "eval, Function, Reflect and Proxy are reported unless listed in knownSites. Other forms of indirection (property lookup by computed name, prototype manipulation) are not examined."
+      knownSites: []
     - mechanism: "network"
-      reason: "No network module is imported, but scripts/ci-triage.mjs reaches GitHub through the gh CLI and the check cannot see that traffic."
+      reason: "Imports of http, https, http2, net, tls, dgram or dns, and fetch, WebSocket and XMLHttpRequest, are reported unless listed in knownSites. Traffic that leaves through another program (scripts/ci-triage.mjs runs the gh CLI) is not visible."
+      knownSites: []
+    - mechanism: "generated-code"
+      reason: "Code written to disk and run later, and generated documentation, are not examined. The scanner has no detector for this."
+      knownSites: []
     - mechanism: "data-access"
       reason: "Which files, rules and policy keys a module reads or writes is not observed; the three-way separation of data ownership rests on review plus assertBindings, not on this check."
+      knownSites: []
     - mechanism: "shell-and-workflow-scripts"
       reason: "scripts/*.ps1, scripts/*.sh and .github/workflows/*.yml are outside the extensions and are not examined."
+      knownSites: []
     - mechanism: "outside-roots"
       reason: "test/, templates/, standards/ and every file outside the roots are not examined."
+      knownSites: []
 
 members:
   - id: "catalog"
@@ -45,29 +64,29 @@ members:
       - rules/
     evidence:
       - PROJECT.md:54
-      - scripts/catalog.mjs:14
+      - scripts/catalog.mjs:144
   - id: "reviews"
     kind: "layer"
     description: "Interprets a recorded review sequence. Holds no catalog, applicability or evidence knowledge."
     paths:
       - scripts/reviews.mjs
     evidence:
-      - scripts/reviews.mjs:1
+      - scripts/reviews.mjs:92
   - id: "evaluator"
     kind: "layer"
     description: "Produces the verdict from catalog, policy and findings. Redefines neither rule metadata nor applicability."
     paths:
       - scripts/compliance.mjs
     evidence:
-      - PROJECT.md:54
-      - scripts/compliance.mjs:1
+      - PROJECT.md:55
+      - scripts/compliance.mjs:39
   - id: "repository-provenance"
     kind: "layer"
     description: "Reads repository content as an evidence source (blob identity, digests, freshness) through git."
     paths:
       - scripts/repository.mjs
     evidence:
-      - scripts/repository.mjs:1
+      - scripts/repository.mjs:216
   - id: "parsers"
     kind: "layer"
     description: "Strict readers: policy YAML, JSON schema evaluation, source-section definition, plan-item tracking."
@@ -77,8 +96,10 @@ members:
       - scripts/sections.mjs
       - scripts/tracking.mjs
     evidence:
-      - scripts/yaml.mjs:1
-      - scripts/jsonschema.mjs:1
+      - scripts/yaml.mjs:220
+      - scripts/jsonschema.mjs:189
+      - scripts/sections.mjs:38
+      - scripts/tracking.mjs:157
   - id: "adoption"
     kind: "layer"
     description: "Plans and applies `standards init`, and generates the agent operating rules it writes."
@@ -86,15 +107,15 @@ members:
       - scripts/init.mjs
       - scripts/agent-instructions.mjs
     evidence:
-      - scripts/init.mjs:1
-      - scripts/agent-instructions.mjs:1
+      - scripts/init.mjs:312
+      - scripts/agent-instructions.mjs:86
   - id: "boundary-check"
     kind: "layer"
     description: "Validates and enforces this declaration. A library; it never terminates the process."
     paths:
       - scripts/boundaries.mjs
     evidence:
-      - scripts/boundaries.mjs:1
+      - scripts/boundaries.mjs:581
   - id: "validator-cli"
     kind: "process"
     description: "The audit and validate command and the ownership check. A CLI boundary: the only place, with the tool CLIs, that terminates the process."
@@ -123,7 +144,7 @@ members:
       - scripts/boundaries-check.mjs
     evidence:
       - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md:87
-      - scripts/policy.mjs:1
+      - scripts/policy.mjs:186
 
 edges:
   - from: "evaluator"
@@ -145,8 +166,8 @@ edges:
       - parseYaml
       - validate
     evidence:
-      - scripts/boundaries.mjs:20
-      - scripts/boundaries.mjs:21
+      - scripts/boundaries.mjs:30
+      - scripts/boundaries.mjs:31
   - from: "validator-cli"
     to: "catalog"
     via:

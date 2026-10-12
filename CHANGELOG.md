@@ -33,7 +33,8 @@ a root-level `architecture-boundaries.yml`, discovered by name beside `project-p
 `schemas/architecture-boundaries.schema.json` (members with path ownership, permitted edges and interfaces, and the
 declaration's own observation limits; `templates/architecture-boundaries/architecture-boundaries.yml` is the starting point). It is a separate
 file so that it can be a reviewed path of an attestation without being the file that records one. An absent file
-changes no verdict, score or exit code, and the policy schema is unchanged; a present one is checked for shape and
+changes no status, score or exit code, and the policy schema is unchanged (the `architecture.no-boundary-bypass`
+attestation does become stale, because Standard 51 is one of its reviewed paths, so passed and skipped counts shift); a present one is checked for shape and
 internal consistency by `standards policy` and `validate`, and against the import graph of its roots by the new
 `node scripts/boundaries-check.mjs`
 (`npm run boundaries`; exit 0 conforms, 1 violations, 2 NOT_EVALUATED) and `test/boundaries.test.mjs`.

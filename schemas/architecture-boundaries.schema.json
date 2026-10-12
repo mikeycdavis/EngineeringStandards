@@ -7,7 +7,8 @@
   "required": [
     "observation",
     "members",
-    "edges"
+    "edges",
+    "external"
   ],
   "additionalProperties": false,
   "properties": {
@@ -33,14 +34,14 @@
   },
   "$defs": {
     "boundaryPath": {
-      "description": "A repository-relative path using forward slashes: a file, or a directory ending in `/`. No `..`, no leading `/`, no backslash, no drive letter, no glob.",
+      "description": "A repository-relative path using forward slashes: a file, or a directory ending in `/`. No `.` or `..` segment, no leading `/`, no backslash, no drive letter, no glob.",
       "type": "string",
-      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$"
+      "pattern": "^(?:(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/)*(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/?$"
     },
     "boundaryEvidence": {
-      "description": "`path:line` citing where the repository states or exhibits the boundary or edge.",
+      "description": "`path:line` citing a line that states, defines or exhibits the boundary or edge. For an edge in an observed file the checker verifies that the line is an import, by that member, of a file owned by the target member.",
       "type": "string",
-      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*:[1-9][0-9]*$"
+      "pattern": "^(?:(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/)*(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+:[1-9][0-9]*$"
     },
     "boundaryObservation": {
       "description": "The observation limits of the check, stated by the declaration itself. A claim about this repository's boundaries holds only within these limits.",
@@ -89,20 +90,35 @@
       "type": "object",
       "required": [
         "mechanism",
-        "reason"
+        "reason",
+        "knownSites"
       ],
       "additionalProperties": false,
       "properties": {
         "mechanism": {
+          "description": "A mechanism from the closed vocabulary. Every one of them must be listed, once (checked structurally).",
           "type": "string",
-          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+          "enum": [
+            "dynamic-import-computed",
+            "require-call",
+            "import-meta-resolve",
+            "url-module-path",
+            "termination-indirect",
+            "subprocess",
+            "reflection",
+            "network",
+            "generated-code",
+            "data-access",
+            "shell-and-workflow-scripts",
+            "outside-roots"
+          ]
         },
         "reason": {
           "type": "string",
           "minLength": 1
         },
         "knownSites": {
-          "description": "Files known to use the mechanism. When the mechanism is `subprocess` the checker requires this to equal the set of in-scope files importing node:child_process, so a new site must be declared. That detects the import, never what is executed.",
+          "description": "Required, an explicit empty list allowed. For a mechanism the scanner detects, the files in which it is acknowledged: the check fails on a use in any other file and on a listed file where none is observed. For a declarative mechanism it is documentation the scanner cannot verify.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/boundaryPath"

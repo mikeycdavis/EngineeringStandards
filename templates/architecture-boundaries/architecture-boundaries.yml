@@ -13,15 +13,45 @@ observation:
     - src
   extensions:
     - ".js"
+  # Every mechanism below must be listed, once. knownSites is required (an empty list is allowed):
+  # for a detected mechanism it names the files where its use is acknowledged.
   cannotObserve:
     - mechanism: "dynamic-import-computed"
-      reason: "Only string-literal import() is resolved."
-    - mechanism: "reflection"
-      reason: "Reflection, eval and generated code are not examined."
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "require-call"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "import-meta-resolve"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "url-module-path"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "termination-indirect"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
     - mechanism: "subprocess"
-      reason: "Imports of the child-process module are seen; what a subprocess runs is not."
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "reflection"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
     - mechanism: "network"
-      reason: "Network paths are not examined."
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "generated-code"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "data-access"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "shell-and-workflow-scripts"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "outside-roots"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
 
 members:
   - id: "core"

@@ -78,13 +78,19 @@ Decided, not left to the checker's discretion:
 | Two members own overlapping paths | Error. A file with two owners has no direction to check |
 | A file under the observed roots with a declared extension is owned by no member | Error (`unowned-file`). Adding a script therefore requires declaring its member, deliberately |
 | Duplicate member id or duplicate edge; an edge naming an unknown member; a self edge | Error |
+| A path or evidence file containing a `.` or `..` segment, a leading `/`, a backslash or a drive letter | Error, in the schema and in the structural check; evidence is also never read from outside the repository |
+| `cannotObserve` that omits, repeats or invents a mechanism of the closed vocabulary (section 4), or an entry without `knownSites` | Error |
+| `external` absent (an empty `allowPrefixes` is allowed) | Error |
 | Declared edges form a cycle | Error. A declared circular dependency is the other failure R2 names |
 | A cross-member import with no declared edge | Violation (`undeclared-edge`) |
 | A cross-member import of a name the edge's `via` does not list, or a namespace import where `via` is not `*` | Violation (`undeclared-interface`) |
-| An import whose specifier leaves the repository and is not under `external.allowPrefixes` | Violation (`undeclared-external`) |
+| A side-effect import (`import "./x.mjs"`) across an edge whose `via` lists neither `side-effect` nor `*` | Violation (`undeclared-interface`) |
+| An import whose specifier leaves the repository and is not under `external.allowPrefixes`; a built-in written without `node:` is one | Violation (`undeclared-external`) |
 | A member without `processExit: permitted` whose files terminate the process | Violation (`process-termination`) |
-| A file importing the child-process module that is not in the declared `subprocess.knownSites`, or a declared site that does not | Violation |
-| Evidence naming a missing file or a line past its end | Violation |
+| A construct the scanner cannot classify (section 4), in a file that is not a `knownSite` of that mechanism | Violation (`unobserved-mechanism`). **The result is never OK**: this is the fail-closed rule |
+| A `knownSite` of a detected mechanism in which the mechanism is no longer observed | Violation (`known-site-missing`), so the acknowledgement list cannot rot |
+| A member path that matches no file or directory | Violation (`dead-member-path`) |
+| Evidence naming a missing file or a line past its end; an edge's evidence that is not an import, by that member, of a file of the target member | Violation (`evidence-missing`, `evidence-out-of-range`, `evidence-mismatch`) |
 
 Structural errors make the policy invalid (`standards policy` exit 2; `standards validate` reports
 the policy as unreadable, `NOT_EVALUATED`, as it does for any schema-invalid policy). The structural
@@ -94,13 +100,42 @@ do **not** change `validate`: see Compatibility.
 
 ### 4. Detector observation limits
 
-The check reads string-literal static `import` / `export ... from` and `import("x")` in files under
-the declared roots and extensions, plus a text scan for process termination and for importing the
-child-process module. It cannot see, and the declaration must therefore list as excluded: computed
-import specifiers, reflection, generated or evaluated code, what a subprocess executes, network
-paths, data-access paths (which files, rules or keys a module reads or writes), shell and workflow
-scripts, and every file outside the roots. For `subprocess` the check detects the import, never the
-command. A passing check is a statement about edges between files, and nothing wider.
+The scanner is a small tokenizer (zero dependencies), not a set of line patterns: comments, strings,
+template literals and regex literals are recognised, so an apostrophe in a comment, an import
+split over several lines or sharing a line with another, a string-named import, a re-export or a
+side-effect import are read correctly, and a termination form inside a comment or string is not one.
+
+It **reads**: string-literal static `import`, `export ... from`, side-effect imports and `import("x")`
+(also across lines, with an attributes argument) in files under the declared roots and extensions;
+and the termination forms `process.exit`, `process.exitCode`, `process.kill`, `process.abort`, the
+same with `?.` or a bracketed string literal, `const { exit } = process`, and `exit` and friends
+imported from `node:process` or `process`.
+
+It **fails closed** on every other construct that can reach a module, end the process or leave the
+repository. Each is recorded under a named mechanism and reported as `unobserved-mechanism` unless
+the file is listed in that mechanism's `knownSites`. The closed vocabulary, which a declaration must
+list in full under `cannotObserve`, each with `knownSites` (an empty list is allowed):
+
+| Mechanism | Detected as | Still unseen |
+| --- | --- | --- |
+| `dynamic-import-computed` | `import()` whose argument is not one string literal | What the computed specifier evaluates to |
+| `require-call` | `require(` and `createRequire` | The module reached |
+| `import-meta-resolve` | `import.meta.resolve` | The module reached |
+| `url-module-path` | `new URL(..., import.meta.url)` | Whether the path is a module, a file or data |
+| `termination-indirect` | The process object used as a value or aliased, `process[<computed>]`, `globalThis[...]`, the `process` module bound under another name | What is ultimately called |
+| `subprocess` | Importing `child_process`, `worker_threads` or `cluster`, with or without `node:` | What runs, what it reaches |
+| `reflection` | `eval(`, `Function`, `Reflect`, `Proxy` | Their effect; other indirection (computed property lookup, prototype manipulation) is not examined |
+| `network` | Importing `http`, `https`, `http2`, `net`, `tls`, `dgram`, `dns`; `fetch(`, `WebSocket`, `XMLHttpRequest` | Traffic that leaves through another program, such as `gh` |
+| `generated-code` | Not detected | Code written to disk and run later; generated documentation |
+| `data-access` | Not detected | Which files, rules or keys a module reads or writes |
+| `shell-and-workflow-scripts` | Not detected | `*.ps1`, `*.sh`, workflows: outside the extensions |
+| `outside-roots` | Not detected | Every file outside the roots |
+
+Remaining blind spots, all inside the declared limits: a module path built elsewhere and handed to
+something other than `import()`, `require` or `new URL`; aliasing of other built-in objects than the
+process object; a source construct the tokenizer mis-tokenizes (a regex literal after `)` or `]` is
+read as division, for example). A passing check is a statement about edges between files, and
+nothing wider.
 
 ### 5. Attestation requirements
 
@@ -132,6 +167,13 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   consumer pinned at `2.0.0` from 0 or 1 to 2 until that consumer edits its pin. That is not
   additive, so `VERSION` stays `2.0.0` and this ships under `Unreleased`. The level is for the
   owner to decide at release.
+- **Name collision.** A pre-existing, unrelated root file called `architecture-boundaries.yml` is
+  treated as a declaration: `standards policy` exits 2 and `validate` reports `NOT_EVALUATED` until
+  it is renamed or made valid. That is the price of discovery by name.
+- **What does change.** Status, score and exit code of `validate` are unchanged. Because
+  `standards/51-architecture-integrity.md` is a reviewed path of the `architecture.no-boundary-bypass`
+  attestation, that attestation becomes stale on this change, so the passed and skipped counts shift:
+  that is the intended effect (section 5), and not an effect of the declaration file.
 - **Consumers.** Nothing to do. A consumer that wants the check creates `architecture-boundaries.yml` (from
   `templates/architecture-boundaries/architecture-boundaries.yml`) and runs `node scripts/boundaries-check.mjs`. A consumer without one gets `NOT_EVALUATED` (exit 2) from that
   command, never a pass.
