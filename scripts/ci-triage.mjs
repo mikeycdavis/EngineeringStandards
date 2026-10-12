@@ -166,9 +166,12 @@ export function establishedRejectionsFrom(policy) {
 
   const rejected = [];
   for (const [rule, node] of Object.entries(attestations)) {
-    const terminal = currentReview(node, rule);
+    const terminal = currentReview(rule, node);
     if (!terminal) return null;
+    // Only the two recorded dispositions are understood. Anything else (bogus, null) is not a
+    // clearance: it establishes nothing, so no expectation is guessed.
     if (terminal.status === "rejected") rejected.push(rule);
+    else if (terminal.status !== "approved") return null;
   }
   return rejected.sort();
 }

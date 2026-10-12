@@ -540,3 +540,37 @@ test("a job id is read from a details URL, and absence is not an id", () => {
   assert.equal(jobIdFrom("https://github.com/o/r/actions/runs/123"), null);
   assert.equal(jobIdFrom(undefined), null);
 });
+
+test("a terminal event that is neither approved nor rejected clears nothing and is fail-closed", () => {
+  const rejectedGenesis = review({ status: "rejected" });
+  for (const bogus of ["bogus", null, undefined, "", "approved ", "REJECTED", 7]) {
+    const successor = review({ id: "r2", supersedes: "r1", reviewedAt: "2026-10-02" });
+    if (bogus === undefined) delete successor.status;
+    else successor.status = bogus;
+    const established = establishedRejectionsFrom({
+      attestations: { "a.rule": { reviews: [rejectedGenesis, successor] } },
+    });
+    assert.equal(established, null, `status ${JSON.stringify(bogus)} was read as a cleared rejection`);
+    const result = classify({ ...fixture("established-red.json"), establishedRejections: established });
+    assert.equal(result.verdict, INDETERMINATE);
+    assert.notEqual(result.verdict, EXPECTED);
+  }
+  // A bogus genesis is equally unestablished, and so is one bogus rule among valid ones.
+  const bogusGenesis = review({ status: "bogus" });
+  assert.equal(establishedRejectionsFrom({ attestations: { "a.rule": { reviews: [bogusGenesis] } } }), null);
+  assert.equal(
+    establishedRejectionsFrom({
+      attestations: {
+        "a.rule": { reviews: [review({ status: "rejected" })] },
+        "b.rule": { reviews: [bogusGenesis] },
+      },
+    }),
+    null,
+  );
+});
+
+test("an anchored rule whose history was replaced yields no rejection set", () => {
+  // scm.no-shared-history-rewrite is anchored: a fresh genesis claiming approval must not clear it.
+  const replaced = { reviews: [review({ id: "fresh-genesis" })] };
+  assert.equal(establishedRejectionsFrom({ attestations: { "scm.no-shared-history-rewrite": replaced } }), null);
+});
