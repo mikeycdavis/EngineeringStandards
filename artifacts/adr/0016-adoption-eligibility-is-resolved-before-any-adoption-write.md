@@ -300,7 +300,7 @@ Each `signals[]` record:
 | Key | Type | Allowed values / meaning |
 | --- | --- | --- |
 | `id` | string | a vocabulary signal id: `"frozen-file"`, `"readme-frozen-banner"` |
-| `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"`; `INDETERMINATE` if any entry is, else `FIRED` if any entry fired, else `NOT_FIRED` (including when no entry matched) |
+| `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"`; `INDETERMINATE` if any entry is, else `FIRED` if any entry fired, else `INDETERMINATE` if `listing` is `"incomplete"` (absence was not established), else `NOT_FIRED` (including when no entry matched) |
 | `overridden` | boolean | `true` only when `result` is `"FIRED"` and the id was named in an override; never `true` for any other `result` |
 | `entries` | array | one record per root entry whose ASCII-lowercased name equals this signal's lowercased source name, sorted by `name` in ascending code-unit (byte-wise) order |
 
@@ -336,6 +336,17 @@ Each `entries[]` record:
 - **`listing`.** `"incomplete"` only when opening the target's directory listing fails or reading
   it fails before its end. A failure to `lstat` or read an individual matching entry is that entry's
   `INDETERMINATE` (with its `reason`), not an incomplete listing.
+- **Partial listings.** One behaviour, for a streamed or injected listing that yields entries and
+  then fails: every entry yielded before the failure **is** inspected, classified and included in
+  `entries[]`, and every signal is derived from those entries as usual. Nothing observed is
+  discarded, so a banner or `FROZEN.md` seen before the failure is still reported `FIRED`. No entry is
+  invented for names that were never yielded. `listing` is `"incomplete"`, and by the existing
+  precedence `state` is `"INDETERMINATE"` even when a signal is `"FIRED"` and un-overridden (the
+  state is not `OUT_OF_SCOPE`: the repository is not known to be only what was seen), and an
+  override cannot change that. A signal with no `FIRED` entry in an incomplete listing is
+  `"INDETERMINATE"` with possibly empty `entries`, not `"NOT_FIRED"`, because absence was not
+  established. A caller that needs the observed signals reads `signals[]`; it must still treat the
+  repository as not eligible.
 - **Entry names and matching.** The comparison lowercases ASCII letters only and compares for
   equality with `frozen.md` or `readme.md`. Unicode case folding is not used, so names containing
   non-ASCII characters never match and `name` is always ASCII with no encoding question. Names are
@@ -456,7 +467,11 @@ The implementation pull requests MUST also test the pinned derivations: a target
 to a directory reports the canonical directory in `target` (capability-probed, with a reported skip
 where links cannot be created, and always covered through an injected `realpath` on every platform);
 `target` has no trailing separator and is never the lexical argument; the three `realpath` failure
-mappings (`ENOENT`/loop, `ENOTDIR`, other) through an injected `realpath`; `listing` `"incomplete"`
+mappings (`ENOENT`/loop, `ENOTDIR`, other) through an injected `realpath`; a listing that yields
+`README.md` carrying the banner and then fails (asserting `listing` `"incomplete"`, `state`
+`"INDETERMINATE"`, the `readme-frozen-banner` signal `"FIRED"` with that entry present, the other
+signal `"INDETERMINATE"` with empty `entries`, and the same with the failure before any entry:
+both signals `"INDETERMINATE"`, `entries` empty); `listing` `"incomplete"`
 when opening the listing fails and when reading fails part-way, and `"complete"` when one matching
 entry's `lstat` fails; ASCII-only matching (`FROZEN.md` with a non-ASCII look-alike letter is not a
 source; `FROZEN.MD` and `frozen.md` are); and `entries` sorted by code unit regardless of the
