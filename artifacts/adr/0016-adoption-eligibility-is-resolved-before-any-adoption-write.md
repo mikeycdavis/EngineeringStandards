@@ -1,9 +1,9 @@
 # 0016 — Adoption eligibility is resolved before any adoption write
 
-- **Status:** Proposed. The decisions below were relayed as approved by the owner on
-  2026-10-12 (see "Decision record"); the status is not flipped to `Accepted` until the owner's own
-  confirmation is on PR #105, because the approval reached this record through an intermediary and
-  the ADR convention (Standard 11 R5, `Proposed | Accepted`) makes `Accepted` the owner's act.
+- **Status:** Accepted, by the owner on 2026-10-12T18:59:50Z (Standard 11 R5, `Proposed | Accepted`),
+  on top of the seven decisions of 2026-10-12T16:52:55Z and the four confirmations of
+  2026-10-12T18:36:55Z recorded below. This record states what must be true of the implementation;
+  it does not claim any of it is implemented.
 - **Date:** 2026-10-11, revised 2026-10-12
 - **Deciders:** Project owner
 - **Tracks:** ST-06, [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
@@ -87,6 +87,19 @@ recorded here and applied where they bind; none is an inference any longer.
    operating system; no canonicalisation contract is introduced. Consequence: `init <subdir>` is
    judged on that subdirectory only, so a freeze marker at an ancestor repository root is not
    consulted.
+
+### Owner decisions of 2026-10-12T18:59:50Z
+
+1. **This ADR is `Accepted`.**
+2. **Platform requirement.** Every supported platform must inspect `README.md` and `FROZEN.md`
+   without opening a symlink, named pipe, device or other unsafe non-regular file as a regular
+   freeze-signal file, by a race-safe method. This replaces the earlier caveat that a runtime
+   without a no-follow open makes eligibility indeterminate for every repository, and the earlier
+   alternative of recording a platform as unsupported. The requirement is stated under "Symbolic
+   links and file safety".
+3. **Windows.** A Windows-safe implementation of `eligibility` is required in 3.0.0.
+
+These do not change decisions Q1-Q7 or the four confirmations.
 
 Decisions D1-D5 of 2026-10-11 stand and are restated where they apply: D1 closed file-based
 vocabulary; D2 named per-signal overrides with INDETERMINATE not overridable; D3 a read-only
@@ -218,6 +231,7 @@ named by the condition used in the human report and in tests:
 | a matching entry is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | `not-regular-file` | the link is not followed, so its content is not what was examined |
 | a matching file is strictly larger than the per-file read cap | `over-read-cap` | the banner could be in the part not examined |
 | a matching file does not decode as UTF-8 under fatal decoding | `not-utf8` | the text cannot be read |
+| during `init`, the target's directory identity differs from the one the resolver examined | `target-changed` | the repository that was checked is not the repository about to be written |
 | the target's directory listing cannot be opened, or fails before its end | `listing-incomplete` | absence of another signal cannot be established; this is distinct from `unreadable`, which applies to an individual file, and the name is not part of the frozen public surface |
 
 An absent `README.md` or `FROZEN.md` is not `INDETERMINATE`; it is an absent signal. The condition
@@ -233,7 +247,7 @@ be only what was seen, so the state is not `OUT_OF_SCOPE`, and an override canno
 signal with no fired entry in an incomplete listing is reported indeterminate, not "not fired",
 because absence was not established.
 
-#### Symbolic links
+#### Symbolic links and file safety
 
 One rule covers every source entry: **a symbolic link is never followed, and is `INDETERMINATE`
 (`not-regular-file`).** The entry is classified from `lstat` on the name as listed; the link's target
@@ -256,12 +270,31 @@ is not opened, resolved or inspected.
   classification (`fstat`: a regular file) and the content read both use that **same open handle**.
   An open that fails because the entry is a link or was replaced is `INDETERMINATE`, never a fall
   back to a path-based read. **There is no identity-comparison fallback:** an ordinary open follows
-  a link before any `fstat` could notice, and can have side effects on a device or FIFO. Where the
-  platform or runtime offers no open that does not follow links (`O_NOFOLLOW` on POSIX; opening the
-  reparse point itself, `FILE_FLAG_OPEN_REPARSE_POINT`, on Windows), the entry is **not opened at
-  all** and is `INDETERMINATE` (`unreadable`). Cost, stated: on such a runtime every repository with a
-  matching file is `INDETERMINATE`, so an implementation must provide a genuine no-follow primitive
-  for each platform it supports, or record that platform as unsupported.
+  a link before any `fstat` could notice, and can block or have side effects on a pipe or device.
+
+**Platform requirement (normative, owner decision of 2026-10-12T18:59:50Z).**
+
+- **Every supported platform** must inspect `README.md` and `FROZEN.md` without opening a symlink, a
+  named pipe (FIFO), a device or any other unsafe non-regular file as if it were a regular
+  freeze-signal file, and by a race-safe method: an open that does not follow links and does not
+  block on or act on a pipe or device, with classification and read taken from that same handle.
+  The method is the implementation's choice per platform (for example `O_NOFOLLOW` with a
+  non-blocking open on POSIX; opening the reparse point itself on Windows); this record prescribes
+  the property, not the call. It must be reachable within the repository's zero-third-party-
+  dependency decision, and each implementation PR must show it by test.
+- **Windows is a supported platform and is not declared unsupported.** A Windows-safe implementation
+  of `eligibility` is **required in 3.0.0**. A platform is not exempted by lacking a convenient
+  primitive; that is a cost the implementation carries.
+- **Fail closed stays.** Where safe inspection cannot be established for an entry in a given run
+  (the primitive is unavailable at runtime, a capability probe fails, or the entry changes under the
+  read), the entry is **not opened as a regular file** and is `INDETERMINATE` (`unreadable`, or
+  `not-regular-file` when a link or special file was identified). That is a runtime fail-closed, not
+  a platform exemption, and it is never overridable.
+- **Normative support is not implementation completion.** This record fixes what every supported
+  platform must do and that Windows is in scope for 3.0.0. It does **not** state that any platform's
+  implementation exists, and nothing here may be cited as evidence that Windows support is already
+  implemented. Completion and per-platform verification are later work, and a 3.0.0 release without
+  a passing Windows-safe implementation of `eligibility` is not permitted by this record.
 
 #### Precedence
 
@@ -333,6 +366,14 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   introduces no machine field anywhere.
 - The refusal happens before `planInit` and `applyInit`, so no `planInit` report or bootstrap plan is
   computed and nothing is written; stderr is the only output.
+- **The directory checked is the directory written.** When the target is a directory symlink (valid,
+  resolved by the operating system, no canonicalisation contract), the resolver records the
+  identity of the directory it actually examined (device and inode, or the platform's file
+  identifier), and `init` verifies that the target still has that identity immediately before
+  `planInit` and again immediately before `applyInit` writes. If it differs (a link retargeted in
+  between), `init` refuses with exit `2`, writes nothing, and names the condition `target-changed`.
+  `target-changed` is an `INDETERMINATE` condition and is not overridable. This binds identity; it
+  adds no canonical-path contract and reports no path format.
 
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
@@ -460,7 +501,7 @@ for every existing fixture is unchanged.
 
 ## Implementation slicing
 
-Each is its own pull request after this record is accepted. None changes `audit` or `validate`;
+Each is its own pull request, now that this record is `Accepted`. None changes `audit` or `validate`;
 slice 2 changes the frozen semantics of `init`, which is why the complete change is classified
 `MAJOR` (3.0.0, the owner's classification above). No slice authorises a `VERSION` change, tag or
 release.
@@ -515,12 +556,22 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   interface on every platform. Real `chmod 000` and real-symlink tests are separate and
   capability-probed (a denial is actually observed; the platform can create the link), with an
   explicit reported skip otherwise.
+- **File safety on every supported platform, Windows included.** A named pipe, a device node and a
+  link named `README.md` or `FROZEN.md` are never opened as regular files, and the call neither
+  blocks nor acts on them (asserted with an injected open that fails the test if it receives a
+  blocking or link-following request). Real-filesystem variants run on Windows and POSIX, each
+  behind a capability probe that reports an explicit skip naming the reason when the platform
+  cannot create the object; the injected variants are not skippable. A release gate: the 3.0.0
+  change set must contain a passing Windows run of the file-safety tests for `eligibility`.
+- **Directory identity bound through `init`.** Injected: the target's identity changes between the
+  resolver and `planInit`, and between `planInit` and `applyInit`: `init` exits `2`, writes nothing,
+  reports `target-changed`; an unchanged identity proceeds as before.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
   is `INDETERMINATE` (`not-regular-file`), and the outside content is never read or used; and, with
-  the no-follow primitive reported as unavailable, the entry is never opened and is
-  `INDETERMINATE` (`unreadable`). A mutation check replaces the no-follow open, and then the
+  the safe-open capability reported as unavailable for the run, the entry is never opened as a
+  regular file and is `INDETERMINATE` (`unreadable`). A mutation check replaces the no-follow open, and then the
   same-handle read, with a path-based read in turn, and requires this test to fail on each.
 - **Partial listing.** A listing that yields `README.md` with the banner and then fails: exit `2`,
   the banner still reported as fired, no override changes it; and a failure before any entry: exit
