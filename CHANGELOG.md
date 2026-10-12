@@ -18,6 +18,18 @@ All notable changes to this framework. Versioning follows
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+ST-26 (#119): `scripts/standards.mjs` now locates the audit surface once, as an observation that is bound to no rule
+(refs #62 for history; separate from the verification-surface observations of #64). `audit` and `validate` gain one
+additive `info` finding, `detected-audit-surface`, with `rule: null`. It reports where audit-named types, tables,
+recorder calls and framework attributes appear in non-test, non-CI code of the working tree, by a small fixed idiom list
+(C#, Java/Kotlin, JavaScript/TypeScript, Python, SQL DDL), and carries a structured `detail` with `observed`, `unread`,
+`incomplete`/`incompleteReasons`, `blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. A
+comment, a string literal, Markdown or a test path is a mention and never an observation; DDL embedded in an
+application-language string literal is a declared blind spot. It is `INFERRED` and never a pass: no rule result,
+verdict, exit code or `audit --strict` outcome changes, and `audit.business-state` / `audit.actor-attribution` stay
+not-evaluated. `findings[].detail` is a new optional member (present only on this finding), and `locateAuditSurface`
+is exported for the audit detectors that will consume it (#125, #126).
+
 Correction to ST-14 (#64, ST14-001): a single-file CI candidate (`Jenkinsfile`, `azure-pipelines.yml`, and the
 others) now counts only when it is a regular file, so a directory named `Jenkinsfile` no longer suppresses
 `no-ci-configuration`. A candidate that exists but cannot be inspected (for example a symlink loop) is unknown and

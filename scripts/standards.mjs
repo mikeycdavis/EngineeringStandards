@@ -312,6 +312,7 @@ function renderVerdict(report, policy) {
   out.push("  compliance of this project — the two never combine into one number.");
   return out.join("\n");
 }
+const STD03 = "standards/03-auditing.md";
 const STD44 = "standards/44-existing-project-reconstruction.md";
 const STD46 = "standards/46-source-control-safety.md";
 const STD48 = "standards/48-error-handling-and-observability.md";
@@ -341,6 +342,9 @@ const R = {
   questions: `${STD44}#r8--question-list`,
   resolution: `${STD44}#r9--question-resolution`,
   done: `${STD44}#r10--definition-of-done`,
+  // Standard 3 R1 is where the audit-surface observation points the reader. It is a pointer, never a
+  // binding: that finding carries no rule (ST-26, #119).
+  audit: `${STD03}#r1--the-core-rule`,
   // Standard 44 R12 is the invariant the evidence-surface findings exist to honour: a negative
   // discovery result is evidence about the search mechanism before it is evidence about the project.
   search: `${STD44}#r12--the-validated-search-invariant`,
@@ -988,7 +992,7 @@ function createRun({ root, strict, json }) {
      * This remains the only writer of `findings`, which is what keeps the accumulator auditable. The
      * single-writer property ADR 0007 identified is preserved; what changed is the lifetime.
      */
-    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation }) {
+    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation, detail }) {
       const shown = evidence.slice(0, MAX_EVIDENCE);
       const omitted = evidence.length - shown.length;
       findings.push({
@@ -1008,6 +1012,10 @@ function createRun({ root, strict, json }) {
         // `undefined`, because an absent key and a key holding undefined are the same thing to
         // `JSON.stringify` and different things to a reader of the audit output.
         ...(remediation ? { remediation } : {}),
+        // A structured, machine-readable payload for an observation whose parts must not be hidden
+        // in `message` (ST-26, #119). Present only on a finding that supplies one, so every other
+        // finding serialises byte-for-byte as before and the property is purely additive.
+        ...(detail ? { detail } : {}),
       });
     },
   };
@@ -2722,6 +2730,7 @@ const DESCRIPTIVE = [
   ["detected-jobs", "Detected background jobs"],
   ["detected-integrations", "Detected integrations"],
   ["detected-ai-interfaces", "Detected AI interfaces"],
+  ["detected-audit-surface", "Audit surface (observed, not evaluated)"],
 ];
 
 // ---------------------------------------------------------------------------
@@ -3272,6 +3281,358 @@ function detectSqlConcat(files, run) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Audit surface locator (ST-26, #119) — an observation, never a rule result
+// ---------------------------------------------------------------------------
+
+/**
+ * WHERE audit mechanisms are, stated once so the two audit detectors (#125, #126) do not each grow
+ * their own locator (Standard 51 R4). It answers "which files hold something shaped like an audit
+ * event type, audit table, audit recorder or audit framework attribute", and nothing else.
+ *
+ * What it deliberately is NOT, because #62 removed the previous binding for exactly this confusion:
+ *
+ *   - It evaluates no rule. The finding it produces carries no `rule`, so `validate` builds no
+ *     verdict from it, and it is `info`, so `audit --strict` does not start failing over it.
+ *   - It is never a pass. Finding an audit-named type is not evidence that business-state changes
+ *     are audited, that events carry the Standard 3 R2 fields, or that anything is tracked in
+ *     version control (ADR 0008: it reports the working tree it walked and says no more).
+ *   - Silence is not absence. Three parts are reported SEPARATELY and never folded into one another
+ *     or into message text only: `unread` (code files not read whole), `incomplete` (the search
+ *     could not see everywhere it needed to, with reasons), and `blindSpots` (language families and
+ *     constructs this locator has no idiom for). A consumer must treat `incomplete` or a relevant
+ *     blind spot as UNKNOWN, never as "no audit mechanism".
+ *
+ * Use versus mention (ADR 0009). Only positions where a use can occur are searched:
+ *
+ *   - Test and CI paths are excluded by classification (`TEST_RE`, `AUDIT_EXCLUDED_PATH_RE`). This
+ *     repository's own audit fixtures live under `test/` for this reason and are not
+ *     self-observations.
+ *   - Only code files (`isCode`) are read; Markdown, YAML and JSON never yield an observation.
+ *   - Identifiers are matched in the STRUCTURAL view, where comments are removed and string
+ *     contents blanked, so an identifier named in a comment or a string is a mention and invisible.
+ *   - SQL is the one place the structural view is read together with the raw text. `CREATE TABLE`
+ *     is found structurally (so DDL inside a comment or a SQL string literal is invisible) and the
+ *     name is then read from the raw text at the same offset, because quoted identifiers
+ *     (`"audit_log"`, `` `audit_log` ``) are blanked by the tokenizer as though they were strings.
+ *   - DDL embedded in a string literal of an application language is a DECLARED BLIND SPOT, not an
+ *     observation. Matching it would need the raw view, and the raw view cannot tell a statement
+ *     that is executed from a message that merely mentions DDL (`"run CREATE TABLE audit_log
+ *     first"`) without parsing the host language. Reporting a mention as a mechanism is the error
+ *     this layer exists to prevent, so the locator says it cannot see there instead.
+ *
+ * Deterministic: files are processed in codepoint order of their repository-relative path and
+ * observations are sorted and de-duplicated, so the output is independent of walk order.
+ */
+
+/**
+ * Paths that never count as audit PRESENCE: test paths by the existing classification, plus CI
+ * configuration directories. A recorder call in a test is a test of recording, not a recorder.
+ */
+const AUDIT_EXCLUDED_PATH_RE = /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipelines|ci)\//i;
+
+/**
+ * Code-file extensions by language family. `supported` is the contract with the idiom table below:
+ * a family is supported exactly when at least one idiom names it, and the others are blind spots
+ * declared by name. An extension in `CODE_EXT` that is not named here is reported under
+ * `language-family:unmapped` rather than guessed at.
+ */
+const AUDIT_LANGUAGE_FAMILIES = [
+  { family: "csharp", supported: true, exts: [".cs", ".razor"] },
+  { family: "go", supported: false, exts: [".go"] },
+  { family: "java-kotlin", supported: true, exts: [".java", ".kt"] },
+  { family: "javascript-typescript", supported: true, exts: [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte"] },
+  { family: "php", supported: false, exts: [".php"] },
+  { family: "python", supported: true, exts: [".py"] },
+  { family: "ruby", supported: false, exts: [".rb"] },
+  { family: "rust", supported: false, exts: [".rs"] },
+  { family: "shell", supported: false, exts: [".sh", ".ps1"] },
+  { family: "sql", supported: true, exts: [".sql"] },
+];
+
+/**
+ * A name that is plausibly an audit record: `audit` followed by event/entry/record/log/trail/history/
+ * trace (`AuditEvent`, `audit_log`, `orderAuditTrail`), or `audit` as a whole word of a snake-case or
+ * qualified name (`orders_audit`, `audit.events`). Deliberately narrower than "contains audit":
+ * `Auditor` and `auditPassed` are not audit records.
+ */
+const AUDIT_NAME_RE = /audit_?(?:event|entry|entries|record|log|trail|history|trace)|(?:^|[_.["`])audits?(?:$|[_.\]"`])/i;
+
+const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
+
+/**
+ * THE initial idiom list, small on purpose and reported verbatim in every observation's payload so
+ * the observation is auditable. Each regex has the identifier in capture group 1 and is matched
+ * against the structural view. `named` applies `AUDIT_NAME_RE` to the identifier; the others spell
+ * the audit name into the pattern. `rawName` reads the identifier from the raw text at the offset
+ * where the match ended (see the SQL note above).
+ *
+ * Adding an idiom is adding a claim: it needs a fixture, a use-versus-mention case, and a place in
+ * the list below. Widening it silently is how this became a rule result in #62.
+ */
+const AUDIT_IDIOMS = [
+  { id: "csharp.type", families: ["csharp"], kind: "type", re: /\b(?:class|record|struct|interface|enum)\s+([A-Za-z_]\w*)/g, named: true },
+  { id: "java-kotlin.type", families: ["java-kotlin"], kind: "type", re: /\b(?:class|interface|enum|record|object)\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "js.class", families: ["javascript-typescript"], exts: [".js", ".mjs", ".cjs", ".jsx", ".vue", ".svelte"], kind: "type", re: /\bclass\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "ts.type", families: ["javascript-typescript"], exts: [".ts", ".tsx"], kind: "type", re: /\b(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "python.class", families: ["python"], kind: "type", re: /^[ \t]*class\s+([A-Za-z_]\w*)/gm, named: true },
+  {
+    id: "sql.create-table",
+    families: ["sql"],
+    kind: "table",
+    re: /\bCREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:(?:TEMP|TEMPORARY|UNLOGGED|VOLATILE|EXTERNAL)\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?/gi,
+    named: true,
+    rawName: true,
+  },
+  {
+    id: "recorder.named-call",
+    families: AUDIT_JS_TS_PY_JAVA_CS,
+    kind: "recorder-call",
+    re: /(?<![A-Za-z0-9])((?:record|write|log|emit|append|publish|save|persist|capture|track)_?audit(?:_?(?:event|entry|record|log|trail))?s?(?:_?async)?)\s*\(/gi,
+  },
+  {
+    id: "recorder.audit-object-call",
+    families: AUDIT_JS_TS_PY_JAVA_CS,
+    kind: "recorder-call",
+    re: /(?<![A-Za-z0-9])(audit_?(?:log|logger|trail|recorder|service|events?)\s*\??\.\s*(?:record|write|append|emit|publish|log|save)\w*)\s*\(/gi,
+  },
+  { id: "csharp.attribute", families: ["csharp"], kind: "framework-attribute", re: /^[ \t]*\[\s*((?:Audit|Audited|Auditable|AuditLog)(?:Attribute)?)\s*[\](,]/gm },
+  { id: "annotation.at-name", families: ["java-kotlin", "javascript-typescript"], kind: "framework-attribute", re: /^[ \t]*@(Audited|Auditable|Audit|AuditLog|EnableJpaAuditing)\b/gm },
+  { id: "java-kotlin.entity-listener", families: ["java-kotlin"], kind: "framework-attribute", re: /@EntityListeners\s*\(\s*(?:\{\s*)?([\w.]*Audit[\w.]*)/g },
+  { id: "python.decorator", families: ["python"], kind: "framework-attribute", re: /^[ \t]*@(audit|audited|auditable|audit_log)\b/gim },
+];
+
+/**
+ * What this locator cannot see, as a FIXED set: the same on every run and every repository, so it
+ * can be tested exactly and a consumer can rely on it. "Every" here means every gap the locator
+ * knows about, which is not every gap there is; an observation is never "all audit mechanisms".
+ */
+const AUDIT_BLIND_SPOTS = [
+  { id: "language-family:go", kind: "language-family", description: "Go source (.go) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:php", kind: "language-family", description: "PHP source (.php) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:ruby", kind: "language-family", description: "Ruby source (.rb) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:rust", kind: "language-family", description: "Rust source (.rs) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:shell", kind: "language-family", description: "Shell and PowerShell (.sh, .ps1) have no idiom; nothing in them is read for audit mechanisms." },
+  { id: "language-family:unmapped", kind: "language-family", description: "A code extension this locator does not name is not read for audit mechanisms." },
+  { id: "construct:attribute-forms-not-matched", kind: "construct", description: "Audit attributes, annotations and decorators are matched only at the start of a line and, in C#, only first in an attribute list; inline and listed forms are not seen." },
+  { id: "construct:database-native-audit", kind: "construct", description: "Triggers, views, stored procedures, temporal or system-versioned tables, change-data-capture and database audit extensions are not located." },
+  { id: "construct:framework-configuration", kind: "construct", description: "Auditing enabled by configuration or by a dependency package (framework settings, history or versioning libraries) rather than by a named construct is not located." },
+  { id: "construct:names-without-audit", kind: "construct", description: "A mechanism whose identifiers do not contain `audit` (history, ledger, activity, journal, change log, event stream) is not located." },
+  { id: "construct:orm-names-in-string-literals", kind: "construct", description: "Table and entity names given as string literals to an ORM or migration DSL (for example a table-name attribute or a migration builder) are blanked in the structural view and are not located." },
+  { id: "construct:string-literal-ddl", kind: "construct", description: "DDL embedded in a string literal of an application language is not located: a statement that is run cannot be told from a message that mentions one without parsing the host language." },
+  { id: "surface:non-code-files", kind: "surface", description: "Markdown, YAML, JSON, TOML, XML and other non-code files are never read for audit mechanisms." },
+];
+
+/** Codepoint order, never locale order, so output is identical on every host. */
+const byCodepoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Locate the audit surface. Pure over the run's retained content: it adds no finding and records no
+ * unknown, so calling it has no effect on any rule. `surface` is `{ surfaceLoss, unreadableFiles }`
+ * from `loadSurface`/`collectSurface`; it is required because completeness cannot be claimed from
+ * the file list alone.
+ *
+ * @returns {{ observed, unread, incomplete, incompleteReasons, blindSpots, languageFamilies, idioms, excluded }}
+ */
+export function locateAuditSurface(files, run, surface) {
+  if (!surface || !surface.surfaceLoss) {
+    throw new TypeError("locateAuditSurface needs the surface loss record: completeness cannot be claimed without it");
+  }
+  const { rel, textOf, structureOf } = run;
+  const { surfaceLoss } = surface;
+  const unreadable = new Set(surface.unreadableFiles ?? []);
+
+  const familyByExt = new Map();
+  for (const fam of AUDIT_LANGUAGE_FAMILIES) for (const e of fam.exts) familyByExt.set(e, fam);
+
+  const entries = files.map((f) => ({ f, r: rel(f) })).sort((a, b) => byCodepoint(a.r, b.r));
+
+  const observed = new Map();
+  const unread = [];
+  const familyCounts = new Map();
+  let excludedCodeFiles = 0;
+
+  for (const { f, r } of entries) {
+    if (!isCode(f)) continue;
+    if (TEST_RE.test(r) || AUDIT_EXCLUDED_PATH_RE.test(r)) {
+      excludedCodeFiles += 1;
+      continue;
+    }
+    const ext = path.extname(f);
+    const fam = familyByExt.get(ext) ?? { family: "unmapped", supported: false };
+    familyCounts.set(fam.family, (familyCounts.get(fam.family) ?? 0) + 1);
+
+    const raw = textOf(f);
+    if (!raw.available) {
+      let reason = "not-read";
+      if (unreadable.has(f)) reason = "unreadable";
+      else if (surfaceLoss.budget?.exhausted) reason = "read-budget-exhausted";
+      unread.push({ file: r, reason });
+      continue;
+    }
+    const view = structureOf(f);
+    if (!view.available || view.text.length !== raw.text.length) {
+      // The offset alignment between the structural view and the raw text is what site identity and
+      // the SQL name read rest on. A file where it does not hold is reported, not guessed at.
+      unread.push({ file: r, reason: "view-misaligned" });
+      continue;
+    }
+    const truncated = run.truncated.has(f);
+    if (truncated) unread.push({ file: r, reason: "truncated" });
+    if (!fam.supported) continue;
+
+    const structure = view.text;
+    let newlines = null;
+    const lineAt = (index) => {
+      if (newlines === null) {
+        newlines = [];
+        for (let i = raw.text.indexOf("\n"); i !== -1; i = raw.text.indexOf("\n", i + 1)) newlines.push(i);
+      }
+      let lo = 0;
+      let hi = newlines.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (newlines[mid] < index) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo + 1;
+    };
+
+    for (const idiom of AUDIT_IDIOMS) {
+      if (!idiom.families.includes(fam.family)) continue;
+      if (idiom.exts && !idiom.exts.includes(ext)) continue;
+      for (const m of structure.matchAll(idiom.re)) {
+        let identifier;
+        let at;
+        let end = m.index + m[0].length;
+        if (idiom.rawName) {
+          const name = /((?:\[[^\]\r\n]*\]|"[^"\r\n]*"|`[^`\r\n]*`|[A-Za-z_#@][\w$#@]*)(?:\s*\.\s*(?:\[[^\]\r\n]*\]|"[^"\r\n]*"|`[^`\r\n]*`|[A-Za-z_#@][\w$#@]*))*)/y;
+          name.lastIndex = end;
+          const hit = name.exec(raw.text);
+          if (!hit) continue;
+          identifier = hit[1].replace(/\s+/g, "").replace(/[\[\]"`]/g, "");
+          at = end;
+          end = name.lastIndex;
+        } else {
+          identifier = m[1].replace(/\s+/g, "");
+          at = m.index + m[0].indexOf(m[1]);
+        }
+        if (idiom.named && !AUDIT_NAME_RE.test(identifier)) continue;
+        // A prefix ends mid-token: `class Audit` may have been `class AuditableThing`. Nothing at the
+        // very end of a truncated read is a complete identifier, so it is dropped rather than reported.
+        if (truncated && end >= raw.text.length) continue;
+        let kind = idiom.kind;
+        if (kind === "recorder-call" && /\b(?:function\*?|def|func|fun)\s+$/.test(structure.slice(Math.max(0, at - 24), at))) {
+          kind = "recorder-definition";
+        }
+        const o = { file: r, line: lineAt(at), kind, identifier, family: fam.family, idiom: idiom.id };
+        observed.set(`${o.file}\u0000${o.line}\u0000${o.kind}\u0000${o.identifier}`, o);
+      }
+    }
+  }
+
+  const observations = [...observed.values()].sort(
+    (a, b) =>
+      byCodepoint(a.file, b.file) || a.line - b.line || byCodepoint(a.kind, b.kind) || byCodepoint(a.identifier, b.identifier),
+  );
+  unread.sort((a, b) => byCodepoint(a.file, b.file) || byCodepoint(a.reason, b.reason));
+
+  // Reasons the SEARCH ITSELF fell short, beyond individual unread files. Each is a place an audit
+  // mechanism could be that this run never listed. A repository-authorized exclusion is not one:
+  // content the project declared disposable was never owed to the run (same rule as `complete`).
+  const frameworkExcluded = (surfaceLoss.excluded ?? []).filter((e) => e.authorizedBy === "framework");
+  const reasons = [];
+  if (unread.length) reasons.push("unread-files");
+  if (surfaceLoss.capped) reasons.push("file-cap-reached");
+  if ((surfaceLoss.dirs ?? []).length) reasons.push("unlistable-directories");
+  if (frameworkExcluded.length) reasons.push("framework-excluded-directories");
+
+  return {
+    observed: observations,
+    unread,
+    incomplete: reasons.length > 0,
+    incompleteReasons: reasons,
+    blindSpots: AUDIT_BLIND_SPOTS.map((b) => ({ ...b })).sort((a, b) => byCodepoint(a.id, b.id)),
+    languageFamilies: AUDIT_LANGUAGE_FAMILIES.map(({ family, supported }) => ({
+      family,
+      supported,
+      codeFilesRead: familyCounts.get(family) ?? 0,
+    })).concat(
+      familyCounts.has("unmapped") ? [{ family: "unmapped", supported: false, codeFilesRead: familyCounts.get("unmapped") }] : [],
+    ),
+    idioms: AUDIT_IDIOMS.map((i) => ({
+      id: i.id,
+      families: [...i.families],
+      kind: i.kind,
+      view: i.rawName ? "structure+raw-name" : "structure",
+      pattern: `/${i.re.source}/${i.re.flags}`,
+      ...(i.named ? { nameFilter: `/${AUDIT_NAME_RE.source}/${AUDIT_NAME_RE.flags}` } : {}),
+    })),
+    excluded: {
+      reason: "test and CI paths never count as audit presence",
+      testPathPattern: `/${TEST_RE.source}/${TEST_RE.flags}`,
+      ciPathPattern: `/${AUDIT_EXCLUDED_PATH_RE.source}/${AUDIT_EXCLUDED_PATH_RE.flags}`,
+      codeFilesExcluded: excludedCodeFiles,
+    },
+  };
+}
+
+/** Bounds on the structured payload, so a very large repository cannot make one finding unbounded. */
+const AUDIT_PAYLOAD_MAX_OBSERVED = 500;
+const AUDIT_PAYLOAD_MAX_UNREAD = 200;
+
+/**
+ * Emit the one unbound `info` finding. Always emitted — including with zero observations — because
+ * `blindSpots` and `incomplete` are the content of the observation, and a run that said nothing
+ * would be indistinguishable from a tool that never looked.
+ */
+function reportAuditSurface(files, run, surface) {
+  const found = locateAuditSurface(files, run, surface);
+  const observedFiles = uniq(found.observed.map((o) => o.file));
+  const parts = [];
+  if (found.observed.length) {
+    parts.push(
+      `${found.observed.length} audit-named construct(s) were observed in ${observedFiles.length} non-test code file(s) of the working tree ` +
+        `by a fixed list of name idioms. This locates where audit-related code is. It is not evidence that business-state changes are ` +
+        `audited, that events carry the Standard 3 R2 fields, or that the code is committed, and no rule is evaluated from it.`,
+    );
+  } else {
+    parts.push(
+      "No audit-named construct was observed in the non-test code files read. That is not evidence that no audit mechanism exists: " +
+        "see the declared blind spots in `detail.blindSpots`.",
+    );
+  }
+  if (found.incomplete) {
+    parts.push(
+      `The search was incomplete (${found.incompleteReasons.join(", ")})` +
+        `${found.unread.length ? `; ${found.unread.length} code file(s) were not read whole` : ""}. Treat absence as unknown.`,
+    );
+  }
+  run.addFinding({
+    id: "detected-audit-surface",
+    category: "Audit surface",
+    severity: "info",
+    label: "INFERRED",
+    evidence: observedFiles.length ? observedFiles : ["(no audit-named construct observed)"],
+    message: parts.join(" "),
+    standardRef: R.audit,
+    detail: {
+      observed: found.observed.slice(0, AUDIT_PAYLOAD_MAX_OBSERVED),
+      observedCount: found.observed.length,
+      observedOmitted: Math.max(0, found.observed.length - AUDIT_PAYLOAD_MAX_OBSERVED),
+      unread: found.unread.slice(0, AUDIT_PAYLOAD_MAX_UNREAD),
+      unreadCount: found.unread.length,
+      unreadOmitted: Math.max(0, found.unread.length - AUDIT_PAYLOAD_MAX_UNREAD),
+      incomplete: found.incomplete,
+      incompleteReasons: found.incompleteReasons,
+      blindSpots: found.blindSpots,
+      languageFamilies: found.languageFamilies,
+      idioms: found.idioms,
+      excluded: found.excluded,
+    },
+  });
+}
+
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
 function renderHuman(fileCount, surface, run) {
@@ -3711,6 +4072,8 @@ export async function main(args) {
   detectSwallowedExceptions(files, run);
   detectCertBypass(files, run);
   detectSqlConcat(files, run);
+  // Last on purpose, and read-only: it observes where audit mechanisms are and binds to no rule.
+  reportAuditSurface(files, run, { surfaceLoss, unreadableFiles });
 
   // ---------------------------------------------------------------------------
   // Verdict — catalog + policy + findings (Standards 25, 27, 30)

@@ -154,6 +154,7 @@ something absent, unproven, or contradictory.
 | `missing-planning-artifacts` | Missing planning artifacts | Absence of `artifacts/project-plan-breakdown/`, or a breakdown with no `00-overview.md` | `warning` |
 | `no-test-surface` | Verification surface | No test files found; audit-only, no rule binding | `info` |
 | `no-ci-configuration` | Verification surface | No CI configuration found; audit-only, no rule binding | `info` |
+| `detected-audit-surface` | Audit surface | Where audit-named types, tables, recorder calls and framework attributes appear in non-test code, by a fixed idiom list reported in `detail.idioms`; always emitted, with `detail.unread`, `detail.incomplete` and `detail.blindSpots` as separate parts; audit-only, no rule binding, `INFERRED` | `info` |
 | `committed-conflict-markers` | Unresolved merge conflicts | A conflict-marker group (opener, separator and terminator, each at column 0 and exactly seven characters) in the working-tree copy of a tracked file the audit reads, outside Markdown fenced blocks; audit-only, no rule binding, `INFERRED` | `warning` |
 | `unverified-functionality` | Unverified functionality | Capabilities with no corresponding test coverage | `warning` |
 | `potential-dead-code` | Potential dead code | Unreferenced modules, unreachable routes, exports with no importer | `info` |
