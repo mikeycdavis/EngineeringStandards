@@ -80,7 +80,7 @@ unsafe direction. On a case-sensitive filesystem the root can hold several entri
 the same name (`FROZEN.md` and `frozen.md`, or `README.md` and `Readme.md`). **Every** case-folded
 match is inspected, none is chosen in preference to another, and each is a source in its own right:
 any match whose signal fired controls the result as a fired signal, and any match that is
-indeterminate (unreadable, not a regular file, over the read cap, not UTF-8) makes the result
+indeterminate (unreadable, not a regular file including any symbolic link, over the read cap, not UTF-8) makes the result
 `INDETERMINATE`, whatever the other matches say. A benign sibling never clears a fired or
 indeterminate one. Matching is on the repository root only; nested directories are not searched,
 because a nested `FROZEN.md` describes a subtree and not the repository.
@@ -114,12 +114,34 @@ permission to write. It is the result when any of these holds:
 | --- | --- |
 | `FROZEN.md` (any case) exists but cannot be opened or read | the signal's presence is established and its content is not |
 | `FROZEN.md` exists, is readable, and contains neither listed phrase | a signal file whose meaning the closed vocabulary does not cover is not evidence of eligibility |
-| `FROZEN.md` is not a regular file (directory, broken link) | its content cannot be read |
+| a matching entry (`FROZEN.md`, `README.md`, any case) is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | the link is not followed, so its content is not what was examined (see "Symbolic links" below) |
 | `FROZEN.md` or `README.md` exceeds the audit collector's per-file read cap, or does not decode as UTF-8 | the banner could be in the part not examined |
 | `README.md` exists but cannot be read | a banner cannot be ruled out |
 | the root directory cannot be listed | no source could be examined |
 
 An absent `README.md` or `FROZEN.md` is not `INDETERMINATE`; it is an absent signal.
+
+#### Symbolic links
+
+One rule covers every source entry: **a symbolic link is never followed, and is `INDETERMINATE` with
+reason `not-regular-file`.** The entry is classified from `lstat` on the name as listed; the target
+of the link is not opened, resolved, or inspected.
+
+- link to a readable regular file, link to a directory, dangling link, and link that leaves the
+  target tree (absolute path or `..`): all the same result, `INDETERMINATE` / `not-regular-file`.
+  There is no per-target-type decision to diverge on.
+- Why not follow: following needs a boundary rule (inside the tree, outside, across mounts) and a
+  loop rule, each a new place for two implementations to disagree, and a link that leaves the tree
+  makes the verdict depend on a repository the caller did not name. Failing closed is one sentence.
+- Cost, stated: a repository whose `README.md` is a link (for example to `docs/README.md`) is
+  `INDETERMINATE`, and D2 makes that un-overridable. The remedy is to replace the link with a regular
+  file in the target repository by the owner's own act. This is a design choice for owner
+  confirmation, not an owner decision recorded in D1-D5.
+- Scope: the rule is about entries inside the target directory. The target argument itself is
+  resolved normally (a symlink to a directory is a valid target; a symlink to a regular file is
+  `not-a-directory`; a dangling one is `no-such-directory`).
+- Listing: an entry that is a link is still an entry whose case-folded name matches, so it counts
+  as a source and is reported in `entries[]`; it cannot be skipped as "not a file".
 
 Precedence: any `INDETERMINATE` source makes the result `INDETERMINATE`; otherwise any signal that
 fired and was not overridden makes it `OUT_OF_SCOPE`; otherwise `IN_SCOPE`. The report names every
@@ -367,7 +389,7 @@ symlink case on every platform.
 Every condition that depends on permissions, links or platform file modes is exercised through the
 injected read and stat interface of layer 1 on every platform, never by an on-disk fixture that must
 run everywhere: `unreadable` (the injected read fails), `not-regular-file` (the injected stat reports
-a directory or link), `over-read-cap`, `not-utf8`, and an incomplete listing. A real-permission test
+a directory, a symbolic link to a regular file, a link to a directory, a dangling link, or a link leaving the tree: every link case yields `not-regular-file`), `over-read-cap`, `not-utf8`, and an incomplete listing. A real-permission test
 (`chmod 000` file, a real symlink) is separate and capability-probed: it runs only after confirming
 the platform enforces the condition (a mode-bit denial is actually observed by the test process, so
 Windows and privileged root processes skip; the platform can create the link), and otherwise is an
