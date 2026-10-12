@@ -150,9 +150,25 @@ implied.
 - **No locale.** No comparison, case change or sort consults the process locale or a Unicode
   normalisation form; strings are compared as UTF-16 code units or bytes.
 
+#### The three states, defined together
+
+The states are mutually exclusive and are decided in this order (the same order as "Precedence"):
+
+- `INDETERMINATE`: **at least one** `INDETERMINATE` condition in the table below applies, or the
+  listing is incomplete. This holds whatever else was observed, including a fired signal.
+- `OUT_OF_SCOPE`: **no** `INDETERMINATE` condition applies, and at least one listed signal fired and
+  was not overridden.
+- `IN_SCOPE`: **no** `INDETERMINATE` condition applies, and no listed signal fired (or every fired
+  signal was overridden).
+
+A readable `FROZEN.md` that contains neither listed phrase is an `INDETERMINATE` condition
+(`no-listed-phrase`), so it is never `IN_SCOPE`, and it is not `OUT_OF_SCOPE` either: a signal that
+did not fire cannot make the result `OUT_OF_SCOPE`.
+
 #### What `IN_SCOPE` does and does not say
 
-`IN_SCOPE` means: every file matching a listed source name was readable and none of the listed signals
+`IN_SCOPE` means: no `INDETERMINATE` condition applied (every file matching a listed source name was
+read in full and was readable text, and the listing was complete) and none of the listed signals
 fired. It is not a claim that the repository is archive-free, and cannot be, because the vocabulary
 is closed. A repository frozen only by a wiki note, an issue, or a differently worded file is
 `IN_SCOPE` to the tool. That is a stated limit of D1, and it is why D5 puts the same question to the
@@ -426,6 +442,12 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   before/after tree comparison (file list and content hashes) shows zero writes.
 - **AC2.** Each `INDETERMINATE` condition above exits `2`, writes nothing, and is not cleared by
   `--override-signal`, for `eligibility` and for `init`.
+- **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
+  whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
+  no other signal: `INDETERMINATE` (`no-listed-phrase`), exit `2`, `init` refuses with exit `2`. The
+  same file beside a `README.md` that carries the banner is also `INDETERMINATE`, not
+  `OUT_OF_SCOPE` (precedence), and `--override-signal=readme-frozen-banner` leaves it
+  `INDETERMINATE`.
 - **AC3.** No repository name appears in the implementation or vocabulary data (a test greps the new
   source for `StandardsOrchestrator`); a differently named fixture with the same signal is
   `OUT_OF_SCOPE`.
