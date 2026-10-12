@@ -58,7 +58,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectSurface, parsePlanDocument, TRACKED_BY_KEYS } from "./standards.mjs";
+import { collectSurface, readPlanItems, TRACKED_BY_KEYS, PLAN_DIR, isPlanFile } from "./standards.mjs";
 
 const EXIT_OK = 0;
 const EXIT_VIOLATION = 1;
@@ -74,10 +74,7 @@ export const CLASS = Object.freeze({
   containerClaimed: "container-claimed",
 });
 
-const PLAN_DIR = "artifacts/project-plan-breakdown";
 const MAPPING = "artifacts/backlog/github-mapping.json";
-/** The plan files the canonical audit reads (`detectPlanDiscrepancies`): `.md` anywhere under the plan directory. */
-const PLAN_FILE = /^artifacts\/project-plan-breakdown\/.+\.md$/;
 
 const SCHEME_CHAR = /[A-Za-z0-9+.-]/;
 /** The characters a Markdown backslash escapes (CommonMark: any ASCII punctuation). */
@@ -200,7 +197,13 @@ export async function collectPlanOwnership(root, { surface = null } = {}) {
   // `surface` is the collector's result for a caller that already holds one (and for tests that need a
   // degraded one: a spent budget, a capped walk); otherwise the collector runs here.
   const { run, files, surfaceLoss } = surface ?? (await collectSurface(root));
-  const planFiles = files.filter((f) => PLAN_FILE.test(run.rel(f))).sort((a, b) => (run.rel(a) < run.rel(b) ? -1 : 1));
+  // The one plan reader. Plan files are sorted first so claims, problems and the refusal message below
+  // come out in a stable order; `readPlanItems` preserves the order it is given.
+  const read = readPlanItems(
+    files.filter((f) => isPlanFile(run.rel(f))).sort((a, b) => (run.rel(a) < run.rel(b) ? -1 : 1)),
+    run,
+  );
+  const { planFiles } = read;
 
   const incomplete = [];
   if (surfaceLoss.capped) incomplete.push("the file walk stopped at its file cap, so plan files may be missing");
@@ -218,10 +221,12 @@ export async function collectPlanOwnership(root, { surface = null } = {}) {
       incomplete.push(`${e.path} was excluded by the audit walk (${e.reason}), so plan files under it were not read`);
     }
   }
+  const notRead = new Map(read.unreadable.map((u) => [u.file, u.reason]));
+  const partial = new Set(read.truncated);
   for (const f of planFiles) {
-    const text = run.textOf(f);
-    if (!text.available) incomplete.push(`${run.rel(f)} was not read (${text.reason})`);
-    else if (run.truncated.has(f)) incomplete.push(`${run.rel(f)} was read only in part (over the read cap)`);
+    const file = run.rel(f);
+    if (notRead.has(file)) incomplete.push(`${file} was not read (${notRead.get(file)})`);
+    else if (partial.has(file)) incomplete.push(`${file} was read only in part (over the read cap)`);
   }
   if (incomplete.length > 0) {
     throw new Error(`plan files were not fully read, so no ownership claim can be made: ${incomplete.join("; ")}`);
@@ -230,9 +235,7 @@ export async function collectPlanOwnership(root, { surface = null } = {}) {
   const claims = [];
   const problems = [];
   let repository = null;
-  for (const f of planFiles) {
-    const file = run.rel(f);
-    const { items, orphans } = parsePlanDocument(run.textOf(f).text, file);
+  for (const { file, items, orphans } of read.documents) {
     const outside = (s, title) =>
       problems.push({
         kind: "plan-claim-outside-item",

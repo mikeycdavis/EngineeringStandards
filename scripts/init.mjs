@@ -38,6 +38,16 @@ export const MODES = {
   RECONSTRUCTION_REQUIRED: "reconstruction-required",
 };
 
+/**
+ * The plan directory, named once for the whole framework.
+ *
+ * It lives here because this module is a leaf: `standards.mjs` imports it and `ownership.mjs`
+ * reaches it through `standards.mjs`, so no importer can form a cycle, and no new module (and so no
+ * new layer assignment) is needed to hold a single string. A scaffold is also the one place whose
+ * job is to name this directory, which makes it the honest owner of the name.
+ */
+export const PLAN_DIR = "artifacts/project-plan-breakdown";
+
 /** Files init can create, and where their content comes from. */
 const ARTIFACTS = [
   { path: "project-policy.yml", template: "templates/project-policy.yml" },
@@ -45,7 +55,7 @@ const ARTIFACTS = [
   { path: "AGENTS.md", template: "templates/AGENTS.md" },
   { path: "CLAUDE.md", template: "templates/CLAUDE.md" },
   { path: ".github/copilot-instructions.md", template: "templates/copilot-instructions.md" },
-  { path: "artifacts/project-plan-breakdown/", directory: true },
+  { path: `${PLAN_DIR}/`, directory: true },
   // `satisfiedBy` names the other locations that already meet the requirement. The ADR check accepts
   // three (Standard 11 R1); creating a fourth, empty, beside a populated docs/adr/ would leave the
   // project with two directories where one holds the decisions — the tool manufacturing the
@@ -66,7 +76,7 @@ const DIRECTORY_MARKERS = ["src", "lib", "app", "source", "cmd", "internal", "pk
 const MANIFEST_MARKERS = ["package.json", "go.mod", "Cargo.toml", "pyproject.toml", "pom.xml", "build.gradle"];
 const IMPLEMENTATION_MARKERS = [...DIRECTORY_MARKERS, ...MANIFEST_MARKERS];
 
-const PLAN_MARKERS = ["artifacts/project-plan-breakdown", "PLAN.md", "plan.md"];
+const PLAN_MARKERS = [PLAN_DIR, "PLAN.md", "plan.md"];
 const PROMPT_MARKERS = ["artifacts/prompts"];
 
 const has = (root, p) => existsSync(path.join(root, p));
