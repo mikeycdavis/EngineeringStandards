@@ -374,3 +374,10 @@ test("no-ci-configuration is withheld when a single-file candidate cannot be ins
     assert.equal(code, "ELOOP", "precondition: the candidate must be uninspectable, not absent");
     assert.deepEqual(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI), [], "absence claimed over an entry nobody could inspect");
   }));
+
+test("a file where a CI candidate's parent directory belongs is an absence, not an unknown", () =>
+  bare(async (dir) => {
+    // `.circleci/config.yml` under a regular file `.circleci` is ENOTDIR: nothing is there to inspect.
+    await writeFile(path.join(dir, ".circleci"), "not a directory\n");
+    assert.deepEqual(idsOf(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI)), [NO_CI]);
+  }));
