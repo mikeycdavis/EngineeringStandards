@@ -142,6 +142,7 @@ test("CLI: exit 0 and OK on this repository; --json carries the observation limi
   assert.equal(report.status, "OK");
   assert.deepEqual(report.violations, []);
   assert.equal(report.cannotObserve.length, MECHANISMS.length);
+  assert.equal(MECHANISMS.length, 13);
 });
 
 // ------------------------------------------------------------------------------------------
@@ -216,6 +217,26 @@ const UNCLASSIFIED = [
   ["reflection", "const p = new Proxy({}, {});"],
   ["network", 'import http from "node:http";'],
   ["network", 'const r = await fetch("https://example.invalid");'],
+  // Review round 2: aliasing and indirection
+  ["termination-indirect", 'import {default as p} from "node:process";\np.exit(1);'],
+  ["termination-indirect", 'import { default as q } from "process";\nq.exit(1);'],
+  ["termination-indirect", 'const m = await import("node:process");\nm.default.exit(1);'],
+  ["reflection", '(0, eval)("1");'],
+  ["reflection", 'const e = eval;\ne("1");'],
+  ["reflection", 'const F = Function;\nF("return 1")();'],
+  ["reflection", '(function () {}).constructor("return 1")();'],
+  ["reflection", 'import vm from "node:vm";'],
+  ["reflection", 'const b = process.binding("fs");'],
+  ["reflection", 'process.dlopen(module, "x.node");'],
+  ["reflection", 'process["binding"]("fs");'],
+  ["import-meta-resolve", 'const r = import.meta["resolve"]("./x.mjs");'],
+  ["import-meta-resolve", 'const m = import.meta;\nconst r = m.resolve("./x.mjs");'],
+  ["import-meta-resolve", 'const { resolve } = import.meta;'],
+  ["require-call", 'const c = process.getBuiltinModule("child_process");'],
+  ["require-call", 'import { register } from "node:module";'],
+  ["require-call", 'import { createRequire as make } from "node:module";'],
+  ["ambiguous-token", 'if (x) /"/.test(y); import { z } from "../c/z.mjs";'],
+  ["ambiguous-token", 'let i = 0;\ni++ / 2; await import("../c/z.mjs");'],
 ];
 
 for (const [mechanism, source] of UNCLASSIFIED) {
@@ -348,6 +369,29 @@ test("a termination form inside a comment, a string, a regex or a template's tex
   );
   assert.deepEqual(scan.terminates, []);
   assert.deepEqual(Object.values(scan.mechanisms).flat(), []);
+});
+
+test("an ambiguous slash can never hide a same-line import: the union of both readings is returned", () => {
+  const afterParen = scanSource('if (x) /"/.test(y); import { z } from "../c/z.mjs";\n');
+  assert.ok(specs(afterParen).includes("../c/z.mjs"), JSON.stringify(afterParen.imports));
+  assert.ok(afterParen.mechanisms["ambiguous-token"].length > 0);
+  const afterPostfix = scanSource('let i = 0;\ni++ / 2; await import("../c/z.mjs");\n');
+  assert.ok(specs(afterPostfix).includes("../c/z.mjs"), JSON.stringify(afterPostfix.imports));
+  assert.ok(afterPostfix.mechanisms["ambiguous-token"].length > 0);
+});
+
+test("a division after a parenthesis is not reported when both readings agree", () => {
+  const scan = scanSource('const h = (a + b) / 2;\nconst k = f(x) / g(y);\nimport { y } from "./y.mjs";\n');
+  assert.deepEqual(scan.mechanisms["ambiguous-token"], []);
+  assert.deepEqual(specs(scan), ["./y.mjs"]);
+});
+
+test("safe import.meta members and safe node:module names are not reported", () => {
+  const scan = scanSource(
+    'import { builtinModules } from "node:module";\nconst d = import.meta.dirname;\nconst u = import.meta.url;\nconst f = import.meta.filename;\nimport process from "node:process";\nprocess.stdout.write("x");\n',
+  );
+  assert.deepEqual(Object.values(scan.mechanisms).flat(), []);
+  assert.deepEqual(scan.terminates, []);
 });
 
 test("a quote inside a regex literal does not swallow the following import", () => {

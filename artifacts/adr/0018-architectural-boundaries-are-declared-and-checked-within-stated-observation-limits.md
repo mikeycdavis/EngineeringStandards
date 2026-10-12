@@ -61,7 +61,7 @@ The file's top-level keys:
 | --- | --- |
 | `observation.method` | How edges are observed. One value is defined: `static-import-graph` |
 | `observation.roots`, `extensions` | The only files the check examines |
-| `observation.cannotObserve[]` | Mechanisms the method cannot see, each with a reason; `subprocess` may carry `knownSites` |
+| `observation.cannotObserve[]` | Every mechanism of the enumerated vocabulary in section 4, once each, each with a `reason` and a required `knownSites` list (an empty list is allowed). For a detected mechanism `knownSites` is the set of files whose use is acknowledged |
 | `members[]` | `id`, `kind` (`package`, `layer`, `plugin`, `process`, `trust-domain`), `paths` (the path ownership; a file, or a directory ending in `/`), `evidence` (`path:line`), optional `processExit: permitted` |
 | `edges[]` | `from`, `to`, `via` (the permitted interface: export names, or `*` stated explicitly), `evidence` |
 | `external.allowPrefixes` | Import specifiers that leave the repository and are allowed (this repository: `node:` only) |
@@ -113,29 +113,42 @@ imported from `node:process` or `process`.
 
 It **fails closed** on every other construct that can reach a module, end the process or leave the
 repository. Each is recorded under a named mechanism and reported as `unobserved-mechanism` unless
-the file is listed in that mechanism's `knownSites`. The closed vocabulary, which a declaration must
+the file is listed in that mechanism's `knownSites`. The enumerated vocabulary (13 mechanisms), which a declaration must
 list in full under `cannotObserve`, each with `knownSites` (an empty list is allowed):
 
 | Mechanism | Detected as | Still unseen |
 | --- | --- | --- |
 | `dynamic-import-computed` | `import()` whose argument is not one string literal | What the computed specifier evaluates to |
-| `require-call` | `require(` and `createRequire` | The module reached |
-| `import-meta-resolve` | `import.meta.resolve` | The module reached |
+| `require-call` | `require(`, `createRequire`, `process.getBuiltinModule`, `process.mainModule`, and any import of `node:module` beyond `builtinModules` and `isBuiltin` (`register`, namespace, default, side effect) | The module reached |
+| `import-meta-resolve` | Any use of `import.meta` other than `.url`, `.dirname` and `.filename`: `.resolve`, a bracketed property, an alias, a destructuring | The module reached |
 | `url-module-path` | `new URL(..., import.meta.url)` | Whether the path is a module, a file or data |
-| `termination-indirect` | The process object used as a value or aliased, `process[<computed>]`, `globalThis[...]`, the `process` module bound under another name | What is ultimately called |
+| `termination-indirect` | The process object used as a value or aliased, `process[<computed>]`, `globalThis[...]`, the `process` module imported as default or namespace under a name other than `process`, `import { default as p }`, or imported dynamically | What is ultimately called |
 | `subprocess` | Importing `child_process`, `worker_threads` or `cluster`, with or without `node:` | What runs, what it reaches |
-| `reflection` | `eval(`, `Function`, `Reflect`, `Proxy` | Their effect; other indirection (computed property lookup, prototype manipulation) is not examined |
+| `reflection` | Any mention of `eval` or `Function` (so `(0, eval)(s)`, `const e = eval`, `const F = Function`), a `.constructor(` call, `Reflect`, `Proxy`, importing `node:vm`, `process.binding`, `process._linkedBinding`, `process.dlopen` | Their effect; the indirection spellings listed under "Not detectable" below |
 | `network` | Importing `http`, `https`, `http2`, `net`, `tls`, `dgram`, `dns`; `fetch(`, `WebSocket`, `XMLHttpRequest` | Traffic that leaves through another program, such as `gh` |
+| `ambiguous-token` | A slash after `)`, `}` or `++`/`--` that may open a regex literal or divide: the file is read both ways and, if the readings disagree about modules or terminations, the union is checked and the file reported | Which reading the author meant |
 | `generated-code` | Not detected | Code written to disk and run later; generated documentation |
 | `data-access` | Not detected | Which files, rules or keys a module reads or writes |
 | `shell-and-workflow-scripts` | Not detected | `*.ps1`, `*.sh`, workflows: outside the extensions |
 | `outside-roots` | Not detected | Every file outside the roots |
 
-Remaining blind spots, all inside the declared limits: a module path built elsewhere and handed to
-something other than `import()`, `require` or `new URL`; aliasing of other built-in objects than the
-process object; a source construct the tokenizer mis-tokenizes (a regex literal after `)` or `]` is
-read as division, for example). A passing check is a statement about edges between files, and
-nothing wider.
+**Not detectable, stated plainly.** No tokenizer of arbitrary JavaScript is perfect, and this one does
+not claim to be. These spellings remain invisible, and the check prints OK for them:
+
+- a function obtained by assignment from a constructor property (`const C = f.constructor; C("code")`)
+  rather than called on the property;
+- a module path built in one place and handed to a loader the repository defines itself, and any module
+  reached only through a subprocess;
+- the effect of a global the scanner does not name (it names `eval`, `Function`, `Reflect`, `Proxy`,
+  `process`, `globalThis`, `fetch`, `WebSocket` and `XMLHttpRequest`);
+- code or a module path held in a string and evaluated or loaded later: it is reported where it is
+  evaluated, not where it is written;
+- a regex literal after `]` (read as division), and any construct the tokenizer mis-tokenizes in a way
+  that is consistent under both slash readings.
+
+Therefore **OK means "OK within the listed observation scope"**: every observed edge is permitted and
+every construct the scanner can recognise as unclassifiable was acknowledged. It never means that
+nothing was unseen; the listed mechanisms are what was unseen by construction.
 
 ### 5. Attestation requirements
 

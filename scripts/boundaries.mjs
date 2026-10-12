@@ -56,6 +56,7 @@ export const DETECTED_MECHANISMS = [
   "subprocess",
   "reflection",
   "network",
+  "ambiguous-token",
 ];
 export const DECLARATIVE_MECHANISMS = ["generated-code", "data-access", "shell-and-workflow-scripts", "outside-roots"];
 export const MECHANISMS = [...DETECTED_MECHANISMS, ...DECLARATIVE_MECHANISMS];
@@ -221,8 +222,9 @@ const isIdPart = (c) => /[A-Za-z0-9_$]/.test(c) || c > "\u007f";
  * Tokens: { t: "id" | "str" | "num" | "re" | "tmpl" | "p", v, line }. Comments are dropped. A
  * template literal yields the tokens of its ${...} expressions followed by one "tmpl" token.
  */
-export function tokenize(src) {
+export function tokenize(src, ambiguous = "regex") {
   const toks = [];
+  toks.ambiguousLines = [];
   const n = src.length;
   let i = 0;
   let line = 1;
@@ -231,7 +233,18 @@ export function tokenize(src) {
   function regexAllowed() {
     const prev = toks[toks.length - 1];
     if (!prev) return true;
-    if (prev.t === "p") return prev.v !== ")" && prev.v !== "]";
+    if (prev.t === "p") {
+      if (prev.v === "]") return false;
+      const before = toks[toks.length - 2];
+      const postfix = (prev.v === "+" || prev.v === "-") && before?.t === "p" && before.v === prev.v;
+      if (prev.v === ")" || prev.v === "}" || postfix) {
+        // A slash here may open a regex literal or divide; the scanner reads both ways and
+        // reports ambiguous-token if the two readings disagree about modules or terminations.
+        toks.ambiguousLines.push(line);
+        return ambiguous === "regex";
+      }
+      return true;
+    }
     if (prev.t === "id") return REGEX_AFTER_KEYWORD.has(prev.v);
     return false;
   }
@@ -332,6 +345,16 @@ export function tokenize(src) {
 // ---------------------------------------------------------------------------------------------
 
 const TERMINATING = new Set(["exit", "exitCode", "kill", "abort", "reallyExit"]);
+// Members of the process object that reach modules or native code without an import statement.
+const PROCESS_REACH = new Map([
+  ["getBuiltinModule", "require-call"],
+  ["mainModule", "require-call"],
+  ["binding", "reflection"],
+  ["_linkedBinding", "reflection"],
+  ["dlopen", "reflection"],
+]);
+// Names of node:module that are safe to import: they reach nothing.
+const MODULE_SAFE = new Set(["builtinModules", "isBuiltin"]);
 const SUBPROCESS_MODULES = new Set(["child_process", "worker_threads", "cluster"]);
 const NETWORK_MODULES = new Set(["http", "https", "http2", "net", "tls", "dgram", "dns", "dns/promises"]);
 const BUILTINS = new Set(builtinModules);
@@ -350,8 +373,7 @@ function builtinName(spec) {
  * of lines holding a recognised process-terminating form, and mechanisms maps each detected
  * mechanism id to the lines of constructs the scanner could not classify further.
  */
-export function scanSource(text) {
-  const toks = tokenize(text);
+function analyse(toks) {
   const imports = [];
   const terminates = [];
   const mechanisms = Object.fromEntries(DETECTED_MECHANISMS.map((m) => [m, []]));
@@ -411,7 +433,10 @@ export function scanSource(text) {
           break;
         }
         if (isP(k + 1, ".")) {
-          if (isId(k + 2, "meta") && isP(k + 3, ".") && isId(k + 4, "resolve")) flag("import-meta-resolve", tk.line);
+          if (isId(k + 2, "meta")) {
+            const plain = isP(k + 3, ".") && (isId(k + 4, "url") || isId(k + 4, "dirname") || isId(k + 4, "filename"));
+            if (!plain) flag("import-meta-resolve", tk.line);
+          }
           break;
         }
         if (isStr(k + 1)) {
@@ -481,11 +506,14 @@ export function scanSource(text) {
         if (isP(m, "[")) {
           if (isStr(m + 1) && isP(m + 2, "]")) {
             if (TERMINATING.has(toks[m + 1].v)) terminates.push(tk.line);
+            else if (PROCESS_REACH.has(toks[m + 1].v)) flag(PROCESS_REACH.get(toks[m + 1].v), tk.line);
           } else {
             flag("termination-indirect", tk.line);
           }
         } else if (isId(m) && TERMINATING.has(toks[m].v)) {
           terminates.push(tk.line);
+        } else if (isId(m) && PROCESS_REACH.has(toks[m].v)) {
+          flag(PROCESS_REACH.get(toks[m].v), tk.line);
         }
         break;
       }
@@ -496,10 +524,14 @@ export function scanSource(text) {
         flag("require-call", tk.line);
         break;
       case "eval":
-        if (!afterDot && isP(k + 1, "(")) flag("reflection", tk.line);
-        break;
       case "Function":
-        if (isP(k + 1, "(") || isId(k - 1, "new")) flag("reflection", tk.line);
+        // Any bare mention, not only a call: `(0, eval)(s)`, `const e = eval` and `const F = Function`
+        // reach the same place.
+        if (!afterDot && !isP(k + 1, ":")) flag("reflection", tk.line);
+        break;
+      case "constructor":
+        // (function () {}).constructor("code")() builds a function from a string.
+        if (afterDot && isP(k + 1, "(")) flag("reflection", tk.line);
         break;
       case "Reflect":
       case "Proxy":
@@ -536,13 +568,59 @@ export function scanSource(text) {
     if (NETWORK_MODULES.has(b)) flag("network", imp.line);
     if (b === "process") {
       if (imp.names.some((nm) => TERMINATING.has(nm))) terminates.push(imp.line);
-      for (const bind of imp.bindings ?? []) {
+      const bindings = imp.bindings ?? [];
+      for (const bind of bindings) {
         if (bind.local !== "process") flag("termination-indirect", imp.line);
       }
+      // `import { default as p }` and any default or namespace import not bound as `process`: the
+      // process object is reachable under a name the scan does not follow.
+      const wholeObject = imp.names.some((nm) => nm === "default" || nm === "*");
+      if (wholeObject && bindings.length === 0 && !imp.sideEffect) flag("termination-indirect", imp.line);
+      if (imp.kind !== "static" && wholeObject) flag("termination-indirect", imp.line);
+    }
+    if (b === "vm") flag("reflection", imp.line);
+    if (b === "module" && (imp.sideEffect || imp.names.some((nm) => !MODULE_SAFE.has(nm)))) {
+      flag("require-call", imp.line);
     }
   }
 
   return { imports, terminates, mechanisms };
+}
+
+/**
+ * Scan one file's text. Pure; exported so tests can exercise it without a repository.
+ *
+ * Returns { imports, terminates, mechanisms } where imports are
+ * { spec, kind: "static" | "dynamic" | "reexport", names, line, sideEffect }, terminates is the list
+ * of lines holding a recognised process-terminating form, and mechanisms maps each detected
+ * mechanism id to the lines of constructs the scanner could not classify further.
+ *
+ * Where a slash could open a regex literal or divide, the file is read both ways. If the readings
+ * agree the result is used; if they disagree the union of both is returned and the file is reported
+ * under `ambiguous-token`, so a disagreement can never hide an import or a termination.
+ */
+export function scanSource(text) {
+  const first = tokenize(text, "regex");
+  const a = analyse(first);
+  if (first.ambiguousLines.length === 0) return a;
+  const b = analyse(tokenize(text, "div"));
+  const key = (r) =>
+    JSON.stringify({
+      i: r.imports.map((x) => [x.kind, x.spec, x.names, x.line]),
+      t: r.terminates,
+      m: r.mechanisms,
+    });
+  if (key(a) === key(b)) return a;
+  const seen = new Set();
+  const imports = [];
+  for (const imp of [...a.imports, ...b.imports]) {
+    const k = `${imp.kind}|${imp.spec}|${imp.line}|${imp.names.join(",")}`;
+    if (!seen.has(k)) { seen.add(k); imports.push(imp); }
+  }
+  const mechanisms = {};
+  for (const m of DETECTED_MECHANISMS) mechanisms[m] = [...new Set([...a.mechanisms[m], ...b.mechanisms[m]])].sort((x, y) => x - y);
+  mechanisms["ambiguous-token"] = [...new Set(first.ambiguousLines)];
+  return { imports, terminates: [...new Set([...a.terminates, ...b.terminates])].sort((x, y) => x - y), mechanisms };
 }
 
 /** Read and scan every in-scope file. */

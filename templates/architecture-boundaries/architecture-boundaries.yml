@@ -40,6 +40,9 @@ observation:
     - mechanism: "network"
       reason: "Replace: why this repository cannot observe it, or what is acknowledged."
       knownSites: []
+    - mechanism: "ambiguous-token"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
     - mechanism: "generated-code"
       reason: "Replace: why this repository cannot observe it, or what is acknowledged."
       knownSites: []
