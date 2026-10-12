@@ -53,6 +53,29 @@ const FIXTURES = path.join(ROOT, "test", "fixtures", "ci-triage");
 
 const fixture = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name), "utf8"));
 
+const review = ({
+  id = "r1",
+  supersedes,
+  status = "approved",
+  reviewedAt = "2026-10-01",
+  reviewedAgainst = {},
+} = {}) => ({
+  id,
+  ...(supersedes === undefined ? {} : { supersedes }),
+  status,
+  reviewedBy: "local-reviewer",
+  reviewerRole: "independent-reviewer",
+  reviewedAt,
+  evidence: "local exact-tree review",
+  reviewedAgainst: {
+    revision: "1111111111111111111111111111111111111111",
+    tree: "2222222222222222222222222222222222222222",
+    digest: "abcdef1234567890",
+    paths: ["synthetic.txt"],
+    ...reviewedAgainst,
+  },
+});
+
 // -------------------------------------------------------------------------------------------
 // Every terminal branch, from a structured observation
 // -------------------------------------------------------------------------------------------
@@ -236,15 +259,63 @@ test("a log with neither annotation reports no exit class rather than guessing o
 // Policy derivation — the authority for what "expected" means
 // -------------------------------------------------------------------------------------------
 
-test("the rejection set is derived from live reviews, and a superseded rejection does not count", () => {
+test("the rejection set comes from each rule's validated terminal review", () => {
   const policy = {
     attestations: {
-      "a.rule": { reviews: [{ id: "r1", status: "rejected" }] },
-      "b.rule": { reviews: [{ id: "r1", status: "rejected" }, { id: "r2", supersedes: "r1", status: "approved" }] },
-      "c.rule": { reviews: [{ id: "r1", status: "approved" }, { id: "r2", supersedes: "r1", status: "rejected" }] },
+      "a.rule": { reviews: [review({ status: "rejected" })] },
+      "b.rule": {
+        reviews: [
+          review({ status: "rejected" }),
+          review({ id: "r2", supersedes: "r1", reviewedAt: "2026-10-02" }),
+        ],
+      },
+      "c.rule": {
+        reviews: [
+          review(),
+          review({ id: "r2", supersedes: "r1", status: "rejected", reviewedAt: "2026-10-02" }),
+        ],
+      },
     },
   };
   assert.deepEqual(establishedRejectionsFrom(policy), ["a.rule", "c.rule"]);
+});
+
+test("invalid successor histories establish no rejection set and cannot produce EXPECTED", () => {
+  const invalidRecords = [
+    {
+      reviews: [
+        review({ status: "rejected" }),
+        review({ id: "r2", supersedes: "absent", reviewedAt: "2026-10-02" }),
+      ],
+    },
+    {
+      reviews: [
+        review({ status: "rejected" }),
+        review({ id: "r2", supersedes: "r1", reviewedAt: "2026-10-02" }),
+        review({ id: "r3", supersedes: "r1", reviewedAt: "2026-10-03" }),
+      ],
+    },
+    {
+      reviews: [
+        review({ status: "rejected" }),
+        review({ id: "r2", supersedes: "r1", reviewedAt: "2026-10-02", reviewedAgainst: { digest: null } }),
+      ],
+    },
+    {
+      reviews: [
+        review({ status: "rejected" }),
+        review({ id: "r1", supersedes: "r1", reviewedAt: "2026-10-02" }),
+      ],
+    },
+  ];
+
+  for (const record of invalidRecords) {
+    const establishedRejections = establishedRejectionsFrom({ attestations: { "a.rule": record } });
+    assert.equal(establishedRejections, null, "invalid history was converted into a rejection set");
+    const result = classify({ ...fixture("established-red.json"), establishedRejections });
+    assert.equal(result.verdict, INDETERMINATE);
+    assert.notEqual(result.verdict, EXPECTED, "invalid history produced false EXPECTED");
+  }
 });
 
 test("an unreadable policy establishes nothing rather than an empty rejection set", () => {
