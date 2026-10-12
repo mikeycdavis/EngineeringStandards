@@ -72,7 +72,7 @@ that goes around it: the diagram now describes a system that does not exist, whi
 
 A boundary that is only believed, or only drawn in a diagram, is not an architectural boundary here:
 there is nothing for a reviewer or a detector to measure the crossing against until it is declared.
-This framework declares its own in the `boundaries` key of `project-policy.yml`, and
+This framework declares its own in `architecture-boundaries.yml`, and
 [ADR 0018](../artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)
 records the declaration format, the checks run against it, and what they cannot observe.
 

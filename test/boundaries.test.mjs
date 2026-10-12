@@ -24,13 +24,14 @@ import {
   checkBoundaries,
   scanRepository,
   scanSource,
+  loadDeclaration,
+  DECLARATION_FILE,
 } from "../scripts/boundaries.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SCHEMA = JSON.parse(readFileSync(path.join(ROOT, "schemas/project-policy.schema.json"), "utf8"));
-const POLICY_TEXT = readFileSync(path.join(ROOT, "project-policy.yml"), "utf8");
-const POLICY = parseYaml(POLICY_TEXT);
-const DECLARATION = POLICY.boundaries;
+const SCHEMA = JSON.parse(readFileSync(path.join(ROOT, "schemas/architecture-boundaries.schema.json"), "utf8"));
+const DECLARATION_TEXT = readFileSync(path.join(ROOT, DECLARATION_FILE), "utf8");
+const DECLARATION = parseYaml(DECLARATION_TEXT);
 const VERSION = readFileSync(path.join(ROOT, "VERSION"), "utf8").trim();
 
 function tmp() {
@@ -46,7 +47,7 @@ function node(args, cwd = ROOT) {
 function copyOfRepo() {
   const dir = tmp();
   cpSync(path.join(ROOT, "scripts"), path.join(dir, "scripts"), { recursive: true });
-  writeFileSync(path.join(dir, "project-policy.yml"), POLICY_TEXT);
+  writeFileSync(path.join(dir, DECLARATION_FILE), DECLARATION_TEXT);
   // The files the declaration cites as evidence, so only the mutation under test can fail.
   const cited = new Set(
     [...DECLARATION.members, ...DECLARATION.edges, DECLARATION.external]
@@ -88,10 +89,16 @@ const baseDeclaration = () => ({
 
 const kinds = (violations) => violations.map((v) => v.kind).sort();
 
-test("the declaration validates against the policy schema and is internally consistent", () => {
-  assert.ok(DECLARATION, "project-policy.yml must declare boundaries");
-  assert.deepEqual(validate(POLICY, SCHEMA), []);
+test("the declaration file validates against its own schema and is internally consistent", () => {
+  assert.ok(DECLARATION, "architecture-boundaries.yml must exist");
+  assert.deepEqual(validate(DECLARATION, SCHEMA), []);
   assert.deepEqual(declarationProblems(DECLARATION), []);
+  assert.equal(loadDeclaration(ROOT).state, "ok");
+});
+
+test("the declaration is not in project-policy.yml, so recording an attestation cannot stale it", () => {
+  const policy = parseYaml(readFileSync(path.join(ROOT, "project-policy.yml"), "utf8"));
+  assert.equal(policy.boundaries, undefined);
 });
 
 test("every scripts/*.mjs file is owned and every observed edge is declared", () => {
@@ -240,16 +247,23 @@ test("structurally inconsistent declarations are rejected", () => {
   assert.deepEqual(declarationProblems(undefined), [], "an absent declaration has no problems");
 });
 
-test("policy and validate reject an inconsistent declaration, and say nothing about a missing one", () => {
+test("policy and validate reject an inconsistent or schema-invalid declaration beside the policy", () => {
   const dir = tmp();
   try {
-    const bad = POLICY_TEXT.replace(/^    - id: "reviews"$/m, '    - id: "catalog"');
-    assert.notEqual(bad, POLICY_TEXT, "the mutation must apply");
-    const file = path.join(dir, "bad-policy.yml");
-    writeFileSync(file, bad);
-    const r = node(["scripts/policy.mjs", file]);
-    assert.equal(r.code, 2, r.out + r.err);
-    assert.match(r.out, /more than once/);
+    writeFileSync(path.join(dir, "project-policy.yml"), `standardVersion: "${VERSION}"\n`);
+    const bad = DECLARATION_TEXT.replace(/^  - id: "reviews"$/m, '  - id: "catalog"');
+    assert.notEqual(bad, DECLARATION_TEXT, "the mutation must apply");
+    writeFileSync(path.join(dir, DECLARATION_FILE), bad);
+    const p = node(["scripts/policy.mjs", path.join(dir, "project-policy.yml")]);
+    assert.equal(p.code, 2, p.out + p.err);
+    assert.match(p.out, /more than once/);
+    const v = node(["scripts/standards.mjs", "validate", `--dir=${dir}`, "--json"]);
+    assert.notEqual(v.code, 0);
+    assert.match(v.out + v.err, /architecture-boundaries\.yml is invalid|NOT_EVALUATED/);
+
+    writeFileSync(path.join(dir, DECLARATION_FILE), "observation: {}\n");
+    const p2 = node(["scripts/policy.mjs", path.join(dir, "project-policy.yml")]);
+    assert.equal(p2.code, 2, "a schema-invalid declaration is rejected");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -261,8 +275,8 @@ test("ADDITIVE: validate reports identical bytes and exit with and without a dec
   try {
     const head = `standardVersion: "${VERSION}"\nproject: "additive-fixture"\n`;
     writeFileSync(path.join(without, "project-policy.yml"), head);
-    const declYaml = POLICY_TEXT.slice(POLICY_TEXT.indexOf("boundaries:\n"), POLICY_TEXT.indexOf("# Recorded human judgement"));
-    writeFileSync(path.join(withDecl, "project-policy.yml"), head + declYaml);
+    writeFileSync(path.join(withDecl, "project-policy.yml"), head);
+    writeFileSync(path.join(withDecl, DECLARATION_FILE), DECLARATION_TEXT);
     const a = node(["scripts/standards.mjs", "validate", `--dir=${without}`, "--json"]);
     const b = node(["scripts/standards.mjs", "validate", `--dir=${withDecl}`, "--json"]);
     assert.equal(a.code, b.code, "exit codes must match");
@@ -279,10 +293,17 @@ test("boundaries-check without a declaration is NOT_EVALUATED (exit 2), never a 
   const dir = tmp();
   try {
     writeFileSync(path.join(dir, "project-policy.yml"), `standardVersion: "${VERSION}"\n`);
+    assert.equal(loadDeclaration(dir).state, "absent");
     const r = node(["scripts/boundaries-check.mjs", `--dir=${dir}`, "--json"]);
     assert.equal(r.code, 2);
     assert.equal(JSON.parse(r.out).status, "NOT_EVALUATED");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the shipped template is schema-valid and internally consistent", () => {
+  const template = parseYaml(readFileSync(path.join(ROOT, "templates/architecture-boundaries/architecture-boundaries.yml"), "utf8"));
+  assert.deepEqual(validate(template, SCHEMA), []);
+  assert.deepEqual(declarationProblems(template), []);
 });

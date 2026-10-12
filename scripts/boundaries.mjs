@@ -16,6 +16,47 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseYaml } from "./yaml.mjs";
+import { validate } from "./jsonschema.mjs";
+
+/**
+ * The declaration's conventional name and location: a root-level file beside project-policy.yml,
+ * discovered by name. A consumer opts in by creating it; nothing else changes (ADR 0018).
+ */
+export const DECLARATION_FILE = "architecture-boundaries.yml";
+
+const DECLARATION_SCHEMA = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "schemas/architecture-boundaries.schema.json",
+);
+
+/**
+ * Discover and load the declaration in `dir`.
+ *
+ * Returns `{ state: "absent" }` when there is no such file (the caller must then change nothing),
+ * `{ state: "invalid", errors }` when it is unreadable, unparseable, schema-invalid or structurally
+ * inconsistent, and `{ state: "ok", declaration }` otherwise.
+ */
+export function loadDeclaration(dir) {
+  const file = path.join(dir, DECLARATION_FILE);
+  if (!existsSync(file)) return { state: "absent" };
+  let declaration;
+  try {
+    declaration = parseYaml(readFileSync(file, "utf8"));
+    const schema = JSON.parse(readFileSync(DECLARATION_SCHEMA, "utf8"));
+    const errors = validate(declaration, schema);
+    if (errors.length > 0) {
+      return { state: "invalid", errors: errors.map((e) => `${e.path || "(document)"} ${e.message}`) };
+    }
+  } catch (error) {
+    return { state: "invalid", errors: [`${DECLARATION_FILE} could not be read: ${error.message}`] };
+  }
+  const problems = declarationProblems(declaration);
+  if (problems.length > 0) return { state: "invalid", errors: problems };
+  return { state: "ok", declaration };
+}
 
 const DIRECTORY = "/";
 // Assembled so that this file does not read as a subprocess site to its own scan.
