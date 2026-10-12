@@ -2,7 +2,7 @@
 
 ## Purpose and non-goals
 
-**This design is implemented.** `scripts/standards.mjs` ships every finding id in the table below.
+**This design is implemented.** `scripts/standards.mjs` ships the finding ids listed below, and more (see that section).
 The document was written before the tool existed, so that the artifacts mandated
 by the standards — particularly
 [Standard 44](../standards/44-existing-project-reconstruction.md) — would be shaped from the start to
@@ -132,10 +132,14 @@ tracking where a standard requires one; it does not grade the tracking it finds.
 
 ## Finding categories
 
-The table below is the enumeration of findings; it is not restated as a count here, so it cannot drift
-from the table. Each finding has a stable kebab-case `id` for machine consumption, and a category that
-more than one id may share. The first six are
-descriptive — they report what the repository *has*, and are always `info`. The remainder report
+The table below lists the principal finding ids by category. It is **not** an exhaustive inventory of
+every id `scripts/standards.mjs` emits: the evidence-surface and availability findings
+(`repository-evidence-unavailable`, `evidence-*`), the content-detector findings (`committed-env-file`,
+`secret-in-artifact`, `swallowed-exception`, `certificate-validation-bypass`,
+`sql-string-interpolation`) and several manifest, plan-field and owner-confirmation findings are emitted but not
+listed. The emitted ids are the source of truth, not this table, and no count is stated here. Each
+finding has a stable kebab-case `id` for machine consumption, and a category that more than one id may
+share. The first six are descriptive — they report what the repository *has*, and are always `info`. The remainder report
 something absent, unproven, or contradictory.
 
 | id | Category | Produced by | Severity |
@@ -166,8 +170,9 @@ detection in tracked files (finding id `committed-conflict-markers`) is **perman
 unbound to any catalog rule and has no compliance effect: `validate --json` still lists it among
 its findings, but the compliance engine skips findings with no rule, so its status, score, per-rule
 results and exit code are the same with or without the marker. Standard 46
-was measured and rejected as its home, and the live working-tree conflict preflight is a separate
-proposition that lives outside the catalog.
+was measured and rejected as its home. Whether a working tree is mid-conflict (unmerged index
+stages) is a separate proposition, checked by the local preflight outside the catalog; the two overlap
+only where a textual conflict writes marker lines into a tracked file, which this detector then reads.
 
 **What is read.** `git ls-files` decides which paths are checked, but the bytes come from the working-tree
 copy, not from `HEAD` or the index. A tracked file whose committed content is clean but whose working
@@ -182,8 +187,9 @@ observation; nothing is added to a verdict.
 
 **Limitation, retained and disclosed in the finding's own message.** A well-formed group is
 lexically identical to documentation of one, so Markdown fenced blocks are excluded. A genuine
-group inside a fence is therefore **not reported**, and neither is one in a file type the audit
-does not read. A clean result is not proof that none exists. The unfenced specimen is reported, the
+group inside a Markdown fenced block is therefore **not reported**, and neither is one in a file type
+the audit does not read. Conflicts whose working-tree content holds no marker lines (for example
+delete/modify) are not seen either, because the index state itself is not inspected. A clean result is not proof that none exists. The unfenced specimen is reported, the
 canonical fenced documentation is not, and the genuine group inside a fence is a known miss;
 `test/conflict-markers.test.mjs` asserts all three outcomes, and also pins the severity, the absent
 rule, the strict exit codes, the unchanged `validate` verdict, and that the working-tree copy is what is read.

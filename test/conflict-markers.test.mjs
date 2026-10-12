@@ -7,13 +7,16 @@
  * are tracked and reads their bytes from the WORKING TREE, not from HEAD or the index, so a group
  * in the working copy of a tracked file is reported even if the committed content is clean (a test
  * pins this). The second proposition — *this working tree is mid-conflict*, meaning unmerged index
- * stages — is a different thing: it is not detected here and lives in the local preflight
- * (`scripts/ci-context.sh` / `.ps1`) rather than in this suite.
+ * stages — is a different thing: the index state itself is not inspected here, and it lives in the
+ * local preflight (`scripts/ci-context.sh` / `.ps1`) rather than in this suite.
  *
- * They are disjoint, and each misses the other's case entirely. A delete/modify conflict leaves
- * unmerged stages in the index over a file whose content holds no markers. A committed marker
- * leaves a clean index and clean status. `git diff --check` sees neither: it reads added lines in a
- * diff, so it went silent the moment `8870a43` committed the specimen this file is built from.
+ * They overlap only partly. An ordinary textual merge conflict writes marker lines into the tracked
+ * file, so the detector reads and reports them from the working tree. A delete/modify conflict leaves
+ * unmerged stages in the index over a file whose content holds no markers, so the detector misses
+ * it and only the preflight sees it. A committed marker leaves a clean index and clean status, so the
+ * preflight misses it and only this detector sees it. Once the markers are committed, `git diff
+ * --check` reports nothing either: it reads added lines in a diff, so it went silent the moment
+ * `8870a43` committed the specimen this file is built from.
  *
  * The known-negative half is the hard half, and it is why every fixture here is a real repository
  * rather than a directory. A well-formed group is lexically identical to an illustration of one, so
@@ -368,9 +371,9 @@ test("a repository with no markers raises nothing", async () => {
 // Owner decision (issue #58, 2026-10-01; strict behaviour confirmed 2026-10-11): committed
 // conflict-marker detection is permanently audit-only evidence. It is unbound to a catalog rule and
 // has no compliance effect. Its severity is `warning`, which is deliberate rather than accidental:
-// `audit --strict` exits 1 on any non-`info` finding, so a committed group fails a strict audit,
-// while the default audit and every `validate` verdict ignore it (`validate --json` still lists the
-// finding, but with no rule the compliance engine skips it). The tests below pin each half of
+// `audit --strict` exits 1 on any non-`info` finding, so a group in a tracked file fails a strict
+// audit, while the default audit exits 0 and the `validate` verdict is unchanged by it
+// (`validate --json` still lists the finding, but with no rule the compliance engine skips it). The tests below pin each half of
 // that, because the contract is as much what the finding must NOT do as what it reports.
 
 const COMPLIANT = path.join(HERE, "fixtures", "compliant");
