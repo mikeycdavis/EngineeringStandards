@@ -1,60 +1,81 @@
 # 0016 — Adoption eligibility is resolved before any adoption write
 
-- **Status:** Proposed
-- **Date:** 2026-10-11
-- **Deciders:** Project owner (decisions D1-D5 below, given 2026-10-11; this record is not yet
-  accepted)
+- **Status:** Proposed. The decisions below were relayed as approved by the owner on
+  2026-10-12 (see "Decision record"); the status is not flipped to `Accepted` until the owner's own
+  confirmation is on PR #105, because the approval reached this record through an intermediary and
+  the ADR convention (Standard 11 R5, `Proposed | Accepted`) makes `Accepted` the owner's act.
+- **Date:** 2026-10-11, revised 2026-10-12
+- **Deciders:** Project owner
 - **Tracks:** ST-06, [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
 - **Related:** [ADR 0004](0004-audit-and-validate-are-separate-commands.md),
-  [ADR 0008](0008-detectors-do-not-assert-repository-state-they-have-not-measured.md),
   [ADR 0005](0005-attestations-are-recorded-human-evidence.md),
+  [ADR 0008](0008-detectors-do-not-assert-repository-state-they-have-not-measured.md),
   [Standard 22](../../standards/22-adoption-and-migration.md),
   [Standard 23](../../standards/23-standards-validator-cli.md),
   [Standard 33](../../standards/33-bootstrap-experience.md),
   [Standard 44](../../standards/44-existing-project-reconstruction.md) R12
 
-This record is written **before implementation** (D4). Nothing it describes exists in code yet; every
-statement in "Decision" is a commitment for the implementation pull requests that follow its review,
-not a description of current behaviour.
+This record is written **before implementation**. Nothing it describes exists in code yet; every
+statement in "Decision" is a commitment for the implementation pull requests that follow, not a
+description of current behaviour.
 
 ## Context
 
 The adoption path has no notion of whether a repository may be adopted at all. Every step assumes
 the answer is yes and asks only how.
 
-The failure was observed, not hypothesised. `StandardsOrchestrator`'s `README.md` opens with
-`⛔ FROZEN`, and its `FROZEN.md` states "Do not adopt this repository into a governed project. Do
-not extend it." The documented adoption sequence ran and wrote five files into it before anything
+The failure was observed, not hypothesised. `StandardsOrchestrator`'s `README.md` carries a `⛔ FROZEN`
+banner, and its `FROZEN.md` states "Do not adopt this repository into a governed project. Do not
+extend it." The documented adoption sequence ran and wrote five files into it before anything
 consulted that status ([#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16);
 [plan item](../project-plan-breakdown/07-distributed-validation-and-ci.md)). The mutation happened
 at `/codebase-docs`, which [`INSTRUCTIONS.md`](../../INSTRUCTIONS.md) step 4 directs an agent to run
-and which precedes, or stands apart from, `standards init`. A guard inside `init` therefore would not
-have prevented it, and `scripts/standards.mjs` at `e341dba` consults no repository status anywhere
-(`COMMANDS` is `audit`, `validate`, `init`).
+and which precedes, or stands apart from, `standards init`. A guard inside `init` alone therefore
+would not have prevented it, and `scripts/standards.mjs` at `e341dba` consults no repository status
+anywhere (`COMMANDS` is `audit`, `validate`, `init`).
 
 This is a different defect from [#2](https://github.com/mikeycdavis/EngineeringStandards/issues/2).
 That one is the entrypoint misreading *what kind* of eligible repository it sees; this one is the
 adoption path never asking whether the repository is eligible.
 
-Two properties of the problem shape the decision. First, the question arises before the project has
-adopted anything, so answering it cannot depend on a separate enforcement repository being present.
-Second, the dangerous error is asymmetric: wrongly refusing an eligible repository costs one owner
-override; wrongly permitting a frozen one is an unauthorised mutation of a repository the tool had
-no standing to touch.
+Two properties shape the decision. First, the question arises before the project has adopted
+anything, so answering it cannot depend on a separate enforcement repository being present. Second,
+the dangerous error is asymmetric: wrongly refusing an eligible repository costs one owner override;
+wrongly permitting a frozen one is an unauthorised mutation of a repository the tool had no standing
+to touch.
+
+## Decision record
+
+Seven decisions were taken on **2026-10-12T16:52:55Z** (owner approval of the revision-2
+recommended bundle of the ST-06 decision packet, relayed to this record by the coordinating
+session). **Revision 1 of the packet is superseded**; its README rule ("first non-blank line") must
+not be cited, because it would not have fired on the evidenced README (see "The vocabulary").
+
+| # | Decision | Chosen | Recorded as |
+| --- | --- | --- | --- |
+| Q1 | Signal vocabulary | A | exactly two evidenced signals: `frozen-file`, `readme-frozen-banner`, with the corrected per-line README rule |
+| Q2 | `init` and the resolver | A | `init` consults the same resolver; refuses with exit `2` and writes nothing; same override flag; INDETERMINATE not overridable |
+| Q3 | Override carrier | A | repeatable per-invocation `--override-signal=<id>`; nothing persisted; binding rules 1-7 under D2 |
+| Q4 | `FROZEN.md` with no listed phrase | A | INDETERMINATE (`no-listed-phrase`), not overridable |
+| Q5 | Machine-readable output | C | **no JSON contract is frozen here**; human output only; the machine contract is deferred to a later ADR |
+| Q6 | Frozen-surface reading | A | additive `MINOR` (2.0.0 to 2.1.0); the new frozen surface is the command name, the three state names, and the exit codes |
+| Q7 | Matching rules | A | ASCII-case-insensitive filenames, every case-folded match inspected, root only, target is the directory given with no walk-up |
+
+Decisions D1-D5 of 2026-10-11 stand and are restated where they apply: D1 closed file-based
+vocabulary; D2 named per-signal overrides with INDETERMINATE not overridable; D3 a read-only
+`eligibility` subcommand; D4 this record before implementation; D5 Standard 22 step 0 with no
+catalog rule.
 
 ## Decision
 
-The owner decided D1-D5 on 2026-10-11. Each is recorded with what it fixes and what this ADR adds to
-make it implementable.
-
-### D1 — A closed, file-based signal vocabulary
+### D1 — A closed, file-based signal vocabulary (Q1 A, Q7 A)
 
 Eligibility is established from a **closed list** of file-based signals, listed with exact filenames
-and phrases below. The list is data in the implementation, closed in the sense that a signal absent
-from it is not a signal: adding one is a documented change with its own fixture, not a heuristic the
-tool may grow on its own. The list is not open-ended pattern matching over prose.
+and phrases below. A signal absent from the list is not a signal: adding one is a documented change
+with its own fixture, not a heuristic the tool may grow. The list is not open-ended pattern matching
+over prose.
 
-Three states, kept distinct from — never merged into — compliance status:
+Three states, kept distinct from, never merged into, compliance status:
 
 ```text
 IN_SCOPE   OUT_OF_SCOPE   INDETERMINATE
@@ -62,502 +83,410 @@ IN_SCOPE   OUT_OF_SCOPE   INDETERMINATE
 
 #### The vocabulary
 
-The owner's list was not available to the author of this record when it was written. This section
-is therefore derived **only from evidence in the repositories**, and every candidate the evidence does
-not support is marked `UNDECIDED` rather than invented. The evidence is the
-`StandardsOrchestrator` banner and `FROZEN.md` quoted in #16 and in plan item 07, re-read for this
-record from a local copy of that repository (README line 3, and the closing paragraph of
-`FROZEN.md`).
+Derived **only from evidence in the repositories**: the `StandardsOrchestrator` `FROZEN.md` and
+`README.md` quoted in #16 and plan item 07, re-read from a local copy.
 
 | Signal id | Source | Fires when | Evidence |
 | --- | --- | --- | --- |
-| `frozen-file` | file named `FROZEN.md` in the repository root | the file is readable and its text, normalised as in "Text rules" below, contains the substring `do not adopt this repository into a governed project` or the substring `do not extend it` | `FROZEN.md` of StandardsOrchestrator: "Do not adopt this repository into a governed project. Do not extend it." (both sentences, final paragraph) |
-| `readme-frozen-banner` | `README.md` in the repository root | some line of the file is a blockquote line whose text, after the marker stripping in "Text rules" below, begins with `⛔ FROZEN` (U+26D4, U+0020, `FROZEN`, case-sensitive) | StandardsOrchestrator `README.md` line 3 (line 1 is the `# StandardsOrchestrator` title, so the banner is not the first line): a blockquote whose bold text begins `⛔ FROZEN — not the portfolio authority.` and ends by pointing at `FROZEN.md` |
+| `frozen-file` | a file in the repository root named `FROZEN.md` (ASCII case-insensitive) | readable, and its text, normalised as in "Text rules", contains the substring `do not adopt this repository into a governed project` or the substring `do not extend it` | `FROZEN.md`: "Do not adopt this repository into a governed project. Do not extend it." |
+| `readme-frozen-banner` | a file in the repository root named `README.md` (ASCII case-insensitive) | some line of the file is a blockquote line whose text, after the stripping in "Text rules", begins with `⛔ FROZEN` (U+26D4, U+0020, `FROZEN`, case-sensitive) | README line 3 (line 1 is the `# StandardsOrchestrator` title, so the banner is not the first line): a blockquote whose bold text begins `⛔ FROZEN — not the portfolio authority.` |
 
-Filename comparison is ASCII-case-insensitive on the directory listing (ASCII letters lowercased; no Unicode or locale case folding), because a differently cased file is
-the same signal on the platforms this repository targets and treating it as absent would be the
-unsafe direction. On a case-sensitive filesystem the root can hold several entries that fold to
-the same name (`FROZEN.md` and `frozen.md`, or `README.md` and `Readme.md`). **Every** case-folded
-match is inspected, none is chosen in preference to another, and each is a source in its own right:
-any match whose signal fired controls the result as a fired signal, and any match that is
-indeterminate (unreadable, not classifiable by `lstat`, not a regular file including any symbolic link, over the read cap, not UTF-8) makes the result
-`INDETERMINATE`, whatever the other matches say. A benign sibling never clears a fired or
-indeterminate one. Matching is on the repository root only; nested directories are not searched,
-because a nested `FROZEN.md` describes a subtree and not the repository.
+**Not in the vocabulary** (not evidenced; none is implemented): `ARCHIVED.md`, `SUPERSEDED.md`,
+`DEPRECATED.md`, `HISTORICAL.md`, `DO-NOT-ADOPT.md`; README banners for those words; the phrase
+"retained as comparative design evidence only"; GitHub's repository-level `archived` flag (not
+file-based, and it needs a network call a read-only local command must not make). Each may join
+later as a reviewed change with its own fixture.
+
+#### Matching rules (Q7 A)
+
+- Filename comparison is **ASCII-case-insensitive** on the directory listing: ASCII letters are
+  lowercased, with no Unicode or locale case folding. A differently cased file is the same signal,
+  and treating it as absent would be the unsafe direction.
+- On a case-sensitive filesystem the root can hold several entries that fold to the same name
+  (`FROZEN.md` and `frozen.md`, or `README.md` and `Readme.md`). **Every** case-folded match is
+  inspected, none is preferred, and each is a source in its own right: any match whose signal fired
+  controls the result as a fired signal, and any match that is indeterminate makes the result
+  `INDETERMINATE`, whatever the other matches say. A benign sibling never clears a fired or
+  indeterminate one.
+- Lookup is the **root of the directory given** only. Nested directories are not searched, because a
+  nested `FROZEN.md` describes a subtree and not the repository. The command does not walk up to a
+  `.git` or `package.json` root the way `audit` does; the target is exactly the directory named (or
+  the current working directory when none is named).
+- The command reads only entries whose lowercased name is one of the two source names, and reads
+  **every** such entry: the count of two names is not a bound on the files read. Each file is subject
+  to the per-file read cap, and no other ceiling on matching entries exists.
 
 #### Text rules
 
-Every character-class decision in the vocabulary is fixed here, ASCII-only and locale-independent, so
-that two implementations cannot differ on Unicode whitespace or case. Where this record is silent,
-nothing is implied.
+Every character-class decision is fixed here, ASCII-only and locale-independent, so two
+implementations cannot differ on Unicode whitespace or case. Where this record is silent, nothing is
+implied.
 
 - **Decoding.** A matching file is read as bytes, no larger than the audit collector's per-file read
   cap (`MAX_READ_BYTES`, 400,000 bytes at e341dba; a file strictly larger is `over-read-cap`) and
-  decoded as UTF-8 with errors fatal (any invalid sequence is `not-utf8`). One leading U+FEFF is
-  removed if present. NUL and other control characters are valid text.
+  decoded as UTF-8 with errors fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is
+  removed. NUL and other control characters are valid text.
 - **Line terminators.** LF, CRLF and a lone CR each end a line.
-- **Blank, and the whitespace set.** The whitespace set is exactly U+0020 and U+0009. A line is blank
-  if it is empty or contains only that set. U+00A0 (no-break space), U+3000, U+200B and every other
-  Unicode space or format character are **not** whitespace and make a line non-blank; the ASCII set
-  is chosen because it is the set Markdown renderers treat as indentation, and because a smaller
-  set never makes a signal fire on a character the author did not type as a space.
+- **Whitespace and blank.** The whitespace set is exactly U+0020 and U+0009. A line is blank if it is
+  empty or contains only that set. U+00A0, U+3000, U+200B and every other Unicode space or format
+  character are **not** whitespace; the ASCII set is the one Markdown treats as indentation, and a
+  smaller set never makes a signal fire on a character the author did not type as a space.
 - **README banner.** For each line: remove leading whitespace-set characters; the line is a
   blockquote line only if its next character is `>`; then repeatedly remove any leading character
-  from `>`, `*`, U+0020, U+0009 until none remains; the signal fires if the remainder begins with the
-  exact code points `⛔ FROZEN`. The match is a prefix match with no word-boundary check and is case-
-  sensitive. `_` emphasis, a variation selector after `⛔`, and a leading U+00A0 are not stripped or
-  skipped, so such a banner does not fire (a stated limit of the closed vocabulary, not a fault).
-  The rule does not use "the first line": the evidenced README opens with a title and carries the
-  banner on line 3, so a position bound would need an invented number. A line anywhere in the file
-  that meets the rule fires; a false match fails closed (OUT_OF_SCOPE, overridable).
-- **`FROZEN.md` phrases.** After decoding: lowercase ASCII letters `A`-`Z` only (all other
-  characters unchanged); replace each maximal run of U+0020, U+0009, U+000A and U+000D with a single
-  U+0020; then test for the two phrases as plain substrings, with no boundary check (so
-  `do not extend items` also matches `do not extend it`; a false match fails closed). A phrase
-  broken by U+00A0, or with a different hyphen or apostrophe, does not match, and a readable file
-  with no match is `no-listed-phrase` INDETERMINATE.
-- **Identifiers.** Signal ids, flag names and override ids are compared exactly and
-  case-sensitively; vocabulary ids are lowercase ASCII with hyphens.
+  from `>`, `*`, U+0020, U+0009; the signal fires if the remainder begins with the exact code points
+  `⛔ FROZEN`. The match is a case-sensitive prefix match with no word-boundary check. `_` emphasis, a
+  variation selector after `⛔`, and a leading U+00A0 are not stripped or skipped, so such a banner
+  does not fire (a stated limit of a closed vocabulary). The rule does not use "the first line": the
+  evidenced README opens with a title and carries the banner on line 3, so a position bound would
+  need an invented number. A line anywhere in the file that meets the rule fires; a false match
+  fails closed (`OUT_OF_SCOPE`, overridable).
+- **`FROZEN.md` phrases.** After decoding: lowercase ASCII letters `A`-`Z` only; replace each
+  maximal run of U+0020, U+0009, U+000A and U+000D with one U+0020; then test the two phrases as
+  plain substrings with no boundary check (`do not extend items` also matches `do not extend it`; a
+  false match fails closed). A phrase broken by U+00A0, or with a different hyphen or apostrophe,
+  does not match.
+- **Identifiers.** Signal ids and override ids are compared exactly and case-sensitively;
+  vocabulary ids are lowercase ASCII with hyphens.
 - **No locale.** No comparison, case change or sort consults the process locale or a Unicode
-  normalisation form. Strings are compared as UTF-16 code units or bytes (equivalent for the ASCII
-  strings involved).
-
-**Candidates not evidenced — `UNDECIDED`, not in the vocabulary.** #16 and plan item 07 name the
-*categories* "frozen, archived, historical, superseded, do not adopt/extend" but give no filename or
-phrase for any except frozen. These are listed so the owner can adopt or reject each by name; none
-is implemented until chosen:
-
-| Candidate | Why it is not in the table |
-| --- | --- |
-| `ARCHIVED.md`, `SUPERSEDED.md`, `DEPRECATED.md`, `HISTORICAL.md`, `DO-NOT-ADOPT.md` | no repository in evidence carries such a file |
-| a README banner with `ARCHIVED`, `SUPERSEDED`, `DEPRECATED` or `HISTORICAL` | no repository in evidence carries one |
-| the phrase `retained as comparative design evidence only` | evidenced, but it sits in the same README blockquote as `⛔ FROZEN`; adding it adds false-positive surface and no coverage, so it is recommended **not** to adopt |
-| GitHub's repository-level `archived` flag | evidenced as a concept, but it is not file-based (D1) and needs a network call, which a read-only local subcommand must not make |
+  normalisation form; strings are compared as UTF-16 code units or bytes.
 
 #### What `IN_SCOPE` does and does not say
 
-`IN_SCOPE` means: every file matching a listed source name was readable and none of the listed signals fired. It is not a
-claim that the repository is archived-free, and it cannot be, because the vocabulary is closed. A
-repository that is frozen only by an announcement in a wiki, an issue, or a differently worded file
-is `IN_SCOPE` to this tool. That is a stated limit of D1, and it is why D5 puts the same question to
-the person following the procedure as well as to the tool.
+`IN_SCOPE` means: every file matching a listed source name was readable and none of the listed signals
+fired. It is not a claim that the repository is archive-free, and cannot be, because the vocabulary
+is closed. A repository frozen only by a wiki note, an issue, or a differently worded file is
+`IN_SCOPE` to the tool. That is a stated limit of D1, and it is why D5 puts the same question to the
+person following the procedure as well as to the tool.
 
-### `INDETERMINATE`
+### `INDETERMINATE` (Q4 A)
 
 `INDETERMINATE` is "whether this repository is frozen could not be determined". It is never
-permission to write. It is the result when any of these holds:
+permission to write, and it cannot be overridden. It is the result when any of these holds, each
+named by the condition used in the human report and in tests:
 
-| Condition | Why it is not `IN_SCOPE` |
-| --- | --- |
-| `FROZEN.md` (ASCII-any case) exists, is a regular file, but cannot be opened or read (`unreadable`; a read that fails after a successful `lstat`, including a disappearance, is this reason) | the signal's presence is established and its content is not |
-| `FROZEN.md` exists, is readable, and contains neither listed phrase | a signal file whose meaning the closed vocabulary does not cover is not evidence of eligibility |
-| a matching entry is returned by the listing but `lstat` on it fails (it disappeared, or its metadata cannot be accessed) | it cannot be classified, so neither its presence nor its content is known; reason `stat-failed` |
-| a matching entry (`FROZEN.md`, `README.md`, ASCII-any case) is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | the link is not followed, so its content is not what was examined (see "Symbolic links" below) |
-| `FROZEN.md` or `README.md` is strictly larger than the audit collector's per-file read cap (`over-read-cap`), or does not decode as UTF-8 under fatal decoding (`not-utf8`) | the banner could be in the part not examined |
-| `README.md` exists but cannot be read | a banner cannot be ruled out |
-| the root directory cannot be listed | no source could be examined |
+| Condition | Name | Why it is not `IN_SCOPE` |
+| --- | --- | --- |
+| a matching regular file cannot be opened or read (including a read that fails after a successful `lstat`, or a disappearance) | `unreadable` | the signal's presence is established and its content is not |
+| `FROZEN.md` is readable and contains neither listed phrase (empty, whitespace-only, or other text) | `no-listed-phrase` | a file named for freezing whose meaning the closed vocabulary does not cover is not evidence of eligibility (Q4 A) |
+| a matching entry is returned by the listing but `lstat` on it fails | `stat-failed` | it cannot be classified, so neither its presence nor its content is known |
+| a matching entry is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | `not-regular-file` | the link is not followed, so its content is not what was examined |
+| a matching file is strictly larger than the per-file read cap | `over-read-cap` | the banner could be in the part not examined |
+| a matching file does not decode as UTF-8 under fatal decoding | `not-utf8` | the text cannot be read |
+| the target's directory listing cannot be opened, or fails before its end | `listing-incomplete` | absence of a source cannot be established |
 
-An absent `README.md` or `FROZEN.md` is not `INDETERMINATE`; it is an absent signal.
+An absent `README.md` or `FROZEN.md` is not `INDETERMINATE`; it is an absent signal. The condition
+names are the vocabulary of this record and of the tests; the layout in which a report prints them is
+not frozen (Q5 C).
+
+**Partial listings.** For a streamed or injected listing that yields entries and then fails, every
+entry yielded before the failure **is** inspected and classified, and signals derive from those
+entries as usual. Nothing observed is discarded: a banner or `FROZEN.md` seen before the failure is
+still reported as fired. No entry is invented for names never yielded. The result is `INDETERMINATE`
+(`listing-incomplete`) even when a signal fired and is not overridden: the repository is not known to
+be only what was seen, so the state is not `OUT_OF_SCOPE`, and an override cannot change it. A
+signal with no fired entry in an incomplete listing is reported indeterminate, not "not fired",
+because absence was not established.
 
 #### Symbolic links
 
-One rule covers every source entry: **a symbolic link is never followed, and is `INDETERMINATE` with
-reason `not-regular-file`.** The entry is classified from `lstat` on the name as listed; the target
-of the link is not opened, resolved, or inspected.
+One rule covers every source entry: **a symbolic link is never followed, and is `INDETERMINATE`
+(`not-regular-file`).** The entry is classified from `lstat` on the name as listed; the link's target
+is not opened, resolved or inspected.
 
-- link to a readable regular file, link to a directory, dangling link, and link that leaves the
-  target tree (absolute path or `..`): all the same result, `INDETERMINATE` / `not-regular-file`.
-  There is no per-target-type decision to diverge on.
-- Why not follow: following needs a boundary rule (inside the tree, outside, across mounts) and a
-  loop rule, each a new place for two implementations to disagree, and a link that leaves the tree
-  makes the verdict depend on a repository the caller did not name. Failing closed is one sentence.
+- A link to a regular file, a link to a directory, a dangling link, and a link leaving the target
+  tree (absolute or `..`) all give the same result, so there is no per-target decision to diverge on.
+- Why not follow: following needs a boundary rule and a loop rule, each a new place to disagree, and
+  a link leaving the tree makes the verdict depend on a repository the caller did not name.
 - Cost, stated: a repository whose `README.md` is a link (for example to `docs/README.md`) is
-  `INDETERMINATE`, and D2 makes that un-overridable. The remedy is to replace the link with a regular
-  file in the target repository by the owner's own act. This is a design choice for owner
-  confirmation, not an owner decision recorded in D1-D5.
-- Scope: the rule is about entries inside the target directory. The target argument itself is
-  resolved normally (a symlink to a directory is a valid target; a symlink to a regular file is
-  `not-a-directory`; a dangling one is `no-such-directory`).
-- Listing: an entry that is a link is still an entry whose case-folded name matches, so it counts
-  as a source and is reported in `entries[]`; it cannot be skipped as "not a file".
+  `INDETERMINATE`, and that cannot be overridden. The remedy is to replace the link with a regular
+  file in the target repository by the owner's own act.
+- Scope: the rule is about entries inside the target. The target argument itself is resolved
+  normally: a symlink to a directory is a valid target; one to a regular file is not a directory.
+- A link whose name matches still counts as a source; it cannot be skipped as "not a file".
 
-Precedence: any `INDETERMINATE` source makes the result `INDETERMINATE`; otherwise any signal that
-fired and was not overridden makes it `OUT_OF_SCOPE`; otherwise `IN_SCOPE`. The report names every
-signal and every source with its own state, so the headline never hides a component.
+#### Precedence
 
-### D2 — Named per-signal overrides; `INDETERMINATE` cannot be overridden
+Any `INDETERMINATE` source or an incomplete listing makes the result `INDETERMINATE`; otherwise any
+signal that fired and was not overridden makes it `OUT_OF_SCOPE`; otherwise `IN_SCOPE`. A human
+report names every signal and every matching entry with its own result, so the headline never hides a
+component. The report layout is not frozen.
+
+### D2 — Named per-signal overrides (Q3 A)
 
 An owner may allow adoption of a repository whose signals fired, by naming **each** signal id to
-override. An override applies to exactly the signal it names:
-
-- naming `frozen-file` does not override `readme-frozen-banner`, and an unnamed fired signal keeps
-  the result `OUT_OF_SCOPE`;
-- there is no wildcard, no `all`, and no override of a signal that did not fire (that is reported
-  as an unused override, not silently ignored);
-- `INDETERMINATE` cannot be overridden. The way out is to make the evidence determinable: fix the
-  unreadable file, or add or remove the signal in the target repository by the owner's own act.
-
-Overridden signals remain in the report under `overridden`, so `IN_SCOPE` reached through an
-override reads differently from `IN_SCOPE` with nothing fired.
-
-**Carrier — proposal, not an owner decision.** D2 fixes the semantics and not the transport. This
-record proposes a repeatable per-invocation flag, `--override-signal=<signal-id>`, because anything
-persisted in the target repository is itself a write into a repository that may be forbidden to
-write to, and anything persisted elsewhere is a new store to govern. The invocation is the unit of
-consent. The owner is asked to confirm or replace this carrier at review.
-
-**Binding limit — stated, not solved.** The tool cannot prove that a human typed the override. An
-agent can pass the same flag. The mitigations are procedural, not cryptographic: Standard 22 step 0
-(D5) states that an override is passed only on the owner's explicit instruction in the current
-conversation and that an agent does not choose one; the report prints the overridden signal ids so
-the invocation is reviewable; and, in line with [ADR 0005](0005-attestations-are-recorded-human-evidence.md),
-nothing in the tool presents an override as attested. This is a known weakness and is recorded as
-one. An override is a convenience for a decision that was already made elsewhere, not evidence that
-it was.
-
-### D3 — A new read-only `eligibility` subcommand
+override. The carrier is a repeatable per-invocation flag:
 
 ```text
-standards eligibility [<dir>] [--json] [--override-signal=<id>]...
+standards eligibility <dir> --override-signal=frozen-file
+standards eligibility <dir> --override-signal=frozen-file --override-signal=readme-frozen-banner
+standards init <dir> --override-signal=frozen-file
 ```
 
-It reads only root entries whose case-folded name is one of the two source names in the vocabulary
-(`FROZEN.md`, `README.md`), and reads **every** such entry: the count of two names is not a bound on
-the count of files read. Each file is subject to the per-file read cap (over it is `INDETERMINATE`),
-and no other ceiling on the number of matching entries is introduced; an incomplete root listing is
-`INDETERMINATE`, never a silent stop after some entries. It performs no write of any kind, runs no process
-and makes no network call. It does not run the audit scan, load a policy, or require one: eligibility
-must be answerable in a repository that has adopted nothing.
+Nothing is persisted: not in the target repository, which may be forbidden to write to, and not in a
+new store. The invocation is the unit of consent. Binding rules:
 
-#### The frozen-surface interpretation
+1. An override names one signal id; there is no wildcard and no `all`.
+2. An override applies only to a signal that fired. Naming a signal that did not fire is reported as
+   unused, never silently ignored, and does not change the state.
+3. An override never changes `INDETERMINATE`: if any source is indeterminate or the listing is
+   incomplete, the state is `INDETERMINATE` whatever was named.
+4. A fired signal that is not named keeps the state `OUT_OF_SCOPE`. Naming `frozen-file` does not
+   clear `readme-frozen-banner`.
+5. An unknown signal id is an invocation error (exit `2`), not an ignored flag.
+6. The state is derived from the signal results only, so there is no ordering between flags on the
+   command line; duplicates are collapsed.
+7. **Binding limit, stated and not solved.** The tool cannot prove that a human typed the flag. An
+   agent can pass it. The mitigation is procedural: Standard 22 step 0 (D5) says an override is passed
+   only on the owner's explicit instruction in the current conversation, and an agent does not choose
+   one; the report prints applied overrides so the invocation is reviewable; and, in line with
+   [ADR 0005](0005-attestations-are-recorded-human-evidence.md), nothing presents an override as
+   attested. An override is a convenience for a decision made elsewhere, not evidence that it was.
 
-[ADR 0004](0004-audit-and-validate-are-separate-commands.md) freezes "CLI command names and their
-high-level semantics" and "exit-code meanings", and makes any change to the frozen list a `MAJOR`
-release. This record interprets that as follows, and asks the owner to confirm the interpretation:
+### D3 — A read-only `eligibility` subcommand, and `init` (Q2 A)
 
-- The frozen items are the **existing** commands' names, high-level semantics and exit-code
-  meanings. `audit`, `validate` and `init` keep every one of them unchanged. Nothing in this decision
-  edits them.
-- **Adding** a subcommand is additive: [Standard 21](../../standards/21-versioning.md) R2 classes
-  "new backward-compatible rule or capability" as `MINOR`, and a currently compliant project is
-  unaffected. The subcommand is not a rule, and D5 binds no rule, so no project can newly fail.
-- What the addition does do is create **new frozen surface**: once released, `eligibility`'s name,
-  its three states, its exit codes and the `--json` document specified in "The `--json` document
-  (normative)" below, with its key names, value types and closed value lists, are frozen in the ADR
-  0004 sense, and changing any is `MAJOR`. That is why the vocabulary, the states and the document
-  are specified here before code exists.
-- `eligibility` is neither an `audit` nor a `validate`. It produces no finding, score, assurance or
-  compliance status, so ADR 0004's "never letting `audit` grow a compliance verdict" is not engaged.
-- Honest precedent note: `init` is listed in the 1.0.0 surface itself in the changelog, so there is
-  **no** precedent in this repository of a `standards` subcommand added after a release. The
-  interpretation rests on Standard 21 R2, not on a prior case.
-- This record does not release anything. Whether the addition ships as a framework `MINOR`, and the
-  `VERSION` and `CHANGELOG.md` entries, belong to the implementation pull request that adds the
-  command, and the release itself is a separate owner act.
+```text
+standards eligibility [<dir>] [--override-signal=<id>]...
+```
 
-#### Exit codes
+It performs no write of any kind, runs no process and makes no network call. It does not run the
+audit scan, load a policy, or require one: eligibility must be answerable in a repository that has
+adopted nothing.
 
-[Standard 23](../../standards/23-standards-validator-cli.md) R3 closes the exit set to `0`, `1`, `2`
-and defines `2` as "could not reach a verdict". `eligibility` uses that set and adds no code:
+**`init` consults the same resolver** (Q2 A). Before any write, `init` resolves eligibility with the
+same code and the same override flag. On `OUT_OF_SCOPE` (not overridden) or `INDETERMINATE` it
+exits `2`, writes nothing, and names the signals; `--dry-run` runs the same check and reports the same
+refusal. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
+unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
+classify and write exactly as before (a test).
 
-| Result | Exit | Reading under Standard 23 R3 |
+#### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
+
+**No machine-readable (`--json`) output is specified or frozen by this record** (Q5 C). In this
+first version `eligibility` writes human text. The only normative output surface is:
+
+- the three state names `IN_SCOPE`, `OUT_OF_SCOPE`, `INDETERMINATE`, spelled exactly, as the words a
+  report uses for the result; and
+- the exit-code mapping:
+
+| Result | Exit | Reading under [Standard 23](../../standards/23-standards-validator-cli.md) R3 |
 | --- | --- | --- |
 | `IN_SCOPE` | `0` | completed; nothing forbids adoption |
 | `OUT_OF_SCOPE` | `1` | completed; the repository declares itself not adoptable |
 | `INDETERMINATE` | `2` | the tool could not reach a verdict |
-| any invocation error: `unknown-flag`, `missing-flag-value`, `unknown-signal-id`, `wrong-argument-count`, `no-such-directory`, `not-a-directory`, `internal-error` (see the `--json` document) | `2` | invocation error |
+| any invocation error (below) | `2` | invocation error |
 
 Only `0` permits proceeding, so every uncertain path fails closed. `1` and `2` are told apart by the
-`state` field of the `--json` output (specified next), which carries `IN_SCOPE`, `OUT_OF_SCOPE`,
-`INDETERMINATE` or, for an invocation error, no `state` key at all. A caller must not infer
-eligibility from the absence of a non-zero exit that it did not read.
+human report, not by a frozen field; a caller that needs only to proceed or stop uses the exit code.
+Layout, wording, ordering of lines, and where a report is printed are **not** frozen, per
+[ADR 0004](0004-audit-and-validate-are-separate-commands.md) "explicitly not frozen". Because no
+machine format exists yet, `--json` is **not accepted** (it is `unknown-flag`), so adding it later
+does not collide with a meaning an earlier release gave it.
 
-The existing CLI spells the machine-output flag `--json` (`parseArgs` in `scripts/standards.mjs`);
-`eligibility` uses the same spelling rather than the `--format json` form that some prose uses.
+The machine-readable contract is deferred. The reviewed draft of it, and the issues review raised
+against that draft, are preserved in the appendix as input to the later ADR and are not normative.
 
-#### The `--json` document (normative)
+#### The frozen-surface interpretation (Q6 A)
 
-Without `--json` the output is human text and carries no contract (ADR 0004, "explicitly not
-frozen"). With `--json`, stdout is exactly one JSON object, UTF-8, followed by a newline, and
-nothing else; human diagnostics go to stderr. Two shapes exist, told apart by which of `state` and
-`error` is present; exactly one is.
+[ADR 0004](0004-audit-and-validate-are-separate-commands.md) freezes "CLI command names and their
+high-level semantics" and "exit-code meanings", and makes any change to the frozen list a `MAJOR`
+release. This record interprets that as follows:
 
-**Success (exit `0`, `1` or `2`; `state` present, `error` absent):**
+- The frozen items are the **existing** commands' names, high-level semantics and exit-code
+  meanings. `audit`, `validate` and `init` keep every one of them. (`init` gains a refusal for a
+  repository carrying a listed signal, a case that had no defined behaviour before; every previously
+  classified fixture is unchanged.)
+- **Adding** a subcommand is additive: [Standard 21](../../standards/21-versioning.md) R2 classes
+  "new backward-compatible rule or capability" as `MINOR`, and no currently compliant project can
+  newly fail, since D5 binds no rule. The addition ships as framework `MINOR`, 2.0.0 to 2.1.0.
+- The addition creates **new frozen surface**: once released, the command name `eligibility`, the
+  three state names, and the exit codes above are frozen in the ADR 0004 sense, and changing any is
+  `MAJOR`. Nothing else is frozen: flag spellings, report layout and diagnostic text are human-facing
+  and may change in a `MINOR`.
+- `eligibility` is neither an `audit` nor a `validate`. It produces no finding, score, assurance or
+  compliance status, so ADR 0004's "never letting `audit` grow a compliance verdict" is not engaged.
+- Honest precedent note: `init` is listed in the 1.0.0 surface itself in the changelog, so this
+  repository has **no** precedent of a `standards` subcommand added after a release. The reading
+  rests on Standard 21 R2, not on a prior case.
+- This record releases nothing. `VERSION` and `CHANGELOG.md` belong to the implementation pull
+  request that adds the command, and the release is a separate owner act.
 
-| Key | Type | Allowed values / meaning |
+#### Invocation errors (human diagnostics, exit `2`)
+
+`eligibility` does not reuse the lenient `parseArgs` of `audit` and `validate`, which takes the first
+non-flag token and ignores unknown flags: silently accepting one of several paths, or ignoring a
+flag, is the unsafe direction here. The conditions below are named so tests can assert them; the
+diagnostic wording is not frozen. After the subcommand name the accepted tokens are exactly:
+
+| Token | Rule | Violation (condition) |
 | --- | --- | --- |
-| `schemaVersion` | string | `"1.0.0"`, semantic, independent of the audit/validate envelope's own value (ADR 0004) |
-| `command` | string | always `"eligibility"` |
-| `state` | string | `"IN_SCOPE"`, `"OUT_OF_SCOPE"`, `"INDETERMINATE"` |
-| `exitCode` | integer | `0` for `IN_SCOPE`, `1` for `OUT_OF_SCOPE`, `2` for `INDETERMINATE`; always equals the process exit code |
-| `target` | string | the canonical absolute path of the directory examined: the result of `realpath` on the argument (symbolic links in the path resolved), with no further rewriting; see "Field derivations" |
-| `listing` | string | `"complete"` when the target's directory listing was opened and read to its end without error, else `"incomplete"` (the listing failed to open or failed part-way); `"incomplete"` forces `state` `"INDETERMINATE"`; see "Field derivations" |
-| `signals` | array | exactly one record per vocabulary signal, in vocabulary order, whether or not it matched anything |
-| `overrides` | object | see below |
+| `<dir>` (a token not starting with `-`) | at most one; none means the current working directory, as for `audit`; an empty string is a path that does not exist | two or more: `wrong-argument-count` |
+| `--override-signal=<id>` | `<id>` non-empty and one of the vocabulary ids; repeatable; duplicates collapsed | no `=`, or an empty id: `missing-flag-value`; an id not in the vocabulary: `unknown-signal-id` |
+| `--help` / `-h` | prints usage to stdout, exit `0`, and wins over every other token | none |
+| anything else beginning with `-`, including `--json`, `--dir=...`, `--strict`, `--max-total-read-bytes=...`, `--`, and a value given as a separate token (`--override-signal frozen-file`) | not accepted | `unknown-flag` (a separate-token value is `missing-flag-value` first, since the flag has no `=`) |
 
-Each `signals[]` record:
-
-| Key | Type | Allowed values / meaning |
-| --- | --- | --- |
-| `id` | string | a vocabulary signal id: `"frozen-file"`, `"readme-frozen-banner"` |
-| `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"`; `INDETERMINATE` if any entry is, else `FIRED` if any entry fired, else `INDETERMINATE` if `listing` is `"incomplete"` (absence was not established), else `NOT_FIRED` (including when no entry matched) |
-| `overridden` | boolean | `true` only when `result` is `"FIRED"` and the id was named in an override; never `true` for any other `result` |
-| `entries` | array | one record per root entry whose ASCII-lowercased name equals this signal's lowercased source name, sorted by `name` in ascending code-unit (byte-wise) order |
-
-Each `entries[]` record:
-
-| Key | Type | Allowed values / meaning |
-| --- | --- | --- |
-| `name` | string | the entry's name exactly as the directory listing returned it, original case; always ASCII, because only ASCII-case-fold matches are entries |
-| `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"` |
-| `reason` | string or null | `null` unless `result` is `"INDETERMINATE"`, then one of `"unreadable"`, `"stat-failed"`, `"not-regular-file"`, `"over-read-cap"`, `"not-utf8"`, `"no-listed-phrase"` |
-
-`overrides` object:
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `requested` | array of string | signal ids named by the caller, in order of first occurrence on the command line, de-duplicated |
-| `applied` | array of string | the requested ids that matched a `FIRED` signal, in `requested` order |
-| `unused` | array of string | the requested ids that were valid but whose signal did not fire (reported, never silently ignored), in `requested` order |
-
-**Field derivations (pinned so two implementations emit the same document):**
-
-- **`target`.** The argument (or the current working directory when none was given) is passed to
-  `realpath` (the platform's native canonical form), and the string it returns is emitted unchanged.
-  A target that is itself a symlink to a directory is therefore reported as the directory it points
-  to, so repository identity is stable however it was reached; the lexical path the caller typed is
-  not reported and no second field carries it. The value has no trailing separator except for a
-  filesystem root; it uses the platform's own separators (backslashes on Windows, JSON-escaped as
-  `\\`), the on-disk letter case that `realpath` returns, and the drive letter as returned. It is not
-  normalised across platforms and a consumer must not compare it between machines. If the argument
-  exists but `realpath` fails: `ENOENT` or a symlink loop is `no-such-directory`, `ENOTDIR` is
-  `not-a-directory`, and any other failure (for example a path component that cannot be searched) is
-  `internal-error`, so the repository is never reported on an unconfirmed identity.
-- **`listing`.** `"incomplete"` only when opening the target's directory listing fails or reading
-  it fails before its end. A failure to `lstat` or read an individual matching entry is that entry's
-  `INDETERMINATE` (with its `reason`), not an incomplete listing.
-- **Partial listings.** One behaviour, for a streamed or injected listing that yields entries and
-  then fails: every entry yielded before the failure **is** inspected, classified and included in
-  `entries[]`, and every signal is derived from those entries as usual. Nothing observed is
-  discarded, so a banner or `FROZEN.md` seen before the failure is still reported `FIRED`. No entry is
-  invented for names that were never yielded. `listing` is `"incomplete"`, and by the existing
-  precedence `state` is `"INDETERMINATE"` even when a signal is `"FIRED"` and un-overridden (the
-  state is not `OUT_OF_SCOPE`: the repository is not known to be only what was seen), and an
-  override cannot change that. A signal with no `FIRED` entry in an incomplete listing is
-  `"INDETERMINATE"` with possibly empty `entries`, not `"NOT_FIRED"`, because absence was not
-  established. A caller that needs the observed signals reads `signals[]`; it must still treat the
-  repository as not eligible.
-- **Entry names and matching.** The comparison lowercases ASCII letters only and compares for
-  equality with `frozen.md` or `readme.md`. Unicode case folding is not used, so names containing
-  non-ASCII characters never match and `name` is always ASCII with no encoding question. Names are
-  emitted as the listing returned them.
-- **Ordering.** `signals` is in vocabulary order (`frozen-file`, then `readme-frozen-banner`).
-  `entries` is sorted by `name`, ascending, comparing UTF-16 code units (equivalently bytes, for
-  ASCII), so `FROZEN.md` precedes `frozen.md` and `README.md` precedes `Readme.md`; the output does
-  not depend on directory enumeration order. The three `overrides` arrays follow the first-occurrence
-  order of `requested`.
-- **Serialisation.** One JSON object, UTF-8, keys as named. Key order and whitespace within the
-  document are not part of the contract; consumers must parse it.
-
-`state` is derived from the records and nothing else: `INDETERMINATE` if `listing` is
-`"incomplete"` or any signal `result` is `"INDETERMINATE"`; otherwise `OUT_OF_SCOPE` if any signal
-is `"FIRED"` with `overridden` `false`; otherwise `IN_SCOPE`. An override can therefore never change
-an `INDETERMINATE`.
-
-**Invocation error (exit `2`; `error` present, `state` absent):**
-
-| Key | Type | Allowed values / meaning |
-| --- | --- | --- |
-| `schemaVersion` | string | `"1.0.0"` |
-| `command` | string | `"eligibility"` |
-| `exitCode` | integer | `2` |
-| `error` | object | `{ "code": string, "message": string }`; `code` is one of `"unknown-flag"`, `"missing-flag-value"`, `"unknown-signal-id"`, `"wrong-argument-count"`, `"no-such-directory"`, `"not-a-directory"`, `"internal-error"`; `message` is human text with no contract |
-
-**Argument grammar (closed).** `eligibility` does not reuse the lenient `parseArgs` of `audit` and
-`validate`, which takes the first non-flag token and ignores unknown flags; silently accepting one
-of several paths, or ignoring a flag, is the unsafe direction here. After the subcommand name the
-accepted tokens are exactly these, in any order:
-
-| Token | Rule | Violation |
-| --- | --- | --- |
-| `<dir>` (a token not starting with `-`) | at most one; none means the current working directory, as for `audit`; an empty string is a path, and does not exist | two or more: `wrong-argument-count` |
-| `--json` | recognised by exact match; repeated occurrences are idempotent and collapsed | none |
-| `--override-signal=<id>` | `<id>` is non-empty and one of the vocabulary ids; repeatable; duplicates collapsed | `--override-signal` with no `=`, or `--override-signal=` with an empty id: `missing-flag-value`; an id not in the vocabulary: `unknown-signal-id` |
-| `--help` / `-h` | prints usage to stdout, exit `0`, no JSON document, and wins over every other token | none |
-| anything else beginning with `-`, including `--dir=...`, `--strict`, `--max-total-read-bytes=...`, `--`, and a value given as a separate token (`--override-signal frozen-file` leaves `frozen-file` as a second `<dir>`) | not accepted | `unknown-flag` (a separate-token value is reported as `missing-flag-value` first, since the flag has no `=`) |
-
-Evaluation is order-independent and reports exactly one error, chosen by this fixed precedence
-and, within one class, by the first offending token in argument order: `unknown-flag`, then
-`missing-flag-value`, then `unknown-signal-id`, then `wrong-argument-count`, then the target checks
-(`no-such-directory`, `not-a-directory`). No directory is examined when any argument error exists,
-so an invalid invocation never reads the target.
-
-Mapping for the target argument, so implementations cannot disagree: a path that does not exist
-(including a dangling symlink) is `no-such-directory`; a path that exists but is not a directory,
-including a symlink that resolves to a regular file, is `not-a-directory`; a path that is a
-directory but whose entries cannot be listed completely is **not** an invocation error, it is the
-success shape with `listing` `"incomplete"` and `state` `"INDETERMINATE"`. `internal-error` is only
-for a fault outside these cases, and a caller that sees it must treat the repository as not eligible.
-
-A caller reading this shape MUST treat the absence of `state` as not eligible. `--json` is
-recognised by exact token match anywhere after the subcommand, before any other validation, so every
-invalid invocation that contains it yields the JSON error shape above and never stdout prose. An
-invalid invocation without `--json` writes its diagnostic to stderr only; exit is `2` in both.
-
-**Proposed shape, owner to confirm.** D1-D5 fix the states, the per-signal override, the exit codes
-and the `state` field. They do not fix the following, which this record supplies so that two
-implementations cannot both claim to conform; each is open to the owner's change before release:
-the key names `signals`, `entries`, `overrides`, `listing`, `target`, with `target` as the canonical `realpath` and the ordering rules under "Field derivations"; the closed `reason` and
-`error.code` lists (including `not-a-directory`, `missing-flag-value` and `wrong-argument-count`), the closed argument grammar (including that no `<dir>` means the current working directory) and error precedence above; `schemaVersion` `"1.0.0"` as the starting value; the per-signal rather than
-per-file override reporting (`applied` / `unused`); and `--json` as the flag spelling. Adding a key
-later is additive; renaming or removing one, or widening an allowed value list, is `MAJOR` once
-released.
+Evaluation is order-independent and reports exactly one error, chosen by fixed precedence and,
+within one class, by the first offending token: `unknown-flag`, `missing-flag-value`,
+`unknown-signal-id`, `wrong-argument-count`, then the target checks. No directory is examined when an
+argument error exists. Target checks: a path that does not exist (including a dangling symlink) is
+`no-such-directory`; a path that exists but is not a directory, including a symlink to a regular file,
+is `not-a-directory`; a directory whose entries cannot be listed completely is **not** an invocation
+error, it is `INDETERMINATE` (`listing-incomplete`). Any other fault is `internal-error`, and a
+caller that sees it treats the repository as not eligible. Diagnostics go to stderr; exit is `2`.
 
 ### D4 — This record precedes implementation
 
-The order is fixed: this ADR and the entrypoint decisions; then the vocabulary and overrides; then
-the wording surfaces. Each lands as its own reviewed change. Nothing here authorises merging this
-ADR's implementation without the review of this record first.
+The order is fixed: this ADR; then the resolver, vocabulary and overrides; then the wording
+surfaces. Each lands as its own reviewed change.
 
 ### D5 — Standard 22 step 0, without a catalog rule
 
 [Standard 22](../../standards/22-adoption-and-migration.md) R1's migration flow gains a **step 0**:
-establish adoption eligibility before any adoption write, by running `standards eligibility`
-against the candidate repository and stopping on anything but `IN_SCOPE`. It is mirrored in
+establish adoption eligibility before any adoption write, by running `standards eligibility` against
+the candidate repository and stopping on anything but `IN_SCOPE`. It is mirrored in
 [`INSTRUCTIONS.md`](../../INSTRUCTIONS.md) and in
 [`docs/adoption-flow.mmd`](../../docs/adoption-flow.mmd) (with its rendered SVG, per
-[ADR 0003](0003-mermaid-is-the-canonical-diagram-source.md)), ahead of `/codebase-docs`, which is
-the step that did the damage.
+[ADR 0003](0003-mermaid-is-the-canonical-diagram-source.md)), ahead of `/codebase-docs`, the step that
+did the damage. The step is added outside the R1 block the standard reproduces verbatim from its
+source.
 
-**No catalog rule is bound.** Eligibility is a precondition of adopting, not a property of an
-adopted project; there is no project for a rule to apply to until the answer is yes. The
-implementation pull requests MUST carry a guarantee, as a test, that the rule catalog is
-byte-identical and that `validate` output for every existing fixture is unchanged, so "no catalog
-rule" is demonstrated and not merely stated.
+**No catalog rule is bound.** Eligibility is a precondition of adopting, not a property of an adopted
+project; there is no project for a rule to apply to until the answer is yes. The implementation pull
+requests MUST carry, as a test, that the rule catalog is byte-identical and that `validate` output
+for every existing fixture is unchanged.
 
-The implementation pull requests MUST also test the both-spellings rule, in two layers, because a
-directory holding `FROZEN.md` and `frozen.md` together cannot exist on a case-insensitive volume
-(Windows, default macOS):
+## Implementation slicing
 
-1. **Injected listing, on every platform.** The directory-enumeration and collision logic takes its
-   listing and its file reads through an injected interface, and is tested against a mocked listing
-   containing both spellings: a benign `frozen.md` beside a `FROZEN.md` that fires, a benign
-   `README.md` beside a `Readme.md` that carries the banner, and a benign sibling beside an
-   unreadable one. Each case is run with the signalling or unreadable spelling listed first and
-   last, so the result cannot depend on directory order, and asserts `OUT_OF_SCOPE` or
-   `INDETERMINATE`, never `IN_SCOPE`. This layer is not skippable.
-2. **Real filesystem, only where it can exist.** The on-disk both-spellings fixture is created in a
-   temporary directory and run only after detecting that the temporary filesystem is case-sensitive
-   (create one file, test whether its other-cased name resolves). On a case-insensitive volume the
-   test is reported as an explicit skip naming that reason, never as a pass, and layer 1 still runs.
+Each is its own pull request after this record is accepted, and none changes the frozen surface of
+`audit` or `validate`.
 
-The implementation pull requests MUST also carry one test per invocation case, each asserting exit
-`2`, the exact `error.code`, no `state` key, and that the target directory was never read: two
-`<dir>` tokens (`wrong-argument-count`, with `--json` before, between and after them); an unknown
-flag (`--bogus`), `--dir=x`, `--strict`, `--max-total-read-bytes=1` and bare `--` (`unknown-flag`);
-`--override-signal`, `--override-signal=` and `--override-signal frozen-file`
-(`missing-flag-value`); `--override-signal=nope` (`unknown-signal-id`); a nonexistent target
-(`no-such-directory`); a regular file and a symlink to a regular file (`not-a-directory`); two
-simultaneous errors to pin the precedence order; repeated `--json` and a repeated identical
-`--override-signal` (accepted, collapsed); `--help` with `--json` (usage, exit `0`); and the same
-cases without `--json` (stderr only, same exit). The injected-interface layer covers all but the
-symlink case on every platform.
+1. **Resolver and `eligibility` subcommand with fixtures.** `scripts/standards.mjs` (`COMMANDS`,
+   usage naming every accepted flag, dispatch before the scan like `init`), a new module holding no
+   module-level run state ([ADR 0014](0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md)),
+   `test/`. The vocabulary and the override semantics may be folded in.
+2. **`init` consults the resolver** (Q2 A). `scripts/init.mjs` / `runInit`; overlaps slice 1 in
+   `scripts/standards.mjs`.
+3. **Wording surfaces.** Standard 22 step 0, `INSTRUCTIONS.md`, `docs/adoption-flow.mmd` and SVG,
+   `CHANGELOG.md` (Unreleased), with the no-catalog-rule test. Depends on slice 1 for the name.
 
-The implementation pull requests MUST also test the pinned derivations: a target that is a symlink
-to a directory reports the canonical directory in `target` (capability-probed, with a reported skip
-where links cannot be created, and always covered through an injected `realpath` on every platform);
-`target` has no trailing separator and is never the lexical argument; the three `realpath` failure
-mappings (`ENOENT`/loop, `ENOTDIR`, other) through an injected `realpath`; a listing that yields
-`README.md` carrying the banner and then fails (asserting `listing` `"incomplete"`, `state`
-`"INDETERMINATE"`, the `readme-frozen-banner` signal `"FIRED"` with that entry present, the other
-signal `"INDETERMINATE"` with empty `entries`, and the same with the failure before any entry:
-both signals `"INDETERMINATE"`, `entries` empty); `listing` `"incomplete"`
-when opening the listing fails and when reading fails part-way, and `"complete"` when one matching
-entry's `lstat` fails; ASCII-only matching (`FROZEN.md` with a non-ASCII look-alike letter is not a
-source; `FROZEN.MD` and `frozen.md` are); and `entries` sorted by code unit regardless of the
-injected listing's order, in both orders.
+## Required tests
 
-The implementation pull requests MUST also test the text rules, each as a unit test over file
-bytes: a README whose first line is only U+00A0 and whose second line is `> **⛔ FROZEN` (fires,
-because the rule is per line and U+00A0 is not whitespace); a README with a `# Title` line, a blank
-line, then the banner as line 3, the evidenced shape (fires); a banner line whose `>` is followed
-by U+00A0 before `⛔` (does not fire); a banner with a leading U+FEFF at file start (fires) and
-with U+FEFF later in the file (does not); CRLF and lone-CR line endings; a `FROZEN.md` with
-U+00A0 inside `do not extend it` (no match, INDETERMINATE `no-listed-phrase`); the same phrase with
-ASCII tabs and newlines between words (matches); an upper-case Turkish dotted İ in the phrase (no
-match, no locale effect); and `lstat` failing for a matching entry after it was listed (entry
-INDETERMINATE with reason `stat-failed`, state INDETERMINATE, `listing` still `"complete"`), through
-the injected interface on every platform.
+Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C).
 
-Every condition that depends on permissions, links or platform file modes is exercised through the
-injected read and stat interface of layer 1 on every platform, never by an on-disk fixture that must
-run everywhere: `unreadable` (the injected read fails), `not-regular-file` (the injected stat reports
-a directory, a symbolic link to a regular file, a link to a directory, a dangling link, or a link leaving the tree: every link case yields `not-regular-file`), `over-read-cap`, `not-utf8`, and an incomplete listing. A real-permission test
-(`chmod 000` file, a real symlink) is separate and capability-probed: it runs only after confirming
-the platform enforces the condition (a mode-bit denial is actually observed by the test process, so
-Windows and privileged root processes skip; the platform can create the link), and otherwise is an
-explicit reported skip naming the reason, never a pass. Fixtures that are portable on every platform
-(a single `FROZEN.md`, a banner, no-phrase, absent, a directory named `FROZEN.md`) run everywhere.
+- **AC1.** A fixture with implementation files, a `FROZEN.md` carrying a listed phrase and no
+  adoption artifacts: `eligibility` exits `1`; and for `init` and `init --dry-run`, exit `2`. A
+  before/after tree comparison (file list and content hashes) shows zero writes.
+- **AC2.** Each `INDETERMINATE` condition above exits `2`, writes nothing, and is not cleared by
+  `--override-signal`, for `eligibility` and for `init`.
+- **AC3.** No repository name appears in the implementation or vocabulary data (a test greps the new
+  source for `StandardsOrchestrator`); a differently named fixture with the same signal is
+  `OUT_OF_SCOPE`.
+- **AC4.** The greenfield, scaffold, nested-monorepo and reconstruction-required fixtures classify
+  and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`.
+- **Overrides.** Rules 1-6: a named fired signal clears only itself; an unused override is reported;
+  an override never changes `INDETERMINATE`; an unknown id exits `2`; duplicates collapse.
+- **Both spellings, two layers.** A directory holding `FROZEN.md` and `frozen.md` cannot exist on a
+  case-insensitive volume. (1) *Injected listing, every platform, not skippable:* the enumeration
+  and collision logic takes its listing, `lstat` and reads through an injected interface and is
+  tested with a mocked listing: benign `frozen.md` beside a firing `FROZEN.md`; benign `README.md`
+  beside a bannered `Readme.md`; a benign sibling beside an unreadable one; each in both orders;
+  asserting `OUT_OF_SCOPE` or `INDETERMINATE`, never `IN_SCOPE`. (2) *Real filesystem, only where it
+  can exist:* the on-disk fixture runs only after a case-sensitivity probe, and is otherwise an
+  explicit reported skip naming that reason, never a pass.
+- **Permission, link and mode conditions** (`unreadable`, `stat-failed`, `not-regular-file` for
+  every link kind, `over-read-cap`, `not-utf8`, an incomplete listing) go through the injected
+  interface on every platform. Real `chmod 000` and real-symlink tests are separate and
+  capability-probed (a denial is actually observed; the platform can create the link), with an
+  explicit reported skip otherwise.
+- **Partial listing.** A listing that yields `README.md` with the banner and then fails: exit `2`,
+  the banner still reported as fired, no override changes it; and a failure before any entry: exit
+  `2`.
+- **Text rules, over file bytes.** A README whose first line is only U+00A0 and whose second line is
+  `> **⛔ FROZEN` fires; a `# Title`, blank line, banner on line 3 fires (the evidenced shape); a `>`
+  followed by U+00A0 before `⛔` does not; a leading U+FEFF fires and a later one does not; CRLF and
+  lone-CR endings; a `FROZEN.md` with U+00A0 inside `do not extend it` is `no-listed-phrase`
+  (`INDETERMINATE`); the same phrase with tabs and newlines between words matches; an upper-case
+  dotted `İ` in the phrase does not match and no locale changes the result.
+- **Invocation errors, one test per condition,** each asserting exit `2` and that the target was not
+  read: two `<dir>` tokens; `--bogus`, `--json`, `--dir=x`, `--strict`, `--max-total-read-bytes=1`
+  and bare `--` (`unknown-flag`); `--override-signal`, `--override-signal=` and
+  `--override-signal frozen-file` (`missing-flag-value`); `--override-signal=nope`
+  (`unknown-signal-id`); a nonexistent target; a regular file and a symlink to one; two simultaneous
+  errors pinning the precedence; repeated identical `--override-signal` (accepted); `--help` (exit
+  `0`).
+- **Read-only.** The command spawns no process and opens no file for writing, asserted by a
+  before/after snapshot.
+- **No catalog rule.** `rules/*.json` is byte-identical and `validate` output for every existing
+  fixture is unchanged.
+- **Mutation checks.** Removing the read-all rule, the INDETERMINATE override block, the ASCII
+  case-fold, or the `init` refusal each makes at least one test fail.
 
 ## Alternatives considered
 
-**A guard inside `init` only.** Rejected as the sole control. The recorded mutation happened before
-`init` in the documented sequence; a guard there would have fired after the damage. `init` may still
-consult the same resolver as defence in depth — see the open question below.
+**A guard inside `init` only.** Rejected as the sole control: the recorded mutation happened at
+`/codebase-docs`, before `init`. `init` also consults the resolver (Q2 A) so a caller who skips
+step 0 is still stopped.
 
 **A catalog rule `adoption.eligible`.** Rejected by D5. A rule is evaluated against an adopted
 project, and the case this exists for is the repository that must not become one.
 
 **Delegating eligibility to an external registry.** Rejected. The question arises before adoption,
-and an answer that needs a separate enforcement repository to be present is unavailable exactly when
-it is needed. Plan item 07 raised this and expected the answer recorded here.
+and an answer that needs a separate enforcement repository is unavailable exactly when needed.
 
 **Open-ended detection (prose heuristics, keyword search of the README).** Rejected by D1. A
 heuristic that can fire on discussion of frozen repositories is the use/mention error
-[ADR 0009](0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md) records, and a
-heuristic that fails to fire is silent. A closed list is incomplete in a way that can be stated.
+[ADR 0009](0009-detectors-distinguish-instances-of-a-subject-from-discussion-of-it.md) records, and
+one that fails to fire is silent. A closed list is incomplete in a way that can be stated.
 
 **A fourth exit code for `INDETERMINATE`.** Rejected. Exit-code meanings are frozen by ADR 0004 and
 Standard 23 R3 closes the set; `2` already means "no verdict".
 
-**A persisted override file in the target repository.** Rejected as the carrier proposal: it is a
-write into the repository the guard protects, and a file an agent could create is no stronger
-binding than a flag it could pass.
+**Freezing a JSON document now (Q5 A or B).** Rejected by Q5 C. The review of the first draft showed
+that a machine contract needs many derivations pinned (path canonicalisation, ordering, error
+enumerations, partial results), and it has no consumer yet; freezing it before a consumer exists
+makes the first shape a public contract without its own review. It is deferred.
+
+**An override persisted in the target repository, or an owner-level store, or no override.**
+Rejected by Q3 A. A file in the repository is a write into the repository the guard protects, and an
+agent can create it as easily as pass a flag; an owner-level store is new state to govern; no
+override leaves no sanctioned way to adopt a repository with an out-of-date banner.
 
 ## Consequences
 
-**Makes easier.** An agent or person has one read-only command that answers "may I write to this
-repository" before any write, with an answer that fails closed. The owner can allow a specific
-repository by naming exactly what is being overridden.
+**Makes easier.** One read-only command answers "may I write to this repository" before any write,
+with an answer that fails closed; and `init` refuses on its own. The owner can allow a specific
+repository by naming exactly what is overridden.
 
-**Makes harder.** A new frozen surface (command, states, exit codes, JSON fields). A closed
-vocabulary will miss a repository that is frozen in a way it does not list, and growing it is a
-reviewed change each time.
+**Makes harder.** A new frozen surface (the name, three states and exit codes). A closed vocabulary
+will miss a repository frozen in a way it does not list, and growing it is a reviewed change. A
+repository whose `README.md` is a symlink, or whose `FROZEN.md` is hand-written without a listed
+phrase, cannot be adopted until the owner changes it.
 
 **Commits the project to.** Keeping `INDETERMINATE` un-overridable; never naming a repository in the
-implementation (acceptance criterion 3 of #16); and treating the vocabulary list in this record as
-the specification the fixtures are derived from.
+implementation (acceptance criterion 3 of #16); treating the vocabulary and text rules in this record
+as the specification the fixtures derive from; and writing the machine-readable contract as its own
+ADR before any consumer depends on one.
 
 **Known limits accepted.**
 
-- The tool cannot prove an override was typed by a human (D2).
+- The tool cannot prove an override was typed by a human (D2 rule 7).
 - `IN_SCOPE` is "no listed signal", not "adoptable" (D1).
-- ASCII-case-insensitive filename matching, root-only lookup, and the per-line blockquote banner rule are
-  design choices made here for fail-closed behaviour. They are not taken from the owner's list and are
-  open to change at review.
+- A banner using `_` emphasis, a variation selector, or a leading no-break space does not fire.
+- The first version has no machine-readable output; callers use the exit code.
 
-## Open questions (not decided; not guessed)
+## Appendix: deferred machine-readable contract (non-normative)
 
-- **UNDECIDED — vocabulary beyond `FROZEN.md` and the `⛔ FROZEN` banner.** Which of the listed
-  candidates, if any, join the vocabulary. The owner's explicit list should replace the table above
-  if it differs; no implementation PR is opened with a signal that is not in the table at the time
-  this record is accepted.
-- **UNDECIDED — does `init` consult the resolver?** Acceptance criterion 1 says "the adoption
-  entrypoint writes nothing". D3 names the subcommand but not whether `init` also refuses on
-  `OUT_OF_SCOPE` / `INDETERMINATE`. Recommended: yes, with the same override flag, exit `2`, before
-  any write, so a caller who skips step 0 is still stopped. This changes `init`'s behaviour for
-  repositories carrying a listed signal, and is not implemented without confirmation.
-- **UNDECIDED — override carrier** (see D2). Per-invocation flag proposed.
-- **UNDECIDED — `FROZEN.md` present with no listed phrase** is `INDETERMINATE` here. The alternative
-  is `OUT_OF_SCOPE` on the filename alone, which is more conservative still but turns a file that
-  says anything into a hard stop that overrides can lift. Confirm at review.
+Nothing in this appendix is a requirement. It records input for the later ADR so the work done in
+review is not lost. The reviewed draft of a `--json` document (envelope with `schemaVersion`,
+success and invocation-error shapes, per-signal and per-entry records, override reporting) is in
+the git history of PR #105: the last commit that carries it is `fda1b98` (parent `69abd34`).
+
+Questions a later ADR must settle before freezing any such document:
+
+- the envelope, schema version, and the success and error shapes, with a complete worked example;
+- whether the target is reported canonically (`realpath`) or lexically, with separator and case
+  rules on Windows;
+- the closed set of per-entry reasons and of error codes, including `stat-failed`,
+  `not-a-directory`, `missing-flag-value`, `wrong-argument-count`, `listing-incomplete`;
+- ordering of every array and the serialisation rules;
+- how partial results are represented when a listing fails after yielding entries;
+- how an unused override is represented.
