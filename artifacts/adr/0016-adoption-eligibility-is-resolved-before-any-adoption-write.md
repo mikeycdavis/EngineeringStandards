@@ -57,7 +57,7 @@ not be cited, because it would not have fired on the evidenced README (see "The 
 | Q2 | `init` and the resolver | A | `init` consults the same resolver; refuses with exit `2` and writes nothing; same override flag; INDETERMINATE not overridable |
 | Q3 | Override carrier | A | repeatable per-invocation `--override-signal=<id>`; nothing persisted; binding rules 1-7 under D2 |
 | Q4 | `FROZEN.md` with no listed phrase | A | INDETERMINATE (`no-listed-phrase`), not overridable |
-| Q5 | Machine-readable output | C | **no JSON contract is frozen here**; human output only; the machine contract is deferred to a later ADR |
+| Q5 | Machine-readable output | C | only the three state names and exit codes 0, 1, 2 are frozen; **no JSON property name, nesting, ordering, optional field, evidence shape or serialisation detail is frozen**; the complete machine-readable contract is deferred to a later, separately approved ADR and work item |
 | Q6 | Frozen-surface reading | A | additive `MINOR` (2.0.0 to 2.1.0); the new frozen surface is the command name, the three state names, and the exit codes |
 | Q7 | Matching rules | A | ASCII-case-insensitive filenames, every case-folded match inspected, root only, target is the directory given with no walk-up |
 
@@ -277,29 +277,41 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
 
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
-**No machine-readable (`--json`) output is specified or frozen by this record** (Q5 C). In this
-first version `eligibility` writes human text. The only normative output surface is:
+**The frozen output surface is exactly two things, and nothing else:**
 
-- the three state names `IN_SCOPE`, `OUT_OF_SCOPE`, `INDETERMINATE`, spelled exactly, as the words a
-  report uses for the result; and
-- the exit-code mapping:
+1. **The three state names**, spelled exactly: `IN_SCOPE`, `OUT_OF_SCOPE`, `INDETERMINATE`.
+2. **The exit codes `0`, `1` and `2`, with these meanings** under
+   [Standard 23](../../standards/23-standards-validator-cli.md) R3:
 
-| Result | Exit | Reading under [Standard 23](../../standards/23-standards-validator-cli.md) R3 |
+| Command and result | Exit | Meaning |
 | --- | --- | --- |
-| `IN_SCOPE` | `0` | completed; nothing forbids adoption |
-| `OUT_OF_SCOPE` | `1` | completed; the repository declares itself not adoptable |
-| `INDETERMINATE` | `2` | the tool could not reach a verdict |
-| any invocation error (below) | `2` | invocation error |
+| `eligibility`, `IN_SCOPE` | `0` | completed; nothing forbids adoption |
+| `eligibility`, `OUT_OF_SCOPE` | `1` | completed; the repository declares itself not adoptable |
+| `eligibility`, `INDETERMINATE` | `2` | the tool could not reach a verdict |
+| `eligibility`, any invocation error (below) | `2` | invocation error |
+| `init`, refused because `OUT_OF_SCOPE` (not overridden) | `2` | refused; nothing written |
+| `init`, refused because `INDETERMINATE` | `2` | refused; nothing written |
 
-Only `0` permits proceeding, so every uncertain path fails closed. `1` and `2` are told apart by the
-human report, not by a frozen field; a caller that needs only to proceed or stop uses the exit code.
-Layout, wording, ordering of lines, and where a report is printed are **not** frozen, per
-[ADR 0004](0004-audit-and-validate-are-separate-commands.md) "explicitly not frozen". Because no
-machine format exists yet, `--json` is **not accepted** (it is `unknown-flag`), so adding it later
-does not collide with a meaning an earlier release gave it.
+The two commands differ on purpose and the difference is part of the frozen meaning:
+`eligibility` reports an `OUT_OF_SCOPE` repository as exit `1` (a completed verdict), whereas `init`
+refuses an `OUT_OF_SCOPE` repository with exit `2`, because for `init` a refusal is "could not run",
+and exit `1` is already `init`'s existing meaning of "ran, with conflicts". All other `init` exit
+codes keep their existing meanings, unchanged by this record. Only `eligibility` exit `0` permits
+proceeding, so every uncertain path fails closed.
 
-The machine-readable contract is deferred. The reviewed draft of it, and the issues review raised
-against that draft, are preserved in the appendix as input to the later ADR and are not normative.
+**Not frozen, explicitly:** JSON property names, nesting, ordering, optional fields, the shape of
+any evidence, and every other serialisation detail; and also report layout, line ordering, wording,
+where a report is printed, and flag spellings. Per
+[ADR 0004](0004-audit-and-validate-are-separate-commands.md) "explicitly not frozen", these may
+change in a `MINOR`.
+
+**The complete machine-readable (JSON) contract is deferred** to a later, separately approved ADR
+and work item. This record specifies and freezes no part of it. In this first version `eligibility`
+writes human text, and `1` and `2` are told apart by the human report or by which command was run; a
+caller that needs only to proceed or stop uses the exit code. Because no machine format exists yet,
+`--json` is **not accepted** by `eligibility` (it is `unknown-flag`), so adding it later does not
+collide with a meaning an earlier release gave it. Material from review of an earlier draft is
+preserved in the appendix as input to that ADR, and is not normative.
 
 #### The frozen-surface interpretation (Q6 A)
 
@@ -315,9 +327,9 @@ release. This record interprets that as follows:
   "new backward-compatible rule or capability" as `MINOR`, and no currently compliant project can
   newly fail, since D5 binds no rule. The addition ships as framework `MINOR`, 2.0.0 to 2.1.0.
 - The addition creates **new frozen surface**: once released, the command name `eligibility`, the
-  three state names, and the exit codes above are frozen in the ADR 0004 sense, and changing any is
-  `MAJOR`. Nothing else is frozen: flag spellings, report layout and diagnostic text are human-facing
-  and may change in a `MINOR`.
+  three state names, and the exit codes `0`, `1` and `2` with the meanings in the table above are
+  frozen in the ADR 0004 sense, and changing any is `MAJOR`. Nothing else is frozen: flag spellings,
+  report layout, diagnostic text and every JSON detail are not, and may change in a `MINOR`.
 - `eligibility` is neither an `audit` nor a `validate`. It produces no finding, score, assurance or
   compliance status, so ADR 0004's "never letting `audit` grow a compliance verdict" is not engaged.
 - Honest precedent note: `init` is listed in the 1.0.0 surface itself in the changelog, so this
@@ -498,13 +510,14 @@ ADR before any consumer depends on one.
 ## Appendix: deferred machine-readable contract (non-normative)
 
 Nothing in this appendix is a requirement. It records input for the later ADR so the work done in
-review is not lost. The reviewed draft of a `--json` document (envelope with `schemaVersion`,
-success and invocation-error shapes, per-signal and per-entry records, override reporting) is in
-the git history of PR #105: the last commit that carries it is `fda1b98` (parent `69abd34`).
+review is not lost. An earlier draft of a machine-readable document was reviewed in this PR; the
+last commit that carries it is `fda1b98` (parent `69abd34`). Nothing in it is normative or implied
+by this record: every property name, nesting, ordering, optional field, evidence shape and
+serialisation detail is open for the later ADR.
 
 Questions a later ADR must settle before freezing any such document:
 
-- the envelope, schema version, and the success and error shapes, with a complete worked example;
+- the whole document: its envelope, versioning, success and error shapes, with a complete worked example;
 - whether the target is reported canonically (`realpath`) or lexically, with separator and case
   rules on Windows;
 - the closed set of per-entry reasons and of error codes, including `stat-failed`,
