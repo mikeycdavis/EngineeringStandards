@@ -19,6 +19,21 @@ All notable changes to this framework. Versioning follows
 catalog, the policy schema, or any published contract.** Every other entry in this section is repository
 tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 
+### Changed — verdict precedence: NOT_EVALUATED now outranks COMPLIANT_WITH_EXCEPTIONS (framework-wide)
+
+**This changes the verdict of existing projects that use `exceptions[]`**, not only of those that adopt
+justifications (ADR 0017, owner decision). `summarise()` previously decided `COMPLIANT_WITH_EXCEPTIONS` before
+it looked for an unexamined forbidden rule, so a live exception hid the unexamined rule in the verdict word. The
+order is now: any non-excepted failure `NON_COMPLIANT`; then any applicable forbidden rule with no detector and
+no valid attestation `NOT_EVALUATED`; then `COMPLIANT_WITH_EXCEPTIONS`; then `COMPLIANT`. Exit codes are
+unchanged (an unestablished prohibition already exited 1). Existing assertions changed: `test/compliance.test.mjs`
+"an exception on a manual-review rule applies only to the rule it names" (`COMPLIANT_WITH_EXCEPTIONS` to
+`NOT_EVALUATED`) and "the exception on a manual-review rule reaches the validate CLI output and JSON"
+(`Excepted:` section to `EXCEPTED:` with an `EXCEPTED` line label). Excepted results also carry
+`verdictLabel: "EXCEPTED"`; `unexaminedRules` (informational) is added to the envelope. Under Standard 21 a verdict
+that moves a project from exit-0-class wording to `NOT_EVALUATED` is **MAJOR**-shaped, and `VERSION` is not bumped
+here; Standard 45 R6's wording ("does not intercept the exception machinery") was not edited. Both are owner calls.
+
 ### Added — path-scoped justifications (ADR 0017)
 
 The policy schema gains an optional `justifications` list: one rule knowingly unmet at one exact tracked

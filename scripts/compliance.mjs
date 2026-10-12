@@ -554,26 +554,45 @@ function summarise(results, policy) {
    * over an unexamined prohibition is a false green at the verdict level — Standard 38 R3's
    * principle applied to the verdict itself.
    *
-   * Placed AFTER the NON_COMPLIANT and COMPLIANT_WITH_EXCEPTIONS determinations on purpose, so it
-   * cannot intercept the exception machinery. A rule that was excepted, rejected, or declared
-   * not-applicable has been LOOKED AT; the cap exists only for the case where nothing has happened
-   * at all. `not-applicable` results are already excluded, and an excepted or failed rule is not
-   * `skipped`, so neither can reach this list.
+   * Placed AFTER the NON_COMPLIANT determination and BEFORE COMPLIANT_WITH_EXCEPTIONS (owner
+   * decision, ADR 0017). A verdict that says "compliant, with these exceptions" over a rule nobody
+   * examined says the project is compliant with something it has not been checked against; the
+   * exceptions then read as the whole story. Failure still outranks everything, because a
+   * recorded failure is a finding rather than an absence. A rule that was excepted, rejected, or
+   * declared not-applicable has been LOOKED AT and is not in this list: `not-applicable` results
+   * are excluded, and an excepted or failed rule is not `skipped`.
+   *
+   * "Lacks a detector or valid attestation" is the existing, tested definition of an unestablished
+   * rule: an applicable `forbidden` rule that is skipped and not-evaluated (Standard 45 R6). It is
+   * deliberately NOT widened to `required` rules here: `a required manual-review rule without an
+   * attestation still yields COMPLIANT` is an existing, deliberate expectation, and widening it
+   * would change the verdict of almost every project (see `unexaminedRules`, reported but not
+   * used). That wider reading is an explicit owner decision, recorded in ADR 0017.
    */
   const unestablished = applicable.filter(
     (r) => r.level === "forbidden" && r.status === RESULT.skipped && r.disposition === "not-evaluated",
   );
+  const unexamined = applicable.filter(
+    (r) => r.status === RESULT.skipped && r.disposition === "not-evaluated",
+  );
+
+  // EXCEPTED is a disposition, not a status value, so it is stated outright on the result for every
+  // consumer that reads results[] without knowing the disposition vocabulary.
+  for (const r of results) {
+    if (r.disposition === "excepted") r.verdictLabel = "EXCEPTED";
+  }
 
   let status;
   if (!policy) status = STATUS.NOT_EVALUATED;
   else if (requiredFailures.length > 0) status = STATUS.NON_COMPLIANT;
-  else if (excepted.length > 0) status = STATUS.COMPLIANT_WITH_EXCEPTIONS;
   else if (unestablished.length > 0) status = STATUS.NOT_EVALUATED;
+  else if (excepted.length > 0) status = STATUS.COMPLIANT_WITH_EXCEPTIONS;
   else status = STATUS.COMPLIANT;
 
   return {
     status,
     unestablishedProhibitions: unestablished.map((r) => r.ruleId),
+    unexaminedRules: unexamined.map((r) => r.ruleId),
     score,
     summary: counts,
     assurance,
@@ -604,6 +623,9 @@ export function envelope({ verdict, project, standardVersion, auditedAt, repo, f
     // Standard 45 R6. Present on every run, empty when nothing is unestablished, so a consumer can
     // distinguish "no prohibitions went unexamined" from "this validator predates the rule".
     unestablishedProhibitions: verdict.unestablishedProhibitions ?? [],
+    // INFORMATIONAL, not used for the verdict: every applicable rule, of any level, with no detector
+    // and no valid attestation. The verdict caps on the forbidden subset above (Standard 45 R6).
+    unexaminedRules: verdict.unexaminedRules ?? [],
     auditedAt,
     results: verdict.results,
   };

@@ -49,11 +49,12 @@ justifications:
    `disposition: "excepted"`, with the status the rule's level gives a violation (`failed` for
    `required`/`forbidden`, `warning` otherwise), which `summarise()` already excludes from
    NON_COMPLIANT and reads as `COMPLIANT_WITH_EXCEPTIONS`. An `optional` rule stays silent, as for
-   any violation (Standard 18 R3). Verdicts are the existing four: `COMPLIANT` (every applicable
-   rule passes, nothing excepted), `COMPLIANT_WITH_EXCEPTIONS` (no failure, at least one rule
-   excepted by an exception or a justification), `NON_COMPLIANT` (any applicable rule fails,
-   including one with an unjustified path remaining or an expired justification), `NOT_EVALUATED`
-   (an applicable forbidden rule nobody examined and no exception outranks it).
+   any violation (Standard 18 R3). Verdicts are the existing four, in this precedence (see rule 11): `NON_COMPLIANT` (any
+   applicable rule fails, including one with an unjustified path remaining or an expired
+   justification), then `NOT_EVALUATED` (an applicable forbidden rule nobody examined), then
+   `COMPLIANT_WITH_EXCEPTIONS` (every applicable rule passes or is excepted, at least one excepted),
+   then `COMPLIANT`. The result also carries `verdictLabel: "EXCEPTED"`, and the human report has
+   an `EXCEPTED:` section, so the state cannot be misread as a pass.
 2. **The engine decides which rules are admitted.** An explicit allowlist in
    `scripts/justifications.mjs` (`JUSTIFIABLE_RULES`), initially `errors.no-swallowed-exceptions`
    alone. It is code, not policy data and not a catalog flag, so widening it is a reviewed change. A
@@ -87,11 +88,33 @@ justifications:
    is only a stale warning. `expires` must be a real date not before `approvedAt`. It is optional
    because Standard 20 asks for "optional expiration"; absence is indefinite, bounded by
    `removeWhen` and by staleness.
-11. **Existing precedence is inherited, not changed.** `summarise()` decides
-   `COMPLIANT_WITH_EXCEPTIONS` before it looks for unexamined prohibitions, so a project with a
-   justification and an unexamined forbidden rule reads `COMPLIANT_WITH_EXCEPTIONS` while the CLI
-   still exits 1 on the unexamined prohibition. That precedence predates this change and is pinned
-   by a test; whether it should change is an owner decision about exceptions generally.
+11. **Verdict precedence is changed, framework-wide (owner decision).** Previously `summarise()`
+   decided `COMPLIANT_WITH_EXCEPTIONS` before it looked for unexamined prohibitions, so an
+   exception hid an unexamined forbidden rule in the verdict word. The order is now: failure, then
+   `NOT_EVALUATED`, then `COMPLIANT_WITH_EXCEPTIONS`, then `COMPLIANT`. **This affects every
+   project that uses `exceptions[]`**, not only justifications: a project with a live exception and
+   an unestablished forbidden rule moves from `COMPLIANT_WITH_EXCEPTIONS` to `NOT_EVALUATED`.
+   The exit code does not change (it was already 1 for an unestablished prohibition; it is now also
+   1 for any `NOT_EVALUATED`, which is the same set). Standard 45 R6's text ("The cap does not
+   intercept the exception machinery") is read per rule: a rule that was itself excepted has been
+   looked at and is not capped; a different rule nobody looked at still caps the aggregate. That
+   normative wording was not edited here and an owner may want it clarified.
+12. **"Lacks a detector or valid attestation" keeps its existing meaning.** The cap applies to
+   applicable `forbidden` rules that are skipped and not-evaluated (Standard 45 R6), as before. It
+   was not widened to `required` rules: that would make `a required manual-review rule without an
+   attestation still yields COMPLIANT` false and would flip most projects' verdicts. The wider set is
+   reported as `unexaminedRules` in the JSON, informational only, so the owner can see its size
+   before deciding.
+
+### Assertions changed by the precedence change
+
+| Test | Before | After |
+| --- | --- | --- |
+| `test/compliance.test.mjs` "an exception on a manual-review rule applies only to the rule it names" | verdict `COMPLIANT_WITH_EXCEPTIONS` while another forbidden manual-review rule was unexamined | verdict `NOT_EVALUATED` |
+| `test/compliance.test.mjs` "the exception on a manual-review rule reaches the validate CLI output and JSON" | human report matched `/Excepted:\s*\n\s+data.migration-rollback/` | matches `/EXCEPTED:\s*\n\s+EXCEPTED data.migration-rollback/` (the label change, not the precedence) |
+| `test/path-justification.test.mjs` "existing precedence..." (this PR's own, never on develop) | `COMPLIANT_WITH_EXCEPTIONS` | replaced by "NOT_EVALUATED outranks COMPLIANT_WITH_EXCEPTIONS" plus an `exceptions[]` equivalent |
+
+No other existing assertion changed.
 7. **A bad list is a configuration error.** Any invalid entry makes `validate` exit 2 with
    `NOT_EVALUATED` and applies **none** of them. A partially honoured waiver list is a verdict that
    cannot be reproduced from the policy.

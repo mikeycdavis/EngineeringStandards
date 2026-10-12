@@ -792,14 +792,31 @@ test("verdict: an expired justification is not applied and fails with a named re
   assert.equal(own.status, "failed");
 });
 
-test("existing precedence, reported not changed: an exception outranks an unexamined prohibition", () => {
-  // summarise() decides COMPLIANT_WITH_EXCEPTIONS before it looks for unestablished prohibitions, and
-  // says so ("so it cannot intercept the exception machinery"). A justification inherits that. The
-  // CLI exit code still reflects the unexamined prohibition, so the gate is not weakened by the word.
+test("NOT_EVALUATED outranks COMPLIANT_WITH_EXCEPTIONS (owner decision, ADR 0017)", () => {
+  // Before ADR 0017 summarise() decided COMPLIANT_WITH_EXCEPTIONS first, so an exception hid an
+  // unexamined prohibition in the verdict word. Failure still outranks both.
   const policy = isolatedPolicy(["security.no-cert-bypass"]);
   const v = verdict({ justified: [justifiedEntry("a.mjs")], policy });
-  assert.equal(v.status, "COMPLIANT_WITH_EXCEPTIONS");
+  assert.equal(v.status, "NOT_EVALUATED");
   assert.deepEqual(v.unestablishedProhibitions, ["security.no-cert-bypass"]);
+  const failing = verdict({ findings: [violation("c.mjs")], justified: [justifiedEntry("a.mjs")], policy });
+  assert.equal(failing.status, "NON_COMPLIANT", "failure takes precedence over not-evaluated");
+});
+
+test("an existing exceptions[] entry is subject to the same precedence", () => {
+  const policy = isolatedPolicy(["security.no-cert-bypass"]);
+  policy.exceptions = [{ rule: RULE, reason: "r", approvedBy: "o", approvedAt: "2026-10-11" }];
+  const v = verdict({ findings: [violation("a.mjs")], policy });
+  assert.equal(v.results.find((r) => r.ruleId === RULE).disposition, "excepted");
+  assert.equal(v.status, "NOT_EVALUATED");
+});
+
+test("EXCEPTED is stated on the result and in the human report, never PASSED", () => {
+  const v = verdict({ justified: [justifiedEntry("a.mjs")] });
+  const r = v.results.find((x) => x.ruleId === RULE);
+  assert.equal(r.verdictLabel, "EXCEPTED");
+  assert.equal(v.status, "COMPLIANT_WITH_EXCEPTIONS");
+  assert.ok(!v.results.some((x) => x.status === "passed" && x.verdictLabel === "EXCEPTED"));
 });
 
 // The same contract through the real CLI, where only RULE is applicable.

@@ -293,12 +293,12 @@ function renderVerdict(report, policy, justifications = null) {
 
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
-    out.push("  Excepted:");
+    out.push("  EXCEPTED:");
     for (const r of excepted) {
       if (r.exception) {
-        out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
+        out.push(`    EXCEPTED ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
       } else {
-        out.push(`    ${r.ruleId} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
+        out.push(`    EXCEPTED ${r.ruleId} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
       }
     }
     out.push("");
@@ -4252,6 +4252,8 @@ export async function main(args) {
   // than exit 2 because it is a statement about the project, not about the configuration — the policy
   // read fine, and what it says is that a prohibition went unexamined.
   if (report.unestablishedProhibitions?.length) return done(EXIT_FINDINGS);
+  // NOT_EVALUATED is non-zero whichever way it was reached.
+  if (report.status === "NOT_EVALUATED") return done(EXIT_FINDINGS);
   return done(EXIT_OK);
 }
 
