@@ -124,9 +124,9 @@ list in full under `cannotObserve`, each with `knownSites` (an empty list is all
 | `url-module-path` | `new URL(..., import.meta.url)` | Whether the path is a module, a file or data |
 | `termination-indirect` | The process object used as a value or aliased, `process[<computed>]`, `globalThis[...]`, the `process` module imported as default or namespace under a name other than `process`, `import { default as p }`, or imported dynamically | What is ultimately called |
 | `subprocess` | Importing `child_process`, `worker_threads` or `cluster`, with or without `node:` | What runs, what it reaches |
-| `reflection` | Any mention of `eval` or `Function` (so `(0, eval)(s)`, `const e = eval`, `const F = Function`), a `.constructor(` call, `Reflect`, `Proxy`, importing `node:vm`, `process.binding`, `process._linkedBinding`, `process.dlopen` | Their effect; the indirection spellings listed under "Not detectable" below |
+| `reflection` | Any mention of `eval` or `Function` (so `(0, eval)(s)`, `const e = eval`, `const F = Function`), any `.constructor` access, a `["constructor"]` or `["__proto__"]` index, `getPrototypeOf`, `setPrototypeOf`, `__proto__`, `Reflect`, `Proxy`, importing `node:vm`, `process.binding`, `process._linkedBinding`, `process.dlopen` | Their effect; the spellings listed under "Not detectable" below |
 | `network` | Importing `http`, `https`, `http2`, `net`, `tls`, `dgram`, `dns`; `fetch(`, `WebSocket`, `XMLHttpRequest` | Traffic that leaves through another program, such as `gh` |
-| `ambiguous-token` | A slash after `)`, `}` or `++`/`--` that may open a regex literal or divide: the file is read both ways and, if the readings disagree about modules or terminations, the union is checked and the file reported | Which reading the author meant |
+| `ambiguous-token` | (a) A slash after `)`, `}` or `++`/`--` that may open a regex literal or divide: the file is read both ways and, if the readings disagree about modules or terminations, the union is checked and the file reported. (b) Any non-ASCII character outside strings, templates, regex literals and comments that is neither whitespace nor a Unicode identifier character, and any backslash outside those (an identifier escape such as `import`) | Which reading the author meant; what an escaped identifier names |
 | `generated-code` | Not detected | Code written to disk and run later; generated documentation |
 | `data-access` | Not detected | Which files, rules or keys a module reads or writes |
 | `shell-and-workflow-scripts` | Not detected | `*.ps1`, `*.sh`, workflows: outside the extensions |
@@ -135,8 +135,9 @@ list in full under `cannotObserve`, each with `knownSites` (an empty list is all
 **Not detectable, stated plainly.** No tokenizer of arbitrary JavaScript is perfect, and this one does
 not claim to be. These spellings remain invisible, and the check prints OK for them:
 
-- a function obtained by assignment from a constructor property (`const C = f.constructor; C("code")`)
-  rather than called on the property;
+- a property name assembled at run time and used to reach a constructor or prototype
+  (`f["con" + "structor"]`, `f[name]`), and `Object.getOwnPropertyDescriptor`-style indirection that
+  never mentions `constructor`, `getPrototypeOf` or `__proto__`;
 - a module path built in one place and handed to a loader the repository defines itself, and any module
   reached only through a subprocess;
 - the effect of a global the scanner does not name (it names `eval`, `Function`, `Reflect`, `Proxy`,
@@ -144,7 +145,9 @@ not claim to be. These spellings remain invisible, and the check prints OK for t
 - code or a module path held in a string and evaluated or loaded later: it is reported where it is
   evaluated, not where it is written;
 - a regex literal after `]` (read as division), and any construct the tokenizer mis-tokenizes in a way
-  that is consistent under both slash readings.
+  that is consistent under both slash readings;
+- identifier spellings the Unicode `ID_Start`/`ID_Continue` classes accept but that name a different
+  thing than they look like (homoglyphs): the scan reads them as ordinary identifiers.
 
 Therefore **OK means "OK within the listed observation scope"**: every observed edge is permitted and
 every construct the scanner can recognise as unclassifiable was acknowledged. It never means that

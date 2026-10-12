@@ -235,6 +235,14 @@ const UNCLASSIFIED = [
   ["require-call", 'const c = process.getBuiltinModule("child_process");'],
   ["require-call", 'import { register } from "node:module";'],
   ["require-call", 'import { createRequire as make } from "node:module";'],
+  ["reflection", '(function () {})["constructor"]("return 1")();'],
+  ["reflection", "(function () {})['constructor']('return 1')();"],
+  ["reflection", 'const C = (async function () {}).constructor;'],
+  ["reflection", 'const F = Object.getPrototypeOf(async function () {}).constructor;'],
+  ["reflection", 'const p = Object.getPrototypeOf(x);'],
+  ["reflection", 'const p = x.__proto__;'],
+  ["ambiguous-token", 'const caf\u0065 = 1;\n\\u0069mport("x");'],
+  ["ambiguous-token", 'const a = 1; \u2603 import { z } from "../c/z.mjs";'],
   ["ambiguous-token", 'if (x) /"/.test(y); import { z } from "../c/z.mjs";'],
   ["ambiguous-token", 'let i = 0;\ni++ / 2; await import("../c/z.mjs");'],
 ];
@@ -392,6 +400,64 @@ test("safe import.meta members and safe node:module names are not reported", () 
   );
   assert.deepEqual(Object.values(scan.mechanisms).flat(), []);
   assert.deepEqual(scan.terminates, []);
+});
+
+// A non-ASCII separator must never glue the import keyword to the previous token.
+const SEPARATORS = [
+  ["U+2003 EM SPACE", "\u2003"],
+  ["U+3000 IDEOGRAPHIC SPACE", "\u3000"],
+  ["U+2028 LINE SEPARATOR", "\u2028"],
+  ["U+2029 PARAGRAPH SEPARATOR", "\u2029"],
+  ["U+00A0 NO-BREAK SPACE", "\u00a0"],
+  ["U+FEFF BYTE ORDER MARK", "\ufeff"],
+  ["U+200A HAIR SPACE", "\u200a"],
+];
+for (const [name, ch] of SEPARATORS) {
+  test(`UNICODE whitespace ${name} before an import and before process.exit is read as whitespace`, () => {
+    const imp = scanSource(`const s = 1;${ch}import { z } from "../c/z.mjs";\n`);
+    assert.deepEqual(specs(imp), ["../c/z.mjs"], JSON.stringify(imp));
+    assert.deepEqual(imp.mechanisms["ambiguous-token"], []);
+    const term = scanSource(`const s = 1;${ch}process.exit(1);\n`);
+    assert.equal(term.terminates.length, 1, JSON.stringify(term));
+    // The check itself sees the cross-boundary import.
+    const t = tiny({ ...FILES, "src/app.mjs": FILES["src/app.mjs"] + `const s = 1;${ch}import { zz } from "./core.mjs";\n` }, baseDeclaration());
+    assert.ok(checkBoundaries(t.dir, t.declaration).some((v) => v.kind === "undeclared-interface"));
+  });
+}
+
+test("a non-ASCII identifier is accepted and does not hide the import after it", () => {
+  const scan = scanSource('const é = 1; const 変数 = 2; import { z } from "./z.mjs"; process.exit(é);\n');
+  assert.deepEqual(specs(scan), ["./z.mjs"]);
+  assert.equal(scan.terminates.length, 1);
+  assert.deepEqual(Object.values(scan.mechanisms).flat(), []);
+});
+
+test("non-ASCII inside strings, comments, templates and regex literals is ignored", () => {
+  const scan = scanSource(
+    [
+      'const s = "\u3000import x from \'./nope.mjs\'\u2028 ☃";',
+      "// ☃ \u3000 import y from './nope2.mjs';",
+      "/* \u2028 ☃ */",
+      "const t = `☃ \u3000 process.exit(1)`;",
+      "const r = /☃\u3000/u;",
+      'import { real } from "./real.mjs";',
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual(specs(scan), ["./real.mjs"]);
+  assert.deepEqual(scan.terminates, []);
+  assert.deepEqual(Object.values(scan.mechanisms).flat(), []);
+});
+
+test("a non-ASCII character that is neither whitespace nor an identifier character is reported", () => {
+  const scan = scanSource('const a = 1 \u2603 ;\nimport { z } from "./z.mjs";\n');
+  assert.deepEqual(scan.mechanisms["ambiguous-token"], [1]);
+  assert.deepEqual(specs(scan), ["./z.mjs"]);
+});
+
+test("a unicode escape in an identifier outside a string is reported, never followed", () => {
+  const scan = scanSource('\\u0069mport("./x.mjs");\n');
+  assert.ok(scan.mechanisms["ambiguous-token"].length > 0);
 });
 
 test("a quote inside a regex literal does not swallow the following import", () => {

@@ -215,8 +215,12 @@ export function inScopeFiles(repoRoot, observation) {
 const REGEX_AFTER_KEYWORD = new Set([
   "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await",
 ]);
-const isIdStart = (c) => /[A-Za-z_$]/.test(c) || c > "\u007f";
-const isIdPart = (c) => /[A-Za-z0-9_$]/.test(c) || c > "\u007f";
+// ASCII identifier characters, and the Unicode ID_Start / ID_Continue classes for the rest. A
+// non-ASCII character that is neither whitespace nor an identifier character is not guessed at: it
+// is recorded as unclassified, which the scanner reports as ambiguous-token.
+const ID_START_UNICODE = /[\p{ID_Start}]/u;
+const ID_CONTINUE_UNICODE = /[\p{ID_Continue}\u200c\u200d]/u;
+const isAsciiIdPart = (c) => /[A-Za-z0-9_$]/.test(c);
 
 /**
  * Tokens: { t: "id" | "str" | "num" | "re" | "tmpl" | "p", v, line }. Comments are dropped. A
@@ -225,6 +229,7 @@ const isIdPart = (c) => /[A-Za-z0-9_$]/.test(c) || c > "\u007f";
 export function tokenize(src, ambiguous = "regex") {
   const toks = [];
   toks.ambiguousLines = [];
+  toks.unclassifiedLines = [];
   const n = src.length;
   let i = 0;
   let line = 1;
@@ -308,20 +313,48 @@ export function tokenize(src, ambiguous = "regex") {
           else if (ch === "/" && !inClass) { i++; break; }
           i++;
         }
-        while (i < n && isIdPart(src[i])) i++;
+        while (i < n && isAsciiIdPart(src[i])) i++;
         toks.push({ t: "re", v: "", line: start });
         continue;
       }
-      if (isIdStart(c)) {
-        let j = i + 1;
-        while (j < n && isIdPart(src[j])) j++;
+      if (c > "\u007f") {
+        const cp = src.codePointAt(i);
+        const ch = String.fromCodePoint(cp);
+        if (/\s/u.test(ch)) {
+          // Unicode space separators, U+00A0, U+FEFF and the line separators U+2028 / U+2029.
+          if (cp === 0x2028 || cp === 0x2029) line++;
+          i += ch.length;
+          continue;
+        }
+        if (!ID_START_UNICODE.test(ch)) {
+          toks.unclassifiedLines.push(line);
+          toks.push({ t: "p", v: ch, line });
+          i += ch.length;
+          continue;
+        }
+      }
+      if (c === "\\") {
+        // A backslash outside a string can only be an identifier escape (\u0069mport): not followed.
+        toks.unclassifiedLines.push(line);
+        toks.push({ t: "p", v: c, line });
+        i++;
+        continue;
+      }
+      if (/[A-Za-z_$]/.test(c) || c > "\u007f") {
+        let j = i;
+        while (j < n) {
+          const cp = src.codePointAt(j);
+          const ch = String.fromCodePoint(cp);
+          if (isAsciiIdPart(ch) || (cp > 0x7f && ID_CONTINUE_UNICODE.test(ch))) j += ch.length;
+          else break;
+        }
         toks.push({ t: "id", v: src.slice(i, j), line });
         i = j;
         continue;
       }
       if (c >= "0" && c <= "9") {
         let j = i + 1;
-        while (j < n && (isIdPart(src[j]) || src[j] === ".")) j++;
+        while (j < n && (isAsciiIdPart(src[j]) || src[j] === ".")) j++;
         toks.push({ t: "num", v: src.slice(i, j), line });
         i = j;
         continue;
@@ -416,6 +449,10 @@ function analyse(toks) {
 
   for (let k = 0; k < toks.length; k++) {
     const tk = toks[k];
+    if (tk.t === "str" && isP(k - 1, "[") && isP(k + 1, "]") && (tk.v === "constructor" || tk.v === "__proto__")) {
+      flag("reflection", tk.line);
+      continue;
+    }
     if (tk.t !== "id" || skip.has(k)) continue;
     const afterDot = isP(k - 1, ".") && !(isId(k - 2, "globalThis") || isId(k - 2, "global"));
 
@@ -530,8 +567,13 @@ function analyse(toks) {
         if (!afterDot && !isP(k + 1, ":")) flag("reflection", tk.line);
         break;
       case "constructor":
-        // (function () {}).constructor("code")() builds a function from a string.
-        if (afterDot && isP(k + 1, "(")) flag("reflection", tk.line);
+        // f.constructor reaches Function from any function value, called or assigned.
+        if (afterDot) flag("reflection", tk.line);
+        break;
+      case "getPrototypeOf":
+      case "setPrototypeOf":
+      case "__proto__":
+        flag("reflection", tk.line);
         break;
       case "Reflect":
       case "Proxy":
@@ -602,8 +644,11 @@ function analyse(toks) {
 export function scanSource(text) {
   const first = tokenize(text, "regex");
   const a = analyse(first);
+  const unclassified = [...new Set(first.unclassifiedLines)];
+  if (unclassified.length > 0) a.mechanisms["ambiguous-token"].push(...unclassified);
   if (first.ambiguousLines.length === 0) return a;
   const b = analyse(tokenize(text, "div"));
+  if (unclassified.length > 0) b.mechanisms["ambiguous-token"].push(...unclassified);
   const key = (r) =>
     JSON.stringify({
       i: r.imports.map((x) => [x.kind, x.spec, x.names, x.line]),
@@ -619,7 +664,7 @@ export function scanSource(text) {
   }
   const mechanisms = {};
   for (const m of DETECTED_MECHANISMS) mechanisms[m] = [...new Set([...a.mechanisms[m], ...b.mechanisms[m]])].sort((x, y) => x - y);
-  mechanisms["ambiguous-token"] = [...new Set(first.ambiguousLines)];
+  mechanisms["ambiguous-token"] = [...new Set([...first.ambiguousLines, ...unclassified])];
   return { imports, terminates: [...new Set([...a.terminates, ...b.terminates])].sort((x, y) => x - y), mechanisms };
 }
 

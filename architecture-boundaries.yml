@@ -37,13 +37,13 @@ observation:
         - scripts/repository.mjs
         - scripts/test.mjs
     - mechanism: "reflection"
-      reason: "Any mention of eval or Function (including (0, eval), const e = eval and const F = Function), a .constructor( call, Reflect, Proxy, node:vm, process.binding, process._linkedBinding and process.dlopen are reported unless listed in knownSites. Other forms of indirection (computed property lookup, a constructor reached by assignment, prototype manipulation) are not examined."
+      reason: "Any mention of eval or Function (including (0, eval), const e = eval and const F = Function), any .constructor access, a constructor or __proto__ index, getPrototypeOf, setPrototypeOf, __proto__, Reflect, Proxy, node:vm, process.binding, process._linkedBinding and process.dlopen are reported unless listed in knownSites. A property name assembled at run time is not examined."
       knownSites: []
     - mechanism: "network"
       reason: "Imports of http, https, http2, net, tls, dgram or dns, and fetch, WebSocket and XMLHttpRequest, are reported unless listed in knownSites. Traffic that leaves through another program (scripts/ci-triage.mjs runs the gh CLI) is not visible."
       knownSites: []
     - mechanism: "ambiguous-token"
-      reason: "A slash after ), } or ++/-- may open a regex literal or divide. The file is read both ways; if the two readings disagree about modules or terminations the union is checked and the file is reported unless listed in knownSites."
+      reason: "A slash after ), } or ++/-- may open a regex literal or divide: the file is read both ways and a disagreement about modules or terminations is reported. Any non-ASCII character outside strings, templates, regex literals and comments that is neither whitespace nor an identifier character, and any backslash outside them, is reported. Listed in knownSites to acknowledge."
       knownSites: []
     - mechanism: "generated-code"
       reason: "Code written to disk and run later, and generated documentation, are not examined. The scanner has no detector for this."
@@ -118,7 +118,7 @@ members:
     paths:
       - scripts/boundaries.mjs
     evidence:
-      - scripts/boundaries.mjs:659
+      - scripts/boundaries.mjs:704
   - id: "validator-cli"
     kind: "process"
     description: "The audit and validate command and the ownership check. A CLI boundary: the only place, with the tool CLIs, that terminates the process."
