@@ -1,11 +1,14 @@
 /**
- * Committed conflict markers are reported; documentation of them is not.
+ * Conflict markers in tracked files are reported; documentation of them is not.
  *
  * Issue #21 framed this as one question about one layer. The measurement split it into two
  * propositions that share a vocabulary and nothing else, and this file covers only the first:
- * *this tracked file's committed content contains a conflict-marker group*. The second — *this
- * working tree is mid-conflict* — cannot reach a commit at all, so it lives in the local preflight
- * (`scripts/ci-context.sh` / `.ps1`) rather than here.
+ * *this tracked file contains a conflict-marker group*. The detector asks `git ls-files` which paths
+ * are tracked and reads their bytes from the WORKING TREE, not from HEAD or the index, so a group
+ * in the working copy of a tracked file is reported even if the committed content is clean (a test
+ * pins this). The second proposition — *this working tree is mid-conflict*, meaning unmerged index
+ * stages — is a different thing: it is not detected here and lives in the local preflight
+ * (`scripts/ci-context.sh` / `.ps1`) rather than in this suite.
  *
  * They are disjoint, and each misses the other's case entirely. A delete/modify conflict leaves
  * unmerged stages in the index over a file whose content holds no markers. A committed marker

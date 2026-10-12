@@ -2,8 +2,8 @@
 
 ## Purpose and non-goals
 
-**This design is implemented.** `scripts/standards.mjs` ships all sixteen finding categories below,
-and has since 1.0.0. The document was written before the tool existed, so that the artifacts mandated
+**This design is implemented.** `scripts/standards.mjs` ships every finding id in the table below.
+The document was written before the tool existed, so that the artifacts mandated
 by the standards — particularly
 [Standard 44](../standards/44-existing-project-reconstruction.md) — would be shaped from the start to
 be machine-readable rather than needing rework. It stays because it remains the record of the
@@ -132,7 +132,9 @@ tracking where a standard requires one; it does not grade the tracking it finds.
 
 ## Finding categories
 
-Sixteen categories, each with a stable kebab-case `id` for machine consumption. The first six are
+The table below is the enumeration of findings; it is not restated as a count here, so it cannot drift
+from the table. Each finding has a stable kebab-case `id` for machine consumption, and a category that
+more than one id may share. The first six are
 descriptive — they report what the repository *has*, and are always `info`. The remainder report
 something absent, unproven, or contradictory.
 
