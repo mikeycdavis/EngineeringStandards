@@ -492,3 +492,23 @@ for (const [name, skip] of [
     assert.deepEqual(with_.strictValidate, without.strictValidate, "--strict made validate see the marker");
   });
 }
+
+test("the detector reads the working-tree copy of a tracked file, so an uncommitted group is reported", async () => {
+  // Pins what the detector actually does, which the finding's id ("committed-...") undersells.
+  // `git ls-files` decides WHICH paths are checked; the bytes are read from the working tree. A
+  // tracked file whose committed content is clean but whose working copy holds a group is reported,
+  // and `audit --strict` fails on that working-tree state. The bytes in HEAD are not consulted.
+  await withCompliantRepo({ marker: false }, async (root) => {
+    const clean = run("audit", root, ["--strict"]);
+    assert.deepEqual(markerEvidence(clean.json), [], "the committed content must be clean at the start");
+    assert.equal(clean.code, 0);
+
+    await writeFile(path.join(root, "src", "merged.mjs"), GROUP);
+    const dirty = run("audit", root, ["--strict"]);
+    assert.deepEqual(markerEvidence(dirty.json), ["src/merged.mjs:2-6"], "the working-tree group was not read");
+    assert.equal(dirty.code, 1, "--strict must fail on a working-tree group in a tracked file");
+    // The same file is still clean in HEAD; this is the working tree being read, not the commit.
+    const head = spawnSync("git", ["-C", root, "show", "HEAD:src/merged.mjs"], { encoding: "utf8" });
+    assert.equal(head.stdout, RESOLVED);
+  });
+});

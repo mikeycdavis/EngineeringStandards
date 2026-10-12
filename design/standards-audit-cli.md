@@ -148,7 +148,7 @@ something absent, unproven, or contradictory.
 | `missing-planning-artifacts` | Missing planning artifacts | Absence of `artifacts/project-plan-breakdown/`, or a breakdown with no `00-overview.md` | `warning` |
 | `no-test-surface` | Verification surface | No test files found; audit-only, no rule binding | `info` |
 | `no-ci-configuration` | Verification surface | No CI configuration found; audit-only, no rule binding | `info` |
-| `committed-conflict-markers` | Unresolved merge conflicts | A conflict-marker group (opener, separator and terminator, each at column 0 and exactly seven characters) in a tracked file the audit reads, outside Markdown fenced blocks; audit-only, no rule binding, `INFERRED` | `warning` |
+| `committed-conflict-markers` | Unresolved merge conflicts | A conflict-marker group (opener, separator and terminator, each at column 0 and exactly seven characters) in the working-tree copy of a tracked file the audit reads, outside Markdown fenced blocks; audit-only, no rule binding, `INFERRED` | `warning` |
 | `unverified-functionality` | Unverified functionality | Capabilities with no corresponding test coverage | `warning` |
 | `potential-dead-code` | Potential dead code | Unreferenced modules, unreachable routes, exports with no importer | `info` |
 | `potential-unfinished-features` | Potential unfinished features | `TODO`/`FIXME`/`HACK`/`XXX` markers, stubs, `NotImplemented` paths, skipped tests, disabled feature flags | `warning` |
@@ -157,18 +157,24 @@ something absent, unproven, or contradictory.
 | `open-reconstruction-questions` | Open reconstruction questions | Unanswered entries in `artifacts/project-baseline/open-questions.md` | `warning` |
 | `standards-violations` | Standards violations | Any requirement `RN` of any standard that the repository fails | `error` |
 
-### Committed conflict markers are audit-only evidence, and they fail `--strict`
+### Conflict markers in tracked files are audit-only evidence, and they fail `--strict`
 
-Owner decision, issue [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58): committed
-conflict-marker detection is **permanently audit-only**. The finding carries `rule: null`, so it is
+Owner decision, issue [#58](https://github.com/mikeycdavis/EngineeringStandards/issues/58): conflict-marker
+detection in tracked files (finding id `committed-conflict-markers`) is **permanently audit-only**. The finding carries `rule: null`, so it is
 unbound to any catalog rule and has no compliance effect: `validate --json` still lists it among
 its findings, but the compliance engine skips findings with no rule, so its status, score, per-rule
 results and exit code are the same with or without the marker. Standard 46
 was measured and rejected as its home, and the live working-tree conflict preflight is a separate
 proposition that lives outside the catalog.
 
+**What is read.** `git ls-files` decides which paths are checked, but the bytes come from the working-tree
+copy, not from `HEAD` or the index. A tracked file whose committed content is clean but whose working
+copy holds a group is reported, and `audit --strict` fails on that working-tree state; the id says
+"committed" because the group sits in a tracked file, not because committed bytes were inspected.
+Untracked files are not reported.
+
 Its severity is `warning`, and that is part of the contract rather than an accident. `audit --strict`
-exits 1 on any finding that is not `info`, so a repository with a committed marker group fails a
+exits 1 on any finding that is not `info`, so a repository with a marker group in a tracked file fails a
 strict audit while a default audit exits 0. The only thing `--strict` promotes here is the
 observation; nothing is added to a verdict.
 
@@ -178,7 +184,7 @@ group inside a fence is therefore **not reported**, and neither is one in a file
 does not read. A clean result is not proof that none exists. The unfenced specimen is reported, the
 canonical fenced documentation is not, and the genuine group inside a fence is a known miss;
 `test/conflict-markers.test.mjs` asserts all three outcomes, and also pins the severity, the absent
-rule, the strict exit codes and the unchanged `validate` verdict.
+rule, the strict exit codes, the unchanged `validate` verdict, and that the working-tree copy is what is read.
 
 ## Required: the use/mention rule
 
