@@ -37,11 +37,14 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  * @param today     ISO date, for exception expiry
  * @param justified path-scoped justifications the caller already subtracted from `findings` (ADR
  *                  0017), each `{ rule, path, reason, reference, approvedBy, approvedAt, removeWhen }`.
- *                  The engine does not subtract; it makes the subtraction VISIBLE on the rule's
- *                  result, so a rule that passes because paths were justified can never read as one
- *                  that simply had nothing to find.
+ *                  The engine does not subtract. A rule whose every violating path is justified
+ *                  is reported `excepted`, never `passed`: it follows the existing exception
+ *                  contract (Standard 20 R1, "countably non-compliant with a named rule"), so the
+ *                  verdict is COMPLIANT_WITH_EXCEPTIONS and cannot read as a clean rule.
+ * @param expiredJustified justifications past their `expires`. They are not applied; each yields a
+ *                  failed `expired-justification` configuration result, as an expired exception does.
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness, justified }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, justified, expiredJustified }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -228,16 +231,24 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       const covered = justifiedFor(rule);
       if (covered.length === 0) {
         results.push(base(rule, level, RESULT.passed, "evaluated", `No violation of ${rule.id} was observed.`));
+      } else if (level === "optional") {
+        // An optional rule's violation is SILENT (Standard 18 R3), and a justified one is a violation
+        // that was subtracted: nothing is reported, exactly as without the justification.
+        silencedRules.add(rule.id);
       } else {
-        // Passed because every violating path is justified — and saying so is the whole control. The
-        // message and the `justified` list travel with the result so this can never read as a clean
-        // rule.
+        // EXCEPTED, never passed. Every violating path is knowingly unmet and justified, which is the
+        // shape of an active exception on a violated rule: status follows the rule's level (failed
+        // for required/forbidden, warning otherwise), disposition is `excepted`, and summarise()
+        // already reads that as COMPLIANT_WITH_EXCEPTIONS rather than NON_COMPLIANT. Reusing the
+        // disposition keeps one vocabulary; a `passed` here would have been a waiver that scores
+        // as evidence the rule is met.
+        const outcome = level === "required" || level === "forbidden" ? RESULT.failed : RESULT.warning;
         const result = base(
           rule,
           level,
-          RESULT.passed,
-          "evaluated",
-          `No unjustified violation of ${rule.id} was observed; ${covered.length} path(s) are justified by project-policy.yml.`,
+          outcome,
+          "excepted",
+          `${rule.id} is excepted by ${covered.length} path-scoped justification(s); every violating path is justified.`,
         );
         result.justified = covered.map(justifiedShape);
         result.evidence = covered.map((e) => e.path);
@@ -334,6 +345,27 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       evidence: ["project-policy.yml"],
       files: ["project-policy.yml"],
       remediation: "Renew the exception with a new approval, or satisfy the rule.",
+    });
+  }
+
+  // An expired justification is not applied, so the violation it covered is already a finding and
+  // the rule fails on its own evidence. This entry says WHY, as an expired exception's does, so the
+  // lapse is a named failure rather than a rule that merely started failing again.
+  for (const entry of expiredJustified ?? []) {
+    const rule = resolve(catalog, entry.rule);
+    if (!rule) continue;
+    results.push({
+      ruleId: rule.id,
+      status: RESULT.failed,
+      severity: rule.severity,
+      level: levelOf(rule),
+      validationType: "configuration",
+      assurance: "full",
+      disposition: "expired-justification",
+      message: `The justification for ${rule.id} at ${entry.path} expired on ${entry.expires}.`,
+      evidence: ["project-policy.yml", entry.path],
+      files: ["project-policy.yml", entry.path],
+      remediation: "Renew the justification with a new approval, or satisfy the rule at that path.",
     });
   }
 

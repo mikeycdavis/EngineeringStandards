@@ -33,14 +33,27 @@ justifications:
     approvedAt: "2026-10-11"
     reference: "ADR-0004 / decision record"
     removeWhen: "The frozen copy is regenerated or deleted."
+    expires: "2027-10-11"   # optional
 ```
 
 ### Binding rules
 
 1. **It is not an exception, and it is not an attestation.** An exception says a rule is unmet
    project-wide; an attestation says a human found it satisfied. A justification says a *named
-   departure at a named place* is understood. It does not make a project `COMPLIANT_WITH_EXCEPTIONS`:
-   the rule passes only because every violating path is justified, and the report lists them.
+   departure at a named place* is understood and approved.
+   **A rule whose every violating path is justified is `excepted`, never `passed`.** The first
+   version of this record said the rule "passes"; that statement is superseded. A pass is evidence
+   the rule is met, and a justified path is a known, countable departure (Standard 20 R1: an
+   exception leaves the project "countably non-compliant with a named rule"). There is no separate
+   `EXCEPTED` status value in the engine's vocabulary, so the existing representation is reused:
+   `disposition: "excepted"`, with the status the rule's level gives a violation (`failed` for
+   `required`/`forbidden`, `warning` otherwise), which `summarise()` already excludes from
+   NON_COMPLIANT and reads as `COMPLIANT_WITH_EXCEPTIONS`. An `optional` rule stays silent, as for
+   any violation (Standard 18 R3). Verdicts are the existing four: `COMPLIANT` (every applicable
+   rule passes, nothing excepted), `COMPLIANT_WITH_EXCEPTIONS` (no failure, at least one rule
+   excepted by an exception or a justification), `NON_COMPLIANT` (any applicable rule fails,
+   including one with an unjustified path remaining or an expired justification), `NOT_EVALUATED`
+   (an applicable forbidden rule nobody examined and no exception outranks it).
 2. **The engine decides which rules are admitted.** An explicit allowlist in
    `scripts/justifications.mjs` (`JUSTIFIABLE_RULES`), initially `errors.no-swallowed-exceptions`
    alone. It is code, not policy data and not a catalog flag, so widening it is a reviewed change. A
@@ -60,9 +73,25 @@ justifications:
    other detector has already inspected every file, and no other rule's findings are read or
    rewritten.
 6. **It is never silent.** Applied justifications appear in the human report, in `justifications` in
-   `validate --json`, and as a `justified` list on the rule's own result. A justification whose
+   `validate --json`, and as a `justified` list on the rule's own result. The output carries the
+   exception count, and for each justification the exact rule and path, reason, owner
+   (`approvedBy`), approval date, expiry and `removeWhen`. A justification whose
    path no longer violates the rule (or that the rule did not examine) is a `warning` finding,
    `stale-justification`, bound to no rule so it cannot itself fail anything.
+10. **Expiry is optional, and an expired justification is never a silent pass.** `expires` is an
+   ISO date. An entry whose `expires` is before today is **not applied**: the violation it covered
+   is a finding again, so the rule `failed` on its own evidence (the contract for a violated rule,
+   chosen over `not-evaluated` because the violation was observed, not unknown), and a separate
+   `expired-justification` result names the lapse, exactly as an expired `exceptions[]` entry does.
+   An entry expiring today is still in force today. An expired entry whose path no longer violates
+   is only a stale warning. `expires` must be a real date not before `approvedAt`. It is optional
+   because Standard 20 asks for "optional expiration"; absence is indefinite, bounded by
+   `removeWhen` and by staleness.
+11. **Existing precedence is inherited, not changed.** `summarise()` decides
+   `COMPLIANT_WITH_EXCEPTIONS` before it looks for unexamined prohibitions, so a project with a
+   justification and an unexamined forbidden rule reads `COMPLIANT_WITH_EXCEPTIONS` while the CLI
+   still exits 1 on the unexamined prohibition. That precedence predates this change and is pinned
+   by a test; whether it should change is an owner decision about exceptions generally.
 7. **A bad list is a configuration error.** Any invalid entry makes `validate` exit 2 with
    `NOT_EVALUATED` and applies **none** of them. A partially honoured waiver list is a verdict that
    cannot be reproduced from the policy.
@@ -104,7 +133,8 @@ justifications:
 ## Consequences
 
 - A frozen file is justified at the cost of one reviewed, attributable, removable record, and the
-  rest of the project keeps full coverage.
+  rest of the project keeps full coverage. The rule reads as excepted, so the project is visibly
+  `COMPLIANT_WITH_EXCEPTIONS` rather than `COMPLIANT`.
 - `removeWhen` is required so the waiver carries its own exit condition; the staleness warning is the
   mechanism that makes a forgotten one visible.
 - The policy schema gains an optional section. Existing policies are unaffected. Per Standard 21 that

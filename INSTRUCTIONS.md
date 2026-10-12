@@ -242,12 +242,15 @@ justifications:
     approvedAt: "2026-10-11"
     reference: "ADR-0004"
     removeWhen: "The frozen copy is regenerated or deleted."
+    expires: "2027-10-11"                    # optional; past it the justification is not applied
 ```
 
 It suppresses that rule at that path and nothing else: every other rule still inspects the file, an
-unlisted file still fails, and the justification is listed in the `validate` report. One that no
-longer matches a violation is reported as stale, so remove it. A malformed entry is a configuration
-error (exit 2), not a partial waiver.
+unlisted file still fails, and the justification is listed in the `validate` report with its owner and
+expiry. A rule whose violating paths are all justified is reported **excepted**, not passed, and the
+verdict is `COMPLIANT_WITH_EXCEPTIONS`. One that no longer matches a violation is reported as stale,
+so remove it; one past its `expires` is not applied and the rule fails again. A malformed entry is a
+configuration error (exit 2), not a partial waiver.
 
 Two things to resist:
 

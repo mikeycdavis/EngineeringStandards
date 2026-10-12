@@ -98,6 +98,19 @@ function complianceFindings(document, today, catalog) {
     }
   }
 
+  // A path-scoped justification past its expiry is not applied by the engine. Say so here, where an
+  // adopter looks first, rather than letting it surface only as a renewed violation.
+  for (const entry of Array.isArray(document.justifications) ? document.justifications : []) {
+    if (entry.expires && entry.expires < today) {
+      findings.push({
+        id: "policy.expired-justification",
+        severity: "error",
+        message: `justification for '${entry.rule}' at '${entry.path}' expired on ${entry.expires}`,
+        remediation: "Renew it with a new approval, or satisfy the rule at that path.",
+      });
+    }
+  }
+
   const exceptions = Array.isArray(document.exceptions) ? document.exceptions : [];
   for (const entry of exceptions) {
     if (entry.expires && entry.expires < today) {

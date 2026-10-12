@@ -39,10 +39,16 @@ decision ([Standard 21](standards/21-versioning.md)).
   are each rejected with their own code. Tracked-ness is `git ls-files` in the audited root; outside a git work
   tree it falls back to the discovered file set and the result says which basis answered.
 - `validate` subtracts only the justified path's evidence from that one rule. Remaining violations still fail
-  the rule, and every other rule still inspects the file. Applied justifications are listed in the human
-  report, in `justifications` of `validate --json`, and as `justified` on the rule's result; one whose path no
-  longer violates is a `stale-justification` warning. Any invalid entry is exit 2 (`NOT_EVALUATED`) and none is
-  applied.
+  the rule, and every other rule still inspects the file. **A rule whose every violating path is justified is
+  `excepted`, never `passed`** (disposition `excepted`, the existing exception vocabulary), so the verdict is
+  `COMPLIANT_WITH_EXCEPTIONS`, not `COMPLIANT`. Applied justifications are listed in the human report (with
+  owner, expiry and an exception count), in `justifications` of `validate --json` (`exceptionCount`,
+  `justificationCount`, `exceptedRules`, `applied`, `expired`, `stale`, `unverified`), and as `justified` on the
+  rule's result; one whose path no longer violates is a `stale-justification` warning. Any invalid entry is exit 2
+  (`NOT_EVALUATED`) and none is applied.
+- Optional `expires` (ISO date). An expired justification is not applied: the violation is reported again, the
+  rule fails, and an `expired-justification` result names the lapse (as for `exceptions[]`); `npm run policy`
+  reports `policy.expired-justification`.
 - `npm run policy` validates the same entries (`--root <dir>` selects the repository the paths resolve
   against). `audit` is unchanged: it remains policy-independent evidence.
 

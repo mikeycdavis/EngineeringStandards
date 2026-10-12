@@ -39,6 +39,7 @@ import {
   applyJustifications,
   justificationProblems,
   justifiedRecord,
+  splitByExpiry,
   trackedProvider,
 } from "./justifications.mjs";
 
@@ -234,6 +235,11 @@ function renderVerdict(report, policy, justifications = null) {
   out.push(`  Score:  ${report.score === null ? "n/a" : report.score + "%"}  (${report.denominator.basis}: ${report.denominator.scored})`);
   out.push(`  Rules:  ${s.passed} passed, ${s.failed} failed, ${s.warnings} warning(s), ${s.skipped} skipped`);
   out.push(`  Cover:  ${a.automated} automated, ${a.manualReview} manual-review, ${a.notEvaluated} not-evaluated`);
+  const exceptedCount = report.results.filter((r) => r.disposition === "excepted").length;
+  if (exceptedCount > 0) {
+    const byJustification = report.results.filter((r) => r.disposition === "excepted" && r.justified?.length).length;
+    out.push(`  Excepted: ${exceptedCount} rule(s) (${exceptedCount - byJustification} by exception, ${byJustification} by path justification)`);
+  }
   out.push("");
 
   const failed = report.results.filter((r) => r.status === "failed");
@@ -288,14 +294,31 @@ function renderVerdict(report, policy, justifications = null) {
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
     out.push("  Excepted:");
-    for (const r of excepted) out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
+    for (const r of excepted) {
+      if (r.exception) {
+        out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
+      } else {
+        out.push(`    ${r.ruleId} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
+      }
+    }
     out.push("");
   }
-  // Path-scoped justifications are never silent: what was subtracted, where, why, and what removes it.
+  // Path-scoped justifications are never silent: what was subtracted, where, why, who approved it,
+  // when it lapses, and what removes it.
   if (justifications?.applied?.length) {
     out.push(`  Justified (path-scoped, ${justifications.trackedBasis}):`);
     for (const j of justifications.applied) {
-      out.push(`    ${j.rule} @ ${j.path} — ${j.reason} [${j.reference}; remove when: ${j.removeWhen}]`);
+      out.push(
+        `    ${j.rule} @ ${j.path} — ${j.reason} (owner ${j.approvedBy}, approved ${j.approvedAt}, ` +
+          `expires ${j.expires ?? "never"}; ${j.reference}; remove when: ${j.removeWhen})`,
+      );
+    }
+    out.push("");
+  }
+  if (justifications?.expired?.length) {
+    out.push("  Expired justifications (NOT applied; the violation is reported again):");
+    for (const j of justifications.expired) {
+      out.push(`    ${j.rule} @ ${j.path} — expired ${j.expires} (owner ${j.approvedBy})`);
     }
     out.push("");
   }
@@ -3886,8 +3909,23 @@ export async function main(args) {
    * is touched — every other detector has already run over every file, and no other finding is read
    * or rewritten here.
    */
-  const justificationReport = { trackedBasis: null, trackedNote: null, applied: [], stale: [], unverified: [], problems: [] };
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const justificationReport = {
+    trackedBasis: null,
+    trackedNote: null,
+    // Filled after evaluation: the number of rules whose disposition is `excepted` (by either
+    // mechanism) and the number of path justifications that produced one.
+    exceptionCount: 0,
+    justificationCount: 0,
+    exceptedRules: [],
+    applied: [],
+    expired: [],
+    stale: [],
+    unverified: [],
+    problems: [],
+  };
   const declaredJustifications = Array.isArray(policy.document?.justifications) ? policy.document.justifications : [];
+  let expiredJustified = [];
   if (declaredJustifications.length > 0) {
     const tracked = trackedProvider(root, files.map((f) => rel(f)));
     justificationReport.trackedBasis = tracked.basis;
@@ -3913,7 +3951,16 @@ export async function main(args) {
       for (const rule of JUSTIFIABLE_RULES) {
         if (!observations.has(rule)) throw new Error(`justifiable rule ${rule} has no detector observation`);
       }
-      const outcome = applyJustifications(declaredJustifications, observations);
+      // An expired justification is NOT applied: the violation it covered stays a finding and the
+      // rule fails on it, and a separate failed result names the lapse. It is classified against the
+      // same observations so an expired entry whose path no longer violates is only stale.
+      const { active, expired } = splitByExpiry(declaredJustifications, todayIso);
+      const lapsed = applyJustifications(expired, observations);
+      justificationReport.expired = lapsed.applied.map(justifiedRecord);
+      expiredJustified = lapsed.applied;
+      const outcome = applyJustifications(active, observations);
+      outcome.stale.push(...lapsed.stale.map((e) => ({ ...e, why: `expired on ${e.expires} and ${e.why}` })));
+      outcome.unverified.push(...lapsed.unverified);
       justificationReport.applied = outcome.applied.map(justifiedRecord);
       justificationReport.stale = outcome.stale.map((e) => ({ ...justifiedRecord(e), why: e.why }));
       justificationReport.unverified = outcome.unverified.map((e) => ({ ...justifiedRecord(e), why: e.why }));
@@ -4122,7 +4169,14 @@ export async function main(args) {
     today: new Date().toISOString().slice(0, 10),
     freshness,
     justified: justificationReport.applied,
+    expiredJustified,
   });
+  justificationReport.exceptedRules = verdict.results
+    .filter((r) => r.disposition === "excepted")
+    .map((r) => r.ruleId)
+    .sort();
+  justificationReport.exceptionCount = justificationReport.exceptedRules.length;
+  justificationReport.justificationCount = justificationReport.applied.length;
 
   // Framework maturity, read from this framework's own inventory rather than the target repository.
   // It travels beside the verdict and never inside it: a coverage improvement must never be able to

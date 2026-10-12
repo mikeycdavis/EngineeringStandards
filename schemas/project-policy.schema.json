@@ -237,6 +237,12 @@
           "description": "The condition under which this justification must be removed. Without one, a path-scoped waiver becomes permanent by default.",
           "type": "string",
           "minLength": 1
+        },
+        "expires": {
+          "description": "Optional. Absence means the justification is indefinite, bounded only by removeWhen and by staleness. A justification past its expiry is not applied: the violation it covered is reported again and the rule fails (Standard 20), and an expired-justification result says why.",
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
         }
       }
     },

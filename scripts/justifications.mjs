@@ -284,6 +284,13 @@ export function justificationProblems(entries, { catalog, root, tracked }) {
     if (!isCalendarDate(entry?.approvedAt)) {
       add("approvedAt", "approved-at-invalid", `approvedAt '${entry?.approvedAt}' is not a real YYYY-MM-DD date`);
     }
+    if (entry?.expires !== undefined) {
+      if (!isCalendarDate(entry.expires)) {
+        add("expires", "expires-invalid", `expires '${entry.expires}' is not a real YYYY-MM-DD date`);
+      } else if (isCalendarDate(entry.approvedAt) && entry.expires < entry.approvedAt) {
+        add("expires", "expires-before-approval", `expires '${entry.expires}' is before approvedAt '${entry.approvedAt}'`);
+      }
+    }
   });
 
   return problems;
@@ -349,6 +356,22 @@ export function applyJustifications(entries, observations) {
   return { remaining, applied, stale, unverified };
 }
 
+/**
+ * Partition by expiry. An entry with no `expires` never expires by date. One whose `expires` is
+ * strictly before `today` is expired: it is not applied (the violation it covered is reported
+ * again), it is reported as expired, and it can never be a silent pass. The comparison is on ISO
+ * date strings, as for `exceptions[]`, so an entry expiring today is still in force today.
+ */
+export function splitByExpiry(entries, today) {
+  const active = [];
+  const expired = [];
+  for (const entry of entries) {
+    if (entry.expires && entry.expires < today) expired.push(entry);
+    else active.push(entry);
+  }
+  return { active, expired };
+}
+
 /** The report shape for one applied justification. Kept in one place so every surface agrees. */
 export function justifiedRecord(entry) {
   return {
@@ -359,5 +382,6 @@ export function justifiedRecord(entry) {
     approvedBy: entry.approvedBy,
     approvedAt: entry.approvedAt,
     removeWhen: entry.removeWhen,
+    expires: entry.expires ?? null,
   };
 }
