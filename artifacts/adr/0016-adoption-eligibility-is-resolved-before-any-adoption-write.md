@@ -71,19 +71,56 @@ record from a local copy of that repository (README line 3, and the closing para
 
 | Signal id | Source | Fires when | Evidence |
 | --- | --- | --- | --- |
-| `frozen-file` | file named `FROZEN.md` in the repository root | the file is readable and its text contains, after collapsing whitespace and ignoring case, either phrase `do not adopt this repository into a governed project` or `do not extend it` | `FROZEN.md` of StandardsOrchestrator: "Do not adopt this repository into a governed project. Do not extend it." (both sentences, final paragraph) |
-| `readme-frozen-banner` | `README.md` in the repository root | its first non-blank line, after removing leading blockquote `>` and emphasis `*` markers and whitespace, begins with `⛔ FROZEN` | StandardsOrchestrator `README.md` line 3: a blockquote whose bold text begins `⛔ FROZEN — not the portfolio authority.` and ends by pointing at `FROZEN.md` |
+| `frozen-file` | file named `FROZEN.md` in the repository root | the file is readable and its text, normalised as in "Text rules" below, contains the substring `do not adopt this repository into a governed project` or the substring `do not extend it` | `FROZEN.md` of StandardsOrchestrator: "Do not adopt this repository into a governed project. Do not extend it." (both sentences, final paragraph) |
+| `readme-frozen-banner` | `README.md` in the repository root | some line of the file is a blockquote line whose text, after the marker stripping in "Text rules" below, begins with `⛔ FROZEN` (U+26D4, U+0020, `FROZEN`, case-sensitive) | StandardsOrchestrator `README.md` line 3 (line 1 is the `# StandardsOrchestrator` title, so the banner is not the first line): a blockquote whose bold text begins `⛔ FROZEN — not the portfolio authority.` and ends by pointing at `FROZEN.md` |
 
-Filename comparison is case-insensitive on the directory listing, because a differently cased file is
+Filename comparison is ASCII-case-insensitive on the directory listing (ASCII letters lowercased; no Unicode or locale case folding), because a differently cased file is
 the same signal on the platforms this repository targets and treating it as absent would be the
 unsafe direction. On a case-sensitive filesystem the root can hold several entries that fold to
 the same name (`FROZEN.md` and `frozen.md`, or `README.md` and `Readme.md`). **Every** case-folded
 match is inspected, none is chosen in preference to another, and each is a source in its own right:
 any match whose signal fired controls the result as a fired signal, and any match that is
-indeterminate (unreadable, not a regular file including any symbolic link, over the read cap, not UTF-8) makes the result
+indeterminate (unreadable, not classifiable by `lstat`, not a regular file including any symbolic link, over the read cap, not UTF-8) makes the result
 `INDETERMINATE`, whatever the other matches say. A benign sibling never clears a fired or
 indeterminate one. Matching is on the repository root only; nested directories are not searched,
 because a nested `FROZEN.md` describes a subtree and not the repository.
+
+#### Text rules
+
+Every character-class decision in the vocabulary is fixed here, ASCII-only and locale-independent, so
+that two implementations cannot differ on Unicode whitespace or case. Where this record is silent,
+nothing is implied.
+
+- **Decoding.** A matching file is read as bytes, no larger than the audit collector's per-file read
+  cap (`MAX_READ_BYTES`, 400,000 bytes at e341dba; a file strictly larger is `over-read-cap`) and
+  decoded as UTF-8 with errors fatal (any invalid sequence is `not-utf8`). One leading U+FEFF is
+  removed if present. NUL and other control characters are valid text.
+- **Line terminators.** LF, CRLF and a lone CR each end a line.
+- **Blank, and the whitespace set.** The whitespace set is exactly U+0020 and U+0009. A line is blank
+  if it is empty or contains only that set. U+00A0 (no-break space), U+3000, U+200B and every other
+  Unicode space or format character are **not** whitespace and make a line non-blank; the ASCII set
+  is chosen because it is the set Markdown renderers treat as indentation, and because a smaller
+  set never makes a signal fire on a character the author did not type as a space.
+- **README banner.** For each line: remove leading whitespace-set characters; the line is a
+  blockquote line only if its next character is `>`; then repeatedly remove any leading character
+  from `>`, `*`, U+0020, U+0009 until none remains; the signal fires if the remainder begins with the
+  exact code points `⛔ FROZEN`. The match is a prefix match with no word-boundary check and is case-
+  sensitive. `_` emphasis, a variation selector after `⛔`, and a leading U+00A0 are not stripped or
+  skipped, so such a banner does not fire (a stated limit of the closed vocabulary, not a fault).
+  The rule does not use "the first line": the evidenced README opens with a title and carries the
+  banner on line 3, so a position bound would need an invented number. A line anywhere in the file
+  that meets the rule fires; a false match fails closed (OUT_OF_SCOPE, overridable).
+- **`FROZEN.md` phrases.** After decoding: lowercase ASCII letters `A`-`Z` only (all other
+  characters unchanged); replace each maximal run of U+0020, U+0009, U+000A and U+000D with a single
+  U+0020; then test for the two phrases as plain substrings, with no boundary check (so
+  `do not extend items` also matches `do not extend it`; a false match fails closed). A phrase
+  broken by U+00A0, or with a different hyphen or apostrophe, does not match, and a readable file
+  with no match is `no-listed-phrase` INDETERMINATE.
+- **Identifiers.** Signal ids, flag names and override ids are compared exactly and
+  case-sensitively; vocabulary ids are lowercase ASCII with hyphens.
+- **No locale.** No comparison, case change or sort consults the process locale or a Unicode
+  normalisation form. Strings are compared as UTF-16 code units or bytes (equivalent for the ASCII
+  strings involved).
 
 **Candidates not evidenced — `UNDECIDED`, not in the vocabulary.** #16 and plan item 07 name the
 *categories* "frozen, archived, historical, superseded, do not adopt/extend" but give no filename or
@@ -112,10 +149,11 @@ permission to write. It is the result when any of these holds:
 
 | Condition | Why it is not `IN_SCOPE` |
 | --- | --- |
-| `FROZEN.md` (any case) exists but cannot be opened or read | the signal's presence is established and its content is not |
+| `FROZEN.md` (ASCII-any case) exists, is a regular file, but cannot be opened or read (`unreadable`; a read that fails after a successful `lstat`, including a disappearance, is this reason) | the signal's presence is established and its content is not |
 | `FROZEN.md` exists, is readable, and contains neither listed phrase | a signal file whose meaning the closed vocabulary does not cover is not evidence of eligibility |
-| a matching entry (`FROZEN.md`, `README.md`, any case) is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | the link is not followed, so its content is not what was examined (see "Symbolic links" below) |
-| `FROZEN.md` or `README.md` exceeds the audit collector's per-file read cap, or does not decode as UTF-8 | the banner could be in the part not examined |
+| a matching entry is returned by the listing but `lstat` on it fails (it disappeared, or its metadata cannot be accessed) | it cannot be classified, so neither its presence nor its content is known; reason `stat-failed` |
+| a matching entry (`FROZEN.md`, `README.md`, ASCII-any case) is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | the link is not followed, so its content is not what was examined (see "Symbolic links" below) |
+| `FROZEN.md` or `README.md` is strictly larger than the audit collector's per-file read cap (`over-read-cap`), or does not decode as UTF-8 under fatal decoding (`not-utf8`) | the banner could be in the part not examined |
 | `README.md` exists but cannot be read | a banner cannot be ruled out |
 | the root directory cannot be listed | no source could be examined |
 
@@ -272,7 +310,7 @@ Each `entries[]` record:
 | --- | --- | --- |
 | `name` | string | the entry's name exactly as the directory listing returned it, original case; always ASCII, because only ASCII-case-fold matches are entries |
 | `result` | string | `"FIRED"`, `"NOT_FIRED"`, `"INDETERMINATE"` |
-| `reason` | string or null | `null` unless `result` is `"INDETERMINATE"`, then one of `"unreadable"`, `"not-regular-file"`, `"over-read-cap"`, `"not-utf8"`, `"no-listed-phrase"` |
+| `reason` | string or null | `null` unless `result` is `"INDETERMINATE"`, then one of `"unreadable"`, `"stat-failed"`, `"not-regular-file"`, `"over-read-cap"`, `"not-utf8"`, `"no-listed-phrase"` |
 
 `overrides` object:
 
@@ -424,6 +462,18 @@ entry's `lstat` fails; ASCII-only matching (`FROZEN.md` with a non-ASCII look-al
 source; `FROZEN.MD` and `frozen.md` are); and `entries` sorted by code unit regardless of the
 injected listing's order, in both orders.
 
+The implementation pull requests MUST also test the text rules, each as a unit test over file
+bytes: a README whose first line is only U+00A0 and whose second line is `> **⛔ FROZEN` (fires,
+because the rule is per line and U+00A0 is not whitespace); a README with a `# Title` line, a blank
+line, then the banner as line 3, the evidenced shape (fires); a banner line whose `>` is followed
+by U+00A0 before `⛔` (does not fire); a banner with a leading U+FEFF at file start (fires) and
+with U+FEFF later in the file (does not); CRLF and lone-CR line endings; a `FROZEN.md` with
+U+00A0 inside `do not extend it` (no match, INDETERMINATE `no-listed-phrase`); the same phrase with
+ASCII tabs and newlines between words (matches); an upper-case Turkish dotted İ in the phrase (no
+match, no locale effect); and `lstat` failing for a matching entry after it was listed (entry
+INDETERMINATE with reason `stat-failed`, state INDETERMINATE, `listing` still `"complete"`), through
+the injected interface on every platform.
+
 Every condition that depends on permissions, links or platform file modes is exercised through the
 injected read and stat interface of layer 1 on every platform, never by an on-disk fixture that must
 run everywhere: `unreadable` (the injected read fails), `not-regular-file` (the injected stat reports
@@ -477,7 +527,7 @@ the specification the fixtures are derived from.
 
 - The tool cannot prove an override was typed by a human (D2).
 - `IN_SCOPE` is "no listed signal", not "adoptable" (D1).
-- Case-insensitive filename matching, root-only lookup, and the first-non-blank-line banner rule are
+- ASCII-case-insensitive filename matching, root-only lookup, and the per-line blockquote banner rule are
   design choices made here for fail-closed behaviour. They are not taken from the owner's list and are
   open to change at review.
 
