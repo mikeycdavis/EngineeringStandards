@@ -40,6 +40,19 @@
       "items": { "$ref": "#/$defs/exception" }
     },
 
+    "boundaries": {
+      "description": "Optional. The repository's explicit architectural boundary declaration (Standard 51 R2, ADR 0018). Absent means nothing is declared and no verdict, score or exit code changes. Present, it names the boundary members, the path each owns, the permitted dependency directions and interfaces, and the observation limits of the check that enforces it. Shape is validated here; overlap, unknown members and cyclic edges are checked by scripts/boundaries.mjs; ownership of every in-scope file and the import directions are checked against the tree by `node scripts/boundaries-check.mjs`.",
+      "type": "object",
+      "required": ["observation", "members", "edges"],
+      "additionalProperties": false,
+      "properties": {
+        "observation": { "$ref": "#/$defs/boundaryObservation" },
+        "members": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/boundaryMember" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/boundaryEdge" } },
+        "external": { "$ref": "#/$defs/boundaryExternal" }
+      }
+    },
+
     "attestations": {
       "description": "Recorded human judgement for rules the catalog says a human evaluates (ADR 0005, added in 1.1.0). An attestation is EVIDENCE, not a waiver: it says the rule applies and is satisfied on human review. It never overrides an automated failure, never applies to a rule the catalog marks non-attestable, and returns the rule to not-evaluated once stale or expired.",
       "type": "object",
@@ -49,6 +62,106 @@
   },
 
   "$defs": {
+    "boundaryPath": {
+      "description": "A repository-relative path using forward slashes: a file, or a directory ending in `/`. No `..`, no leading `/`, no backslash, no drive letter, no glob.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$"
+    },
+
+    "boundaryEvidence": {
+      "description": "`path:line` citing where the repository states or exhibits the boundary or edge.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*:[1-9][0-9]*$"
+    },
+
+    "boundaryObservation": {
+      "description": "The observation limits of the check, stated by the declaration itself. A claim about this repository's boundaries holds only within these limits.",
+      "type": "object",
+      "required": ["method", "roots", "extensions", "cannotObserve"],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "description": "How edges are observed. Only static import graphs are defined.",
+          "type": "string",
+          "enum": ["static-import-graph"]
+        },
+        "roots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/boundaryPath" } },
+        "extensions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[.][a-z0-9]+$" }
+        },
+        "cannotObserve": {
+          "description": "Mechanisms the method cannot see. Unobserved dynamic import, reflection, generated code, subprocesses, network and data-access paths are excluded from any claim unless a detector named here covers them.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/boundaryUnobserved" }
+        }
+      }
+    },
+
+    "boundaryUnobserved": {
+      "type": "object",
+      "required": ["mechanism", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "mechanism": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+        "reason": { "type": "string", "minLength": 1 },
+        "knownSites": {
+          "description": "Files known to use the mechanism. When the mechanism is `subprocess` the checker requires this to equal the set of in-scope files importing node:child_process, so a new site must be declared. That detects the import, never what is executed.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/boundaryPath" }
+        }
+      }
+    },
+
+    "boundaryMember": {
+      "type": "object",
+      "required": ["id", "kind", "paths", "evidence", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+        "kind": { "type": "string", "enum": ["package", "layer", "plugin", "process", "trust-domain"] },
+        "description": { "type": "string", "minLength": 1 },
+        "paths": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/boundaryPath" } },
+        "processExit": {
+          "description": "`permitted` lets files of this member call process.exit or set process.exitCode. Absent means they may not. A string rather than a boolean because the policy parser reads scalars as strings and refuses to guess types.",
+          "type": "string",
+          "enum": ["permitted"]
+        },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/boundaryEvidence" } }
+      }
+    },
+
+    "boundaryEdge": {
+      "description": "A permitted direction: files of `from` may import from files of `to`, and only the named exports in `via`. Imports within one member are always permitted. Anything else crossing members is a boundary bypass.",
+      "type": "object",
+      "required": ["from", "to", "via", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+        "to": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+        "via": {
+          "description": "The permitted interface: export names, or [\"*\"] to permit any, stated explicitly rather than by omission.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/boundaryEvidence" } }
+      }
+    },
+
+    "boundaryExternal": {
+      "description": "Specifiers that leave the repository. A bare specifier whose prefix is not listed is an undeclared external dependency.",
+      "type": "object",
+      "required": ["allowPrefixes", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "allowPrefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/boundaryEvidence" } }
+      }
+    },
+
     "ruleId": {
       "description": "Canonical rule identity per Standard 26 R1 and ADR 0002: `category.kebab-case-name`, dot-separated, lower-case throughout. The pattern rejects legacy camelCase aliases such as `ai.uiCapabilitiesMustBeAgentOperable` by construction.",
       "type": "string",

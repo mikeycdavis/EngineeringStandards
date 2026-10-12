@@ -18,7 +18,8 @@
     "links": "node scripts/links.mjs",
     "audit:strict": "node scripts/standards.mjs audit . --strict",
     "pipeline": "node scripts/pipeline.mjs list",
-    "ownership": "node scripts/ownership.mjs"
+    "ownership": "node scripts/ownership.mjs",
+    "boundaries": "node scripts/boundaries-check.mjs"
   },
   "engines": {
     "node": ">=18"

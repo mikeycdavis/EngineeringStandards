@@ -224,6 +224,267 @@ applicability:
 # failing rule is reported as a failure rather than waived (Standard 20, Standard 30 R2).
 exceptions: []
 
+# Architectural boundaries declared by this repository (Standard 51 R2, ADR 0018).
+#
+# This is the declaration `architecture.no-boundary-bypass` is judged against. A boundary that is
+# not listed here is not an architectural boundary in the Standard 51 sense. It is enforced, within
+# the observation limits below and nowhere else, by `node scripts/boundaries-check.mjs` and by
+# test/boundaries.test.mjs. Declaring it changes no verdict, score or exit code of `validate`.
+boundaries:
+  observation:
+    method: "static-import-graph"
+    roots:
+      - scripts
+    extensions:
+      - ".mjs"
+    cannotObserve:
+      - mechanism: "dynamic-import-computed"
+        reason: "Only string-literal import() is resolved. A computed specifier is invisible to the graph."
+      - mechanism: "reflection"
+        reason: "Reflect, Proxy, eval, Function and module-namespace indirection are not examined."
+      - mechanism: "generated-code"
+        reason: "Code written to disk or evaluated at run time, and generated documentation, are not examined."
+      - mechanism: "subprocess"
+        reason: "The check sees which files import the child-process module, never what a subprocess runs or what it reaches. scripts/pipeline.mjs runs a caller-supplied command string through a shell."
+        knownSites:
+          - scripts/ci-triage.mjs
+          - scripts/pipeline.mjs
+          - scripts/repository.mjs
+          - scripts/test.mjs
+      - mechanism: "network"
+        reason: "No network module is imported, but scripts/ci-triage.mjs reaches GitHub through the gh CLI and the check cannot see that traffic."
+      - mechanism: "data-access"
+        reason: "Which files, rules and policy keys a module reads or writes is not observed; the three-way separation of data ownership rests on review plus assertBindings, not on this check."
+      - mechanism: "shell-and-workflow-scripts"
+        reason: "scripts/*.ps1, scripts/*.sh and .github/workflows/*.yml are outside the extensions and are not examined."
+      - mechanism: "outside-roots"
+        reason: "test/, templates/, standards/ and every file outside the roots are not examined."
+
+  members:
+    - id: "catalog"
+      kind: "layer"
+      description: "Owns rule identity and metadata. Defines the rule catalog and refuses evaluator findings bound to an id it does not carry."
+      paths:
+        - scripts/catalog.mjs
+        - rules/
+      evidence:
+        - PROJECT.md:54
+        - scripts/catalog.mjs:14
+    - id: "reviews"
+      kind: "layer"
+      description: "Interprets a recorded review sequence. Holds no catalog, applicability or evidence knowledge."
+      paths:
+        - scripts/reviews.mjs
+      evidence:
+        - scripts/reviews.mjs:1
+    - id: "evaluator"
+      kind: "layer"
+      description: "Produces the verdict from catalog, policy and findings. Redefines neither rule metadata nor applicability."
+      paths:
+        - scripts/compliance.mjs
+      evidence:
+        - PROJECT.md:54
+        - scripts/compliance.mjs:1
+    - id: "repository-provenance"
+      kind: "layer"
+      description: "Reads repository content as an evidence source (blob identity, digests, freshness) through git."
+      paths:
+        - scripts/repository.mjs
+      evidence:
+        - scripts/repository.mjs:1
+    - id: "parsers"
+      kind: "layer"
+      description: "Strict readers: policy YAML, JSON schema evaluation, source-section definition, plan-item tracking."
+      paths:
+        - scripts/yaml.mjs
+        - scripts/jsonschema.mjs
+        - scripts/sections.mjs
+        - scripts/tracking.mjs
+      evidence:
+        - scripts/yaml.mjs:1
+        - scripts/jsonschema.mjs:1
+    - id: "adoption"
+      kind: "layer"
+      description: "Plans and applies `standards init`, and generates the agent operating rules it writes."
+      paths:
+        - scripts/init.mjs
+        - scripts/agent-instructions.mjs
+      evidence:
+        - scripts/init.mjs:1
+        - scripts/agent-instructions.mjs:1
+    - id: "boundary-check"
+      kind: "layer"
+      description: "Validates and enforces this declaration. A library; it never terminates the process."
+      paths:
+        - scripts/boundaries.mjs
+      evidence:
+        - scripts/boundaries.mjs:1
+    - id: "validator-cli"
+      kind: "process"
+      description: "The audit and validate command and the ownership check. A CLI boundary: the only place, with the tool CLIs, that terminates the process."
+      processExit: "permitted"
+      paths:
+        - scripts/standards.mjs
+        - scripts/ownership.mjs
+      evidence:
+        - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md:87
+        - scripts/standards.mjs:4123
+    - id: "tool-clis"
+      kind: "process"
+      description: "Single-purpose command-line tools: policy, attestations, inventory, fidelity, links, diagrams, pipeline, ci-triage, submit-gate, test, boundaries-check."
+      processExit: "permitted"
+      paths:
+        - scripts/policy.mjs
+        - scripts/attestations.mjs
+        - scripts/inventory.mjs
+        - scripts/fidelity.mjs
+        - scripts/links.mjs
+        - scripts/diagrams.mjs
+        - scripts/pipeline.mjs
+        - scripts/ci-triage.mjs
+        - scripts/submit-gate.mjs
+        - scripts/test.mjs
+        - scripts/boundaries-check.mjs
+      evidence:
+        - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md:87
+        - scripts/policy.mjs:1
+
+  edges:
+    - from: "evaluator"
+      to: "catalog"
+      via:
+        - resolve
+      evidence:
+        - scripts/compliance.mjs:18
+    - from: "evaluator"
+      to: "reviews"
+      via:
+        - currentReview
+        - reviewProblems
+      evidence:
+        - scripts/compliance.mjs:19
+    - from: "validator-cli"
+      to: "catalog"
+      via:
+        - loadCatalog
+        - assertBindings
+        - coverage
+        - resolve
+      evidence:
+        - scripts/standards.mjs:21
+    - from: "validator-cli"
+      to: "evaluator"
+      via:
+        - evaluate
+        - envelope
+      evidence:
+        - scripts/standards.mjs:22
+    - from: "validator-cli"
+      to: "adoption"
+      via:
+        - plan
+        - apply
+        - render
+      evidence:
+        - scripts/standards.mjs:23
+    - from: "validator-cli"
+      to: "parsers"
+      via:
+        - parseYaml
+        - discoverBacklog
+        - resolveTracked
+        - OUTCOME
+        - validate
+      evidence:
+        - scripts/standards.mjs:24
+        - scripts/standards.mjs:25
+        - scripts/standards.mjs:26
+    - from: "validator-cli"
+      to: "repository-provenance"
+      via:
+        - classifyFreshness
+        - ignoredEntries
+        - repositoryAvailable
+        - repositoryDigest
+        - trackedMatching
+        - DIGEST_ALGORITHM
+        - FRESHNESS
+      evidence:
+        - scripts/standards.mjs:27
+    - from: "validator-cli"
+      to: "reviews"
+      via:
+        - currentReview
+      evidence:
+        - scripts/standards.mjs:36
+    - from: "validator-cli"
+      to: "boundary-check"
+      via:
+        - declarationProblems
+      evidence:
+        - scripts/standards.mjs:37
+    - from: "tool-clis"
+      to: "parsers"
+      via:
+        - parseYaml
+        - YamlError
+        - validate
+        - assertSchemaSupported
+        - SchemaError
+        - sectionText
+        - sectionRe
+      evidence:
+        - scripts/attestations.mjs:25
+        - scripts/ci-triage.mjs:79
+        - scripts/fidelity.mjs:39
+        - scripts/inventory.mjs:43
+        - scripts/policy.mjs:22
+        - scripts/policy.mjs:23
+        - scripts/boundaries-check.mjs:25
+        - scripts/boundaries-check.mjs:26
+    - from: "tool-clis"
+      to: "repository-provenance"
+      via:
+        - classifyFreshness
+        - repositoryAvailable
+        - DIGEST_ALGORITHM
+        - LEGACY_ALGORITHM
+        - FRESHNESS
+      evidence:
+        - scripts/attestations.mjs:26
+    - from: "tool-clis"
+      to: "reviews"
+      via:
+        - reviewsOf
+        - currentReview
+        - reviewProblems
+        - isLegacyShape
+      evidence:
+        - scripts/attestations.mjs:33
+    - from: "tool-clis"
+      to: "catalog"
+      via:
+        - loadCatalog
+      evidence:
+        - scripts/policy.mjs:43
+        - scripts/policy.mjs:173
+    - from: "tool-clis"
+      to: "boundary-check"
+      via:
+        - declarationProblems
+        - scanRepository
+        - checkBoundaries
+      evidence:
+        - scripts/policy.mjs:24
+        - scripts/boundaries-check.mjs:27
+
+  external:
+    allowPrefixes:
+      - "node:"
+    evidence:
+      - PROJECT.md:57
+      - .github/workflows/ci.yml:29
+
 # Recorded human judgement for rules the catalog says a human evaluates (ADR 0005).
 #
 # An attestation is EVIDENCE, not a waiver. It never overrides an automated failure, and it goes
