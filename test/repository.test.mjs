@@ -1487,6 +1487,83 @@ test("without a determinable base approvals are disregarded but recorded rejecti
   }
 });
 
+// ---------------------------------------------------------------------------------------------
+// A history that cannot be established is explained, never replaced by an invented result: every
+// cause states its own reason on both surfaces, and no approval is reported as established.
+// ---------------------------------------------------------------------------------------------
+
+test("a history that cannot be established states its reason and never reports an established approval", async () => {
+  const causes = [];
+
+  // 1. A work tree with no remote default-branch ref: no trusted base can be named.
+  {
+    const dir = await validateFixture();
+    try {
+      git(dir, "add", "reviewed.txt");
+      git(dir, "commit", "-qm", "reviewed content");
+      const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+      await writeFile(path.join(dir, "project-policy.yml"), twoRulePolicy(digest));
+      git(dir, "add", "project-policy.yml");
+      git(dir, "commit", "-qm", "policy");
+      causes.push(["no default-branch ref", dir, /no remote default-branch ref/]);
+      await runCause();
+    } finally {
+      await cleanup(dir);
+    }
+  }
+
+  // 2. A directory that is not a Git work tree at all.
+  {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "standards-no-worktree-"));
+    try {
+      await writeFile(path.join(dir, "reviewed.txt"), "one\n");
+      const digest = repositoryDigest(dir, ["reviewed.txt"]).digest ?? "0".repeat(32);
+      await writeFile(path.join(dir, "project-policy.yml"), twoRulePolicy(digest));
+      causes.push(["not a work tree", dir, /not a Git work tree/]);
+      await runCause();
+    } finally {
+      await cleanup(dir);
+    }
+  }
+
+  async function runCause() {
+    const [name, dir, reason] = causes.at(-1);
+    const run = runValidate(dir);
+    assert.equal(run.finding?.severity, "warning", `${name}: ${JSON.stringify(run.finding)}`);
+    assert.match(run.finding.message, /NOT_EVALUATED/, name);
+    assert.match(run.finding.message, reason, `${name}: the cause is not stated`);
+    // The approval is not established and is not reported as passed or attested.
+    assert.notEqual(run.rule.disposition, "attested", `${name}: an approval stayed effective`);
+    assert.notEqual(run.rule.status, "passed", `${name}: an unestablished approval passed`);
+
+    const inventory = runAttestations(dir);
+    assert.equal(inventory.json.historyIntegrity.status, "not-evaluated", name);
+    assert.equal(inventory.json.historyIntegrity.effective, false, name);
+    assert.match(inventory.json.historyIntegrity.reason ?? "", reason, `${name}: attestations omits the cause`);
+    assert.equal(inventory.json.attestations.filter((row) => row.current).length, 0, name);
+    const migrate = runAttestations(dir, "--migrate");
+    assert.notEqual(migrate.status, 0, `${name}: --migrate wrote without an established history`);
+  }
+
+  // 3. A verified history whose reviewed path later changed: stale, with its reason, not passed.
+  {
+    const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
+    try {
+      git(fx.work, "checkout", "-q", "-b", "feature/stale");
+      await writeFile(path.join(fx.work, "reviewed.txt"), "one\ntwo\n");
+      commitAll(fx.work, "reviewed path changed after the review");
+      const run = runValidate(fx.work);
+      assert.equal(run.rule.freshness, "stale", JSON.stringify(run.rule));
+      assert.equal(run.rule.disposition, "not-evaluated");
+      assert.notEqual(run.rule.status, "passed");
+      assert.match(run.rule.message, /does not establish the current state: committed content changed since review/);
+      assert.equal(run.finding?.severity, "info", "a verified history is still reported as verified");
+    } finally {
+      await cleanup(fx.root);
+    }
+  }
+});
+
 test("the asserted-identity label is pinned exactly on every surface", async () => {
   const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
   try {
