@@ -1622,6 +1622,82 @@ test("a malformed chain that records no rejection is NOT_EVALUATED and never a p
   assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
 });
 
+// ---------------------------------------------------------------------------------------------
+// ST-41: policy-controlled text is escaped before it reaches a message a person reads. A control
+// character in an id, a reviewer or a date must never be written raw, and escaping changes no verdict.
+// ---------------------------------------------------------------------------------------------
+
+test("control characters in policy strings are escaped in human, JSON and attestations output, and change no verdict", async () => {
+  const ESC = String.fromCharCode(27);
+  const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+  const build = (id, reviewedBy, reviewedAt) => (digest) => {
+    const lines = [
+      policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]).trimEnd(),
+      `  ${REJECTED_RULE}:`,
+      `    reviews:`,
+      `      - id: "${id}"`,
+      `        status: rejected`,
+      `        reviewedBy: "${reviewedBy}"`,
+      `        reviewedAt: "${reviewedAt}"`,
+      `        evidence: "synthetic rejection"`,
+      `      - id: "p2"`,
+      `        supersedes: "no-such-event"`,
+      `        status: approved`,
+      `        reviewedBy: "x"`,
+      `        reviewedAt: "2026-10-02"`,
+      `        evidence: "makes the chain malformed"`,
+    ];
+    return `${lines.join("\n")}\n`;
+  };
+  const verdict = async (id, reviewedBy, reviewedAt) => {
+    const dir = await validateFixture();
+    try {
+      git(dir, "add", "reviewed.txt");
+      git(dir, "commit", "-qm", "reviewed content");
+      const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+      await writeFile(path.join(dir, "project-policy.yml"), build(id, reviewedBy, reviewedAt)(digest));
+      git(dir, "add", "project-policy.yml");
+      git(dir, "commit", "-qm", "policy");
+      const run = runValidate(dir); // no default-branch ref: the comparison is NOT_EVALUATED
+      const human = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir], { encoding: "utf8", windowsHide: true });
+      const table = runAttestations(dir);
+      const tableText = spawnSync(process.execPath, [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${dir}`], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      return { run, human: human.stdout, table, tableText: tableText.stdout + tableText.stderr };
+    } finally {
+      await cleanup(dir);
+    }
+  };
+
+  const plain = await verdict("p1", "reviewer-plain", "2026-10-01");
+  const hostile = await verdict(`p${ESC}[31m1`, `evil${ESC}[31mRED${ESC}[0m`, "2026-10-01");
+
+  const plainRule = plain.run.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+  const hostileRule = hostile.run.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+  // Escaping changes how a value is shown, never what is decided.
+  assert.equal(hostileRule.status, plainRule.status);
+  assert.equal(hostileRule.disposition, plainRule.disposition);
+  assert.equal(hostile.run.report.status, plain.run.report.status);
+
+  // The raw character appears nowhere a person reads, and the escape is visible instead.
+  assert.ok(!CONTROL.test(hostileRule.message), JSON.stringify(hostileRule.message));
+  assert.ok(hostileRule.message.includes("evil\\u001b[31mRED\\u001b[0m"), hostileRule.message);
+  assert.ok(!CONTROL.test(hostile.human), "raw control character in the human validate output");
+  assert.ok(hostile.human.includes("evil\\u001b[31mRED"), "the escaped reviewer is not shown");
+  assert.ok(!CONTROL.test(JSON.stringify(hostile.run.report)), "raw control character in the JSON report");
+  assert.ok(!CONTROL.test(hostile.tableText), "raw control character in the attestations table");
+  assert.ok(!CONTROL.test(JSON.stringify(hostile.table.json)), "raw control character in the attestations JSON");
+
+  // A control character in a date makes the policy schema-invalid: no verdict (exit 2), and the value is
+  // not echoed raw by any surface.
+  const badDate = await verdict("p1", "plain-reviewer", `2026-10-01${ESC}[2J`);
+  assert.ok(!CONTROL.test(badDate.human), "raw control character in the human output for an invalid date");
+  assert.ok(!CONTROL.test(JSON.stringify(badDate.run.report)), "raw control character in the JSON report for an invalid date");
+  assert.ok(!CONTROL.test(badDate.tableText), "raw control character in the attestations output for an invalid date");
+});
+
 test("the asserted-identity label is pinned exactly on every surface", async () => {
   const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
   try {

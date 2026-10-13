@@ -16,6 +16,7 @@
  */
 
 import { resolve } from "./catalog.mjs";
+import { displaySafe } from "./display-safe.mjs";
 import { currentReview, recordedRejections, reviewProblems } from "./reviews.mjs";
 
 export const STATUS = {
@@ -126,13 +127,14 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         validationType: "configuration",
         assurance: "full",
         disposition: "invalid-attestation",
-        message:
+        message: displaySafe(
           `${rule.id} has a malformed review history: ${structural.join("; ")}.` +
           (rejections.length > 0
             ? ` It records a rejection that stays effective: ${rejections
                 .map((r) => `${r.id ?? "(no id)"}${r.reviewedBy ? ` by ${r.reviewedBy}` : ""}${r.reviewedAt ? ` on ${r.reviewedAt}` : ""}`)
                 .join(", ")}.`
             : ""),
+        ),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
         remediation: "Give every review a unique id and record them in chronological order.",

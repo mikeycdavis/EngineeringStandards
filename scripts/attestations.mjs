@@ -32,6 +32,7 @@ import {
 } from "./repository.mjs";
 import { currentReview, reviewsOf, reviewProblems, isLegacyShape } from "./reviews.mjs";
 import { reviewHistoryPreflight, IDENTITY_NOTE } from "./review-history.mjs";
+import { displaySafe } from "./display-safe.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -67,12 +68,12 @@ try {
     if (JSON_OUT) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     else {
       process.stderr.write(
-        `history integrity: VIOLATED - ${missing.reason}\nNo attestation is created, listed as valid or renewed.\n`,
+        `history integrity: VIOLATED - ${displaySafe(missing.reason)}\nNo attestation is created, listed as valid or renewed.\n`,
       );
     }
     process.exit(EXIT_FINDINGS);
   }
-  process.stderr.write(`project-policy.yml could not be read: ${error.message}\n`);
+  process.stderr.write(`project-policy.yml could not be read: ${displaySafe(error.message)}\n`);
   process.exit(EXIT_INVOCATION);
 }
 
@@ -159,7 +160,7 @@ const preflight = await reviewHistoryPreflight({ repositoryPath: root, policyPat
 if (MIGRATE) {
   if (!preflight.effective) {
     process.stderr.write(
-      `Refusing to migrate: review-history integrity is ${preflight.status.toUpperCase()}: ${preflight.reason}
+      `Refusing to migrate: review-history integrity is ${preflight.status.toUpperCase()}: ${displaySafe(preflight.reason)}
 ` +
         `No attestation is created, listed as valid or renewed until the history is verified.
 `,
@@ -292,7 +293,7 @@ if (JSON_OUT) {
   const out = [];
   out.push(`${rows.length} attestation(s) in ${root}`);
   if (!repo.available) out.push(`  repository content unavailable: ${repo.reason}`);
-  out.push(`  history integrity: ${preflight.status.toUpperCase()}${preflight.reason ? ` - ${preflight.reason}` : ""}`);
+  out.push(`  history integrity: ${preflight.status.toUpperCase()}${preflight.reason ? ` - ${displaySafe(preflight.reason)}` : ""}`);
   if (!preflight.effective) out.push("  No attestation is listed as current or valid while history integrity is not verified.");
   out.push(`  ${IDENTITY_NOTE}`);
   out.push("");
@@ -307,18 +308,18 @@ if (JSON_OUT) {
   out.push(`  ${rows.filter((r) => r.freshness !== FRESHNESS.fresh).length} require provenance re-establishment`);
   out.push("");
   for (const r of rows) {
-    out.push(`  ${r.rule}`);
+    out.push(`  ${displaySafe(r.rule)}`);
     out.push(`    disposition: ${r.disposition}`);
-    out.push(`    reviewer:    ${r.reviewedBy ?? "?"} (asserted, not authenticated)`);
+    out.push(`    reviewer:    ${displaySafe(r.reviewedBy ?? "?")} (asserted, not authenticated)`);
     out.push(`    algorithm:   ${r.algorithm ?? "(none recorded)"}`);
     out.push(`    freshness:   ${r.freshness}`);
-    out.push(`    reviewed:    ${r.reviewedAt ?? "?"}${r.revision ? ` at ${r.revision}` : ""}`);
+    out.push(`    reviewed:    ${displaySafe(r.reviewedAt ?? "?")}${r.revision ? ` at ${r.revision}` : ""}`);
     out.push(`    action:      ${r.action}`);
     out.push("");
   }
   if (violations.length) {
     out.push("  Invariant violations:");
-    for (const v of violations) out.push(`    ${v}`);
+    for (const v of violations) out.push(`    ${displaySafe(v)}`);
     out.push("");
   }
   out.push("  A digest-algorithm migration may classify existing provenance. It may not upgrade the");

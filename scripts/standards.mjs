@@ -35,6 +35,7 @@ import {
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
+import { displaySafe } from "./display-safe.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -3902,8 +3903,8 @@ export async function main(args) {
             ` ${IDENTITY_NOTE}`
           : base.status === "violated"
             ? `Review history was rewritten relative to ${base.baseCommit} (merge-base with ${base.ref}): ` +
-              `${base.reason}. ${consequence}`
-            : `Review-history immutability is NOT_EVALUATED: ${base.reason}. ${consequence} Their validity ` +
+              `${displaySafe(base.reason)}. ${consequence}`
+            : `Review-history immutability is NOT_EVALUATED: ${displaySafe(base.reason)}. ${consequence} Their validity ` +
               `depends on a history that could not be compared with a trusted base (supply the ` +
               `default-branch ref, for example with git fetch origin, and run again). ${IDENTITY_NOTE}`,
       standardRef: R.search,
