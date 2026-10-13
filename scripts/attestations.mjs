@@ -47,6 +47,31 @@ let document;
 try {
   document = parseYaml(await readFile(path.join(root, "project-policy.yml"), "utf8"));
 } catch (error) {
+  // A policy that no longer exists at its path (deleted, moved, renamed) is a violation when the
+  // trusted base recorded attestations; it is not merely "could not be read".
+  const missing = await reviewHistoryPreflight({ repositoryPath: root, policyPath: "project-policy.yml" });
+  if (missing.status === "violated") {
+    const report = {
+      historyIntegrity: {
+        status: "violated",
+        effective: false,
+        reason: missing.reason,
+        baseCommit: missing.baseCommit ?? null,
+        ref: missing.ref ?? null,
+      },
+      identityNote: IDENTITY_NOTE,
+      total: 0,
+      attestations: [],
+      violations: [`review history: ${missing.reason}`],
+    };
+    if (JSON_OUT) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    else {
+      process.stderr.write(
+        `history integrity: VIOLATED - ${missing.reason}\nNo attestation is created, listed as valid or renewed.\n`,
+      );
+    }
+    process.exit(EXIT_FINDINGS);
+  }
   process.stderr.write(`project-policy.yml could not be read: ${error.message}\n`);
   process.exit(EXIT_INVOCATION);
 }
@@ -176,6 +201,7 @@ const rows = entries.flatMap(([ruleId, record]) => {
       id: attestation?.id ?? null,
       current: preflight.effective && attestation === current,
       identity: "asserted, not authenticated",
+      rejectionEffective: !preflight.effective && attestation === current && attestation?.status === "rejected",
       shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
       predecessor: attestation?.supersedes ?? null,
       supersedes: attestation?.supersedes ?? null,

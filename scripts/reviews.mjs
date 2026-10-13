@@ -23,6 +23,21 @@ export function reviewsOf(record) {
   return [record]; // Legacy single-record shape.
 }
 
+/**
+ * Recorded rejection events, wherever they sit in a history, in file order. A malformed chain has no
+ * trustworthy order, so this does not ask which event is current: a rejection that is written down is
+ * negative evidence and is reported by identity, never silently dropped with the rest of the chain.
+ */
+export function recordedRejections(record) {
+  return reviewsOf(record)
+    .filter((event) => event && typeof event === "object" && !Array.isArray(event) && event.status === "rejected")
+    .map((event) => ({
+      id: typeof event.id === "string" ? event.id : null,
+      reviewedBy: typeof event.reviewedBy === "string" ? event.reviewedBy : null,
+      reviewedAt: typeof event.reviewedAt === "string" ? event.reviewedAt : null,
+    }));
+}
+
 /** True when the record still uses the pre-migration single-record shape. */
 export function isLegacyShape(record) {
   return isReviewRecord(record) && !Object.hasOwn(record, "reviews");

@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseYaml } from "./yaml.mjs";
-import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf } from "./reviews.mjs";
+import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recordedRejections } from "./reviews.mjs";
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
@@ -123,6 +123,7 @@ export async function verifyReviewHistoryAppend({
   expectedBaseTree,
   policyPath,
   proposedPolicySource,
+  allowMissingBasePolicy = false,
 }) {
   const repository = path.resolve(repositoryPath ?? "");
   if (!OBJECT_ID.test(baseCommit ?? "")) fail("baseCommit must be one full, unambiguous Git object id");
@@ -139,13 +140,24 @@ export async function verifyReviewHistoryAppend({
     fail(`base tree ${baseTree} does not match expected ${expectedBaseTree}`, { baseTree, expectedBaseTree });
   }
 
-  const priorSource = runGit(repository, ["show", `${baseCommit}:${exactPath}`]).stdout;
-  const prior = parsePolicy(priorSource, "base");
-  const proposed = parsePolicy(proposedPolicySource, "proposed");
+  // A policy that did not exist at the base has no history to rewrite: every proposed history is
+  // new and is validated strictly below.
+  const baseHadPolicy = spawnSync("git", ["-C", repository, "cat-file", "-e", `${baseCommit}:${exactPath}`], {
+    windowsHide: true,
+  }).status === 0;
+  if (!baseHadPolicy && !allowMissingBasePolicy) {
+    fail(`${exactPath} does not exist at base commit ${baseCommit}`);
+  }
+  const priorSource = baseHadPolicy ? runGit(repository, ["show", `${baseCommit}:${exactPath}`]).stdout : "";
+  const prior = baseHadPolicy ? parsePolicy(priorSource, "base") : {};
+  // `null` means the policy file no longer exists at its path (deleted, moved or renamed): it has no
+  // attestations, which is a violation exactly when the base recorded any.
+  const proposed = proposedPolicySource === null ? {} : parsePolicy(proposedPolicySource, "proposed");
   const priorHistories = prior.attestations ?? {};
   const proposedHistories = proposed.attestations ?? {};
   if (typeof priorHistories !== "object" || Array.isArray(priorHistories)) fail("base attestations must be a mapping");
   if (typeof proposedHistories !== "object" || Array.isArray(proposedHistories)) {
+    if (Object.keys(priorHistories).length > 0) violation("proposed attestations are not a mapping; prior histories were removed");
     fail("proposed attestations must be a mapping");
   }
 
@@ -203,7 +215,10 @@ export async function verifyReviewHistoryAppend({
     histories.push({ rule: ruleId, priorEvents: 0, appendedEvents: resolution.reviews.length });
   }
 
-  const diff = await gitDiffEvidence(priorSource, proposedPolicySource, exactPath);
+  const diff =
+    proposedPolicySource === null || !baseHadPolicy
+      ? { exitCode: 1, stdout: "", stderr: "" }
+      : await gitDiffEvidence(priorSource, proposedPolicySource, exactPath);
   if (appendedEvents > 0 && diff.exitCode === 0) {
     violation("structured comparison found appended events but the exact policy-path Git diff is empty");
   }
@@ -288,10 +303,6 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
   }
   const baseTree = tryGit(repository, ["rev-parse", `${baseCommit}^{tree}`]);
   if (!baseTree) return unverified(`the tree of base commit ${baseCommit} is not readable`, { ref, baseCommit });
-  if (tryGit(repository, ["cat-file", "-e", `${baseCommit}:${relative}`]) === null) {
-    // `cat-file -e` prints nothing on success, so an empty string is success and null is failure.
-    return unverified(`${relative} does not exist at base commit ${baseCommit}`, { ref, baseCommit });
-  }
 
   try {
     const result = await verifyReviewHistoryAppend({
@@ -300,6 +311,7 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
       expectedBaseTree: baseTree,
       policyPath: relative,
       proposedPolicySource,
+      allowMissingBasePolicy: true,
     });
     return {
       status: "verified",
@@ -312,7 +324,21 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
     };
   } catch (error) {
     if (error instanceof ReviewHistoryVerificationError) {
-      if (error.details?.violation) return { status: "violated", reason: error.message, ref, baseCommit, baseTree };
+      if (error.details?.violation) {
+        // The attestations recorded at the trusted base, so negative evidence recorded there stays
+        // effective even when the proposed policy removed or relabeled it.
+        let baseAttestations = {};
+        try {
+          const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+          const parsed = baseSource ? parseYaml(baseSource) : null;
+          if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
+            baseAttestations = parsed.attestations;
+          }
+        } catch {
+          baseAttestations = {};
+        }
+        return { status: "violated", reason: error.message, ref, baseCommit, baseTree, baseAttestations };
+      }
       return unverified(error.message, { ref, baseCommit });
     }
     throw error;
@@ -328,44 +354,113 @@ export const IDENTITY_NOTE =
  * The history-integrity preflight shared by `standards validate` and `npm run attestations`.
  *
  * It reads the policy file at `repositoryPath` itself, so no caller can compare one text and judge
- * another, and returns the base comparison plus the one consequence both commands apply:
+ * another, and it ALWAYS compares with the trusted base when one exists, even when the policy now
+ * records no attestation: deleting the `attestations:` section, emptying it, removing a rule key,
+ * emptying a `reviews` list, or deleting or moving the policy file is a violation whenever the base
+ * recorded any. Statuses:
  *
  * - `verified`: attestations are effective.
- * - `violated`: attestations are withdrawn (the policy rewrites recorded history).
- * - `not-evaluated`: attestations are withdrawn as well. Their validity depends on a history that
- *   could not be compared with a trusted base, and an attestation must not stay effective merely
- *   because the comparison was unavailable.
+ * - `violated`: the policy rewrites or removes recorded history.
+ * - `not-evaluated`: no trusted base could be determined.
+ * - `not-applicable`: nothing recorded and nothing to protect (or, with no base, nothing to disregard).
  *
- * `effective` is true only for `verified`. A policy that records no attestation returns
- * `{ status: "not-applicable", effective: true }`: there is no history to protect.
+ * `effective` is true for `verified` and `not-applicable`. When it is false the caller applies
+ * `effectiveAttestations`, which disregards APPROVALS (and every freshness-established attestation)
+ * but keeps recorded REJECTIONS effective (see holdsRejection): negative evidence is never removed because a comparison
+ * was unavailable or because history was rewritten. On `violated` the rejections recorded at the
+ * trusted base are the ones kept, so removing or relabeling a rejection does not clear it.
  *
  * What a developer sees without a remote: the finding states `NOT_EVALUATED` with the reason and the
- * command that supplies the missing ref (`git fetch origin`), and the rules those attestations would
- * have established report as unreviewed. This is deliberate: a clone that cannot see the default
- * branch cannot show that history was only appended.
+ * command that supplies the missing ref (`git fetch origin`); approvals report as unreviewed and
+ * recorded rejections still fail their rules. Without a base, the removal of a whole policy section
+ * cannot be detected; that limit is stated, not hidden.
  */
 export async function reviewHistoryPreflight({ repositoryPath, policyPath = "project-policy.yml" }) {
   const repository = path.resolve(repositoryPath ?? "");
-  let source;
+  let source = null;
   try {
     source = await readFile(path.resolve(repository, policyPath), "utf8");
   } catch (error) {
-    return { status: "not-evaluated", effective: false, reason: `the policy could not be read: ${error.message}` };
+    if (error?.code !== "ENOENT") {
+      return { status: "not-evaluated", effective: false, reason: `the policy could not be read: ${error.message}` };
+    }
   }
-  let document;
-  try {
-    document = parseYaml(source);
-  } catch (error) {
-    return { status: "not-evaluated", effective: false, reason: `the policy could not be parsed: ${error.message}` };
+  let document = null;
+  if (source !== null) {
+    try {
+      document = parseYaml(source);
+    } catch (error) {
+      return { status: "not-evaluated", effective: false, reason: `the policy could not be parsed: ${error.message}` };
+    }
   }
-  const attestations = document?.attestations;
-  if (!attestations || typeof attestations !== "object" || Object.keys(attestations).length === 0) {
-    return { status: "not-applicable", effective: true, reason: "the policy records no attestation" };
-  }
+  const headAttestations = document?.attestations;
+  const headCount =
+    headAttestations && typeof headAttestations === "object" && !Array.isArray(headAttestations)
+      ? Object.keys(headAttestations).length
+      : 0;
+
   const result = await verifyAgainstTrustedBase({
     repositoryPath: repository,
     policyPath,
     proposedPolicySource: source,
   });
+
+  if (result.status === "not-evaluated") {
+    if (headCount === 0) {
+      return {
+        status: "not-applicable",
+        effective: true,
+        reason:
+          `the policy records no attestation and no base could be determined (${result.reason}), ` +
+          "so the removal of earlier attestations cannot be detected",
+      };
+    }
+    return { ...result, effective: false };
+  }
+  if (result.status === "verified" && headCount === 0) {
+    return { ...result, status: "not-applicable", effective: true, reason: "no attestation is recorded here or at the base" };
+  }
   return { ...result, effective: result.status === "verified" };
+}
+
+/**
+ * The attestations a run may rely on, given the preflight.
+ *
+ * Effective preflight: the recorded attestations unchanged. Otherwise only rules whose current
+ * event is a REJECTION survive, preferring the one recorded at the trusted base. Approvals, and any
+ * attestation whose standing depends on freshness, are disregarded. Rejections are negative
+ * evidence and are never withdrawn for want of a comparison.
+ */
+export function effectiveAttestations(headAttestations, preflight) {
+  const head =
+    headAttestations && typeof headAttestations === "object" && !Array.isArray(headAttestations)
+      ? headAttestations
+      : {};
+  if (!preflight || preflight.effective) return head;
+  const base = preflight.baseAttestations && typeof preflight.baseAttestations === "object" ? preflight.baseAttestations : {};
+  const kept = {};
+  for (const ruleId of new Set([...Object.keys(base), ...Object.keys(head)])) {
+    if (base[ruleId] !== undefined && holdsRejection(ruleId, base[ruleId])) {
+      kept[ruleId] = base[ruleId];
+    } else if (head[ruleId] !== undefined && holdsRejection(ruleId, head[ruleId])) {
+      kept[ruleId] = head[ruleId];
+    }
+  }
+  return kept;
+}
+
+/**
+ * Whether a record holds negative evidence that must survive a failed or unavailable comparison.
+ *
+ * A well-formed chain whose current event is a rejection holds one. A MALFORMED chain has no current
+ * event, but if it records a rejection anywhere that rejection is kept too: compliance reports the
+ * chain as malformed with the rejection named, so it fails instead of reading as merely unreviewed.
+ * A malformed chain that records no rejection holds none and is withdrawn, so the rule reads
+ * NOT_EVALUATED, never a pass.
+ */
+function holdsRejection(ruleId, record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return false;
+  const resolution = resolveRecordedReviewHistory(ruleId, record);
+  if (resolution.problems.length > 0) return recordedRejections(record).length > 0;
+  return resolution.current?.status === "rejected";
 }
