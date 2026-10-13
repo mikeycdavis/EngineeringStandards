@@ -256,17 +256,25 @@ someone to lie to make the build go green.
 - **ADR:** [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md),
   status Accepted (owner, 2026-10-12), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
   and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
-  to an external registry. Later additions to it are listed in its "Post-acceptance additions
-  (pending owner reapproval)" section.
-- **Implementation slices** (each its own pull request; none is implemented by the ADR):
-  1. the resolver and the read-only `eligibility` subcommand, with fixtures;
-  2. `init` consults the resolver, with the held-handle binding of the checked directory;
+  to an external registry.
+- **Ready scope (owner-approved content only), as implementation slices** (each its own pull
+  request; none is implemented by the ADR):
+  1. the resolver and the read-only `eligibility` subcommand, with fixtures and **Windows-safe source
+     inspection** of `README.md` and `FROZEN.md`;
+  2. `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`, writes
+     nothing), as decided in Q2;
   3. the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram and its
      SVG, `CHANGELOG.md`), with a no-catalog-rule test.
-- **Release blockers for 3.0.0** (the owner classified the complete change MAJOR, targeted to
-  3.0.0): a Windows-safe `eligibility` and a Windows-safe `init`; non-skipped real-filesystem
-  Windows tests, including the synchronized replacement-race cases; and the MAJOR classification
-  itself. No `VERSION` change, tag or release is authorised by the ADR or by this item.
+- **Release classification:** the owner classified the complete change MAJOR, targeted to 3.0.0. A
+  Windows-safe `eligibility` is required in 3.0.0. No `VERSION` change, tag or release is
+  authorised by the ADR or by this item.
+- **Pending owner reapproval: do not implement until approved.** This block is **not** part of the
+  ready scope and is **not** a release blocker until the owner approves it. It lists the additions
+  made to ADR 0016 after its acceptance (see the ADR's "Post-acceptance additions (pending owner
+  reapproval)"): the held-directory-handle binding between the resolver and `init`; the component-wise
+  and leaf binding of `init`'s reads and writes; the post-write race class and its `entry-changed`
+  condition; the non-skipped real-filesystem Windows `init` and race-gate release requirements; and
+  the capped read. Each may be approved, amended or withdrawn by the owner.
 
 ### Prepare a truthful Engineering adapter release candidate
 

@@ -450,7 +450,9 @@ file safety is `entry-changed`, used only for the post-write class in P6.
 classification made before the first write when it is written** is refused at write time. This
 covers an entry that was absent and is **replaced by a link, a special file, a directory, or a newly
 created regular file** by another process before the exclusive creation, and an entry that was a
-regular file and is replaced by a link, special file or directory before the overwrite. The
+regular file and is replaced by a link, special file or directory, **or is deleted**, before the
+overwrite. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
+place: an overwrite or temp-plus-rename that could recreate the missing path must not. The
 guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
 a link, to a special file, over a directory, over a newly appeared file, or outside the checked
 directory; no later write is made; and `init` exits `2` naming the condition **`entry-changed`**.
@@ -764,7 +766,11 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
   preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
   at either path is refused; (e) the table above, one case per cell. A temp-plus-rename placement
-  is tested with a link at the destination, which must be refused and not replaced. Mutation checks
+  is tested with a link at the destination, which must be refused and not replaced. **Disappearance,
+  injected:** a file artifact that is a regular file at classification and is **deleted** between
+  classification and the `--force-overwrite` overwrite is refused with `entry-changed`, the path is
+  not recreated, earlier artifacts remain and no later write is made, exit `2`. Mutation checks
+  include letting the overwrite, or the temp-plus-rename, recreate a missing destination, and
   replace the exclusive no-follow create with a plain create, the no-follow open with a following
   open, the same-handle classification with a path-based check, the no-replace or identity-checked
   rename with a replacing rename, and the non-blocking classification with a plain open, and require
