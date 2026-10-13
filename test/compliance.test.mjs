@@ -430,15 +430,15 @@ test("an attested rule does NOT make the project COMPLIANT_WITH_EXCEPTIONS", () 
 test("an attestation cannot override an automated failure", () => {
   // Evidence outranks assertion (Standard 38 R4). This is also why an attestation cannot bypass a
   // nonExemptible rule — not a separate prohibition, the automated failure simply survives.
-  // ai.destructive-approval is both manual-review (so genuinely attestable) and nonExemptible, so
+  // data.no-silent-discard is both manual-review (so genuinely attestable) and nonExemptible, so
   // this case covers both prohibitions at once.
-  const rule = catalog.rules.get("ai.destructive-approval");
+  const rule = catalog.rules.get("data.no-silent-discard");
   assert.equal(rule.attestable, true);
   assert.equal(rule.nonExemptible, true);
 
   const verdict = run({
-    policy: policy({ attestations: { "ai.destructive-approval": attest() } }),
-    findings: [{ rule: "ai.destructive-approval", message: "delete runs unguarded", evidence: ["cli.js"] }],
+    policy: unestablishing("data.no-silent-discard", { attestations: { "data.no-silent-discard": attest() } }),
+    findings: [{ rule: "data.no-silent-discard", message: "delete runs unguarded", evidence: ["cli.js"] }],
   });
   assert.equal(verdict.status, STATUS.NON_COMPLIANT);
   assert.ok(

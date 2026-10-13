@@ -18,6 +18,23 @@
 # those rejections stand, which is an organization-enforcement decision rather than part of proving
 # distribution fidelity (ADR 0013).
 
+# BOOTSTRAP RULE — a validator may be judged by the validator it contains, but never only by it.
+#
+# `validate-self` runs the validator from the code under test: the local reusable workflow of the
+# same commit, with `standards-ref` set to that commit (`github.sha`; the merge commit on a pull
+# request). A check added to the validator, such as the review-history integrity comparison, is
+# therefore executed by hosted self-validation in the same change that introduces it, instead of
+# waiting for a later pin bump.
+#
+# That cannot be the only judge, because a change that weakened the validator would then weaken the
+# verdict on itself. So:
+#   1. `validate-self-pinned-baseline` runs an older, owner-reviewed commit, pinned by full SHA exactly
+#      as before. It is the independent reference; a pull request cannot change which commit it runs.
+#   2. A difference in verdict between the two jobs is the signal. Both are expected red here.
+#   3. Neither job is a required check (ADR 0013), so neither is a merge gate; the baseline pin moves
+#      only by a separate, reviewed commit that names the new SHA, never by the change it judges.
+#   4. The code-under-test job proves nothing on its own about its own integrity; it is evidence.
+
 name: standards-dogfood
 
 on:
@@ -28,6 +45,13 @@ on:
 
 jobs:
   validate-self:
+    # The validator of the code under test: same-repository workflow, same commit.
+    uses: ./.github/workflows/standards-validate.yml
+    with:
+      standards-ref: ${{ github.sha }}
+
+  validate-self-pinned-baseline:
+    # The independent reference: an older reviewed commit, pinned by full SHA in both places.
     uses: mikeycdavis/EngineeringStandards/.github/workflows/standards-validate.yml@361390267662f9c76bd6490db68db5e22793328f
     with:
       standards-ref: 361390267662f9c76bd6490db68db5e22793328f
