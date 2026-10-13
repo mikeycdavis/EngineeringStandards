@@ -407,6 +407,28 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
     write plus a rename performed relative to the held directory handle. Where none can be shown,
     the fail-closed refusal above applies to `init` on that platform; this does not change the
     separate requirement of a Windows-safe `eligibility` in 3.0.0.
+- **Every path component is bound, not only the root.** Holding the root handle protects the
+  first component only. A target can contain a symlink or junction at an intermediate artifact
+  path such as `.github` or `artifacts`, and resolving `.github/copilot-instructions.md` or
+  `artifacts/adr/...` relative to the root handle would follow that link and write outside the
+  directory that was checked. The same property as the root therefore applies to **every
+  component of every read and write path** in `init`:
+  - each directory component is opened relative to its parent handle **without following links**,
+    and the operation proceeds relative to that component's handle (the artifacts `init` writes
+    are nested, for example `.github/` and `artifacts/project-plan-breakdown/`, so this is
+    exercised on ordinary runs); or
+  - the operation **refuses a linked component**: `init` exits `2`, writes nothing, and names the
+    condition by classification of that component with the existing vocabulary (`not-regular-file`
+    for a link or other non-directory where a directory is required, `unreadable` where it cannot be
+    opened safely, `target-changed` where an identity moved); no new condition is introduced.
+  - **Consequence, stated for the owner:** an `init` on a repository whose `.github`, `artifacts` or
+    any intermediate artifact directory is itself a symlink or junction now **refuses** where it
+    previously wrote through the link. This is fail-closed behaviour under the MAJOR 3.0.0
+    classification, not a new product feature.
+  - **The resolver's source reads are root-level only.** The resolver reads only `README.md` and
+    `FROZEN.md` in the root of the target and does not traverse intermediate components; the
+    component-wise rule applies to it vacuously for those two opens, which are made relative to the
+    held root handle without following links (the source-file rule above).
 - **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
   pre-write refusal.** `init` refuses with exit `2`, writes nothing, and leaves the tree unchanged.
   `target-changed` is raised only when the identity from the held handle differs from the
@@ -629,6 +651,15 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   and handle-relative source opens with path-based ones, replaces the held-handle write with a
   path-based write, and replaces it with "verify then write by path", and requires these tests to
   fail on each. A matching test confirms there is no post-write `target-changed`.
+- **Component-wise traversal, injected:** (a) a pre-existing linked intermediate directory
+  (`.github` or `artifacts` is a symlink or junction, to a directory outside the target and to a
+  directory inside it): `init` exits `2`, writes nothing, and nothing lands outside the target;
+  (b) an intermediate directory that is a regular directory when checked and is replaced by a link
+  **between the check and the write** (and, separately, between creating the intermediate directory
+  and writing into it): the write is refused or lands in the held component, never outside; (c) the
+  same for a deeper component (`artifacts/project-plan-breakdown/`). A mutation check replaces
+  component-wise no-follow traversal with a single path-based write relative to the root, and with
+  `mkdir -p`-style path creation, and requires these tests to fail on each.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
