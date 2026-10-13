@@ -42,8 +42,11 @@ A claim is the first `Tracked by` / `TrackedBy` field (the two spellings are one
 as the issue links in its span text that point at the mapping's `target` repository. Link extraction
 (`extractIssueLinks`) is ownership semantics over the span text, not plan grammar, and runs in one forward
 pass: a link counts at the start of the value, after whitespace, after the `(` of a markdown link
-destination (a `(` directly after a `]` that closes a `[` opened earlier; a `](` with no label before it is only characters), or after `( < [ * " ' > , ;` unless the whitespace-delimited token already holds a
-`scheme:`. The accepted syntax is that of #99; only the algorithm changed (Q5).
+destination (a `(` directly after a `]` that closes a `[` opened earlier; a `](` with no label before it is only characters; a
+backslash before ASCII punctuation makes that character literal, so an escaped `[` opens no label and an escaped `]` closes none,
+and `\\` is an escaped backslash that leaves a following bracket real), or after `( < [ * " ' > , ;` unless the whitespace-delimited token already holds a
+`scheme:`. The accepted syntax is that of #99, narrowed by #102 for backslash-escaped brackets (#104); only the algorithm
+changed (Q5).
 
 Plan files are the canonical collector's set: `.md` files anywhere under the plan directory, through the
 repository's ignore set and the framework exclusions, with the 400,000-byte per-file cap, the aggregate
