@@ -54,7 +54,7 @@ not be cited, because it would not have fired on the evidenced README (see "The 
 | # | Decision | Chosen | Recorded as |
 | --- | --- | --- | --- |
 | Q1 | Signal vocabulary | A | exactly two evidenced signals: `frozen-file`, `readme-frozen-banner`, with the corrected per-line README rule |
-| Q2 | `init` and the resolver | A | `init` consults the same resolver; refuses with exit `2` and writes nothing; same override flag; INDETERMINATE not overridable |
+| Q2 | `init` and the resolver | A | `init` consults the same resolver; refuses with exit `2` and writes nothing (a pre-write refusal; the single post-write race is P6); same override flag; INDETERMINATE not overridable |
 | Q3 | Override carrier | A | repeatable per-invocation `--override-signal=<id>`; nothing persisted; binding rules 1-7 under D2 |
 | Q4 | `FROZEN.md` with no listed phrase | A | INDETERMINATE (`no-listed-phrase`), not overridable |
 | Q5 | Machine-readable output | C | only the three state names and exit codes 0, 1, 2 are frozen; **no JSON property name, nesting, ordering, optional field, evidence shape or serialisation detail is frozen**; the complete machine-readable contract is deferred to a later, separately approved ADR and work item |
@@ -347,7 +347,7 @@ adopted nothing.
 **`init` consults the same resolver** (Q2 A). Before any write, `init` resolves eligibility with the
 same code and the same override flag. On `OUT_OF_SCOPE` (not overridden) or `INDETERMINATE` it
 exits `2`, writes nothing, and names the signals; `--dry-run` runs the same check and reports the same
-refusal. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
+refusal. These are pre-write refusals; the one post-write failure is the race in P6. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
 unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
 classify and write exactly as before (a test).
 
@@ -371,6 +371,12 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
 The requirements below are **properties**. They state what must be true, not which system call
 achieves it; mechanisms are in the non-normative guidance note that follows and prescribe nothing.
 
+**Scope: paths resolved within the target directory.** P1-P6 govern the reads and writes that
+`init` and the resolver perform on paths **inside the target directory**. Framework-side reads, such
+as the templates under `templates/` and `VERSION` (read by `renderTemplate()` and
+`frameworkVersion()`), belong to the tool's own installation, cannot be bound to the target, and are
+**outside** this binding; they are read as `init` reads them today.
+
 **P1. One held directory, bound before resolution.** The invocation acquires one held handle to the
 target directory (the directory a symlink target resolves to, resolved once by the operating system;
 no canonicalisation contract, no reported path format) **before** eligibility is resolved. The
@@ -381,12 +387,12 @@ reuse the resolver's handle (a separate process after an earlier `eligibility`),
 again and requires its identity to equal the one the resolver examined; a mismatch is the condition
 `target-changed`. Checking identity and then writing by path is never a substitute for binding.
 
-**P2. Every path component is bound.** Every component of every read and write path in `init` is
-bound to the held directory in the same way as the root: **no component is followed through a
+**P2. Every path component is bound.** Every component of every read and write path **within the
+target directory** in `init` is bound to the held directory in the same way as the root: **no component is followed through a
 symbolic link or junction**. A linked intermediate directory (for example `.github` or `artifacts`)
 is refused, not traversed.
 
-**P3. The leaf is bound.** The final entry of every path is also bound: no link is followed, a
+**P3. The leaf is bound.** The final entry of every path within the target is also bound: no link is followed, a
 special file (FIFO, device, any non-regular file) is **never opened with an open that blocks or has
 an effect**, including one that was a regular file at classification and was replaced afterwards,
 and creation or overwrite cannot be redirected through a link. A rename used to place a file does
@@ -431,7 +437,10 @@ with exit `2`, naming `target-changed` where an identity mismatch was observed a
 otherwise. This record does not prescribe the call and does not claim that a mechanism exists.
 
 **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
-pre-write refusal** (P5), except the single race in P6. `target-changed` is raised only when the
+pre-write refusal** (P5): zero writes and an unchanged tree. The **only** exception is the single
+race in P6 (an entry replaced by a link or special file after classification), which is not an
+`INDETERMINATE` condition: that write is refused, earlier artifacts already written remain, and no
+later write is made. `target-changed` is raised only when the
 identity of the directory held differs from the resolver's, which happens before the first write;
 once the directory is held and verified there is no mid-apply `target-changed`. It is an
 `INDETERMINATE` condition, is not overridable, and keeps this name exactly as introduced.
@@ -469,8 +478,8 @@ component cannot protect replaceable ancestors.
 | `eligibility`, `OUT_OF_SCOPE` | `1` | completed; the repository declares itself not adoptable |
 | `eligibility`, `INDETERMINATE` | `2` | the tool could not reach a verdict |
 | `eligibility`, any invocation error (below) | `2` | invocation error |
-| `init`, refused because `OUT_OF_SCOPE` (not overridden) | `2` | refused; nothing written |
-| `init`, refused because `INDETERMINATE` | `2` | refused; nothing written |
+| `init`, refused because `OUT_OF_SCOPE` (not overridden) | `2` | refused before the first write; nothing written |
+| `init`, refused because `INDETERMINATE` | `2` | refused before the first write; nothing written (the P6 race is the one exception and is not an `INDETERMINATE` condition) |
 
 The two commands differ on purpose and the difference is part of the frozen meaning:
 `eligibility` reports an `OUT_OF_SCOPE` repository as exit `1` (a completed verdict), whereas `init`
@@ -604,7 +613,9 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   before/after tree comparison (file list and content hashes) shows zero writes.
 - **AC2.** Each `INDETERMINATE` condition above, `target-changed` included, exits `2`, writes
   nothing (tree unchanged), and is not cleared by `--override-signal`, for `eligibility` and for
-  `init`. There is no INDETERMINATE condition that is a post-write refusal.
+  `init`. There is no INDETERMINATE condition that is a post-write refusal. The single post-write
+  case is the P6 race, which is tested separately (earlier artifacts remain, that write refused, no
+  later write, exit `2`) and is not an `INDETERMINATE` condition.
 - **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
   whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
   no other signal: `INDETERMINATE` (`no-listed-phrase`), exit `2`, `init` refuses with exit `2`. The
@@ -649,6 +660,16 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `FROZEN.md` and shows it is not opened as a regular file. A CI account that cannot create such an
   object must be provisioned so that it can, or the gate fails; it never passes by skipping. This
   record states the requirement and does not claim that such a runner exists.
+- **Real-filesystem Windows `init` gate, not satisfiable by injection or skipping.** All the
+  directory-component and leaf `init` cases above are injected, and an injected suite can pass while
+  the native Windows handle, reparse-point or rename wiring is broken. The 3.0.0 release run must
+  therefore contain at least one **non-skipped, real-filesystem Windows `init` test** that exercises
+  the platform-specific binding path: (a) a pre-existing **linked intermediate directory**
+  (`.github` or `artifacts` as a symlink or junction) and (b) a pre-existing **leaf link** at a file
+  artifact path (also with `--force-overwrite`), each asserting exit `2`, nothing written, and the
+  link target unchanged, plus an ordinary run that preserves a real directory artifact. A runner that
+  cannot create the objects must be provisioned, or the gate fails. This is a requirement of this
+  record; it does not claim that such a test or runner exists.
 - **Directory identity bound through `init`.** Injected, each asserting exit `2`, **zero writes and
   an unchanged tree**, and `target-changed` where an identity mismatch was observed: the target's
   identity differs between the resolver's handle and a handle `init` acquires again; and the
