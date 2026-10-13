@@ -106,6 +106,27 @@ vocabulary; D2 named per-signal overrides with INDETERMINATE not overridable; D3
 `eligibility` subcommand; D4 this record before implementation; D5 Standard 22 step 0 with no
 catalog rule.
 
+## Post-acceptance additions (pending owner reapproval)
+
+The owner accepted this record on 2026-10-12T18:59:50Z. The additions below were made **after** that
+acceptance, in response to review of PR #105, and this record does **not** assert that the owner
+approved them. They are listed with their source, the choice made and the alternative, so the owner
+can approve or amend them in one pass; until then they are proposals within an Accepted record. The
+status line and attribution above are deliberately unchanged pending that decision.
+
+| # | Addition | Source (Codex finding, commit) | Choice made | Alternative |
+| --- | --- | --- | --- | --- |
+| 1 | The resolver acquires the held directory handle before resolution and reads relative to it; `init` reuses it, or re-acquires and compares identity (`target-changed`) | 4251464916, 4251544511, 4251801205; commits 2c542b9, 18b0f9d, 4762e0f (merged as 03ac0e7) | binding by held handle; check-then-write by path rejected | check identity before each write and write by path (rejected: not atomic) |
+| 2 | Every path component and the leaf are bound; links, FIFOs, devices and a directory where a file is expected are refused (exit `2`, nothing written) | 4264398202, 4264725716, 4264835581, 4264835588, 4264835599; commits aa8abcc, ebefbcb, 0f77ff7 | refuse, never follow, never replace a link by rename | follow links inside the target, or replace a link as a link |
+| 3 | Properties-only normative text with a non-normative mechanism note (P1-P7); scope limited to paths within the target | 4264881405; commits 0f77ff7, 563167c | properties only; framework-side reads (`templates/*`, `VERSION`) outside the binding | prescribe system calls in the normative text |
+| 4 | The post-write race class (P6): that write is refused, earlier artifacts remain, no rollback; named `entry-changed` | 4264881418, 4264926220, 4264964402; commits 563167c, 9687685, 3adfed5 | partial retention, narrowest honest wording | rollback or transactional placement of all artifacts |
+| 5 | Windows release gates: non-skipped real-filesystem tests (symlink or reparse point, linked intermediate, leaf link, synchronized replacement races for absent and existing leaves and an intermediate junction) in the 3.0.0 run, with a seam in the implementation's test surface | 4251464935, 4264881420, 4264926224, 4264964409; commits 2c542b9, 563167c, 9687685, 3adfed5 | release-blocking requirements, stated as requirements and not as existing | injected-only tests, or skippable real tests |
+| 6 | Fail closed where no safe open exists: the entry is not opened as a regular file and is `INDETERMINATE` (`unreadable`); no "mark the platform unsupported" alternative | 4251291172; commit f4615dd and later | refuse at runtime | declare the platform unsupported |
+| 7 | Capped read at cap-plus-one bytes with an injected grow-after-classification test | 4265009543; this commit | bounded read | size check then unbounded read |
+
+Condition names introduced by these additions (`target-changed`, `entry-changed`) are human
+diagnostics and are not part of the frozen surface.
+
 ## Decision
 
 ### D1 — A closed, file-based signal vocabulary (Q1 A, Q7 A)
@@ -165,10 +186,13 @@ Every character-class decision is fixed here, ASCII-only and locale-independent,
 implementations cannot differ on Unicode whitespace or case. Where this record is silent, nothing is
 implied.
 
-- **Decoding.** A matching file is read as bytes, no larger than the audit collector's per-file read
-  cap (`MAX_READ_BYTES`, 400,000 bytes at e341dba; a file strictly larger is `over-read-cap`) and
-  decoded as UTF-8 with errors fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is
-  removed. NUL and other control characters are valid text.
+- **Decoding.** A matching file is read with a **capped read that stops after at most cap-plus-one
+  bytes**, where the cap is the audit collector's per-file read cap (`MAX_READ_BYTES`, 400,000 bytes
+  at e341dba). It is not a size check followed by an unbounded read: a file that grows after
+  classification is bounded by the same cap-plus-one read. If more than the cap is observed the file
+  is `over-read-cap` and nothing is decoded. A file within the cap is decoded as UTF-8 with errors
+  fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is removed. NUL and other control
+  characters are valid text.
 - **Line terminators.** LF, CRLF and a lone CR each end a line.
 - **Whitespace and blank.** The whitespace set is exactly U+0020 and U+0009. A line is blank if it is
   empty or contains only that set. U+00A0, U+3000, U+200B and every other Unicode space or format
@@ -745,6 +769,11 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   open, the same-handle classification with a path-based check, the no-replace or identity-checked
   rename with a replacing rename, and the non-blocking classification with a plain open, and require
   these tests to fail on each.
+- **Capped read.** Injected: a matching file that is within the cap when classified and **grows
+  past the cap before or during the read** is `INDETERMINATE` (`over-read-cap`) and no more than
+  cap-plus-one bytes are requested or retained; a file of exactly the cap is read in full. A
+  mutation check replaces the capped read with a size check followed by an unbounded read and
+  requires the test to fail.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read

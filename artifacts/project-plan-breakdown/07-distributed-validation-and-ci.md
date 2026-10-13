@@ -253,10 +253,20 @@ someone to lie to make the build go green.
   of the assertion, not a manual check.
 - **Dependencies:** `standards init` and the adoption guide above — both are downstream of the guard
   and the guide's step order is part of what changes.
-- **Possible ADR:** whether the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model, and the decision
-  that EngineeringStandards owns adoption eligibility itself rather than delegating to an external
-  registry, is consequential enough to record. It likely is: the question arises before a project has
-  adopted anything, so answering it must not require a separate enforcement repository to be present.
+- **ADR:** [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md),
+  status Accepted (owner, 2026-10-12), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
+  and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
+  to an external registry. Later additions to it are listed in its "Post-acceptance additions
+  (pending owner reapproval)" section.
+- **Implementation slices** (each its own pull request; none is implemented by the ADR):
+  1. the resolver and the read-only `eligibility` subcommand, with fixtures;
+  2. `init` consults the resolver, with the held-handle binding of the checked directory;
+  3. the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram and its
+     SVG, `CHANGELOG.md`), with a no-catalog-rule test.
+- **Release blockers for 3.0.0** (the owner classified the complete change MAJOR, targeted to
+  3.0.0): a Windows-safe `eligibility` and a Windows-safe `init`; non-skipped real-filesystem
+  Windows tests, including the synchronized replacement-race cases; and the MAJOR classification
+  itself. No `VERSION` change, tag or release is authorised by the ADR or by this item.
 
 ### Prepare a truthful Engineering adapter release candidate
 
