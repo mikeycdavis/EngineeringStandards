@@ -366,111 +366,94 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   introduces no machine field anywhere.
 - The refusal happens before `planInit` and `applyInit`, so no `planInit` report or bootstrap plan is
   computed and nothing is written; stderr is the only output.
-- **The directory checked is the directory written, by binding and not by checking.** A check
-  followed by a path-based write is not atomic: a directory symlink or junction can be retargeted
-  between the check and the write, and a verified identity does not bind the write. Verifying
-  identity "at each use" and then writing by path is therefore **not** an acceptable mechanism, on
-  any platform. The requirement is:
-  - **The handle is acquired before eligibility is resolved, and the resolver uses it.** The
-    invocation obtains **one held handle** to the target directory first (the directory a symlink
-    target resolves to, resolved once by the operating system; no canonicalisation contract, no
-    reported path format). The resolver's directory listing and its opens of `README.md` and
-    `FROZEN.md` are performed **relative to that handle**, and never by re-resolving the target
-    path, so the directory the resolver examines is by construction the directory the handle is
-    bound to. A retargetable link therefore cannot show one directory while entries are enumerated
-    and another when an identity is recorded or compared. `init` then uses the **same handle** for
-    planning and for every write, so the repository that was checked is the repository that is
-    written. The identity of the directory (device and inode, or the platform's file identifier) is
-    taken from that handle.
-  - **When `init` cannot reuse the resolver's handle** (for example it is invoked as a separate
-    process after an earlier `eligibility`, or the handle was not retained), it acquires a handle
-    again and requires its identity to equal the identity the resolver examined. A mismatch is the
-    condition `target-changed`. A path-based re-resolution followed by an identity comparison is
-    never a substitute for using the held handle in the resolver itself.
-  - From that point, planning and **every** read and write are performed through the held handle, or
-    through another operation that atomically binds the verified identity to the write, and never
-    by re-resolving the target path. Nothing that happens to the path afterwards (a retarget, or a
-    transient retarget restored before any later check) can redirect a write, because no write
-    consults the path.
-  - Where the platform or runtime cannot provide such a binding, `init` **does not write**: it
-    refuses with exit `2`, naming `target-changed` where an identity mismatch was observed and
-    `unreadable` otherwise. This refusal cannot be satisfied by "check, then write by path".
-  - **Windows is required** (see the platform requirement). The Windows implementation must use
-    the held handle, or another operation that atomically binds **each** write to the verified
-    identity; a mechanism that verifies a path (or a path component) and then writes by path does not
-    qualify, because a rename or replacement of the directory or of any ancestor after the check
-    redirects later writes, and verifying only the target component cannot protect replaceable
-    ancestors. This record does not prescribe the call and does not claim that a mechanism exists.
-    The implementation must find one within the zero-third-party-dependency decision; the kinds of
-    mechanism that would meet the property, none asserted to be available, are limited to those that
-    actually bind: a handle-based native route, handle-relative creation and write, or a staged
-    write plus a rename performed relative to the held directory handle. Where none can be shown,
-    the fail-closed refusal above applies to `init` on that platform; this does not change the
-    separate requirement of a Windows-safe `eligibility` in 3.0.0.
-- **Every path component is bound, not only the root.** Holding the root handle protects the
-  first component only. A target can contain a symlink or junction at an intermediate artifact
-  path such as `.github` or `artifacts`, and resolving `.github/copilot-instructions.md` or
-  `artifacts/adr/...` relative to the root handle would follow that link and write outside the
-  directory that was checked. The same property as the root therefore applies to **every
-  component of every read and write path** in `init`:
-  - each directory component is opened relative to its parent handle **without following links**,
-    and the operation proceeds relative to that component's handle (the artifacts `init` writes
-    are nested, for example `.github/` and `artifacts/project-plan-breakdown/`, so this is
-    exercised on ordinary runs); or
-  - the operation **refuses a linked component**: `init` exits `2`, writes nothing, and names the
-    condition by classification of that component with the existing vocabulary (`not-regular-file`
-    for a link or other non-directory where a directory is required, `unreadable` where it cannot be
-    opened safely, `target-changed` where an identity moved); no new condition is introduced.
-  - **Consequence, stated for the owner:** an `init` on a repository whose `.github`, `artifacts` or
-    any intermediate artifact directory is itself a symlink or junction now **refuses** where it
-    previously wrote through the link. This is fail-closed behaviour under the MAJOR 3.0.0
-    classification, not a new product feature.
-  - **The resolver's source reads are root-level only.** The resolver reads only `README.md` and
-    `FROZEN.md` in the root of the target and does not traverse intermediate components; the
-    component-wise rule applies to it vacuously for those two opens, which are made relative to the
-    held root handle without following links (the source-file rule above).
-- **The leaf artifact entry is bound too.** Directory components are not the whole path: the final
-  entry, the artifact file itself, can be a symlink, for example `PROJECT.md` with
-  `--force-overwrite=PROJECT.md`, or an absent artifact replaced by a link between planning and
-  creation. Opening it relative to a safely held parent would still follow the link and could
-  overwrite a file outside the checked repository. Each leaf is therefore handled by an **atomic
-  no-follow operation relative to the held parent handle**:
-  - **creation** of an absent leaf is an exclusive, no-follow create (`O_CREAT|O_EXCL|O_NOFOLLOW` on
-    POSIX; the platform equivalent that fails if the name exists, including as a link, and does not
-    follow it);
-  - **overwrite** of an existing regular file is a no-follow open followed by `fstat` on **that same
-    handle** classifying it as a regular file before any byte is written;
-  - **write by temp file plus rename** is acceptable only if the temporary file is created by the
-    exclusive no-follow create inside the held parent, the rename is performed relative to that held
-    parent, and a pre-existing leaf link is **replaced as a link**, never followed;
-  - a leaf that is a link, a FIFO, a device or any other non-regular file is **refused**: `init` exits
-    `2` and writes nothing for it (condition `not-regular-file`; `unreadable` where it cannot be
-    opened safely; `target-changed` where an identity moved).
-  Every leaf is classified (no-follow, relative to the held parent) **before the first write**, so
-  a leaf found to be a link, FIFO, device or directory is a pre-write refusal. A leaf that becomes a
-  link **after** classification is caught by the atomic no-follow open or create above and that
-  write is refused, never followed; this is an ordinary write failure of the kind `init` already has
-  and does not alter the pre-write refusal rule for the conditions in the table.
+#### File safety for `init` (normative properties)
 
-  | Leaf kind at an artifact path | `init` behaviour |
-  | --- | --- |
-  | absent | created by exclusive no-follow create (or temp file plus rename within the held parent) |
-  | regular file | preserved as today; overwritten only with the existing `--force-overwrite=<path>`, by no-follow open with same-handle `fstat` regular-file check |
-  | symlink (to anywhere, inside or outside the target; with or without `--force-overwrite`) | refused: exit `2`, nothing written, `not-regular-file`; never followed |
-  | directory | refused: exit `2`, nothing written, `not-regular-file` |
-  | FIFO, device, or other special file | refused: exit `2`, nothing written, `not-regular-file`; never opened for blocking or acting on it |
+The requirements below are **properties**. They state what must be true, not which system call
+achieves it; mechanisms are in the non-normative guidance note that follows and prescribe nothing.
 
-  This refuses a leaf link where an earlier `init` might have written through it, under the MAJOR
-  3.0.0 classification, and it replaces reporting such a leaf as an ordinary conflict.
-- **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
-  pre-write refusal.** `init` refuses with exit `2`, writes nothing, and leaves the tree unchanged.
-  `target-changed` is raised only when the identity from the held handle differs from the
-  resolver's, which happens before the first write. Once the handle is held and verified, there is
-  **no** mid-apply `target-changed` and no post-write refusal for this reason: a later path change
-  is irrelevant because writes never use the path. The only failures after a first write are
-  ordinary I/O errors of the kind `init` already has, which this record does not alter.
-  `target-changed` is an `INDETERMINATE` condition, is not overridable, and keeps this name exactly
-  as introduced.
+**P1. One held directory, bound before resolution.** The invocation acquires one held handle to the
+target directory (the directory a symlink target resolves to, resolved once by the operating system;
+no canonicalisation contract, no reported path format) **before** eligibility is resolved. The
+resolver's directory listing and its opens of `README.md` and `FROZEN.md` (it reads only those two,
+in the root) are bound to that directory, and `init` uses the same directory for planning and for
+every write. The repository that was checked is the repository that is written. If `init` cannot
+reuse the resolver's handle (a separate process after an earlier `eligibility`), it acquires one
+again and requires its identity to equal the one the resolver examined; a mismatch is the condition
+`target-changed`. Checking identity and then writing by path is never a substitute for binding.
+
+**P2. Every path component is bound.** Every component of every read and write path in `init` is
+bound to the held directory in the same way as the root: **no component is followed through a
+symbolic link or junction**. A linked intermediate directory (for example `.github` or `artifacts`)
+is refused, not traversed.
+
+**P3. The leaf is bound.** The final entry of every path is also bound: no link is followed, a
+special file (FIFO, device, any non-regular file) is **never opened with an open that blocks or has
+an effect**, including one that was a regular file at classification and was replaced afterwards,
+and creation or overwrite cannot be redirected through a link. A rename used to place a file does
+not replace a link at its destination: a link at the destination is **refused, not replaced**.
+
+**P4. Designation matters.** Artifacts are designated in `scripts/init.mjs` (`ARTIFACTS`):
+**directory artifacts** `artifacts/project-plan-breakdown/` and `artifacts/adr/`; **file artifacts**
+`project-policy.yml`, `PROJECT.md`, `AGENTS.md`, `CLAUDE.md` and
+`.github/copilot-instructions.md`. A directory artifact that is present as a real directory is
+**preserved**, and one that is absent is **created**, as today (including the existing alternative
+locations that already satisfy it); both are bound component-wise (P2). A directory found where a
+**file** artifact is expected is refused. A link at any artifact path, or a non-directory at a
+directory artifact's path, is refused.
+
+**P5. Refusal is before the first write.** Every artifact path is classified, bound as above,
+**before the first write**, and every refusal in the table below is a pre-write refusal: `init` exits
+`2`, writes nothing, and leaves the tree unchanged. Conditions use the existing vocabulary
+(`not-regular-file` for a link, special file or wrong-kind entry; `unreadable` where an entry
+cannot be opened safely; `target-changed` where an identity moved); no new condition is introduced.
+
+| Entry at an artifact path | File artifact | Directory artifact |
+| --- | --- | --- |
+| absent | created, bound (P2, P3) | created, bound (P2) |
+| regular file | preserved as today; overwritten only with the existing `--force-overwrite=<path>`, under P3 | refused (`not-regular-file`) |
+| real directory | refused (`not-regular-file`) | preserved |
+| symlink or junction, to anywhere, with or without `--force-overwrite` | refused (`not-regular-file`); never followed | refused (`not-regular-file`); never followed |
+| FIFO, device, other special file | refused (`not-regular-file`); never opened with a blocking or effectful open | refused (`not-regular-file`) |
+
+**P6. The single post-write failure, stated exactly.** An entry that was a regular file or absent at
+classification and is replaced by a link or special file **afterwards** (a race) is caught by the
+binding in P3 and **that write is refused**: nothing is written through the link, to the special
+file, or outside the checked directory, no later write is made, and `init` exits `2`
+(`not-regular-file`). Artifacts already written before the race went to the checked directory and
+**remain**. This is the only way `init` exits `2` after a first write for a reason in this section;
+it is not a state, it is an ordinary write failure of the kind `init` already has, and it does not
+weaken P5 for any condition in the table.
+
+**P7. Windows is required, and failure is closed.** Every property above applies on every supported
+platform. **Windows is required in 3.0.0** (see the platform requirement). Where the platform or
+runtime cannot provide the binding for an entry in a given run, `init` does not write: it refuses
+with exit `2`, naming `target-changed` where an identity mismatch was observed and `unreadable`
+otherwise. This record does not prescribe the call and does not claim that a mechanism exists.
+
+**Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
+pre-write refusal** (P5), except the single race in P6. `target-changed` is raised only when the
+identity of the directory held differs from the resolver's, which happens before the first write;
+once the directory is held and verified there is no mid-apply `target-changed`. It is an
+`INDETERMINATE` condition, is not overridable, and keeps this name exactly as introduced.
+
+**Consequences, stated for the owner** (fail-closed behaviour under the MAJOR 3.0.0 classification,
+not new product features): an `init` on a repository whose `.github`, `artifacts` or any
+intermediate artifact directory is itself a symlink or junction, or whose file artifact is a link,
+special file or directory, now **refuses** where it previously wrote through the link or reported
+it as a conflict.
+
+**Implementation guidance (non-normative; does not prescribe the call and claims no mechanism
+exists).** Mechanisms that could satisfy the properties, none asserted available on any platform:
+on POSIX, `openat`-style handle-relative operations with `O_NOFOLLOW`, with `O_NONBLOCK` and
+`O_NOCTTY` on opens that could meet a FIFO or device and `fstat` on the same handle before any other
+effect, `O_CREAT|O_EXCL` for creation, and an exclusive temporary file in the held directory renamed
+with a no-replace rename or an identity-checked rename relative to the held handle; a device that is
+not yet classified as regular is not opened for write until it has been classified through a handle
+that cannot act on it. On Windows, handle-based native routes that open the directory and each entry
+without following reparse points, handle-relative creation, or a staged write plus a rename relative
+to the held handle. A mechanism that verifies a path or path component and then writes by path does
+not qualify, because a rename or replacement after the check redirects later writes and verifying one
+component cannot protect replaceable ancestors.
 
 #### Human output, exit codes, and what is frozen (Q5 C, Q6 A)
 
@@ -693,16 +676,22 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   same for a deeper component (`artifacts/project-plan-breakdown/`). A mutation check replaces
   component-wise no-follow traversal with a single path-based write relative to the root, and with
   `mkdir -p`-style path creation, and requires these tests to fail on each.
-- **Leaf artifact entries, injected:** (a) a pre-existing leaf symlink to a file **inside** the
-  target and to a file **outside** it, each with and without `--force-overwrite=<path>`: exit `2`,
-  nothing written, the link target unchanged; (b) an absent leaf replaced by a symlink **between
-  planning and creation**, and an existing regular leaf replaced by a symlink between classification
-  and the overwrite: the write is refused and never lands through the link; (c) a leaf that is a
-  directory, a FIFO and a device node: exit `2`, nothing written, never opened blocking; (d) the
-  table above, one case per row, asserting the stated behaviour. Mutation checks replace the
-  exclusive no-follow create with a plain create, the no-follow open with a following open, and the
-  same-handle `fstat` classification with a path-based check, and require these tests to fail on
-  each.
+- **Leaf artifact entries, injected:** (a) a pre-existing leaf symlink to a file **inside** and to a
+  file **outside** the target, each with and without `--force-overwrite=<path>`: exit `2`, nothing
+  written, the link target unchanged; (b) an absent file artifact replaced by a symlink **between
+  planning and creation**, and an existing regular file artifact replaced by a symlink **and,
+  separately, by a FIFO and by a device node**, between classification and overwrite: the write is
+  refused, nothing lands through the link, and the FIFO or device is **never opened with a blocking
+  or effectful open**; the P6 guarantees hold (earlier artifacts remain, no later write, exit `2`);
+  (c) a directory at a file artifact's path (exit `2`, nothing written); (d) **the directory
+  artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
+  preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
+  at either path is refused; (e) the table above, one case per cell. A temp-plus-rename placement
+  is tested with a link at the destination, which must be refused and not replaced. Mutation checks
+  replace the exclusive no-follow create with a plain create, the no-follow open with a following
+  open, the same-handle classification with a path-based check, the no-replace or identity-checked
+  rename with a replacing rename, and the non-blocking classification with a plain open, and require
+  these tests to fail on each.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
