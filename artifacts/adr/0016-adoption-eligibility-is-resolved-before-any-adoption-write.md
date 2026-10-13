@@ -429,6 +429,39 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
     `FROZEN.md` in the root of the target and does not traverse intermediate components; the
     component-wise rule applies to it vacuously for those two opens, which are made relative to the
     held root handle without following links (the source-file rule above).
+- **The leaf artifact entry is bound too.** Directory components are not the whole path: the final
+  entry, the artifact file itself, can be a symlink, for example `PROJECT.md` with
+  `--force-overwrite=PROJECT.md`, or an absent artifact replaced by a link between planning and
+  creation. Opening it relative to a safely held parent would still follow the link and could
+  overwrite a file outside the checked repository. Each leaf is therefore handled by an **atomic
+  no-follow operation relative to the held parent handle**:
+  - **creation** of an absent leaf is an exclusive, no-follow create (`O_CREAT|O_EXCL|O_NOFOLLOW` on
+    POSIX; the platform equivalent that fails if the name exists, including as a link, and does not
+    follow it);
+  - **overwrite** of an existing regular file is a no-follow open followed by `fstat` on **that same
+    handle** classifying it as a regular file before any byte is written;
+  - **write by temp file plus rename** is acceptable only if the temporary file is created by the
+    exclusive no-follow create inside the held parent, the rename is performed relative to that held
+    parent, and a pre-existing leaf link is **replaced as a link**, never followed;
+  - a leaf that is a link, a FIFO, a device or any other non-regular file is **refused**: `init` exits
+    `2` and writes nothing for it (condition `not-regular-file`; `unreadable` where it cannot be
+    opened safely; `target-changed` where an identity moved).
+  Every leaf is classified (no-follow, relative to the held parent) **before the first write**, so
+  a leaf found to be a link, FIFO, device or directory is a pre-write refusal. A leaf that becomes a
+  link **after** classification is caught by the atomic no-follow open or create above and that
+  write is refused, never followed; this is an ordinary write failure of the kind `init` already has
+  and does not alter the pre-write refusal rule for the conditions in the table.
+
+  | Leaf kind at an artifact path | `init` behaviour |
+  | --- | --- |
+  | absent | created by exclusive no-follow create (or temp file plus rename within the held parent) |
+  | regular file | preserved as today; overwritten only with the existing `--force-overwrite=<path>`, by no-follow open with same-handle `fstat` regular-file check |
+  | symlink (to anywhere, inside or outside the target; with or without `--force-overwrite`) | refused: exit `2`, nothing written, `not-regular-file`; never followed |
+  | directory | refused: exit `2`, nothing written, `not-regular-file` |
+  | FIFO, device, or other special file | refused: exit `2`, nothing written, `not-regular-file`; never opened for blocking or acting on it |
+
+  This refuses a leaf link where an earlier `init` might have written through it, under the MAJOR
+  3.0.0 classification, and it replaces reporting such a leaf as an ordinary conflict.
 - **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
   pre-write refusal.** `init` refuses with exit `2`, writes nothing, and leaves the tree unchanged.
   `target-changed` is raised only when the identity from the held handle differs from the
@@ -660,6 +693,16 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   same for a deeper component (`artifacts/project-plan-breakdown/`). A mutation check replaces
   component-wise no-follow traversal with a single path-based write relative to the root, and with
   `mkdir -p`-style path creation, and requires these tests to fail on each.
+- **Leaf artifact entries, injected:** (a) a pre-existing leaf symlink to a file **inside** the
+  target and to a file **outside** it, each with and without `--force-overwrite=<path>`: exit `2`,
+  nothing written, the link target unchanged; (b) an absent leaf replaced by a symlink **between
+  planning and creation**, and an existing regular leaf replaced by a symlink between classification
+  and the overwrite: the write is refused and never lands through the link; (c) a leaf that is a
+  directory, a FIFO and a device node: exit `2`, nothing written, never opened blocking; (d) the
+  table above, one case per row, asserting the stated behaviour. Mutation checks replace the
+  exclusive no-follow create with a plain create, the no-follow open with a following open, and the
+  same-handle `fstat` classification with a path-based check, and require these tests to fail on
+  each.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
