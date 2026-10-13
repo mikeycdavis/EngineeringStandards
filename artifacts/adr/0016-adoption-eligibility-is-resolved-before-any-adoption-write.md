@@ -371,11 +371,22 @@ stderr, returns exit `2`, and emits **nothing** on stdout, with or without `--js
   between the check and the write, and a verified identity does not bind the write. Verifying
   identity "at each use" and then writing by path is therefore **not** an acceptable mechanism, on
   any platform. The requirement is:
-  - `init` obtains **one held handle** to the target directory (the directory a symlink target
-    resolves to, resolved once by the operating system; no canonicalisation contract, no reported path
-    format), takes the identity of the directory from that handle (device and inode, or the
-    platform's file identifier), and requires it to equal the identity of the directory the resolver
-    examined. A mismatch is the condition `target-changed`.
+  - **The handle is acquired before eligibility is resolved, and the resolver uses it.** The
+    invocation obtains **one held handle** to the target directory first (the directory a symlink
+    target resolves to, resolved once by the operating system; no canonicalisation contract, no
+    reported path format). The resolver's directory listing and its opens of `README.md` and
+    `FROZEN.md` are performed **relative to that handle**, and never by re-resolving the target
+    path, so the directory the resolver examines is by construction the directory the handle is
+    bound to. A retargetable link therefore cannot show one directory while entries are enumerated
+    and another when an identity is recorded or compared. `init` then uses the **same handle** for
+    planning and for every write, so the repository that was checked is the repository that is
+    written. The identity of the directory (device and inode, or the platform's file identifier) is
+    taken from that handle.
+  - **When `init` cannot reuse the resolver's handle** (for example it is invoked as a separate
+    process after an earlier `eligibility`, or the handle was not retained), it acquires a handle
+    again and requires its identity to equal the identity the resolver examined. A mismatch is the
+    condition `target-changed`. A path-based re-resolution followed by an identity comparison is
+    never a substitute for using the held handle in the resolver itself.
   - From that point, planning and **every** read and write are performed through the held handle, or
     through another operation that atomically binds the verified identity to the write, and never
     by re-resolving the target path. Nothing that happens to the path afterwards (a retarget, or a
@@ -602,12 +613,20 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   record states the requirement and does not claim that such a runner exists.
 - **Directory identity bound through `init`.** Injected, each asserting exit `2`, **zero writes and
   an unchanged tree**, and `target-changed` where an identity mismatch was observed: the target's
-  identity differs between the resolver and the held handle; and the platform reports that no
+  identity differs between the resolver's handle and a handle `init` acquires again; and the
+  platform reports that no
   atomic binding is available (refusal `unreadable`, no write, and a check-then-write-by-path
   implementation must fail this test). Also injected, asserting the writes all land in the held
   directory and none in the retargeted one, with the normal exit: the path is retargeted **after**
   the handle is held and verified, during `planInit`, between writes, and transiently with
-  restoration before any later check. A mutation check replaces the held-handle write with a
+  restoration before any later check. **Retargeting during resolution, injected:** the path is
+  retargeted (to a frozen directory B and back) **during the resolver's directory listing**, **between
+  the listing and the opening of a signal file**, and **between the resolver and the identity
+  comparison**; in every case the resolver examines only the directory its handle is bound to, the
+  entries and signal files it reads all come from that directory, and `init` writes only that
+  directory, or refuses `target-changed` with zero writes; it never approves directory A on
+  evidence from B or writes B on A's result. A mutation check replaces the handle-relative listing
+  and handle-relative source opens with path-based ones, replaces the held-handle write with a
   path-based write, and replaces it with "verify then write by path", and requires these tests to
   fail on each. A matching test confirms there is no post-write `target-changed`.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
