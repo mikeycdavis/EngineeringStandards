@@ -411,7 +411,8 @@ directory artifact's path, is refused.
 **before the first write**, and every refusal in the table below is a pre-write refusal: `init` exits
 `2`, writes nothing, and leaves the tree unchanged. Conditions use the existing vocabulary
 (`not-regular-file` for a link, special file or wrong-kind entry; `unreadable` where an entry
-cannot be opened safely; `target-changed` where an identity moved); no new condition is introduced.
+cannot be opened safely; `target-changed` where an identity moved). The one name added for `init`'s
+file safety is `entry-changed`, used only for the post-write class in P6.
 
 | Entry at an artifact path | File artifact | Directory artifact |
 | --- | --- | --- |
@@ -428,8 +429,14 @@ created regular file** by another process before the exclusive creation, and an 
 regular file and is replaced by a link, special file or directory before the overwrite. The
 guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
 a link, to a special file, over a directory, over a newly appeared file, or outside the checked
-directory; no later write is made; and `init` exits `2` (`not-regular-file`, or `unreadable` where
-the entry cannot be opened safely). Artifacts already written before the race went to the checked
+directory; no later write is made; and `init` exits `2` naming the condition **`entry-changed`**.
+`entry-changed` means "an artifact entry no longer matches the classification made before the first
+write when it is written". It is used for **every** raced-in kind in this class, because a newly
+appeared regular file is neither `not-regular-file` nor `unreadable` and a single truthful name is
+simpler than a per-kind choice; `not-regular-file` stays the name for the **pre-write**
+classification of links, special files and directories (P5). `entry-changed` is a post-write class,
+**not** an `INDETERMINATE` condition, is not overridable, exits `2`, and, like every condition name,
+is not part of the frozen surface. Artifacts already written before the race went to the checked
 directory and **remain**; this record chooses that narrowest honest wording rather than requiring
 rollback or transactional placement, and says so. This is the only way `init` exits `2` after a
 first write for a reason in this section; it is not a state, it is an ordinary write failure of the
@@ -680,14 +687,19 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   record; it does not claim that such a test or runner exists.
 - **Real-filesystem Windows replacement-race gate.** Links that exist before `init` starts are not
   enough: an implementation could reject them during preclassification and still do a path-based
-  create or overwrite later. The 3.0.0 release run must also contain a **non-skipped, synchronized,
-  real-filesystem Windows `init` test** in which (a) a leaf artifact is replaced by a link **between
-  classification and write**, and (b) an intermediate directory is replaced by a junction **between
-  the check and the write**, each asserting that nothing lands through the link or junction, the
-  link target is unchanged, and `init` exits `2` with the P6 guarantees. The implementation's test
-  surface must provide a seam (a hook at the classification-to-write boundary) to synchronise the
-  replacement deterministically; that seam is part of what the implementation delivers. This is a
-  requirement of this record; it does not claim that such a seam, test or runner exists.
+  create or overwrite later, and one leaf-write path is not enough either. The 3.0.0 release run must
+  also contain **non-skipped, synchronized, real-filesystem Windows `init` tests** for **both**
+  initial classifications and for the intermediate component: (a) an **absent** leaf artifact
+  replaced, between classification and the exclusive creation, by a **link**, and separately by a
+  **newly created regular file**; (b) an **existing regular** leaf artifact replaced by a **link**
+  between classification and the `--force-overwrite` overwrite; and (c) an **intermediate
+  directory** replaced by a **junction** between the check and the write. Each asserts that nothing
+  lands through the link or junction or over the newly appeared file, the target of the link is
+  unchanged, and `init` exits `2` naming `entry-changed` with the P6 guarantees (earlier artifacts
+  remain, no later write). The implementation's test surface must provide a seam (a hook at the
+  classification-to-write boundary) to synchronise the replacement deterministically; that seam is
+  part of what the implementation delivers. This is a requirement of this record; it does not claim
+  that such a seam, test or runner exists.
 - **Directory identity bound through `init`.** Injected, each asserting exit `2`, **zero writes and
   an unchanged tree**, and `target-changed` where an identity mismatch was observed: the target's
   identity differs between the resolver's handle and a handle `init` acquires again; and the
@@ -723,7 +735,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   refused, nothing lands through the link, and the FIFO or device is **never opened with a blocking
   or effectful open**; **an absent artifact that another process creates as a regular file before
   the exclusive creation** is refused with nothing overwritten; the P6 guarantees hold for each
-  (earlier artifacts remain, no later write, exit `2`);
+  (earlier artifacts remain, no later write, exit `2`, condition `entry-changed`);
   (c) a directory at a file artifact's path (exit `2`, nothing written); (d) **the directory
   artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
   preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
