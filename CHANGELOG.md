@@ -47,6 +47,11 @@ A genesis event may still omit its digest (the ADR 0005 first-pass workflow); th
 behaviour and not authenticated history, and no successor may omit it. The hosted self-validation job now runs the
 validator from the code under test, with a pinned baseline job beside it (see `standards-dogfood.yml`).
 
+Correction to ST-14 (#64, ST14-001): a single-file CI candidate (`Jenkinsfile`, `azure-pipelines.yml`, and the
+others) now counts only when it is a regular file, so a directory named `Jenkinsfile` no longer suppresses
+`no-ci-configuration`. A candidate that exists but cannot be inspected (for example a symlink loop) is unknown and
+still withholds the finding, as before; only ENOENT/ENOTDIR is absence.
+
 Correction to the entries below, after Codex review of #102 (#104): a backslash before ASCII punctuation makes that
 character literal, so an escaped `[` opens no label and an escaped `]` closes none, and the `](` shortcut applies only
 when that `]` closes a `[` that is itself unescaped (`data:\[x](<issue url>)` and `data:[x\](<issue url>)` are no

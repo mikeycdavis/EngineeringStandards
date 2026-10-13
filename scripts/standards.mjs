@@ -1495,7 +1495,9 @@ const CI_FILES = [
  * cannot be listed — the caller must not claim absence from that.
  */
 function hasCiConfiguration(root, c) {
-  if (c !== ".github/workflows") return existsSync(path.join(root, c));
+  // A single-file system counts only as a regular file: a directory named `Jenkinsfile` is not a
+  // pipeline. An entry that cannot be inspected is unknown (null), never absent.
+  if (c !== ".github/workflows") return statSyncIsFile(path.join(root, c));
   const dir = path.join(root, c);
   try {
     if (!statSync(dir).isDirectory()) return false;
