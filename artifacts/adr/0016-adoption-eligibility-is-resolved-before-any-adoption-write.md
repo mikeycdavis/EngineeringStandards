@@ -54,7 +54,7 @@ not be cited, because it would not have fired on the evidenced README (see "The 
 | # | Decision | Chosen | Recorded as |
 | --- | --- | --- | --- |
 | Q1 | Signal vocabulary | A | exactly two evidenced signals: `frozen-file`, `readme-frozen-banner`, with the corrected per-line README rule |
-| Q2 | `init` and the resolver | A | `init` consults the same resolver; refuses with exit `2` and writes nothing (a pre-write refusal; the single post-write race is P6); same override flag; INDETERMINATE not overridable |
+| Q2 | `init` and the resolver | A | `init` consults the same resolver; refuses with exit `2` and writes nothing (a pre-write refusal; the single post-write class is the P6 race); same override flag; INDETERMINATE not overridable |
 | Q3 | Override carrier | A | repeatable per-invocation `--override-signal=<id>`; nothing persisted; binding rules 1-7 under D2 |
 | Q4 | `FROZEN.md` with no listed phrase | A | INDETERMINATE (`no-listed-phrase`), not overridable |
 | Q5 | Machine-readable output | C | only the three state names and exit codes 0, 1, 2 are frozen; **no JSON property name, nesting, ordering, optional field, evidence shape or serialisation detail is frozen**; the complete machine-readable contract is deferred to a later, separately approved ADR and work item |
@@ -347,7 +347,7 @@ adopted nothing.
 **`init` consults the same resolver** (Q2 A). Before any write, `init` resolves eligibility with the
 same code and the same override flag. On `OUT_OF_SCOPE` (not overridden) or `INDETERMINATE` it
 exits `2`, writes nothing, and names the signals; `--dry-run` runs the same check and reports the same
-refusal. These are pre-write refusals; the one post-write failure is the race in P6. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
+refusal. These are pre-write refusals; the one post-write failure class is the race in P6. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
 unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
 classify and write exactly as before (a test).
 
@@ -421,14 +421,19 @@ cannot be opened safely; `target-changed` where an identity moved); no new condi
 | symlink or junction, to anywhere, with or without `--force-overwrite` | refused (`not-regular-file`); never followed | refused (`not-regular-file`); never followed |
 | FIFO, device, other special file | refused (`not-regular-file`); never opened with a blocking or effectful open | refused (`not-regular-file`) |
 
-**P6. The single post-write failure, stated exactly.** An entry that was a regular file or absent at
-classification and is replaced by a link or special file **afterwards** (a race) is caught by the
-binding in P3 and **that write is refused**: nothing is written through the link, to the special
-file, or outside the checked directory, no later write is made, and `init` exits `2`
-(`not-regular-file`). Artifacts already written before the race went to the checked directory and
-**remain**. This is the only way `init` exits `2` after a first write for a reason in this section;
-it is not a state, it is an ordinary write failure of the kind `init` already has, and it does not
-weaken P5 for any condition in the table.
+**P6. The single post-write failure class, stated exactly.** An entry that **no longer matches the
+classification made before the first write when it is written** is refused at write time. This
+covers an entry that was absent and is **replaced by a link, a special file, a directory, or a newly
+created regular file** by another process before the exclusive creation, and an entry that was a
+regular file and is replaced by a link, special file or directory before the overwrite. The
+guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
+a link, to a special file, over a directory, over a newly appeared file, or outside the checked
+directory; no later write is made; and `init` exits `2` (`not-regular-file`, or `unreadable` where
+the entry cannot be opened safely). Artifacts already written before the race went to the checked
+directory and **remain**; this record chooses that narrowest honest wording rather than requiring
+rollback or transactional placement, and says so. This is the only way `init` exits `2` after a
+first write for a reason in this section; it is not a state, it is an ordinary write failure of the
+kind `init` already has, and it does not weaken P5 for any condition in the table.
 
 **P7. Windows is required, and failure is closed.** Every property above applies on every supported
 platform. **Windows is required in 3.0.0** (see the platform requirement). Where the platform or
@@ -438,7 +443,8 @@ otherwise. This record does not prescribe the call and does not claim that a mec
 
 **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
 pre-write refusal** (P5): zero writes and an unchanged tree. The **only** exception is the single
-race in P6 (an entry replaced by a link or special file after classification), which is not an
+race class in P6 (an entry that no longer matches its classification when written: replaced by a
+link, special file, directory, or a newly created regular file), which is not an
 `INDETERMINATE` condition: that write is refused, earlier artifacts already written remain, and no
 later write is made. `target-changed` is raised only when the
 identity of the directory held differs from the resolver's, which happens before the first write;
@@ -479,7 +485,7 @@ component cannot protect replaceable ancestors.
 | `eligibility`, `INDETERMINATE` | `2` | the tool could not reach a verdict |
 | `eligibility`, any invocation error (below) | `2` | invocation error |
 | `init`, refused because `OUT_OF_SCOPE` (not overridden) | `2` | refused before the first write; nothing written |
-| `init`, refused because `INDETERMINATE` | `2` | refused before the first write; nothing written (the P6 race is the one exception and is not an `INDETERMINATE` condition) |
+| `init`, refused because `INDETERMINATE` | `2` | refused before the first write; nothing written (the P6 race class is the one exception and is not an `INDETERMINATE` condition) |
 
 The two commands differ on purpose and the difference is part of the frozen meaning:
 `eligibility` reports an `OUT_OF_SCOPE` repository as exit `1` (a completed verdict), whereas `init`
@@ -614,8 +620,10 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
 - **AC2.** Each `INDETERMINATE` condition above, `target-changed` included, exits `2`, writes
   nothing (tree unchanged), and is not cleared by `--override-signal`, for `eligibility` and for
   `init`. There is no INDETERMINATE condition that is a post-write refusal. The single post-write
-  case is the P6 race, which is tested separately (earlier artifacts remain, that write refused, no
-  later write, exit `2`) and is not an `INDETERMINATE` condition.
+  class is the P6 race (an entry that no longer matches its classification when written), which is
+  tested separately for **every** raced-in kind (link, FIFO, device, directory, newly created
+  regular file) with the same assertions (that write refused, earlier artifacts remain, no later
+  write, exit `2`) and is not an `INDETERMINATE` condition.
 - **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
   whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
   no other signal: `INDETERMINATE` (`no-listed-phrase`), exit `2`, `init` refuses with exit `2`. The
@@ -670,6 +678,16 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   link target unchanged, plus an ordinary run that preserves a real directory artifact. A runner that
   cannot create the objects must be provisioned, or the gate fails. This is a requirement of this
   record; it does not claim that such a test or runner exists.
+- **Real-filesystem Windows replacement-race gate.** Links that exist before `init` starts are not
+  enough: an implementation could reject them during preclassification and still do a path-based
+  create or overwrite later. The 3.0.0 release run must also contain a **non-skipped, synchronized,
+  real-filesystem Windows `init` test** in which (a) a leaf artifact is replaced by a link **between
+  classification and write**, and (b) an intermediate directory is replaced by a junction **between
+  the check and the write**, each asserting that nothing lands through the link or junction, the
+  link target is unchanged, and `init` exits `2` with the P6 guarantees. The implementation's test
+  surface must provide a seam (a hook at the classification-to-write boundary) to synchronise the
+  replacement deterministically; that seam is part of what the implementation delivers. This is a
+  requirement of this record; it does not claim that such a seam, test or runner exists.
 - **Directory identity bound through `init`.** Injected, each asserting exit `2`, **zero writes and
   an unchanged tree**, and `target-changed` where an identity mismatch was observed: the target's
   identity differs between the resolver's handle and a handle `init` acquires again; and the
@@ -703,7 +721,9 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   planning and creation**, and an existing regular file artifact replaced by a symlink **and,
   separately, by a FIFO and by a device node**, between classification and overwrite: the write is
   refused, nothing lands through the link, and the FIFO or device is **never opened with a blocking
-  or effectful open**; the P6 guarantees hold (earlier artifacts remain, no later write, exit `2`);
+  or effectful open**; **an absent artifact that another process creates as a regular file before
+  the exclusive creation** is refused with nothing overwritten; the P6 guarantees hold for each
+  (earlier artifacts remain, no later write, exit `2`);
   (c) a directory at a file artifact's path (exit `2`, nothing written); (d) **the directory
   artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
   preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
