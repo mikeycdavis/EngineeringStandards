@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseYaml } from "./yaml.mjs";
-import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf } from "./reviews.mjs";
+import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recordedRejections } from "./reviews.mjs";
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
@@ -366,7 +366,7 @@ export const IDENTITY_NOTE =
  *
  * `effective` is true for `verified` and `not-applicable`. When it is false the caller applies
  * `effectiveAttestations`, which disregards APPROVALS (and every freshness-established attestation)
- * but keeps recorded REJECTIONS effective: negative evidence is never removed because a comparison
+ * but keeps recorded REJECTIONS effective (see holdsRejection): negative evidence is never removed because a comparison
  * was unavailable or because history was rewritten. On `violated` the rejections recorded at the
  * trusted base are the ones kept, so removing or relabeling a rejection does not clear it.
  *
@@ -440,16 +440,27 @@ export function effectiveAttestations(headAttestations, preflight) {
   const base = preflight.baseAttestations && typeof preflight.baseAttestations === "object" ? preflight.baseAttestations : {};
   const kept = {};
   for (const ruleId of new Set([...Object.keys(base), ...Object.keys(head)])) {
-    if (base[ruleId] !== undefined && terminalStatus(ruleId, base[ruleId]) === "rejected") {
+    if (base[ruleId] !== undefined && holdsRejection(ruleId, base[ruleId])) {
       kept[ruleId] = base[ruleId];
-    } else if (head[ruleId] !== undefined && terminalStatus(ruleId, head[ruleId]) === "rejected") {
+    } else if (head[ruleId] !== undefined && holdsRejection(ruleId, head[ruleId])) {
       kept[ruleId] = head[ruleId];
     }
   }
   return kept;
 }
 
-function terminalStatus(ruleId, record) {
-  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
-  return resolveRecordedReviewHistory(ruleId, record).current?.status ?? null;
+/**
+ * Whether a record holds negative evidence that must survive a failed or unavailable comparison.
+ *
+ * A well-formed chain whose current event is a rejection holds one. A MALFORMED chain has no current
+ * event, but if it records a rejection anywhere that rejection is kept too: compliance reports the
+ * chain as malformed with the rejection named, so it fails instead of reading as merely unreviewed.
+ * A malformed chain that records no rejection holds none and is withdrawn, so the rule reads
+ * NOT_EVALUATED, never a pass.
+ */
+function holdsRejection(ruleId, record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return false;
+  const resolution = resolveRecordedReviewHistory(ruleId, record);
+  if (resolution.problems.length > 0) return recordedRejections(record).length > 0;
+  return resolution.current?.status === "rejected";
 }

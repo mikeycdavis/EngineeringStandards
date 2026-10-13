@@ -1564,6 +1564,64 @@ test("a history that cannot be established states its reason and never reports a
   }
 });
 
+// ---------------------------------------------------------------------------------------------
+// A MALFORMED head chain, when the history cannot be compared with a trusted base: a rejection it
+// records stays effective and is named, and a chain that records none reads NOT_EVALUATED, never a
+// pass. The malformation here is a successor that names a predecessor which does not exist.
+// ---------------------------------------------------------------------------------------------
+
+function malformedChainPolicy(digest, events) {
+  const lines = [policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]).trimEnd(), `  ${REJECTED_RULE}:`, `    reviews:`];
+  for (const event of events) {
+    lines.push(`      - id: "${event.id}"`);
+    if (event.supersedes) lines.push(`        supersedes: "${event.supersedes}"`);
+    lines.push(`        status: ${event.status}`);
+    lines.push(`        reviewedBy: "synthetic-reviewer"`);
+    lines.push(`        reviewedAt: "2026-10-01"`);
+    lines.push(`        evidence: "synthetic evidence"`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+async function runMalformedChain(events) {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    await writeFile(path.join(dir, "project-policy.yml"), malformedChainPolicy(digest, events));
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy with a malformed chain");
+    const run = runValidate(dir); // no default-branch ref: the comparison is NOT_EVALUATED
+    assert.equal(run.finding?.severity, "warning", JSON.stringify(run.finding));
+    assert.match(run.finding.message, /NOT_EVALUATED/);
+    return { ...run, result: run.report.results.find((entry) => entry.ruleId === REJECTED_RULE) };
+  } finally {
+    await cleanup(dir);
+  }
+}
+
+test("a malformed chain that records a rejection fails with the rejection named when no base exists", async () => {
+  const { result } = await runMalformedChain([
+    { id: "p1", status: "rejected" },
+    { id: "p2", supersedes: "no-such-event", status: "approved" },
+  ]);
+  assert.equal(result.status, "failed", JSON.stringify(result));
+  assert.equal(result.disposition, "invalid-attestation");
+  assert.match(result.message, /malformed review history/);
+  assert.match(result.message, /records a rejection that stays effective: p1 by synthetic-reviewer on 2026-10-01/);
+});
+
+test("a malformed chain that records no rejection is NOT_EVALUATED and never a pass when no base exists", async () => {
+  const { result } = await runMalformedChain([
+    { id: "p1", status: "approved" },
+    { id: "p2", supersedes: "no-such-event", status: "approved" },
+  ]);
+  assert.notEqual(result.status, "passed", JSON.stringify(result));
+  assert.notEqual(result.status, "failed", JSON.stringify(result));
+  assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
+});
+
 test("the asserted-identity label is pinned exactly on every surface", async () => {
   const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
   try {
