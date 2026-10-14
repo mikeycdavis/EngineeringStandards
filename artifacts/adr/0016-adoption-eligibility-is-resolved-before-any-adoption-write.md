@@ -484,8 +484,13 @@ file safety is `entry-changed`, used only for the post-write class in P6.
 classification made before the first write when it is written** is refused at write time. This
 covers an entry that was absent and is **replaced by a link, a special file, a directory, or a newly
 created regular file** by another process before the exclusive creation, and an entry that was a
-regular file and is replaced by a link, special file or directory, **or is deleted**, before the
-overwrite. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
+regular file and is replaced by a link, special file or directory, **is deleted, or is replaced by
+another regular file** (a different file at the same name, whether swapped in atomically or
+re-created), before the overwrite. For this last kind the classification of a regular leaf carries
+its **identity** (device and inode, or the platform's file identifier) captured at classification,
+and the write verifies that identity through the same handle it writes through; a regular file with a
+different identity no longer matches and is refused with `entry-changed`. This identity binding is
+a clarification within property P3, not a new property. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
 place: an overwrite or temp-plus-rename that could recreate the missing path must not. The
 guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
 a link, to a special file, over a directory, over a newly appeared file, or outside the checked
@@ -511,7 +516,8 @@ otherwise. This record does not prescribe the call and does not claim that a mec
 **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
 pre-write refusal** (P5): zero writes and an unchanged tree. The **only** exception is the single
 race class in P6 (an entry that no longer matches its classification when written: replaced by a
-link, special file or directory, deleted, or a newly created regular file), which is not an
+link, special file or directory, deleted, replaced by another regular file, or a newly created
+regular file), which is not an
 `INDETERMINATE` condition: that write is refused, earlier artifacts already written remain, and no
 later write is made. `target-changed` is raised only when the
 identity of the directory held differs from the resolver's, which happens before the first write;
@@ -684,13 +690,20 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
 - **AC1.** A fixture with implementation files, a `FROZEN.md` carrying a listed phrase and no
   adoption artifacts: `eligibility` exits `1`; and for `init` and `init --dry-run`, exit `2`. A
   before/after tree comparison (file list and content hashes) shows zero writes.
-- **AC2.** Each `INDETERMINATE` condition above, `target-changed` included, exits `2`, writes
-  nothing (tree unchanged), and is not cleared by `--override-signal`, for `eligibility` and for
-  `init`. There is no INDETERMINATE condition that is a post-write refusal. The single post-write
-  class is the P6 race (an entry that no longer matches its classification when written), which is
-  tested separately for **every** raced-in kind (link, FIFO, device, directory, newly created
-  regular file, deletion) with the same assertions (that write refused, earlier artifacts remain, no later
-  write, exit `2`) and is not an `INDETERMINATE` condition.
+- **AC2.** Each `INDETERMINATE` condition exits `2`, writes nothing (tree unchanged), and is not
+  cleared by `--override-signal`, for the command(s) to which it applies, per this table:
+
+  | Condition | `eligibility` | `init` |
+  | --- | --- | --- |
+  | `unreadable`, `no-listed-phrase`, `stat-failed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
+  | `target-changed` | **does not apply**: one invocation holds one handle and there is no second identity to compare | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
+  | `entry-changed` (P6) | does not apply (it never writes artifacts) | post-write class; not an `INDETERMINATE` condition; tested separately |
+
+  There is no INDETERMINATE condition that is a post-write refusal. The single post-write class is
+  the P6 race (an entry that no longer matches its classification when written), which is tested
+  separately for **every** raced-in kind (link, FIFO, device, directory, newly created regular file,
+  deletion, regular-to-regular replacement) with the same assertions (that write refused, earlier
+  artifacts remain, no later write, exit `2`) and is not an `INDETERMINATE` condition.
 - **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
   whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
   no other signal: `INDETERMINATE` (`no-listed-phrase`), exit `2`, `init` refuses with exit `2`. The
@@ -752,7 +765,8 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   initial classifications and for the intermediate component: (a) an **absent** leaf artifact
   replaced, between classification and the exclusive creation, by a **link**, and separately by a
   **newly created regular file**; (b) an **existing regular** leaf artifact replaced by a **link**, and
-  separately **deleted**, between classification and the `--force-overwrite` overwrite; and (c) an **intermediate
+  separately **deleted** and **replaced by another regular file**, between classification and the
+  `--force-overwrite` overwrite; and (c) an **intermediate
   directory** replaced by a **junction** between the check and the write. Each asserts that nothing
   lands through the link or junction or over the newly appeared file, the target of the link is
   unchanged, and `init` exits `2` naming `entry-changed` with the P6 guarantees (earlier artifacts
@@ -796,7 +810,11 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   or effectful open**; **an absent artifact that another process creates as a regular file before
   the exclusive creation** is refused with nothing overwritten; the P6 guarantees hold for each
   (earlier artifacts remain, no later write, exit `2`, condition `entry-changed`);
-  (c) a directory at a file artifact's path (exit `2`, nothing written); (d) **the directory
+  (c) a directory at a file artifact's path (exit `2`, nothing written); (c2) **an existing regular
+  file artifact replaced by another regular file** (a different identity at the same name) between
+  classification and the `--force-overwrite` overwrite: refused with `entry-changed`, the replacement
+  is not overwritten, earlier artifacts remain, no later write, exit `2`, with a mutation check that
+  removes the identity verification and requires this test to fail; (d) **the directory
   artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
   preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
   at either path is refused; (e) the table above, one case per cell. A temp-plus-rename placement
