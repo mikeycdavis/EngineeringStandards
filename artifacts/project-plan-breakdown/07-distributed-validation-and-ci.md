@@ -260,8 +260,8 @@ someone to lie to make the build go green.
 - **Ready scope (owner-approved content only), as implementation slices** (each its own pull
   request; none is implemented by the ADR):
   1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
-     **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the acceptance-time read
-     cap (strictly larger than `MAX_READ_BYTES` is `over-read-cap`);
+     **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
+     read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`);
   2. READY: `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
      writes nothing before its first write), with the held-directory binding, the component and leaf
      binding, and `entry-changed`, as re-approved by the owner on 2026-10-14 (ADR 0016, "Decision
@@ -272,11 +272,12 @@ someone to lie to make the build go green.
   3.0.0. A Windows-safe `eligibility` and the mandatory, non-skippable real-filesystem Windows safety
   tests (including the synchronized replacement-race cases) are required for the 3.0.0 release gate.
   No `VERSION` change, tag or release is authorised by the ADR or by this item.
-- **BLOCKED: signal-file size limits.** Not approved. ADR 0016's "Pending: size limits" section lists
-  what a decision packet must state (exact byte limits, raw bytes or decoded text, boundary behaviour,
-  truncation or refusal or INDETERMINATE, Unicode and newline handling, Windows and container
-  performance evidence, false-negative consequences, compatibility classification and tests). Nothing
-  above depends on it; do not implement it until the owner approves the packet.
+- **Size limits (approved 2026-10-14, relayed at 01:34Z):** a 400,000 raw-byte capped read (at most
+  cap-plus-one bytes; at most 400,000 read in full and examined; 400,001 or more `over-read-cap`,
+  INDETERMINATE, not overridable) with the grow-after-classification test and mutation check. It is part
+  of the READY resolver slice; the former blocker is removed.
+- **`--help` (decided 2026-10-14, relayed at 01:34Z):** `eligibility --help` in any position prints usage
+  and exits 2, so exit 0 means only `IN_SCOPE`; top-level `standards --help` is unchanged.
 
 ### Prepare a truthful Engineering adapter release candidate
 

@@ -1,10 +1,9 @@
 # 0016 — Adoption eligibility is resolved before any adoption write
 
 - **Status:** Accepted, by the owner on 2026-10-12T18:59:50Z (Standard 11 R5, `Proposed | Accepted`);
-  amended by the owner on 2026-10-14 (re-approval at 00:24:50Z, final set at 00:25:20Z), recorded as a
-  dated entry in "Decision history" below. Signal-file size limits beyond what the 2026-10-12
-  acceptance contained are **not** approved (see "Pending: size limits"). This record states what
-  must be true of the implementation; it does not claim any of it is implemented.
+  amended by the owner on 2026-10-14 in two dated entries (re-approval at 00:24:50Z, final set at
+  00:25:20Z; further decisions relayed at 01:34Z), recorded in "Decision history" below. This record
+  states what must be true of the implementation; it does not claim any of it is implemented.
 - **Date:** 2026-10-11; accepted 2026-10-12; amended 2026-10-14
 - **Deciders:** Project owner
 - **Tracks:** ST-06, [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
@@ -138,9 +137,9 @@ amendment date:
 **Not approved, and withheld from the amended record:** unspecified signal-file size limits. The
 per-file read cap that the acceptance of 2026-10-12 already contained (strictly larger than
 `MAX_READ_BYTES` is `over-read-cap`, INDETERMINATE) is unchanged. A capped read that stops after
-cap-plus-one bytes, a grow-after-classification test, and any other size-limit semantics are in the
-non-normative section "Pending: size limits" and nothing in the normative text, the tests or the
-plan depends on them.
+cap-plus-one bytes and a grow-after-classification test were withheld at that time. **This was
+resolved later the same day by the second entry below (01:34Z); this paragraph records the state at
+00:24:50Z and is not edited.**
 
 **Replaced detail, stated plainly.** The acceptance text verified a directory identity before
 `planInit` and again before `applyInit` and named a mismatch `target-changed`. The amendment
@@ -162,6 +161,22 @@ Three facts govern, stated without weakening R5:
 If the owner reads the replaced identity-check detail as "a decision that no longer holds", R5's
 compliant route is a **successor ADR** (the next free number) that holds only the items above and
 names ADR 0016 as the record it extends; that alternative was not chosen here.
+
+### Amendment of 2026-10-14, second entry (owner decisions relayed at 01:34Z)
+
+These decisions were relayed on **2026-10-14T01:34Z**, after the first entry above and **not**
+backdated to it. They did not exist at 00:24:50Z.
+
+1. **Size limits, option B, approved as normative.** Per-file limit **400,000 raw bytes** (the audit
+   collector's `MAX_READ_BYTES`). A matching file is read with a **capped read that stops after at
+   most cap-plus-one bytes**; **at most 400,000 bytes are read in full and examined; 400,001 bytes or
+   more are not decoded and the result is `INDETERMINATE` (`over-read-cap`), which is not
+   overridable.** A file that grows after classification is bounded by the same read. The
+   grow-after-classification test and its mutation check are required (see "Required tests").
+2. **`--help`, option B.** `eligibility --help`, in **any** position and with any other tokens, prints
+   usage to stdout and **exits `2`**, with empty stderr, and examines no directory, so exit `0` only
+   ever means `IN_SCOPE`. This differs from top-level `standards --help`, which stays exit `0` and is
+   unchanged.
 
 ## Decision
 
@@ -222,11 +237,15 @@ Every character-class decision is fixed here, ASCII-only and locale-independent,
 implementations cannot differ on Unicode whitespace or case. Where this record is silent, nothing is
 implied.
 
-- **Decoding.** A matching file is read as bytes, no larger than the audit collector's per-file read
-  cap (`MAX_READ_BYTES`, 400,000 bytes at e341dba; a file strictly larger is `over-read-cap`) and
-  decoded as UTF-8 with errors fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is
-  removed. NUL and other control characters are valid text. (This is the text approved at
-  acceptance; any other size-limit behaviour is pending, below.)
+- **Decoding.** A matching file is read with a **capped read that stops after at most cap-plus-one
+  bytes**, where the cap is the audit collector's per-file read cap (`MAX_READ_BYTES`, 400,000 raw
+  bytes at e341dba). It is not a size check followed by an unbounded read: a file that grows after
+  classification is bounded by the same cap-plus-one read. At most 400,000 bytes are read in full and
+  examined. If **400,001 or more** bytes are observed the file is `over-read-cap`, INDETERMINATE and
+  not overridable, and nothing is decoded or truncated and examined. A file within the cap is decoded
+  as UTF-8 with errors fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is removed. NUL
+  and other control characters are valid text. The limit is on raw bytes, so CRLF counts as two and a
+  multi-byte character as its encoded length, and a file over the cap is never decoded.
 - **Line terminators.** LF, CRLF and a lone CR each end a line.
 - **Whitespace and blank.** The whitespace set is exactly U+0020 and U+0009. A line is blank if it is
   empty or contains only that set. U+00A0, U+3000, U+200B and every other Unicode space or format
@@ -570,6 +589,7 @@ component cannot protect replaceable ancestors.
 | `eligibility`, `OUT_OF_SCOPE` | `1` | completed; the repository declares itself not adoptable |
 | `eligibility`, `INDETERMINATE` | `2` | the tool could not reach a verdict |
 | `eligibility`, any invocation error (below) | `2` | invocation error |
+| `eligibility --help` / `-h`, in any position | `2` | usage request: usage on stdout, nothing examined; **exit `0` never results from a usage request** |
 | `init`, refused because `OUT_OF_SCOPE` (not overridden) | `2` | refused before the first write; nothing written |
 | `init`, refused because `INDETERMINATE` | `2` | refused before the first write; nothing written (the P6 race class is the one exception and is not an `INDETERMINATE` condition) |
 
@@ -578,7 +598,8 @@ The two commands differ on purpose and the difference is part of the frozen mean
 refuses an `OUT_OF_SCOPE` repository with exit `2`, because for `init` a refusal is "could not run",
 and exit `1` is already `init`'s existing meaning of "ran, with conflicts". All other `init` exit
 codes keep their existing meanings, unchanged by this record. Only `eligibility` exit `0` permits
-proceeding, so every uncertain path fails closed.
+proceeding, so every uncertain path fails closed, and a usage request cannot be mistaken for it. Note
+that this differs from top-level `standards --help`, which stays exit `0` and is unchanged.
 
 **Not frozen, explicitly:** JSON property names, nesting, ordering, optional fields, the shape of
 any evidence, and every other serialisation detail; report layout, line ordering, wording and where
@@ -647,7 +668,7 @@ diagnostic wording is not frozen. After the subcommand name the accepted tokens 
 | --- | --- | --- |
 | `<dir>` (a token not starting with `-`) | at most one; none means the current working directory, as for `audit`; an empty string is a path that does not exist | two or more: `wrong-argument-count` |
 | `--override-signal=<id>` | `<id>` non-empty and one of the vocabulary ids; repeatable; duplicates collapsed | no `=`, or an empty id: `missing-flag-value`; an id not in the vocabulary: `unknown-signal-id` |
-| `--help` / `-h` | prints usage to stdout, exit `0`, and wins over every other token | none |
+| `--help` / `-h` (in any position) | prints usage to stdout, **exit `2`**, empty stderr, examines no directory, and wins over every other token (including otherwise-invalid ones); owner decision, option B | none |
 | anything else beginning with `-`, including `--json` (owner-confirmed: no stdout, diagnostic on stderr), `--dir=...`, `--strict`, `--max-total-read-bytes=...`, `--`, and a value given as a separate token (`--override-signal frozen-file`) | not accepted | `unknown-flag` (a separate-token value is `missing-flag-value` first, since the flag has no `=`) |
 
 Evaluation is order-independent and reports exactly one error, chosen by fixed precedence and,
@@ -847,8 +868,14 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   open, the same-handle classification with a path-based check, the no-replace or identity-checked
   rename with a replacing rename, and the non-blocking classification with a plain open, and require
   these tests to fail on each.
-- **Read cap.** A matching file strictly larger than the per-file read cap is `INDETERMINATE`
-  (`over-read-cap`) and is not decoded; a file of exactly the cap is read in full.
+- **Read cap and capped read.** A matching file of 399,999 or exactly 400,000 bytes is read in full
+  and examined; one of 400,001 bytes, or 10 MB, is `INDETERMINATE` (`over-read-cap`), is not decoded,
+  and no more than cap-plus-one bytes are requested or retained. **Injected:** a file that is within
+  the cap when classified and **grows past the cap before or during the read** is `INDETERMINATE`
+  (`over-read-cap`). A marker at byte 400,001 or later is never examined and the result is never
+  `IN_SCOPE`. A multi-byte character straddling byte 400,000 in an exactly-400,000-byte file is
+  decoded whole. **Mutation check:** replace the capped read with a size check followed by an
+  unbounded read and require the grow-after-classification test to fail.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
@@ -876,8 +903,9 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   and bare `--` (`unknown-flag`); `--override-signal`, `--override-signal=` and
   `--override-signal frozen-file` (`missing-flag-value`); `--override-signal=nope`
   (`unknown-signal-id`); a nonexistent target; a regular file and a symlink to one; two simultaneous
-  errors pinning the precedence; repeated identical `--override-signal` (accepted); `--help` (exit
-  `0`).
+  errors pinning the precedence; repeated identical `--override-signal` (accepted); `--help` and `-h` in
+  every position, alone and with a directory or other flags (exit `2`, usage on stdout, empty
+  stderr, directory not read).
 - **Read-only, process-free and network-free, by instrumentation.** A final-tree comparison cannot
   show these properties (an implementation could open a file for writing without changing its bytes,
   spawn a process, or make a network call and leave the tree identical), so the harness **injects or
@@ -948,21 +976,6 @@ ADR before any consumer depends on one.
 - The first version has no machine-readable output; callers use the exit code.
 - `init <subdir>` does not see a freeze marker at an ancestor repository root (confirmation 4).
 - This record freezes no flag spelling and no part of the invocation grammar (confirmation 2).
-
-## Pending: size limits (not approved, non-normative)
-
-**Nothing in this section is a requirement.** The owner has not approved signal-file size limits
-beyond the acceptance-time cap (strictly larger than `MAX_READ_BYTES`, 400,000 bytes at e341dba, is
-`over-read-cap`, INDETERMINATE). Withheld from the amended record: a capped read that stops after at
-most cap-plus-one bytes (so a file that grows after classification is bounded by the same read), and
-an injected grow-after-classification test with its mutation check.
-
-A decision packet must state, before any of it is approved: exact byte limits per file; whether
-limits operate on raw bytes or decoded text; behaviour at and above the boundary; whether truncation,
-refusal or `INDETERMINATE` results; Unicode and newline handling; performance and memory evidence on
-Windows and in container CI; the false-negative consequences for markers beyond the limit; and the
-compatibility classification and tests. The packet is
-`F:\Repos\StandardsPortfolio-evidence\eng-adr0016-size-limit-packet-2026-10-14.md`.
 
 ## Appendix: deferred machine-readable contract (non-normative)
 
