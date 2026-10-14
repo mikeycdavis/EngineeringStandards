@@ -262,7 +262,7 @@
     },
 
     "fixtureExemption": {
-      "description": "One file, one digest, one rule. An entry with neither expires nor reviewWhen is reported as invalid and does not apply (the schema dialect this validator supports has no anyOf; scripts/fixture-exemptions.mjs enforces it).",
+      "description": "One file, one digest, one rule. Exactly one of expires or reviewWhen is required: an entry with neither, or with both, is reported as invalid and does not apply (the schema dialect this validator supports cannot express it over fields; scripts/fixture-exemptions.mjs enforces it).",
       "type": "object",
       "required": ["path", "sha256", "rule", "reason", "owner"],
       "additionalProperties": false,

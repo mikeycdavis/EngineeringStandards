@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
-import { checkEntries, bindEntries } from "./fixture-exemptions.mjs";
+import { checkEntries, bindEntries, contentDigest } from "./fixture-exemptions.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
@@ -927,6 +927,9 @@ function createRun({ root, strict, json }) {
   // is right to search it and right to keep what it finds. This records the one thing the retained
   // text cannot say about itself — that there was more of it.
   const truncated = new Set();
+  // Digests of the bytes each file had when the surface read retained it, by repository-relative
+  // path: the one source a fixture pin is compared against (ADR 0020).
+  const readDigests = new Map();
 
   /**
    * Checks that could not run, by the rule they would have fed.
@@ -951,6 +954,7 @@ function createRun({ root, strict, json }) {
     json,
     findings,
     truncated,
+    readDigests,
     unknownChecks,
 
     /**
@@ -1240,7 +1244,9 @@ async function readText(file) {
     const buf = await readFile(file);
     const truncated = buf.length > MAX_READ_BYTES;
     const text = truncated ? buf.subarray(0, MAX_READ_BYTES).toString("utf8") : buf.toString("utf8");
-    return { ok: true, text, truncated, bytes: buf.length };
+    // The digest is taken from THIS read, the one whose text the detectors will inspect, so a pin can
+    // only be checked against bytes that were actually inspected. Nothing reopens the path to hash it.
+    return { ok: true, text, truncated, bytes: buf.length, digest: contentDigest(buf) };
   } catch {
     return { ok: false, text: "", truncated: false, bytes: 0 };
   }
@@ -3592,6 +3598,7 @@ async function loadSurface(run, root, maxTotalReadBytes) {
       run.truncated.add(f);
     }
     run.retain(f, read.text);
+    run.readDigests.set(rel(f), read.digest);
 
     // The derived `sources` entry is proportional to the same text, so one accounting bounds both.
     budget.retainedBytes += cost;
@@ -3800,7 +3807,21 @@ export async function main(args) {
   if (Array.isArray(policy.document?.fixtureExemptions)) {
     const checked = checkEntries(policy.document.fixtureExemptions, { catalog, today });
     exemptionCheck.problems = checked.problems;
-    exemptionCheck.bound = await bindEntries(checked.valid, { root, scanned: new Set(files.map((f) => rel(f))) });
+    // A file the surface retained already has its digest, taken from the very read the detectors
+    // inspected. Only a pinned path the surface never opened as text (no recognised text extension, or
+    // the read budget was spent first) is hashed here, once: no detector holds content for it, so
+    // there is no inspected version a second read could disagree with. A retained file is never reopened.
+    for (const entry of checked.valid) {
+      if (run.readDigests.has(entry.path)) continue;
+      const abs = files.find((f) => rel(f) === entry.path);
+      if (abs === undefined) continue;
+      try {
+        run.readDigests.set(entry.path, contentDigest(await readFile(abs)));
+      } catch {
+        /* unreadable: no digest, so the entry is `not-read` */
+      }
+    }
+    exemptionCheck.bound = await bindEntries(checked.valid, { scanned: new Set(files.map((f) => rel(f))), digests: run.readDigests });
     run.useFixtureExemptions(exemptionCheck.bound);
   }
 
@@ -3856,9 +3877,10 @@ export async function main(args) {
     // A file this run did not read in full cannot show that its rule "found no violation": the read
     // budget was spent before it was retained, or a violation may lie past the truncation boundary.
     // That is "not established", never "stale", and it must not tell anyone to remove the entry.
-    if (entry.state === "matches") {
+    if (entry.state === "matches" || entry.state === "not-read") {
       const abs = files.find((f) => rel(f) === entry.path);
-      const incomplete = abs === undefined || !run.textOf(abs).available || run.truncated.has(abs);
+      const incomplete =
+        entry.state === "not-read" || abs === undefined || !run.textOf(abs).available || run.truncated.has(abs);
       if (incomplete) {
         addFinding({
           id: "fixture-exemption-not-established",
@@ -3867,8 +3889,8 @@ export async function main(args) {
           label: "OBSERVED",
           evidence: [entry.path],
           message:
-            `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the file's bytes match ` +
-            `the pin, but this run did not read the whole file (read budget spent or read cap reached), so whether ` +
+            `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
+            `checked against a complete read, because this run did not read the whole file (read budget spent or read cap reached), so whether ` +
             `${entry.rule} still fires there is unknown. Keep the entry; rerun with a larger budget.`,
           standardRef: R.search,
         });

@@ -239,7 +239,7 @@ const SEMANTIC = [
   ["a backslash path", { ...GOOD(), path: "test\\fixtures\\bad\\bypass.js" }, "fixture-exemption-bad-path"],
   ["a rule with no per-file detector", { ...GOOD(), rule: "documentation.architecture" }, "fixture-exemption-rule-not-exemptible"],
   ["no expiry and no review condition", (() => { const e = GOOD(); delete e.reviewWhen; return e; })(), "fixture-exemption-no-lifetime"],
-  ["an expired entry", { ...GOOD(), expires: "2020-01-01" }, "fixture-exemption-expired"],
+  ["an expired entry", (() => { const e = GOOD(); delete e.reviewWhen; return { ...e, expires: "2020-01-01" }; })(), "fixture-exemption-expired"],
 ];
 
 for (const [name, entry, id] of SEMANTIC) {
@@ -335,7 +335,7 @@ test("an incomplete read never makes a pin stale: the violation lies past the tr
 
 for (const bad of ["2026-02-30", "2027-02-29", "2026-04-31", "2026-00-10", "2026-13-01", "2026-01-00", "2026-06-31"]) {
   test(`an impossible expiry date (${bad}) waives nothing`, async () => {
-    const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [{ ...GOOD(), expires: bad }]);
+    const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [(() => { const e = GOOD(); delete e.reviewWhen; return { ...e, expires: bad }; })()]);
     const res = cli("validate", root);
     assert.equal(findingsOf(res, "fixture-exemption-bad-expiry").length, 1);
     assert.equal(resultOf(res, CERT_RULE).disposition, "evaluated");
@@ -343,8 +343,30 @@ for (const bad of ["2026-02-30", "2027-02-29", "2026-04-31", "2026-00-10", "2026
 }
 
 test("a real leap-day expiry in the future is accepted", async () => {
-  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [{ ...GOOD(), expires: "2096-02-29" }]);
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [(() => { const e = GOOD(); delete e.reviewWhen; return { ...e, expires: "2096-02-29" }; })()]);
   assert.equal(resultOf(cli("validate", root), CERT_RULE).disposition, "excepted");
+});
+
+test("an entry with BOTH expires and reviewWhen is rejected by name and waives nothing", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [{ ...GOOD(), expires: "2096-01-01" }]);
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-two-lifetimes").length, 1, JSON.stringify(res.json.findings.map((f) => f.id)));
+  assert.equal(resultOf(res, CERT_RULE).disposition, "evaluated");
+});
+
+test("the digest is checked against the bytes the surface read retained, never a second read of the path", async () => {
+  const { bindEntries } = await import("../scripts/fixture-exemptions.mjs");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "fx-bind-"));
+  await mkdir(path.join(dir, "t"), { recursive: true });
+  // On disk NOW is the pinned version B; the surface read retained version A.
+  await writeFile(path.join(dir, "t/f.js"), "B");
+  const entry = { ...pin("t/f.js", "B", CERT_RULE), index: 0 };
+  const retainedA = contentDigest(Buffer.from("A"));
+  const [bound] = bindEntries([entry], { scanned: new Set(["t/f.js"]), digests: new Map([["t/f.js", retainedA]]), root: dir });
+  assert.equal(bound.state, "digest-mismatch", "a pin for bytes that were never inspected must not match");
+  assert.equal(bound.observedSha256, retainedA);
+  const [unread] = bindEntries([entry], { scanned: new Set(["t/f.js"]), digests: new Map(), root: dir });
+  assert.equal(unread.state, "not-read", "a file with no retained digest is never hashed from disk");
 });
 
 // ---- evidence surface ----------------------------------------------------------------------------

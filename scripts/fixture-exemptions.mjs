@@ -18,7 +18,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -120,8 +119,11 @@ export function checkEntries(entries, { catalog, today }) {
     }
     const hasExpiry = entry.expires !== undefined && entry.expires !== null;
     const hasReview = typeof entry.reviewWhen === "string" && entry.reviewWhen.trim() !== "";
+    const hasReviewField = entry.reviewWhen !== undefined && entry.reviewWhen !== null;
     if (!hasExpiry && !hasReview) {
-      problem("fixture-exemption-no-lifetime", "an expiry date (expires) or a review condition (reviewWhen) is required");
+      problem("fixture-exemption-no-lifetime", "exactly one of an expiry date (expires) or a review condition (reviewWhen) is required; neither was given");
+    } else if (hasExpiry && hasReviewField) {
+      problem("fixture-exemption-two-lifetimes", "exactly one of expires or reviewWhen is required; both were given, and they would disagree about when the entry ends");
     }
     if (hasExpiry && (typeof entry.expires !== "string" || !isRealDate(entry.expires))) {
       problem("fixture-exemption-bad-expiry", "expires must be a real YYYY-MM-DD date");
@@ -176,35 +178,23 @@ export function checkEntries(entries, { catalog, today }) {
 }
 
 /**
- * Bind each valid entry to the bytes actually on disk.
+ * Bind each valid entry to the bytes the run actually inspected.
  *
  * `scanned` is the set of repository-relative paths the walk collected. An entry whose path is not in
  * it cannot apply — ignored by the repository, skipped as a vendored tree, or absent — and is
- * reported as such. A digest mismatch is recorded with the observed digest so the maintainer can
- * review the change and re-pin deliberately.
- *
- * Reads only the declared paths, once each, and never follows a path outside `root`.
+ * reported as such. `digests` maps a path to the content digest computed from the SAME read that
+ * retained the text the detectors inspect; this function never opens a path, because a second read
+ * could see different bytes than the ones inspected and let a pin vouch for content nobody checked.
+ * A path with no retained digest was never read this run (budget spent, or unreadable) and is
+ * `not-read`. A digest mismatch is recorded with the observed digest so the maintainer can review
+ * the change and re-pin deliberately.
  */
-export async function bindEntries(valid, { root, scanned }) {
-  const bound = [];
-  for (const entry of valid) {
+export function bindEntries(valid, { scanned, digests }) {
+  return valid.map((entry) => {
     const base = { ...entry, state: "unbound", observedSha256: null };
-    if (!scanned.has(entry.path)) {
-      bound.push({ ...base, state: "not-scanned" });
-      continue;
-    }
-    const abs = path.resolve(root, entry.path);
-    const within = path.relative(path.resolve(root), abs);
-    if (within.startsWith("..") || path.isAbsolute(within)) {
-      bound.push({ ...base, state: "not-scanned" });
-      continue;
-    }
-    try {
-      const observed = contentDigest(await readFile(abs));
-      bound.push({ ...base, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" });
-    } catch {
-      bound.push({ ...base, state: "unreadable" });
-    }
-  }
-  return bound;
+    if (!scanned.has(entry.path)) return { ...base, state: "not-scanned" };
+    const observed = digests.get(entry.path);
+    if (typeof observed !== "string") return { ...base, state: "not-read" };
+    return { ...base, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" };
+  });
 }
