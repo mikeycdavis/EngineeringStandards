@@ -317,7 +317,7 @@ named by the condition used in the human report and in tests:
 | `FROZEN.md` is readable and contains neither listed phrase (empty, whitespace-only, or other text) | `no-listed-phrase` | a file named for freezing whose meaning the closed vocabulary does not cover is not evidence of eligibility (Q4 A) |
 | `lstat` on a matching entry fails **on first classification** (the entry was returned by the listing), or fails after the read with an error **other than** "no such entry" (for example a permission or I/O error) | `stat-failed` | it cannot be classified, so neither its presence nor its content is known |
 | a matching source file was classified and read, and **afterwards its entry no longer names the identity that was classified**: `lstat` succeeds and reports a different identity (replaced by another file), **or `lstat` reports the entry missing** (`ENOENT`, `ENOTDIR`, or the platform's not-found equivalent: renamed away or removed without replacement), **or the file's size or modification stamps changed during the read** (an `fstat` through the same handle after the read differs from the `fstat` before it in size, in `mtime` or `ctime` where the platform provides them, or in identity) | `source-changed` | the content read may not be the content of the file the name designates, or may mix bytes written during the read; not overridable; a human diagnostic name, not frozen |
-| a matching name set that **differs between the first enumeration and a re-enumeration after the sources were read** (a matching name, case-folded, appeared, disappeared or changed) | `listing-changed` | concurrent-directory enumeration need not return an entry added after its position passed, so the first set cannot be trusted; resolver-side, applies to `eligibility` and `init`; not overridable; a human diagnostic name, not frozen |
+| the **multiset of exact matching entry names** (exact spellings; ASCII case folding decides only which names are sources, never whether two spellings are equal) **differs between the first enumeration and a re-enumeration after the sources were read** (a matching entry appeared, disappeared or was renamed, including a differently spelled twin such as `Readme.md` beside `README.md`) | `listing-changed` | concurrent-directory enumeration need not return an entry added after its position passed, and folding spellings into one name would hide an added twin that is never read; resolver-side, applies to `eligibility` and `init`; not overridable; a human diagnostic name, not frozen |
 | a matching entry is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | `not-regular-file` | the link is not followed, so its content is not what was examined |
 | a matching file is strictly larger than the per-file read cap | `over-read-cap` | the banner could be in the part not examined |
 | a matching file does not decode as UTF-8 under fatal decoding | `not-utf8` | the text cannot be read |
@@ -396,14 +396,24 @@ After a source file is read, the resolver (a) takes `fstat` through the **same h
 size, `mtime`, `ctime` (where the platform provides them) and identity equal to the `fstat` taken
 before the read, **in addition to** the entry-identity check above; any difference is
 `INDETERMINATE` (`source-changed`). After all sources are read, the resolver (b) **re-enumerates the
-directory through the same held handle** and requires the set of matching names (ASCII-case-folded)
-to equal the first enumeration's; any difference is `INDETERMINATE` (`listing-changed`).
+directory through the same held handle** and requires the **multiset of exact matching entry names**
+to equal the first enumeration's (folding is used only to decide which names are sources; two
+spellings that fold together are two entries, and a name cannot repeat within one directory); any
+difference is `INDETERMINATE` (`listing-changed`). Every matching entry of the first enumeration was
+read, so equal multisets mean no unread twin exists at the second enumeration.
+
+**Status.** The contract above (same-handle stamps, re-enumeration) is a **clarification within the
+approved P3/P6 binding**, not a new owner decision. The **residual limit** below is a **documented
+known limit** under the owner's class-closed merge rule of 2026-10-14T16:32Z (decision card B:
+findings of P2 or lower may be recorded as fixed or as documented known limits rather than blocking;
+relayed by the coordinating session). **The owner has not approved this specific limit**; it is
+listed in the PR body for the owner's acknowledgement.
 
 **Remaining limit, stated honestly.** These checks are point-in-time observations. A writer that
 restores identical stamps and an identical listing between the checks, or that acts after the final
 check, is outside what such an observation can establish. **Eligibility is evidence at observation
 time, not a lock**, and nothing here claims to prevent a concurrent writer; it narrows the window
-and fails closed where a change is observed. This is a documented limit for the owner's awareness;
+and fails closed where a change is observed. This is a documented limit for the owner's acknowledgement;
 no approval of it is claimed.
 
 #### Precedence
@@ -507,8 +517,9 @@ classification has its **identity** (device and inode, or the platform's file id
 and at use the identity of the component handle must equal the identity of the directory entry the
 write is bound to. A component that was renamed away and replaced by **another real directory** no
 longer matches (reopening the name would write into an unchecked replacement, and keeping the
-original handle could write into the renamed-away directory); it is refused with `entry-changed`.
-This is a clarification within property P2, not a new property.
+original handle could write into the renamed-away directory); it is refused with `entry-changed`, and so is a component renamed away and replaced by a link: the
+retained handle is never written through, and the renamed-away directory is left untouched. This is
+a clarification within property P2, not a new property.
 
 **P3. The leaf is bound.** The final entry of every path within the target is also bound: no link is followed, a
 special file (FIFO, device, any non-regular file) is **never opened with an open that blocks or has
@@ -854,8 +865,13 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   enumeration and the read of the sources**, and one that appears or disappears **between the read
   and the re-enumeration**, is `INDETERMINATE` (`listing-changed`), through a seam between enumeration
   and read and a seam between read and re-enumeration; (c) an unchanged directory and unchanged
-  sources are not flagged. Mutation checks remove the same-handle `fstat` comparison, and remove the
-  re-enumeration, and require tests (a) and (b) to fail respectively.
+  sources are not flagged; (d) **twins:** on a case-sensitive filesystem a benign `README.md` is
+  enumerated and a bannered `Readme.md` is **added** after the first enumeration passed its
+  position, and, separately, a twin that was enumerated is **removed**: each is `INDETERMINATE`
+  (`listing-changed`), never `IN_SCOPE` and `init` writes nothing (a same-spelling duplicate cannot
+  exist in one directory and is not a case). Mutation checks remove the same-handle `fstat`
+  comparison, remove the re-enumeration, and replace the multiset comparison with a case-folded set
+  comparison, and require tests (a), (b) and (d) to fail respectively.
 - **Permission, link and mode conditions** (`unreadable`, `stat-failed`, `not-regular-file` for
   every link kind, `over-read-cap`, `not-utf8`, an incomplete listing) go through the injected
   interface on every platform. Real `chmod 000` and real-symlink tests are separate and
@@ -895,7 +911,8 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `--force-overwrite` overwrite; and (c) an **intermediate
   directory** replaced by a **junction**, and separately **renamed away and replaced by another real
   directory**, between the check and the write. Each asserts that nothing
-  lands through the link or junction or over the newly appeared file, the target of the link is
+  lands through the link or junction, through the retained directory handle, or over the newly
+  appeared file, that a renamed-away directory is untouched, the target of the link is
   unchanged, and `init` exits `2` naming `entry-changed` with the P6 guarantees (earlier artifacts
   remain, no later write). The implementation's test surface must provide a seam (a hook at the
   classification-to-write boundary) to synchronise the replacement deterministically; that seam is
@@ -922,9 +939,11 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
 - **Component-wise traversal, injected:** (a) a pre-existing linked intermediate directory
   (`.github` or `artifacts` is a symlink or junction, to a directory outside the target and to a
   directory inside it): `init` exits `2`, writes nothing, and nothing lands outside the target;
-  (b) an intermediate directory that is a regular directory when checked and is replaced by a link
-  **between the check and the write** (and, separately, between creating the intermediate directory
-  and writing into it): the write is refused or lands in the held component, never outside; (c) the
+  (b) an intermediate directory that is a regular directory when checked and is **renamed away and
+  replaced by a link** **between the check and the write** (and, separately, between creating the
+  intermediate directory and writing into it): the **only passing outcome is refusal with
+  `entry-changed`**, exit `2`, with **nothing written through the retained directory handle or
+  through the replacement**, and the renamed-away directory untouched; (c) the
   same for a deeper component (`artifacts/project-plan-breakdown/`). A mutation check replaces
   component-wise no-follow traversal with a single path-based write relative to the root, and with
   `mkdir -p`-style path creation, and requires these tests to fail on each.

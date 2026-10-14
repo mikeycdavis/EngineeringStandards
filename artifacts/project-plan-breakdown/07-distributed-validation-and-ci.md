@@ -261,7 +261,9 @@ someone to lie to make the build go green.
   request; none is implemented by the ADR):
   1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
-     read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`);
+     read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`),
+     and the read-time consistency checks (same-handle stamps, multiset re-enumeration), a clarification
+     within the approved binding whose residual concurrency limit is documented and not approved;
   2. READY: `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
      writes nothing before its first write), with the held-directory binding, the component and leaf
      binding, and `entry-changed`, as re-approved by the owner on 2026-10-14 (ADR 0016, "Decision
