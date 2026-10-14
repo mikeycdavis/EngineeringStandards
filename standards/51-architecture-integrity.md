@@ -76,6 +76,15 @@ there is nothing for a reviewer or a detector to measure the crossing against un
 Moving a boundary through an ADR (above) is the decision; the declaration named in the definition is amended to
 match in the same change, and until it is, the declared boundary is the one in force.
 
+**Where a declaration appears.** The two surfaces the definition names are artifacts the framework already defines.
+The *architecture manifest* is the project manifest of [Standard 6](06-project-manifest.md) (`PROJECT.md` or
+`artifacts/project-manifest.md`, rule `architecture.project-manifest`), and a boundary is declared in its
+*Architectural rules* section. The *standards configuration* is `project-policy.yml`
+([Standard 18](18-machine-readable-project-policy.md)); its schema has no field for a boundary, so nothing in it
+declares one today. The definition does not say whether a boundary that appears only in `docs/architecture.md`
+(which the manifest's Architecture Summary points to, [Standard 6](06-project-manifest.md)), a README or a diagram is
+declared; until the owner says so, only the two surfaces above are accepted.
+
 **Observation scope.** Any detector, and any attestation, for this rule MUST state its observation
 scope and list the mechanisms it did not observe. Static dependency evidence cannot support a claim
 about unobserved runtime reflection, generated code, subprocesses or network paths; a claim that
