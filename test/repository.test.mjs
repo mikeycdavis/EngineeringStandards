@@ -313,6 +313,63 @@ test("every recorded digest names the algorithm that produced it", () => {
   }
 });
 
+// ST-45: the inventory's `action` text is user-facing output. Its separator is an ASCII hyphen
+// with spaces, never an em-dash, so it survives terminals and log capture that mangle non-ASCII.
+test("the attestation inventory action strings pin their exact ASCII wording", async () => {
+  const expected = {
+    unrecorded: "no digest recorded - record one to make staleness detectable",
+    "legacy-unverifiable": "human re-review required - record a new digest, never recompute the old one",
+    "evidence-unavailable": "repository evidence unavailable - establish it, then re-review",
+    stale: "human re-review required - reviewed content changed",
+  };
+  const policy = (algorithmLine, digest) => {
+    const version = readFileSync(path.join(REPO_ROOT, "VERSION"), "utf8").trim();
+    return [
+      `standardVersion: "${version}"`,
+      `project: "synthetic"`,
+      `rules:`,
+      `  ${RULE}:`,
+      `    level: required`,
+      `attestations:`,
+      `  ${RULE}:`,
+      `    reviews:`,
+      `      - id: "r1"`,
+      `        status: approved`,
+      `        reviewedBy: "synthetic-reviewer"`,
+      `        reviewedAt: "2026-10-01"`,
+      `        evidence: "synthetic evidence"`,
+      `        reviewedAgainst:`,
+      ...(algorithmLine ? [`          digestAlgorithm: "${algorithmLine}"`] : []),
+      ...(digest ? [`          digest: "${digest}"`] : []),
+      `          source: git`,
+      `          paths:`,
+      `            - "reviewed.txt"`,
+      ``,
+    ].join("\n");
+  };
+  const cases = [
+    ["unrecorded", policy(null, null)],
+    ["legacy-unverifiable", policy(null, "abcdef1234567890")],
+    ["evidence-unavailable", policy("unknown-algorithm-v0", "abcdef1234567890")],
+    ["stale", policy(DIGEST_ALGORITHM, "abcdef1234567890")],
+  ];
+  for (const [state, source] of cases) {
+    const dir = await validateFixture();
+    try {
+      git(dir, "add", "reviewed.txt");
+      git(dir, "commit", "-qm", "reviewed content");
+      await writeFile(path.join(dir, "project-policy.yml"), source);
+      const rows = runAttestations(dir).json.attestations;
+      assert.equal(rows.length, 1, state);
+      assert.equal(rows[0].freshness, state);
+      assert.equal(rows[0].action, expected[state], state);
+      assert.ok(!/[^\x00-\x7F]/.test(rows[0].action), `${state}: action must be ASCII`);
+    } finally {
+      await cleanup(dir);
+    }
+  }
+});
+
 // --- Reviews are events, not mutable state ------------------------------------------------------
 //
 // The invariant, stronger and simpler than talking about digests specifically:
@@ -1620,6 +1677,63 @@ test("a malformed chain that records no rejection is NOT_EVALUATED and never a p
   assert.notEqual(result.status, "passed", JSON.stringify(result));
   assert.notEqual(result.status, "failed", JSON.stringify(result));
   assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
+});
+
+// ---------------------------------------------------------------------------------------------
+// ST-42: the number of disregarded attestations counts every rule recorded at the trusted base or at
+// the head, so it stays accurate when the head no longer carries what the base recorded.
+// ---------------------------------------------------------------------------------------------
+
+test("the disregarded-attestation count is exact after a section deletion, a removed rule key, an emptied list and without a base", async () => {
+  const disregarded = (finding) => {
+    const match = /(\d+) attestation\(s\) that were not recorded rejections were disregarded in this run; (\d+) recorded rejection\(s\) stay effective/.exec(
+      finding.message,
+    );
+    assert.ok(match, finding.message);
+    return { disregarded: Number(match[1]), kept: Number(match[2]) };
+  };
+  const mutations = {
+    "whole attestations section deleted": (text) => policyWithoutAttestations(text),
+    "one rule key removed": (text) => text.slice(0, text.indexOf(`  ${REJECTED_RULE}:`)),
+    "approval's reviews list emptied": (text) => {
+      const start = text.indexOf("    reviews:");
+      const end = text.indexOf(`  ${REJECTED_RULE}:`);
+      return `${text.slice(0, start)}    reviews: []\n${text.slice(end)}`;
+    },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const fx = await originFixture((digest) => twoRulePolicy(digest));
+    try {
+      git(fx.work, "checkout", "-q", "-b", "feature/count");
+      const original = readFileSync(path.join(fx.work, "project-policy.yml"), "utf8");
+      const mutated = mutate(original);
+      assert.notEqual(mutated, original, name);
+      await writeFile(path.join(fx.work, "project-policy.yml"), mutated);
+      commitAll(fx.work, name);
+      const run = runValidate(fx.work);
+      assert.equal(run.finding?.severity, "error", `${name}: ${JSON.stringify(run.finding)}`);
+      // The base recorded one approval and one rejection: one approval is disregarded, one rejection kept.
+      assert.deepEqual(disregarded(run.finding), { disregarded: 1, kept: 1 }, name);
+    } finally {
+      await cleanup(fx.root);
+    }
+  }
+
+  // No base: only the head can be counted; the head records one approval and one rejection.
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    await writeFile(path.join(dir, "project-policy.yml"), twoRulePolicy(digest));
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy");
+    const run = runValidate(dir);
+    assert.equal(run.finding?.severity, "warning", JSON.stringify(run.finding));
+    assert.deepEqual(disregarded(run.finding), { disregarded: 1, kept: 1 }, "no base");
+  } finally {
+    await cleanup(dir);
+  }
 });
 
 test("the asserted-identity label is pinned exactly on every surface", async () => {

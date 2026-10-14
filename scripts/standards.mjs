@@ -3881,13 +3881,21 @@ export async function main(args) {
     policyPath: "project-policy.yml",
   });
   const headAttestations = policy.document?.attestations ?? {};
-  const headAttestationCount = Object.keys(headAttestations).length;
+  // Every rule that recorded an attestation at the trusted base or at the head: a whole-section
+  // deletion leaves the head empty, but what was recorded at the base is exactly what was withdrawn.
+  // The base set exists only when the comparison ran and found a violation; without a base the count
+  // can only be taken from the head.
+  const recordedAttestationRules = new Set([
+    ...Object.keys(reviewHistoryBase.baseAttestations ?? {}),
+    ...Object.keys(headAttestations),
+  ]);
   const reviewHistoryEffective = effectiveAttestations(headAttestations, reviewHistoryBase);
   const keptRejections = Object.keys(reviewHistoryEffective).length;
+  const disregardedAttestations = recordedAttestationRules.size - keptRejections;
   if (reviewHistoryBase.status !== "not-applicable") {
     const base = reviewHistoryBase;
     const consequence =
-      `${headAttestationCount - Math.min(headAttestationCount, keptRejections)} attestation(s) that were not ` +
+      `${disregardedAttestations} attestation(s) that were not ` +
       `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.`;
     addFinding({
       id: "review-history-append-only",
