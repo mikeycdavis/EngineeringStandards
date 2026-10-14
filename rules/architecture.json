@@ -76,7 +76,7 @@
       "assurance": "none",
       "nonExemptible": false,
       "introducedIn": "2.0.0",
-      "description": "No layer or module boundary is circumvented because going around it is easier, and no circular dependency is introduced. A transitional bypass during a recorded migration expires at that migration's stated end.",
+      "description": "No declared architectural boundary (between named packages, layers, plugins, processes or trust domains) is circumvented because going around it is easier, and no circular dependency is introduced. A transitional bypass during a recorded migration expires at that migration's stated end.",
       "rationale": "A circular dependency is usually what a bypassed boundary becomes. Leaving the boundary documented and believed while writing code around it means the diagram now describes a system that does not exist.",
       "remediation": "Route through the boundary, or move the boundary through a decision record and amend the boundary declaration in the same change, so the new one is what everyone works to.",
       "aliases": [],

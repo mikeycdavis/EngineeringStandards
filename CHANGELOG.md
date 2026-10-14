@@ -21,6 +21,7 @@ dependency, execution path or data-access path that crosses a declared boundary 
 declaration explicitly permits), and requires any detector or attestation for the rule to state its observation scope and
 the mechanisms it did not observe: static dependency evidence cannot support claims about unobserved runtime reflection,
 generated code, subprocesses or network paths (ST-23, #112; owner decision of 2026-10-12). The catalog's
+description no longer says "layer or module boundary": it names the declared kinds the owner's wording lists, so a boundary between modules that no declaration names is not within the rule (the owner's verbatim definition does not list modules; widening it is the owner's call). The catalog's
 `$assuranceNote` for `architecture.no-boundary-bypass` carries the same sentence. Standards text only: no detector, schema
 or script changes. Level: **MAJOR** under [Standard 21](standards/21-versioning.md) R2. The new `MUST` means an existing attestation that omits the list of unobserved mechanisms no longer conforms, and R2's test is the effect on a currently compliant project ("If a project that passed yesterday fails today, the change was `MAJOR` however it was described"), which does not depend on a detector enforcing it today. `VERSION`, tags and releases are not changed here; the release decision stays the owner's. The recorded review events for `architecture.no-boundary-bypass` are
 untouched; because `standards/51-architecture-integrity.md` is a reviewed path, that attestation is now stale by design
