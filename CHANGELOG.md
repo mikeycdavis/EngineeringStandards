@@ -22,10 +22,7 @@ declaration explicitly permits), and requires any detector or attestation for th
 the mechanisms it did not observe: static dependency evidence cannot support claims about unobserved runtime reflection,
 generated code, subprocesses or network paths (ST-23, #112; owner decision of 2026-10-12). The catalog's
 `$assuranceNote` for `architecture.no-boundary-bypass` carries the same sentence. Standards text only: no detector, schema
-or script changes. Level: a clarification that narrows what counts as a bypass and adds a statement requirement to
-attestations, so no currently compliant project becomes non-compliant; `VERSION` is **not** bumped here and the level
-(PATCH under [Standard 21](standards/21-versioning.md) R2, or MINOR if the owner treats the new attestation requirement as
-a capability) is the owner's call at release. The recorded review events for `architecture.no-boundary-bypass` are
+or script changes. Level, stated without choosing it: this adds a `MUST` (a detector or attestation for the rule lists the mechanisms it did not observe), so an existing approval that omits that list stops conforming. Under [Standard 21](standards/21-versioning.md) R2 that is a breaking compliance requirement, which is MAJOR, if the `MUST` is enforced by a detector or a validator; as a standards-text change that nothing yet enforces, the classification is the owner's, and `VERSION`, tags and releases are not changed here. The definitions alone, which narrow what counts as a bypass, would be a PATCH clarification. The recorded review events for `architecture.no-boundary-bypass` are
 untouched; because `standards/51-architecture-integrity.md` is a reviewed path, that attestation is now stale by design
 ([ADR 0011](artifacts/adr/0011-attestation-freshness-is-repository-content-not-checkout-bytes.md)).
 
