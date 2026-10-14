@@ -1,4 +1,4 @@
-# 0016 — Fixtures are exempted by exact path, digest and rule, not skipped by name
+# 0020 — Fixtures are exempted by exact path, digest and rule, not skipped by name
 
 - **Status:** Accepted
 - **Date:** 2026-10-12

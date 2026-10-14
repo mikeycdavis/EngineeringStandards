@@ -363,7 +363,7 @@ const R = {
 /**
  * Directories never worth walking: build output, dependencies, virtualenvs, caches.
  *
- * `fixtures` is deliberately NOT here (ST-19a, ADR 0016). It was, because test fixtures are
+ * `fixtures` is deliberately NOT here (ST-19a, ADR 0020). It was, because test fixtures are
  * deliberately malformed and scanning them reports planted defects as the repository's own. That
  * reason is real and the mechanism was wrong: a directory NAME removed every file beneath it from
  * every detector at once, so a prohibition reported clean over tracked code the run never read, and
@@ -1037,7 +1037,7 @@ function createRun({ root, strict, json }) {
     },
 
     /**
-     * Bind the validated, digest-checked fixture exemptions to this run (ST-19a, ADR 0016).
+     * Bind the validated, digest-checked fixture exemptions to this run (ST-19a, ADR 0020).
      * Only an entry whose path, rule AND current content digest were all established can ever match.
      */
     useFixtureExemptions(bound) {
@@ -3785,7 +3785,7 @@ export async function main(args) {
     exclusionsFrom: ignored.ok ? "repository" : "unavailable",
   };
 
-  // Fixture exemptions (ST-19a, ADR 0016) are the one policy input `audit` reads, and it reads ONLY
+  // Fixture exemptions (ST-19a, ADR 0020) are the one policy input `audit` reads, and it reads ONLY
   // them: an exemption changes how a departure is classified, never whether the file was inspected,
   // and `audit` still lists every waived departure as its own finding. A policy that is absent or
   // does not parse yields no exemptions, so the failure direction is more findings, never fewer.

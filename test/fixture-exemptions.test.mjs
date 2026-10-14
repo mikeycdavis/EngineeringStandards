@@ -1,5 +1,5 @@
 /**
- * Exact fixture exemptions (ST-19a, ADR 0016).
+ * Exact fixture exemptions (ST-19a, ADR 0020).
  *
  * `fixtures` used to be dropped from the walk by NAME, which removed whatever it held from every
  * detector at once. It is scanned now, and a deliberately violating fixture is waived only by an

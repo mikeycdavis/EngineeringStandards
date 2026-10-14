@@ -1,5 +1,5 @@
 /**
- * Fixture exemptions — exact path + content digest + rule (ST-19a, ADR 0016).
+ * Fixture exemptions — exact path + content digest + rule (ST-19a, ADR 0020).
  *
  * A directory NAME is not an authority. The walk used to drop every directory called `fixtures`,
  * which removed whatever it held from EVERY detector at once: a deliberately violating test file and

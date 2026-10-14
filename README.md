@@ -139,7 +139,7 @@ source extraction still agrees with it, and CI fails if it does not.
   — execution-specific mutable state is owned by an invocation and cannot outlive it, and importing
   the evaluator does not execute an audit. Replaces enumeration as Standard 51 R1's control, because
   recognising every representation of state failed where constraining its lifetime does not.
-- [artifacts/adr/0016-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md](artifacts/adr/0016-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md)
+- [artifacts/adr/0020-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md](artifacts/adr/0020-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md)
   — `fixtures` is no longer skipped by name; a deliberately violating fixture is waived by exact path,
   content digest and rule, and the rule reports EXCEPTED. The directory name was never an authority
   over content.

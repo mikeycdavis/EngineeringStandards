@@ -107,7 +107,7 @@ function complianceFindings(document, today, catalog) {
     }
   }
 
-  // Fixture exemptions (ST-19a, ADR 0016): the same validator the audit uses, so an entry that would
+  // Fixture exemptions (ST-19a, ADR 0020): the same validator the audit uses, so an entry that would
   // be ignored at run time is an error here and an adopter learns it from `standards policy`.
   const fixtureCheck = checkEntries(document.fixtureExemptions, { catalog, today });
   for (const problem of fixtureCheck.problems) {

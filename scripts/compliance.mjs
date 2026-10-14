@@ -224,7 +224,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       continue;
     }
 
-    // Violations a fixture exemption waived (ST-19a, ADR 0016) are kept apart from live ones. The
+    // Violations a fixture exemption waived (ST-19a, ADR 0020) are kept apart from live ones. The
     // detector observed each of them — a waiver is applied to a violation the run found, never to a
     // file it did not read — so a rule whose ONLY violations are waived is EXCEPTED, not passed:
     // "no violation was observed" would be untrue. A live violation anywhere still fails the rule,

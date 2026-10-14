@@ -163,7 +163,7 @@ exceptions: []
   #   expires: "2026-12-31"
   #   reference: "ADR-0004"
 
-# Deliberately violating test fixtures, waived EXACTLY (ADR 0016).
+# Deliberately violating test fixtures, waived EXACTLY (ADR 0020).
 #
 # `fixtures/` directories are scanned like any other. A fixture that violates a rule on purpose is
 # waived by naming ONE file, pinning its content digest, and naming ONE rule. The waiver applies only

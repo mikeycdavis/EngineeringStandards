@@ -32,7 +32,7 @@ const fixture = (name) => path.join(HERE, "fixtures", name);
  * The `never-violations` fixture, with its credential bait materialised at run time.
  *
  * `security.no-secrets-in-artifacts` is non-exemptible (Standard 20 R4), so a tracked file holding a
- * credential-shaped value can never be waived by a fixture exemption (ADR 0016) — and since the
+ * credential-shaped value can never be waived by a fixture exemption (ADR 0020) — and since the
  * walk no longer skips `fixtures/`, committing it would leave this repository permanently failing a
  * prohibition it cannot except. The bait is therefore written here, into a throwaway copy that is
  * also made a Git repository, because `scm.no-committed-env-files` asks the index and the copied

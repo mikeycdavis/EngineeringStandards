@@ -41,7 +41,7 @@
     },
 
     "fixtureExemptions": {
-      "description": "Exact, content-pinned waivers for deliberately violating test fixtures (ST-19a, ADR 0016). Each entry names ONE repository-relative file, the SHA-256 of its content, and ONE rule. It applies only while path, digest and rule all match; any other path, any changed byte and any other rule is inspected as ordinary content. No wildcard, directory or glob is accepted. Distinct from `exceptions`: an exception waives a rule for the project, a fixture exemption waives one rule for one pinned file and is reported as EXCEPTED, never as passed.",
+      "description": "Exact, content-pinned waivers for deliberately violating test fixtures (ST-19a, ADR 0020). Each entry names ONE repository-relative file, the SHA-256 of its content, and ONE rule. It applies only while path, digest and rule all match; any other path, any changed byte and any other rule is inspected as ordinary content. No wildcard, directory or glob is accepted. Distinct from `exceptions`: an exception waives a rule for the project, a fixture exemption waives one rule for one pinned file and is reported as EXCEPTED, never as passed.",
       "type": "array",
       "items": { "$ref": "#/$defs/fixtureExemption" }
     },

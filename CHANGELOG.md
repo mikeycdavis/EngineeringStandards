@@ -20,7 +20,7 @@ is repository tooling: nothing an adopting project consumes is affected, and `VE
 The exceptions are the fixture-exemption entry and the review-history entry directly below, each of which widens the policy schema.
 
 **Fixtures are exempted by exact path, content digest and rule, not skipped by name** (ST-19a, #110;
-[ADR 0016](artifacts/adr/0016-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md)).
+[ADR 0020](artifacts/adr/0020-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md)).
 `fixtures` is removed from `SKIP_DIRS`: every file beneath a `fixtures/` directory is an ordinary scanned
 file, and the evidence surface is no longer marked incomplete for the directory's name. A deliberately
 violating fixture is waived by an entry in the new optional `fixtureExemptions` section of
