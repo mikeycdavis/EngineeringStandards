@@ -259,12 +259,17 @@ someone to lie to make the build go green.
   to an external registry.
 - **Ready scope (owner-approved content only), as implementation slices** (each its own pull
   request; none is implemented by the ADR):
-  1. the resolver and the read-only `eligibility` subcommand, with fixtures and **Windows-safe source
-     inspection** of `README.md` and `FROZEN.md`;
-  2. `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`, writes
-     nothing), as decided in Q2;
-  3. the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram and its
-     SVG, `CHANGELOG.md`), with a no-catalog-rule test.
+  1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
+     **Windows-safe source inspection** of `README.md` and `FROZEN.md`;
+  2. READY: the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
+     and its SVG, `CHANGELOG.md`), with a no-catalog-rule test.
+- **BLOCKED slice: `init` consults the resolver** and refuses on `OUT_OF_SCOPE` or `INDETERMINATE`
+  (exit `2`, writes nothing), as decided in Q2. It needs the write binding that ADR 0016's
+  post-acceptance additions define (the held-directory-handle binding, the component-wise and leaf
+  binding, and the post-write race class: rows 1, 2 and 4 of its "Post-acceptance additions
+  (pending owner reapproval)" table, restructured as row 3). **It is blocked on the owner's
+  approve-or-amend decision on rows 1-4 of that table**; the slice becomes READY when that decision
+  is recorded.
 - **Release classification:** the owner classified the complete change MAJOR, targeted to 3.0.0. A
   Windows-safe `eligibility` is required in 3.0.0. No `VERSION` change, tag or release is
   authorised by the ADR or by this item.

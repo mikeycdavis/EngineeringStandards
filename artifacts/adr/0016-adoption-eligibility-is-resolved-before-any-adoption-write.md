@@ -116,16 +116,22 @@ status line and attribution above are deliberately unchanged pending that decisi
 
 | # | Addition | Source (Codex finding, commit) | Choice made | Alternative |
 | --- | --- | --- | --- | --- |
-| 1 | The resolver acquires the held directory handle before resolution and reads relative to it; `init` reuses it, or re-acquires and compares identity (`target-changed`) | 4251464916, 4251544511, 4251801205; commits 2c542b9, 18b0f9d, 4762e0f (merged as 03ac0e7) | binding by held handle; check-then-write by path rejected | check identity before each write and write by path (rejected: not atomic) |
+| 1 | The resolver acquires the held directory handle before resolution and reads relative to it; `init` writes through it, and checking identity then writing by path is not acceptable. (The identity check with `target-changed` before `planInit` and `applyInit` was already in f4615dd and is approved.) | 4251464916, 4251544511, 4251801205; commits 2c542b9, 18b0f9d, 4762e0f (merged as 03ac0e7) | binding by held handle | the f4615dd identity check followed by a path-based write (rejected: not atomic) |
 | 2 | Every path component and the leaf are bound; links, FIFOs, devices and a directory where a file is expected are refused (exit `2`, nothing written) | 4264398202, 4264725716, 4264835581, 4264835588, 4264835599; commits aa8abcc, ebefbcb, 0f77ff7 | refuse, never follow, never replace a link by rename | follow links inside the target, or replace a link as a link |
 | 3 | Properties-only normative text with a non-normative mechanism note (P1-P7); scope limited to paths within the target | 4264881405; commits 0f77ff7, 563167c | properties only; framework-side reads (`templates/*`, `VERSION`) outside the binding | prescribe system calls in the normative text |
 | 4 | The post-write race class (P6): that write is refused, earlier artifacts remain, no rollback; named `entry-changed` | 4264881418, 4264926220, 4264964402; commits 563167c, 9687685, 3adfed5 | partial retention, narrowest honest wording | rollback or transactional placement of all artifacts |
-| 5 | Windows release gates: non-skipped real-filesystem tests (symlink or reparse point, linked intermediate, leaf link, synchronized replacement races for absent and existing leaves and an intermediate junction) in the 3.0.0 run, with a seam in the implementation's test surface | 4251464935, 4264881420, 4264926224, 4264964409; commits 2c542b9, 563167c, 9687685, 3adfed5 | release-blocking requirements, stated as requirements and not as existing | injected-only tests, or skippable real tests |
-| 6 | Fail closed where no safe open exists: the entry is not opened as a regular file and is `INDETERMINATE` (`unreadable`); no "mark the platform unsupported" alternative | 4251291172; commit f4615dd and later | refuse at runtime | declare the platform unsupported |
-| 7 | Capped read at cap-plus-one bytes with an injected grow-after-classification test | 4265009543; this commit | bounded read | size check then unbounded read |
+| 5 | Windows release gates beyond the one in f4615dd: a **non-skipped** real symlink or reparse-point test for `eligibility`, and non-skipped real-filesystem `init` tests (linked intermediate, leaf link, synchronized replacement races for absent and existing leaves, deletion, and an intermediate junction) in the 3.0.0 run, with a seam in the implementation's test surface | 4251464935, 4264881420, 4264926224, 4264964409; commits 2c542b9, 563167c, 9687685, 3adfed5 | release-blocking requirements, stated as requirements and not as existing | injected-only tests, or skippable real tests |
+| 6 | Capped read at cap-plus-one bytes with an injected grow-after-classification test | 4265009543; commit ade7f24 | bounded read | size check then unbounded read |
 
-Condition names introduced by these additions (`target-changed`, `entry-changed`) are human
-diagnostics and are not part of the frozen surface.
+**Approved at acceptance, not additions (verified against f4615dd):** the platform requirement
+(every supported platform inspects `README.md` and `FROZEN.md` safely; Windows is not declared
+unsupported); the runtime fail-closed rule where safe inspection cannot be established (the entry
+is not opened as a regular file and is `INDETERMINATE`, `unreadable`); the condition
+`target-changed` with identity verified before `planInit` and `applyInit`; and a release gate of a
+passing Windows run of the file-safety tests for `eligibility`.
+
+Condition names (`target-changed`, which was approved at acceptance, and `entry-changed`, which is
+an addition) are human diagnostics and are not part of the frozen surface.
 
 ## Decision
 
@@ -477,7 +483,7 @@ otherwise. This record does not prescribe the call and does not claim that a mec
 **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
 pre-write refusal** (P5): zero writes and an unchanged tree. The **only** exception is the single
 race class in P6 (an entry that no longer matches its classification when written: replaced by a
-link, special file, directory, or a newly created regular file), which is not an
+link, special file or directory, deleted, or a newly created regular file), which is not an
 `INDETERMINATE` condition: that write is refused, earlier artifacts already written remain, and no
 later write is made. `target-changed` is raised only when the
 identity of the directory held differs from the resolver's, which happens before the first write;
@@ -655,7 +661,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `init`. There is no INDETERMINATE condition that is a post-write refusal. The single post-write
   class is the P6 race (an entry that no longer matches its classification when written), which is
   tested separately for **every** raced-in kind (link, FIFO, device, directory, newly created
-  regular file) with the same assertions (that write refused, earlier artifacts remain, no later
+  regular file, deletion) with the same assertions (that write refused, earlier artifacts remain, no later
   write, exit `2`) and is not an `INDETERMINATE` condition.
 - **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
   whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
@@ -717,8 +723,8 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   also contain **non-skipped, synchronized, real-filesystem Windows `init` tests** for **both**
   initial classifications and for the intermediate component: (a) an **absent** leaf artifact
   replaced, between classification and the exclusive creation, by a **link**, and separately by a
-  **newly created regular file**; (b) an **existing regular** leaf artifact replaced by a **link**
-  between classification and the `--force-overwrite` overwrite; and (c) an **intermediate
+  **newly created regular file**; (b) an **existing regular** leaf artifact replaced by a **link**, and
+  separately **deleted**, between classification and the `--force-overwrite` overwrite; and (c) an **intermediate
   directory** replaced by a **junction** between the check and the write. Each asserts that nothing
   lands through the link or junction or over the newly appeared file, the target of the link is
   unchanged, and `init` exits `2` naming `entry-changed` with the P6 guarantees (earlier artifacts
