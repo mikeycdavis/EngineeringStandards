@@ -221,6 +221,15 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   a destructuring of `process` is read when it is a string literal and is `termination-indirect` otherwise. Evidence
   must be a regular file reached without a symbolic link and inside the repository; a directory or link is
   `evidence-not-regular-file`, not a crash.
+  The global object is recognised as `globalThis`, `global`, `window` or `self`, bare, optional-chained or
+  parenthesised, before `.process`; `module` likewise before `require`. A root reached through a symlinked
+  ancestor is reported as `symlink-not-followed` for that ancestor.
+  **Bare imports of repository packages.** A full workspace resolver is out of scope, so the check fails
+  closed: the package names resolved are the `name` of `package.json` at the repository root and in each
+  directory above an observed file. A bare import equal to, or under, such a name is
+  `repository-package-import` (the crossing is not observed), and an `external.allowPrefixes` entry that matches
+  such a name is `external-prefix-shadows-member`. Workspace globs, `exports` maps and path aliases are not
+  resolved.
 - A second file to keep: the declaration lives apart from the policy, by design (section 2).
 - This repository's declaration describes `scripts/` only. `test/`, shell wrappers and workflows are
   outside it and listed as such.

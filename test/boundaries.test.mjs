@@ -823,3 +823,94 @@ test("evidence reached through a symlinked directory that leaves the repository 
     rmSync(outside.dir, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------------------------------------------------
+// 10. Review findings: global-object forms, optional module access, linked ancestors, packages
+// ------------------------------------------------------------------------------------------
+
+for (const src of [
+  "globalThis?.process.exit(1);",
+  "(globalThis).process.exit(1);",
+  "global?.process?.exit(1);",
+  "(global).process.exit(1);",
+  "window.process.exit(1);",
+  "self?.process.exitCode = 1;",
+  "globalThis.process.exit(1);",
+]) {
+  test(`TERMINATION through a global-object form is classified: ${src}`, () => {
+    assert.ok(scanSource(src).terminates.length > 0, src);
+  });
+}
+
+for (const src of ['globalThis?.["process"].exit(1);', '(globalThis)["process"].exit(1);', 'globalThis["pro" + "cess"].exit(1);']) {
+  test(`UNCLASSIFIED termination-indirect: bracketed global object: ${src}`, () => {
+    assert.ok(scanSource(src).mechanisms["termination-indirect"].length > 0 || scanSource(src).terminates.length > 0, src);
+  });
+}
+
+for (const src of [
+  'module?.["require"]("./other.cjs");',
+  '(module).require("./other.cjs");',
+  '(module)["require"]("./other.cjs");',
+  'module?.[name]("./other.cjs");',
+]) {
+  test(`REQUIRE through optional or parenthesised module access is a require-call: ${src}`, () => {
+    assert.ok(scanSource(src).mechanisms["require-call"].length > 0, src);
+  });
+}
+
+test("an observation root reached through a symlinked ancestor is reported, not walked", (t0) => {
+  const outside = tiny({ "src/leak.mjs": "export const x = 1;\n" }, null);
+  const d = baseDeclaration();
+  d.observation.roots = ["linked/src"];
+  const t = tiny(FILES, d);
+  try {
+    if (!linkOrSkip(outside.dir, path.join(t.dir, "linked"), "dir")) return t0.skip("symlinks not permitted here");
+    const scan = scanRepository(t.dir, t.declaration);
+    assert.deepEqual([...scan.files], []);
+    assert.deepEqual(scan.links, ["linked"]);
+    assert.ok(kinds(checkBoundaries(t.dir, t.declaration, scan)).includes("symlink-not-followed"));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+    rmSync(outside.dir, { recursive: true, force: true });
+  }
+});
+
+const withPackage = (extra = {}) => ({
+  ...FILES,
+  "package.json": JSON.stringify({ name: "@acme/core" }),
+  ...extra,
+});
+
+test("a bare import naming a repository package is not read as external", () => {
+  const t = tiny(withPackage({ "src/app.mjs": 'import { run } from "./core.mjs";\nimport { thing } from "@acme/core/lib";\n' }), {
+    ...baseDeclaration(),
+    external: { allowPrefixes: ["node:", "@acme/"], evidence: ["NOTES.md:1"] },
+  });
+  try {
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.ok(kinds(v).includes("repository-package-import"), JSON.stringify(v));
+    assert.ok(kinds(v).includes("external-prefix-shadows-member"), JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("an allowPrefix matching a repository package name is a violation even when nothing imports it", () => {
+  const d = { ...baseDeclaration(), external: { allowPrefixes: ["node:", "@acme/"], evidence: ["NOTES.md:1"] } };
+  const t = tiny(withPackage(), d);
+  try {
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["external-prefix-shadows-member"]);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("a repository with a package name no prefix admits, and no import of it, is unaffected", () => {
+  const t = tiny(withPackage(), baseDeclaration());
+  try {
+    assert.deepEqual(checkBoundaries(t.dir, t.declaration), []);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});

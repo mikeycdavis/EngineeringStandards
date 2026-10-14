@@ -199,7 +199,27 @@ export function loadDeclaration(dir) {
 export function inScopeFiles(repoRoot, observation) {
   const out = [];
   const links = [];
-  const walk = (rel) => {
+  // A root reached through a symlinked ancestor (linked/src, linked a link) is a link too.
+  const linkedAncestor = (rel) => {
+    const parts = rel.split("/").filter((x) => x && x !== ".");
+    for (let n = 1; n < parts.length; n++) {
+      const prefix = parts.slice(0, n).join("/");
+      try {
+        if (lstatSync(path.join(repoRoot, prefix)).isSymbolicLink()) return prefix;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+  const walk = (rel, root = false) => {
+    if (root) {
+      const link = linkedAncestor(rel);
+      if (link) {
+        links.push(link);
+        return;
+      }
+    }
     const abs = path.join(repoRoot, rel);
     let st;
     try {
@@ -221,7 +241,7 @@ export function inScopeFiles(repoRoot, observation) {
       walk(path.posix.join(rel, name));
     }
   };
-  for (const r of observation.roots) walk(r.replace(/\/$/, "") || ".");
+  for (const r of observation.roots) walk(r.replace(/\/$/, "") || ".", true);
   const result = [...new Set(out)].sort();
   result.links = [...new Set(links)].sort();
   return result;
@@ -475,6 +495,23 @@ function analyse(toks) {
     return o >= 0 ? namesInBraces(o + 1, k - 2) : [];
   };
 
+  const GLOBAL_OBJECTS = new Set(["globalThis", "global", "window", "self"]);
+  // Is the "." before token k preceded by the global object: g.k, g?.k or (g).k ?
+  const followsGlobalObject = (k) => {
+    if (!isP(k - 1, ".")) return false;
+    const g = (j) => toks[j]?.t === "id" && GLOBAL_OBJECTS.has(toks[j].v);
+    if (g(k - 2)) return true;
+    if (isP(k - 2, "?") && g(k - 3)) return true;
+    return isP(k - 2, ")") && g(k - 3) && isP(k - 4, "(");
+  };
+  // Is the "." before token k preceded by `module`: module.k, module?.k or (module).k ?
+  const followsModule = (k) => {
+    if (!isP(k - 1, ".")) return false;
+    if (isId(k - 2, "module")) return true;
+    if (isP(k - 2, "?") && isId(k - 3, "module")) return true;
+    return isP(k - 2, ")") && isId(k - 3, "module") && isP(k - 4, "(");
+  };
+
   for (let k = 0; k < toks.length; k++) {
     const tk = toks[k];
     if (tk.t === "str" && isP(k - 1, "[") && isP(k + 1, "]") && (tk.v === "constructor" || tk.v === "__proto__")) {
@@ -482,7 +519,7 @@ function analyse(toks) {
       continue;
     }
     if (tk.t !== "id" || skip.has(k)) continue;
-    const afterDot = isP(k - 1, ".") && !(isId(k - 2, "globalThis") || isId(k - 2, "global"));
+    const afterDot = isP(k - 1, ".") && !followsGlobalObject(k);
 
     switch (tk.v) {
       case "import": {
@@ -555,7 +592,13 @@ function analyse(toks) {
       }
       case "globalThis":
       case "global":
-        if (!afterDot && isP(k + 1, "[")) flag("termination-indirect", tk.line);
+        if (!afterDot) {
+          // g[...], g?.[...] and (g)[...]
+          let b = k + 1;
+          if (isP(b, ")") && isP(k - 1, "(")) b++;
+          if (isP(b, "?") && isP(b + 1, ".")) b += 2;
+          if (isP(b, "[")) flag("termination-indirect", tk.line);
+        }
         break;
       case "process": {
         if (afterDot) break;
@@ -590,13 +633,18 @@ function analyse(toks) {
       case "require":
         if (isP(k + 1, "(")) {
           // module.require and module?.require calls are require calls too.
-          const viaModule = isP(k - 1, ".") && (isId(k - 2, "module") || (isP(k - 2, "?") && isId(k - 3, "module")));
-          if (!afterDot || viaModule) flag("require-call", tk.line);
+          if (!afterDot || followsModule(k)) flag("require-call", tk.line);
         }
         break;
       case "module":
         // a bracketed access on module: the string "require", or a computed key
-        if (!afterDot && isP(k + 1, "[") && (!isStr(k + 2) || toks[k + 2].v === "require")) flag("require-call", tk.line);
+        if (!afterDot) {
+          // module[...], module?.[...] and (module)[...]
+          let b = k + 1;
+          if (isP(b, ")") && isP(k - 1, "(")) b++;
+          if (isP(b, "?") && isP(b + 1, ".")) b += 2;
+          if (isP(b, "[") && (!isStr(b + 1) || toks[b + 1].v === "require")) flag("require-call", tk.line);
+        }
         break;
       case "createRequire":
         flag("require-call", tk.line);
@@ -722,6 +770,34 @@ export function scanRepository(repoRoot, declaration) {
 // Check
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Names of the packages the repository itself defines: the `name` of every package.json found at
+ * the repository root or in a directory above an observed file. A workspace resolver is out of
+ * scope (ADR 0018); this is the set a bare specifier must not be read as "external" for.
+ */
+function repositoryPackageNames(repoRoot, files) {
+  const dirs = new Set([""]);
+  for (const f of files) {
+    let d = path.posix.dirname(f);
+    while (d && d !== ".") {
+      dirs.add(d);
+      d = path.posix.dirname(d);
+    }
+  }
+  const names = new Set();
+  for (const d of dirs) {
+    const file = path.join(repoRoot, d, "package.json");
+    try {
+      if (!lstatSync(file).isFile()) continue;
+      const name = JSON.parse(readFileSync(file, "utf8")).name;
+      if (typeof name === "string" && name) names.add(name);
+    } catch {
+      // absent or unreadable: no package name from this directory
+    }
+  }
+  return names;
+}
+
 function ownerOf(members, file) {
   return members.find((m) => m.paths.some((p) => covers(p, file))) ?? null;
 }
@@ -758,7 +834,8 @@ function parseEvidence(e) {
  * Violation kinds: unowned-file, dead-member-path, undeclared-edge, undeclared-interface,
  * undeclared-external, unresolved-import, process-termination, unobserved-mechanism,
  * known-site-missing, symlink-not-followed, evidence-missing, evidence-out-of-range, evidence-mismatch,
- * evidence-outside-observation, evidence-not-regular-file.
+ * evidence-outside-observation, evidence-not-regular-file, repository-package-import,
+ * external-prefix-shadows-member.
  *
  * A side-effect import across a declared edge is a use of the interface named "side-effect": the
  * edge's `via` must list it, or `*`.
@@ -770,6 +847,20 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
   const fileSet = new Set(scan.files);
   const allowPrefixes = declaration.external?.allowPrefixes ?? [];
   const crossings = new Map(); // file -> Map(line -> [{ from, to }])
+
+  const packageNames = repositoryPackageNames(repoRoot, scan.files);
+  for (const prefix of allowPrefixes) {
+    for (const name of packageNames) {
+      if (name.startsWith(prefix) || prefix.startsWith(name)) {
+        violations.push({
+          kind: "external-prefix-shadows-member",
+          file: DECLARATION_FILE,
+          line: 1,
+          message: `external allowPrefix '${prefix}' matches the repository package '${name}'; an external prefix must not admit a package this repository defines`,
+        });
+      }
+    }
+  }
 
   for (const link of scan.links ?? []) {
     violations.push({
@@ -830,6 +921,13 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
             });
           }
         }
+      } else if ([...packageNames].some((n) => imp.spec === n || imp.spec.startsWith(`${n}/`))) {
+        violations.push({
+          kind: "repository-package-import",
+          file,
+          line: imp.line,
+          message: `${file}:${imp.line} imports '${imp.spec}', which names a package this repository defines; bare imports of repository packages are not resolved by this check, so the crossing is not observed`,
+        });
       } else if (!allowPrefixes.some((p) => imp.spec.startsWith(p))) {
         const hint = builtinName(imp.spec) !== null ? `; write the built-in as node:${builtinName(imp.spec)}` : "";
         violations.push({
