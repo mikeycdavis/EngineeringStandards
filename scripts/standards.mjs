@@ -35,6 +35,7 @@ import {
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
+import { loadDeclaration, DECLARATION_FILE } from "./boundaries.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -197,6 +198,16 @@ async function loadProjectPolicy(repoRoot) {
         document: null,
         error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
+      };
+    }
+    // An optional boundary declaration beside the policy must be well-formed and internally
+    // consistent (ADR 0018). Absent, there is nothing to check and no existing policy changes status.
+    const declared = loadDeclaration(repoRoot);
+    if (declared.state === "invalid") {
+      return {
+        document: null,
+        error: `${DECLARATION_FILE} is invalid (${declared.errors.length} problem(s)): ` +
+          declared.errors.slice(0, 3).join("; "),
       };
     }
     return { document, error: null };

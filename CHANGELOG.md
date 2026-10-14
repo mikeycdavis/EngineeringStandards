@@ -15,6 +15,20 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Boundary declaration and checker (ST-23 follow-on, refs #112; split from draft PR 113, the Standard 51 text is a separate
+change). Adds an optional, additive boundary declaration ([ADR 0018](artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)):
+a root-level `architecture-boundaries.yml`, discovered by name beside `project-policy.yml` and described by the new
+`schemas/architecture-boundaries.schema.json` (members with path ownership, permitted edges and interfaces, and the
+declaration's own observation limits; `templates/architecture-boundaries/architecture-boundaries.yml` is the starting point).
+It is a separate file so that it can be a reviewed path of an attestation without being the file that records one. An absent
+file changes no status, score or exit code, and the policy schema is unchanged; a present one is checked for shape and
+internal consistency by `standards policy` and `validate`, and against the import graph of its roots by the new
+`node scripts/boundaries-check.mjs` (`npm run boundaries`; exit 0 conforms, 1 violations, 2 NOT_EVALUATED) and
+`test/boundaries.test.mjs`. New library `scripts/boundaries.mjs`. This repository declares its own `scripts/` boundaries.
+`VERSION` stays `2.0.0`: `validate` refuses a policy whose `standardVersion` differs from `VERSION` (`VERSION_MISMATCH`,
+exit 2), so a MINOR bump would change the exit code of every consumer pinned at `2.0.0` and is therefore not additive.
+A pre-existing unrelated root file named `architecture-boundaries.yml` would be treated as a declaration.
+
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 The one exception is the review-history entry directly below, which widens the policy schema.

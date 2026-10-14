@@ -1,0 +1,335 @@
+# Architectural boundaries declared by this repository (Standard 51 R2, ADR 0018).
+#
+# This file is the declaration `architecture.no-boundary-bypass` is judged against, kept apart from
+# project-policy.yml so that it can be a reviewed path of an attestation without being the file that
+# records the attestation. A boundary not listed here is not an architectural boundary in the
+# Standard 51 sense. It is enforced, within the observation limits below and nowhere else, by
+# `node scripts/boundaries-check.mjs` and by test/boundaries.test.mjs. Its schema is
+# schemas/architecture-boundaries.schema.json. Its presence changes no verdict, score or exit code of
+# `validate`; its absence is not a pass of anything.
+observation:
+  method: "static-import-graph"
+  roots:
+    - scripts
+  extensions:
+    - ".mjs"
+  cannotObserve:
+    - mechanism: "dynamic-import-computed"
+      reason: "An import() whose argument is not a single string literal cannot be resolved. The check reports it unless the file is listed in knownSites."
+      knownSites: []
+    - mechanism: "require-call"
+      reason: "require(...), createRequire, process.getBuiltinModule, process.mainModule, and any import of node:module beyond builtinModules and isBuiltin reach modules by a path the graph does not see. The check reports any use unless the file is listed in knownSites."
+      knownSites: []
+    - mechanism: "import-meta-resolve"
+      reason: "Any use of import.meta other than import.meta.url, import.meta.dirname and import.meta.filename (import.meta.resolve, import.meta with a bracketed property, an alias or a destructuring of import.meta) names a module the graph does not follow. The check reports any use unless listed in knownSites."
+      knownSites: []
+    - mechanism: "url-module-path"
+      reason: "new URL(..., import.meta.url) can name a module or file the graph does not follow. The check reports any use unless listed in knownSites. scripts/reviews.mjs reads the pinned review-history legacy-prefix manifest this way."
+      knownSites:
+        - scripts/reviews.mjs
+    - mechanism: "termination-indirect"
+      reason: "Process termination through an alias, a computed property, globalThis indexing, a default or namespace import of the process module not bound as process, or import { default as p } is not classified. The check reports it unless listed in knownSites. process.exit, exitCode, kill and abort in their direct, optional-chained, bracketed-literal, destructured and imported forms are classified."
+      knownSites: []
+    - mechanism: "subprocess"
+      reason: "The check sees which files import child_process, worker_threads or cluster (with or without the node: prefix), never what a subprocess runs or reaches. scripts/pipeline.mjs runs a caller-supplied command string through a shell."
+      knownSites:
+        - scripts/ci-triage.mjs
+        - scripts/pipeline.mjs
+        - scripts/repository.mjs
+        - scripts/review-history.mjs
+        - scripts/test.mjs
+    - mechanism: "reflection"
+      reason: "Any mention of eval or Function (including (0, eval), const e = eval and const F = Function), any .constructor access, a constructor or __proto__ index, getPrototypeOf, setPrototypeOf, __proto__, Reflect, Proxy, node:vm, process.binding, process._linkedBinding and process.dlopen are reported unless listed in knownSites. A property name assembled at run time is not examined."
+      knownSites: []
+    - mechanism: "network"
+      reason: "Imports of http, https, http2, net, tls, dgram or dns, and direct use of fetch, WebSocket, EventSource and XMLHttpRequest, are reported unless listed in knownSites. Aliases of those globals, and traffic that leaves through another program (scripts/ci-triage.mjs runs the gh CLI), are not visible."
+      knownSites: []
+    - mechanism: "ambiguous-token"
+      reason: "A slash after ), } or ++/-- may open a regex literal or divide: the file is read both ways and a disagreement about modules or terminations is reported. Any non-ASCII character outside strings, templates, regex literals and comments that is neither whitespace nor an identifier character, and any backslash outside them, is reported. Listed in knownSites to acknowledge."
+      knownSites: []
+    - mechanism: "generated-code"
+      reason: "Code written to disk and run later, and generated documentation, are not examined. The scanner has no detector for this."
+      knownSites: []
+    - mechanism: "data-access"
+      reason: "Which files, rules and policy keys a module reads or writes is not observed; the three-way separation of data ownership rests on review plus assertBindings, not on this check."
+      knownSites: []
+    - mechanism: "shell-and-workflow-scripts"
+      reason: "scripts/*.ps1, scripts/*.sh and .github/workflows/*.yml are outside the extensions and are not examined."
+      knownSites: []
+    - mechanism: "outside-roots"
+      reason: "test/, templates/, standards/ and every file outside the roots are not examined."
+      knownSites: []
+
+members:
+  - id: "catalog"
+    kind: "layer"
+    description: "Owns rule identity and metadata. Defines the rule catalog and refuses evaluator findings bound to an id it does not carry."
+    paths:
+      - scripts/catalog.mjs
+      - rules/
+    evidence:
+      - PROJECT.md:54
+      - scripts/catalog.mjs:144
+  - id: "reviews"
+    kind: "layer"
+    description: "Interprets a recorded review sequence. Holds no catalog, applicability or evidence knowledge."
+    paths:
+      - scripts/reviews.mjs
+    evidence:
+      - scripts/reviews.mjs:92
+  - id: "review-history"
+    kind: "layer"
+    description: "Resolves the recorded review history of a policy against the merge base. Reads review records through the reviews layer; holds no catalog or applicability knowledge."
+    paths:
+      - scripts/review-history.mjs
+    evidence:
+      - scripts/review-history.mjs:15
+  - id: "evaluator"
+    kind: "layer"
+    description: "Produces the verdict from catalog, policy and findings. Redefines neither rule metadata nor applicability."
+    paths:
+      - scripts/compliance.mjs
+    evidence:
+      - PROJECT.md:55
+      - scripts/compliance.mjs:39
+  - id: "repository-provenance"
+    kind: "layer"
+    description: "Reads repository content as an evidence source (blob identity, digests, freshness) through git."
+    paths:
+      - scripts/repository.mjs
+    evidence:
+      - scripts/repository.mjs:216
+  - id: "parsers"
+    kind: "layer"
+    description: "Strict readers: policy YAML, JSON schema evaluation, source-section definition, plan-item tracking."
+    paths:
+      - scripts/yaml.mjs
+      - scripts/jsonschema.mjs
+      - scripts/sections.mjs
+      - scripts/tracking.mjs
+    evidence:
+      - scripts/yaml.mjs:220
+      - scripts/jsonschema.mjs:189
+      - scripts/sections.mjs:38
+      - scripts/tracking.mjs:157
+  - id: "adoption"
+    kind: "layer"
+    description: "Plans and applies `standards init`, and generates the agent operating rules it writes."
+    paths:
+      - scripts/init.mjs
+      - scripts/agent-instructions.mjs
+    evidence:
+      - scripts/init.mjs:312
+      - scripts/agent-instructions.mjs:86
+  - id: "boundary-check"
+    kind: "layer"
+    description: "Validates and enforces this declaration. A library; it never terminates the process."
+    paths:
+      - scripts/boundaries.mjs
+    evidence:
+      - scripts/boundaries.mjs:705
+  - id: "validator-cli"
+    kind: "process"
+    description: "The audit and validate command and the ownership check. A CLI boundary: the only place, with the tool CLIs, that terminates the process."
+    processExit: "permitted"
+    paths:
+      - scripts/standards.mjs
+      - scripts/ownership.mjs
+    evidence:
+      - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md:87
+      - scripts/standards.mjs:4123
+  - id: "tool-clis"
+    kind: "process"
+    description: "Single-purpose command-line tools: policy, attestations, inventory, fidelity, links, diagrams, pipeline, ci-triage, submit-gate, test, boundaries-check."
+    processExit: "permitted"
+    paths:
+      - scripts/policy.mjs
+      - scripts/attestations.mjs
+      - scripts/inventory.mjs
+      - scripts/fidelity.mjs
+      - scripts/links.mjs
+      - scripts/diagrams.mjs
+      - scripts/pipeline.mjs
+      - scripts/ci-triage.mjs
+      - scripts/submit-gate.mjs
+      - scripts/test.mjs
+      - scripts/boundaries-check.mjs
+    evidence:
+      - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md:87
+      - scripts/policy.mjs:186
+
+edges:
+  - from: "evaluator"
+    to: "catalog"
+    via:
+      - resolve
+    evidence:
+      - scripts/compliance.mjs:18
+  - from: "evaluator"
+    to: "reviews"
+    via:
+      - currentReview
+      - reviewProblems
+      - recordedRejections
+      - reviewsOf
+    evidence:
+      - scripts/compliance.mjs:19
+  - from: "review-history"
+    to: "reviews"
+    via:
+      - resolveReviewHistory
+      - resolveRecordedReviewHistory
+      - reviewsOf
+      - recordedRejections
+    evidence:
+      - scripts/review-history.mjs:15
+  - from: "review-history"
+    to: "parsers"
+    via:
+      - parseYaml
+    evidence:
+      - scripts/review-history.mjs:14
+  - from: "validator-cli"
+    to: "review-history"
+    via:
+      - reviewHistoryPreflight
+      - effectiveAttestations
+      - IDENTITY_NOTE
+    evidence:
+      - scripts/standards.mjs:37
+  - from: "boundary-check"
+    to: "parsers"
+    via:
+      - parseYaml
+      - validate
+    evidence:
+      - scripts/boundaries.mjs:30
+      - scripts/boundaries.mjs:31
+  - from: "validator-cli"
+    to: "catalog"
+    via:
+      - loadCatalog
+      - assertBindings
+      - coverage
+      - resolve
+    evidence:
+      - scripts/standards.mjs:21
+  - from: "validator-cli"
+    to: "evaluator"
+    via:
+      - evaluate
+      - envelope
+    evidence:
+      - scripts/standards.mjs:22
+  - from: "validator-cli"
+    to: "adoption"
+    via:
+      - plan
+      - apply
+      - render
+    evidence:
+      - scripts/standards.mjs:23
+  - from: "validator-cli"
+    to: "parsers"
+    via:
+      - parseYaml
+      - discoverBacklog
+      - resolveTracked
+      - OUTCOME
+      - validate
+    evidence:
+      - scripts/standards.mjs:24
+      - scripts/standards.mjs:25
+      - scripts/standards.mjs:26
+  - from: "validator-cli"
+    to: "repository-provenance"
+    via:
+      - classifyFreshness
+      - ignoredEntries
+      - repositoryAvailable
+      - repositoryDigest
+      - trackedMatching
+      - DIGEST_ALGORITHM
+      - FRESHNESS
+    evidence:
+      - scripts/standards.mjs:27
+  - from: "validator-cli"
+    to: "reviews"
+    via:
+      - currentReview
+    evidence:
+      - scripts/standards.mjs:36
+  - from: "validator-cli"
+    to: "boundary-check"
+    via:
+      - loadDeclaration
+      - DECLARATION_FILE
+    evidence:
+      - scripts/standards.mjs:38
+  - from: "tool-clis"
+    to: "parsers"
+    via:
+      - parseYaml
+      - YamlError
+      - validate
+      - assertSchemaSupported
+      - SchemaError
+      - sectionText
+      - sectionRe
+    evidence:
+      - scripts/attestations.mjs:25
+      - scripts/ci-triage.mjs:79
+      - scripts/fidelity.mjs:39
+      - scripts/inventory.mjs:43
+      - scripts/policy.mjs:22
+      - scripts/policy.mjs:23
+  - from: "tool-clis"
+    to: "repository-provenance"
+    via:
+      - classifyFreshness
+      - repositoryAvailable
+      - DIGEST_ALGORITHM
+      - LEGACY_ALGORITHM
+      - FRESHNESS
+    evidence:
+      - scripts/attestations.mjs:26
+  - from: "tool-clis"
+    to: "reviews"
+    via:
+      - reviewsOf
+      - currentReview
+      - reviewProblems
+      - isLegacyShape
+    evidence:
+      - scripts/attestations.mjs:33
+  - from: "tool-clis"
+    to: "catalog"
+    via:
+      - loadCatalog
+    evidence:
+      - scripts/policy.mjs:43
+      - scripts/policy.mjs:176
+  - from: "tool-clis"
+    to: "review-history"
+    via:
+      - IDENTITY_NOTE
+      - reviewHistoryPreflight
+    evidence:
+      - scripts/attestations.mjs:34
+  - from: "tool-clis"
+    to: "boundary-check"
+    via:
+      - loadDeclaration
+      - scanRepository
+      - checkBoundaries
+      - DECLARATION_FILE
+    evidence:
+      - scripts/policy.mjs:24
+      - scripts/boundaries-check.mjs:22
+
+external:
+  allowPrefixes:
+    - "node:"
+  evidence:
+    - PROJECT.md:57
+    - .github/workflows/ci.yml:29
