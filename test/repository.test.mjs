@@ -1721,3 +1721,37 @@ test("replacing the attestations section with a flow mapping yields no verdict a
     await cleanup(fx.root);
   }
 });
+
+test("ST-44: the documented fail-closed rule is scoped to a rule that applies; a not-applicable rule is not evaluated", () => {
+  const rule = {
+    id: "testing.synthetic",
+    level: "required",
+    severity: "error",
+    validationType: "manual-review",
+    attestable: true,
+    nonExemptible: false,
+  };
+  const reviews = [review({ id: "r1", status: "rejected" }), review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" })];
+  const run = (applicability) =>
+    evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { ...(applicability ? { applicability: { [rule.id]: applicability } } : {}), attestations: { [rule.id]: { reviews } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "fresh", detail: null }]]),
+    });
+  const applies = run(null).results.find((entry) => entry.ruleId === rule.id);
+  assert.equal(applies.disposition, "invalid-attestation");
+  assert.equal(applies.status, "failed");
+  // Pinned so the documentation cannot overclaim: the evaluator returns at the not-applicable declaration,
+  // before any review history is read. Changing this is a verdict change and belongs to its own story.
+  const notApplicable = run({ status: "not-applicable", reason: "no subject here" }).results.find((entry) => entry.ruleId === rule.id);
+  assert.equal(notApplicable.disposition, "not-applicable");
+  assert.notEqual(notApplicable.status, "failed");
+  for (const file of ["INSTRUCTIONS.md", "artifacts/adr/0005-attestations-are-recorded-human-evidence.md"]) {
+    const text = readFileSync(path.join(REPO_ROOT, file), "utf8").replace(/\s+/g, " ");
+    assert.match(text, /rule that applies/, `${file} must scope the rule`);
+    assert.match(text, /not-applicable` is not evaluated, so a rejection recorded for it is not consulted/, `${file} must say what a not-applicable rule does`);
+  }
+});
