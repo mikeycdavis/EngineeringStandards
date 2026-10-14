@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +70,7 @@ for (const [name, reviews] of [
     assert.equal(finding.category, "policy-compliance");
     assert.equal(finding.ruleId, RULE_ID);
     assert.equal(finding.rule, null, "the finding must not be evidence for a rule");
+    assert.match(finding.standardRef ?? "", /^standards\/20-exceptions\.md#r1--/);
     assert.match(finding.message, /declared not-applicable/);
     assert.match(finding.message, /rejection is recorded/);
     assert.match(finding.message, /"r1"/);
@@ -170,6 +171,15 @@ test("CLI: validate emits the policy-compliance finding and the verdict equals t
     assert.equal(found.length, 1);
     assert.equal(found[0].ruleId, "ai.propose-execute");
     assert.equal(found[0].rule, null);
+    // Every finding carries a standardRef that resolves to a heading in the file it names.
+    assert.equal(typeof found[0].standardRef, "string", "the policy finding carries no standardRef");
+    const [refFile, refAnchor] = found[0].standardRef.split("#");
+    const md = await readFile(path.join(ROOT, refFile), "utf8");
+    const anchors = md
+      .split(/\r?\n/)
+      .filter((l) => /^#{2,3} /.test(l))
+      .map((l) => l.replace(/^#+ /, "").toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-"));
+    assert.ok(anchors.includes(refAnchor), `${found[0].standardRef} is not a heading`);
     assert.ok(!a.stdout.includes(String.fromCharCode(27)), "raw ESC reached the JSON output");
     assert.match(found[0].message, /\\u001b/);
     assert.deepEqual(b.report.findings.filter((f) => f.category === "policy-compliance"), []);

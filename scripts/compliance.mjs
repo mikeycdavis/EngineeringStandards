@@ -373,6 +373,8 @@ function strayRejectionFinding(ruleId, rejections) {
     // fail, pass or withdraw one.
     rule: null,
     ruleId,
+    // Standard 20 R1: the requirement that separates "does not apply" from "applies, knowingly unmet".
+    standardRef: "standards/20-exceptions.md#r1--an-exception-waives-applicability-never-definition",
     evidence: ["project-policy.yml"],
     message:
       `${ruleId} is declared not-applicable but a rejection is recorded on it (${named}). ` +
