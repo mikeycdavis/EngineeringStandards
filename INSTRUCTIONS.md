@@ -228,6 +228,10 @@ ref, shallow history without it) the result is `NOT_EVALUATED` and every approva
 that run (run `git fetch origin`); a rewritten history withdraws them too. Only approvals are disregarded:
 a recorded **rejection stays effective**, because negative evidence is never removed for want of a
 comparison. Deleting or emptying the attestations section is itself a rewrite when a base exists.
+A rejection recorded in a history that is malformed, rewritten or not comparable with a trusted base stays
+in force: the rule fails with the rejection named, and only a later well-formed review in a repaired history
+(and, once authenticated review exists, an authenticated one) clears it. A malformed history that records no
+rejection establishes nothing: it is never read as an approval.
 
 The distinction that matters most: **not-applicable is a claim about your project, not about the
 rule.** *We have no background jobs* stops being true the day you add one — which is what

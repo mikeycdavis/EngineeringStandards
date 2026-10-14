@@ -27,6 +27,11 @@ export const STATUS = {
 
 const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped: "skipped" };
 
+// A malformed history that records a rejection: the rejection is negative evidence and stays in force.
+export const MALFORMED_WITH_REJECTION_REMEDIATION =
+  "A recorded rejection in this history stays in force until the history is repaired (unique ids, chronological order) " +
+  "and a later well-formed review clears it.";
+
 /**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
@@ -135,7 +140,10 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
             : ""),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
-        remediation: "Give every review a unique id and record them in chronological order.",
+        remediation:
+          rejections.length > 0
+            ? MALFORMED_WITH_REJECTION_REMEDIATION
+            : "Give every review a unique id and record them in chronological order.",
       });
       continue;
     }

@@ -123,6 +123,9 @@ An attestation is only as good as the history it sits in. `validate` and `npm ru
 policy with its merge-base with the default branch and treat a rewrite or removal of recorded history as a
 violation. When that comparison is violated or cannot be made (no remote ref, shallow history), **approvals are
 disregarded and recorded rejections stay effective**: negative evidence may be contributed by a human at any time and is
-never removed because a comparison was unavailable. This is an owner-reviewable choice. Reviewer identity is
+never removed because a comparison was unavailable. The same holds for a history that is malformed (a successor
+naming a missing predecessor, a duplicate id, a fork): a rejection it records stays in force, and the result
+names it, until the history is repaired and a later well-formed review clears it. A malformed history with
+no recorded rejection establishes nothing and is never read as an approval. This is an owner-reviewable choice. Reviewer identity is
 asserted by the policy text, not authenticated. A genesis event may omit its digest (the first-pass workflow above);
 that is bootstrap behaviour and not authenticated history.

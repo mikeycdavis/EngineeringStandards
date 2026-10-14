@@ -1622,6 +1622,44 @@ test("a malformed chain that records no rejection is NOT_EVALUATED and never a p
   assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
 });
 
+// ---------------------------------------------------------------------------------------------
+// ST-44: the remediation for a malformed history says what a recorded rejection in it means, and says
+// nothing of the kind for a history that records none.
+// ---------------------------------------------------------------------------------------------
+
+test("the malformed-history remediation states that a recorded rejection stays in force until a later well-formed review clears it", () => {
+  const rule = {
+    id: "testing.synthetic",
+    level: "required",
+    severity: "error",
+    validationType: "manual-review",
+    attestable: true,
+    nonExemptible: false,
+  };
+  const remediation = (reviews) => {
+    const verdict = evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { attestations: { [rule.id]: { reviews } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "fresh", detail: null }]]),
+    });
+    const result = verdict.results.find((entry) => entry.ruleId === rule.id);
+    assert.equal(result.disposition, "invalid-attestation", JSON.stringify(result));
+    return result.remediation;
+  };
+  const missingPredecessor = review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" });
+  assert.equal(
+    remediation([review({ id: "r1", status: "rejected" }), missingPredecessor]),
+    "A recorded rejection in this history stays in force until the history is repaired (unique ids, chronological order) and a later well-formed review clears it.",
+  );
+  assert.equal(
+    remediation([review({ id: "r1" }), missingPredecessor]),
+    "Give every review a unique id and record them in chronological order.",
+  );
+});
+
 test("the asserted-identity label is pinned exactly on every surface", async () => {
   const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
   try {
