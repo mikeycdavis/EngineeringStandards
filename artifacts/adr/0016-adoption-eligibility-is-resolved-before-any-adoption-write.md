@@ -329,6 +329,10 @@ is not opened, resolved or inspected.
   An open that fails because the entry is a link or was replaced is `INDETERMINATE`, never a fall
   back to a path-based read. **There is no identity-comparison fallback:** an ordinary open follows
   a link before any `fstat` could notice, and can block or have side effects on a pipe or device.
+  Reading through the handle binds the file object, not its directory entry; after the read the
+  resolver confirms that the entry still names the identity it classified, and a changed entry is
+  `INDETERMINATE` (`stat-failed`), so a source file that was renamed away during the read does not
+  decide eligibility.
 
 **Platform requirement (normative, owner decision of 2026-10-12T18:59:50Z).**
 
@@ -488,9 +492,18 @@ regular file and is replaced by a link, special file or directory, **is deleted,
 another regular file** (a different file at the same name, whether swapped in atomically or
 re-created), before the overwrite. For this last kind the classification of a regular leaf carries
 its **identity** (device and inode, or the platform's file identifier) captured at classification,
-and the write verifies that identity through the same handle it writes through; a regular file with a
-different identity no longer matches and is refused with `entry-changed`. This identity binding is
-a clarification within property P3, not a new property. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
+and a regular file with a different identity no longer matches and is refused with `entry-changed`.
+**Verifying the file object alone is not sufficient.** An identity check through the handle that
+will be written binds the *object*, not the directory *entry*: if another process renames the
+classified file after the check and before the first write, the handle still reports the captured
+identity, the moved file would be written, and `init` would succeed although the artifact path now
+names a replacement (and the original may be outside the checked directory). The overwrite must
+therefore be **bound to the directory entry**: the new content is written to a temporary file created
+exclusively in the held directory, and it replaces the artifact by an atomic rename relative to the
+held directory handle that **verifies the destination entry's identity** (or a no-replace
+placement followed by that verification), so that a destination entry that has changed is refused
+with `entry-changed` and nothing lands at, or through, the moved object. This entry binding is a
+clarification within properties P3 and P6, not a new property. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
 place: an overwrite or temp-plus-rename that could recreate the missing path must not. The
 guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
 a link, to a special file, over a directory, over a newly appeared file, or outside the checked
@@ -765,7 +778,8 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   initial classifications and for the intermediate component: (a) an **absent** leaf artifact
   replaced, between classification and the exclusive creation, by a **link**, and separately by a
   **newly created regular file**; (b) an **existing regular** leaf artifact replaced by a **link**, and
-  separately **deleted** and **replaced by another regular file**, between classification and the
+  separately **deleted**, **replaced by another regular file**, and **renamed away with a
+  replacement put in its place after the identity verification**, between classification and the
   `--force-overwrite` overwrite; and (c) an **intermediate
   directory** replaced by a **junction** between the check and the write. Each asserts that nothing
   lands through the link or junction or over the newly appeared file, the target of the link is
@@ -814,7 +828,13 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   file artifact replaced by another regular file** (a different identity at the same name) between
   classification and the `--force-overwrite` overwrite: refused with `entry-changed`, the replacement
   is not overwritten, earlier artifacts remain, no later write, exit `2`, with a mutation check that
-  removes the identity verification and requires this test to fail; (d) **the directory
+  removes the identity verification and requires this test to fail; (c3) **entry binding,
+  synchronized:** the classified regular file is **renamed** (and a replacement put at the name)
+  **after** the write handle's identity verification and **before** the first write: refused with
+  `entry-changed`, nothing is written to the moved file or through it, the replacement is not
+  overwritten, exit `2`; the test seam at the verification-to-write boundary is part of the
+  implementation's test surface; a mutation check replaces the entry-bound atomic replacement with
+  a write through the already-verified handle and requires this test to fail; (d) **the directory
   artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
   preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
   at either path is refused; (e) the table above, one case per cell. A temp-plus-rename placement
