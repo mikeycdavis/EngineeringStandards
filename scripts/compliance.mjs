@@ -28,9 +28,11 @@ export const STATUS = {
 const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped: "skipped" };
 
 // A malformed history that records a rejection: the rejection is negative evidence and stays in force.
+export const MALFORMED_HISTORY_REMEDIATION =
+  "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, chronological order).";
 export const MALFORMED_WITH_REJECTION_REMEDIATION =
-  "A recorded rejection in this history stays in force until every reported structural problem is fixed " +
-  "(predecessor links, required event fields, ids, chronological order) and a later well-formed review clears it.";
+  MALFORMED_HISTORY_REMEDIATION +
+  " A recorded rejection in this history stays in force until then, and only a later well-formed review clears it.";
 
 /**
  * @param catalog   from loadCatalog()
@@ -143,7 +145,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         remediation:
           rejections.length > 0
             ? MALFORMED_WITH_REJECTION_REMEDIATION
-            : "Give every review a unique id and record them in chronological order.",
+            : MALFORMED_HISTORY_REMEDIATION,
       });
       continue;
     }
