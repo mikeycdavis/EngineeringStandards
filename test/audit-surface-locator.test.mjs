@@ -40,6 +40,7 @@ const DECLARED_BLIND_SPOTS = [
   "construct:logging-frameworks-as-audit-trails",
   "construct:names-without-audit",
   "construct:orm-names-in-string-literals",
+  "construct:string-interpolation-outside-js-templates",
   "construct:string-literal-ddl",
   "language-family:go",
   "language-family:markup-components",
@@ -748,4 +749,57 @@ test("a minified one-line file with three occurrences counts three, and the boun
     assert.equal(cut.observed.length, 2);
     assert.deepEqual(cut.observedFiles, ["src/min.js", "src/z.js"]);
   });
+});
+
+// --- Codex findings on 00ec932: inline `#`, template expressions, the declared exclusion filter -----
+
+test("an inline MySQL # comment hides DDL after it; # in strings, operators and temp tables does not", () =>
+  withRepo(
+    {
+      "db/a.sql": "SELECT 1; # CREATE TABLE audit_hidden (id INT);\n",
+      "db/b.sql": "SELECT 'a # b'; CREATE TABLE audit_after_string (id INT);\n",
+      "db/c.sql": "SELECT j #> '{a}' FROM t; CREATE TABLE audit_after_op (id INT);\n",
+      "db/d.sql": "CREATE TABLE #audit_tmp (id INT);\n",
+      "db/e.sql": "-- note # here\nCREATE TABLE audit_after_dash (id INT);\n",
+      "db/f.sql": "# CREATE TABLE audit_line_comment (id INT);\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(f.detail.observed.map((o) => o.identifier), ["audit_after_string", "audit_after_op", "#audit_tmp", "audit_after_dash"]);
+    },
+  ));
+
+test("an executable ${...} in a template literal is scanned; the literal text and ordinary strings are not", () =>
+  withRepo(
+    {
+      "src/a.js": "const m = `done ${recordAuditEvent(event)} ok`;\n",
+      "src/b.js": "const m = `a ${ `b ${auditLogger.info(x)}` } ${ {k: 1}.k + AuditLog.create(y) }`;\n",
+      "src/c.js": "const a = `recordAuditEvent(x) is described here`;\nconst b = \"${recordAuditEvent(x)}\";\nconst c = '${recordAuditEvent(x)}';\n",
+      "src/d.ts": "const t = tag`x ${ /* recordAuditEvent(z) */ 1 } y`;\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(sites(f), [
+        "src/a.js:1 recorder-call recordAuditEvent",
+        "src/b.js:1 recorder-call AuditLog.create",
+        "src/b.js:1 recorder-call auditLogger.info",
+      ]);
+    },
+  ));
+
+test("the shared structural view still blanks template expressions, so other detectors are unchanged", async () => {
+  await withRepo({ "src/a.js": "const m = `${recordAuditEvent(event)}`;\n" }, async (dir) => {
+    const s = await collectSurface(dir);
+    const f = s.files.find((x) => x.endsWith("a.js"));
+    assert.ok(!s.run.structureOf(f).text.includes("recordAuditEvent"));
+  });
+});
+
+test("the declared test-path filter names the locator's own classification, not the shared TEST_RE", () => {
+  const f = surfaceOf(cli("audit", fixture("audit-unaudited-with-infrastructure")).json);
+  const spot = f.detail.blindSpots.find((b) => b.id === "surface:test-helper-paths-not-recognised");
+  assert.match(spot.description, /locator's own classification, not the shared TEST_RE/);
+  assert.match(spot.description, /Contest\.java, Attest\.cs/);
+  assert.doesNotMatch(spot.description, /excluded by TEST_RE plus/);
+  assert.match(f.detail.excluded.testPathPattern, /test_/);
 });

@@ -468,7 +468,11 @@ const COMMENT_SYNTAX = new Map([
  * Approximate by design: it does not understand regex literals, Python docstrings, or heredocs. It
  * only has to be right enough that a sentence in a comment stops being mistaken for a call.
  */
-function splitSource(text, ext) {
+function splitSource(text, ext, options = {}) {
+  const templateExpressions = options.templateExpressions === true;
+  // One frame per open `${` of a template literal, each counting its own braces, so a nested template or a
+  // block inside the expression closes the right thing. Empty unless `templateExpressions` is set.
+  const exprStack = [];
   const syntax = COMMENT_SYNTAX.get(ext);
   if (!syntax) return { code: text, structure: text, comments: "" };
 
@@ -499,6 +503,21 @@ function splitSource(text, ext) {
     const rest2 = text.substr(i, 2);
 
     if (mode === "code") {
+      if (exprStack.length) {
+        const top = exprStack[exprStack.length - 1];
+        if (c === "{") top.depth += 1;
+        else if (c === "}") {
+          if (top.depth === 0) {
+            exprStack.pop();
+            mode = "`";
+            code += c;
+            drop(c);
+            i++;
+            continue;
+          }
+          top.depth -= 1;
+        }
+      }
       if (rest2 === syntax.line || (syntax.line.length === 1 && c === syntax.line)) {
         mode = "line";
         for (let k = 0; k < syntax.line.length; k += 1) drop(text[i + k]);
@@ -571,6 +590,17 @@ function splitSource(text, ext) {
       continue;
     }
 
+    // An executable `${ ... }` inside a template literal is code, not literal text: the expression is scanned
+    // in the structural view when the caller asked for it (the audit locator); the default view is unchanged.
+    if (templateExpressions && mode === "`" && rest2 === "${") {
+      exprStack.push({ depth: 0 });
+      mode = "code";
+      code += rest2;
+      drop("$");
+      drop("{");
+      i += 2;
+      continue;
+    }
     // Inside a string literal: preserved in the code half, escapes skipped.
     if (c === "\\") {
       code += text.substr(i, 2);
@@ -3305,7 +3335,7 @@ function detectSqlConcat(files, run) {
  *
  * Use versus mention (ADR 0009). Only positions where a use can occur are searched:
  *
- *   - Test and CI paths are excluded by classification (`TEST_RE`, `AUDIT_EXCLUDED_PATH_RE`). This
+ *   - Test and CI paths are excluded by classification (`AUDIT_TEST_PATH_RE`, `AUDIT_TEST_SUFFIX_RE`, `AUDIT_EXCLUDED_PATH_RE`). This
  *     repository's own audit fixtures live under `test/` for this reason and are not
  *     self-observations.
  *   - Only code files (`isCode`) are read; Markdown, YAML and JSON never yield an observation.
@@ -3448,7 +3478,8 @@ const AUDIT_BLIND_SPOTS = [
   { id: "construct:orm-names-in-string-literals", kind: "construct", description: "Table and entity names given as string literals to an ORM or migration DSL (for example a table-name attribute or a migration builder) are blanked in the structural view and are not located." },
   { id: "construct:string-literal-ddl", kind: "construct", description: "DDL embedded in a string literal of an application language is not located: a statement that is run cannot be told from a message that mentions one without parsing the host language." },
   { id: "surface:non-code-files", kind: "surface", description: "Markdown, YAML, JSON, TOML, XML and other non-code files are never read for audit mechanisms." },
-  { id: "surface:test-helper-paths-not-recognised", kind: "surface", description: "Test and CI paths are excluded by TEST_RE plus a fixed audit-specific path list; a test helper outside both is read as ordinary code and may be reported as a mechanism." },
+  { id: "surface:test-helper-paths-not-recognised", kind: "surface", description: "Test and CI paths are excluded by the locator's own classification, not the shared TEST_RE: directories named test, tests, spec or __tests__; .test. and .spec. files; _test.go and _test.py; test_*.py at the start of a file name; a Test, Tests, .test or .tests suffix on a code file; plus a fixed audit-specific list of CI, e2e, mock and story paths. Names that merely end in those letters (Contest.java, Attest.cs) are read as code. A test helper outside all of these is read as ordinary code and may be reported as a mechanism." },
+  { id: "construct:string-interpolation-outside-js-templates", kind: "construct", description: "Expressions inside string interpolation other than JavaScript and TypeScript template literals (Python f-strings, C# interpolated strings, Kotlin and Groovy templates) are blanked with the string and not scanned; a recorder call written only there is not located." },
 ];
 
 /** Code-language extensions this tool does not read. Counted from the file list, never searched. */
@@ -3551,7 +3582,12 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     let fileHit = false;
     const fileObserved = new Map();
 
-    const structure = view.text;
+    // `${...}` in a template literal executes, so the locator scans those expressions; the shared view blanks
+    // the whole literal and is left as it is for every other detector.
+    const structure =
+      fam.family === "javascript-typescript" && raw.text.includes("${")
+        ? splitSource(raw.text, ext, { templateExpressions: true }).structure
+        : view.text;
     let newlines = null;
     const lineAt = (index) => {
       if (newlines === null) {
@@ -3595,8 +3631,13 @@ export function locateAuditSurface(files, run, surface, options = {}) {
         // MySQL writes a comment as `#`, which the SQL tokenizer does not know: a line that opens with one is
         // a comment, so DDL on it is a mention.
         if (fam.family === "sql") {
-          const lineStart = Math.max(raw.text.lastIndexOf("\n", at - 1), raw.text.lastIndexOf("\r", at - 1)) + 1;
-          if (/^[ \t]*#/.test(raw.text.slice(lineStart, at))) continue;
+          // `structure` has strings, quoted identifiers and `--`/`/* */` comments blanked, so a `#` left in the
+          // line before the match is outside them. It is a MySQL comment when it is the first thing on the
+          // line or is followed by whitespace; `#name` (a T-SQL temporary table) and the Postgres operators
+          // `#>`, `#>>`, `#-`, `##`, `#=` are not comments. `[...]` identifiers are skipped first.
+          const lineStart = Math.max(structure.lastIndexOf("\n", at - 1), structure.lastIndexOf("\r", at - 1)) + 1;
+          const before = structure.slice(lineStart, at).replace(/\[[^\]\r\n]*\]/g, (m) => " ".repeat(m.length));
+          if (/^[ \t]*#/.test(before) || /(?:^|[^#<>@\w])#(?=\s|$)/.test(before)) continue;
         }
         let kind = idiom.kind;
         if (kind === "recorder-call") {
