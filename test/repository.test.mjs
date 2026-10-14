@@ -1355,6 +1355,49 @@ test("a genesis may omit its digest (bootstrap behaviour); a successor may not",
   assert.equal(currentReview("x.bootstrap", { reviews: [genesis, successor] }), null);
 });
 
+// ---------------------------------------------------------------------------------------------
+// ST-43: a result that names a reviewer carries the asserted-identity label, whatever its disposition.
+// ---------------------------------------------------------------------------------------------
+
+test("rejected and malformed-history results carry the asserted-identity label, in JSON and in the human report", async () => {
+  const dir = await validateFixture();
+  try {
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content");
+    const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+    await writeFile(path.join(dir, "project-policy.yml"), twoRulePolicy(digest));
+    git(dir, "add", "project-policy.yml");
+    git(dir, "commit", "-qm", "policy with an approval and a rejection");
+    const run = runValidate(dir);
+    const rejected = run.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+    assert.equal(rejected.disposition, "attested-rejected");
+    assert.equal(rejected.attestation.identity, "asserted, not authenticated");
+    assert.equal(rejected.attestation.reviewedBy, "synthetic-reviewer");
+
+    const human = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir], { encoding: "utf8", windowsHide: true }).stdout;
+    const failing = human.slice(human.indexOf("Failing:"));
+    const block = failing.slice(0, failing.indexOf("\n\n"));
+    assert.ok(block.includes(REJECTED_RULE), block);
+    assert.ok(block.includes("Reviewer identities are asserted by the policy text, not authenticated."), block);
+  } finally {
+    await cleanup(dir);
+  }
+
+  const malformed = await runMalformedChain([
+    { id: "p1", status: "rejected" },
+    { id: "p2", supersedes: "no-such-event", status: "approved" },
+  ]);
+  assert.equal(malformed.result.disposition, "invalid-attestation");
+  assert.equal(malformed.result.attestation.identity, "asserted, not authenticated");
+  assert.equal(malformed.result.attestation.id, "p1");
+  assert.equal(malformed.result.attestation.reviewedBy, "synthetic-reviewer");
+
+  // No result anywhere reports a reviewer identity as authenticated.
+  for (const entry of [...malformed.report.results]) {
+    if (entry.attestation) assert.equal(entry.attestation.identity, "asserted, not authenticated", entry.ruleId);
+  }
+});
+
 test("a shallow clone that lacks the base is NOT_EVALUATED and its attestations are disregarded", async () => {
   const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
   try {
