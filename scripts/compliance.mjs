@@ -16,7 +16,7 @@
  */
 
 import { resolve } from "./catalog.mjs";
-import { currentReview, recordedRejections, reviewProblems } from "./reviews.mjs";
+import { currentReview, recordedRejections, reviewProblems, reviewsOf } from "./reviews.mjs";
 
 export const STATUS = {
   COMPLIANT: "COMPLIANT",
@@ -146,6 +146,14 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     if (attestation) {
       const hits = byRule.get(rule.id) ?? [];
       const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);
+      // Additive only: an approval whose immediate predecessor is a recorded rejection says so, so a
+      // cleared rejection is never read as an acceptance that was always there (ST-18).
+      if (verdict?.disposition === "attested" && attestation.status === "approved") {
+        const predecessor = reviewsOf(record).find((review) => review?.id === attestation.supersedes);
+        if (predecessor?.status === "rejected") {
+          verdict.message = `${verdict.message} (attested, successor to rejected event ${predecessor.id})`;
+        }
+      }
       if (verdict?.disposition === "not-evaluated" && verdict.freshness) {
         nonEstablishing = verdict;
       } else if (verdict) {

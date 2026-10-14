@@ -77,6 +77,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseYaml } from "./yaml.mjs";
+import { currentReview } from "./reviews.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -154,10 +155,10 @@ export function parseValidatorLog(raw) {
 /**
  * The rules a policy currently records as reviewed and rejected.
  *
- * Each rule's live review is the one no other review supersedes, so a rejection later re-reviewed and
- * approved is absent without anyone maintaining a list. Returns null when the policy cannot be read
- * or has no attestations — an unreadable policy establishes nothing, and must not read as "no
- * rejections are expected".
+ * Each rule's current review comes from the rule-aware review-history resolver, so a rejection later
+ * re-reviewed and approved is absent without duplicating chain validation here. Returns null when the
+ * policy or any recorded history cannot establish a single valid terminal review - unreadable or
+ * invalid evidence must not read as "no rejections are expected".
  */
 export function establishedRejectionsFrom(policy) {
   const attestations = policy?.attestations;
@@ -165,10 +166,12 @@ export function establishedRejectionsFrom(policy) {
 
   const rejected = [];
   for (const [rule, node] of Object.entries(attestations)) {
-    const reviews = Array.isArray(node?.reviews) ? node.reviews : [];
-    const superseded = new Set(reviews.map((r) => r?.supersedes).filter(Boolean));
-    const live = reviews.filter((r) => !superseded.has(r?.id));
-    if (live.some((r) => r?.status === "rejected")) rejected.push(rule);
+    const terminal = currentReview(rule, node);
+    if (!terminal) return null;
+    // Only the two recorded dispositions are understood. Anything else (bogus, null) is not a
+    // clearance: it establishes nothing, so no expectation is guessed.
+    if (terminal.status === "rejected") rejected.push(rule);
+    else if (terminal.status !== "approved") return null;
   }
   return rejected.sort();
 }

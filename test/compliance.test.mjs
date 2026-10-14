@@ -1181,3 +1181,47 @@ test("the exception on a manual-review rule reaches the validate CLI output and 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("an approval that succeeds a recorded rejection says so, and an ordinary approval does not", () => {
+  const base = {
+    reviewedBy: "project-owner",
+    reviewedAt: "2026-08-09",
+    evidence: "Reviewed the implementation and its tests.",
+  };
+  const rejected = { id: "r1", status: "rejected", ...base };
+  const approved = {
+    id: "r2",
+    supersedes: "r1",
+    status: "approved",
+    ...base,
+    reviewedAt: "2026-08-10",
+    reviewerRole: "synthetic-role",
+    reviewedAgainst: {
+      revision: "1111111111111111111111111111111111111111",
+      tree: "2222222222222222222222222222222222222222",
+      digest: "abcdef1234567890",
+      paths: ["a.mjs"],
+    },
+  };
+  const messageFor = (reviews) =>
+    run({ policy: policy({ attestations: { "ai.propose-execute": { reviews } } }) }).results.find(
+      (r) => r.ruleId === "ai.propose-execute",
+    );
+
+  const cleared = messageFor([rejected, approved]);
+  assert.equal(cleared.disposition, "attested");
+  assert.match(cleared.message, /^Attested by project-owner on 2026-08-10: /);
+  assert.match(cleared.message, /\(attested, successor to rejected event r1\)$/);
+
+  const ordinary = messageFor([{ id: "r1", status: "approved", ...base }]);
+  assert.equal(ordinary.disposition, "attested");
+  assert.doesNotMatch(ordinary.message, /successor to rejected event/);
+
+  // approved -> approved: the predecessor is an approval, so no rejection is mentioned.
+  const renewed = messageFor([{ id: "r1", status: "approved", ...base }, approved]);
+  assert.equal(renewed.disposition, "attested");
+  assert.doesNotMatch(renewed.message, /successor to rejected event/);
+
+  const stillRejected = messageFor([{ id: "r1", status: "approved", ...base }, { ...approved, status: "rejected" }]);
+  assert.equal(stillRejected.disposition, "attested-rejected");
+});
