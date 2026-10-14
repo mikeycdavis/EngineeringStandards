@@ -431,8 +431,9 @@ same code and the same override flag. On `OUT_OF_SCOPE` (not overridden) or `IND
 exits `2`, writes nothing, and names the signals; `--dry-run` runs the same check and reports the same
 refusal. These are pre-write refusals; the one post-write failure class is the race in P6. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
 unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
-classify and write exactly as before (a test), **except for the one bounded exception stated
-under "Bounded compatibility exception"**.
+classify and write exactly as before (a test) for creation, preservation and directory artifacts;
+the existing-artifact overwrite path is **pending owner confirmation** (see "Pending owner
+confirmation: overwrite no longer shares the inode").
 
 *Clarification (review of #105; not a new owner decision).* What `init` writes to stdout on a refusal
 is fixed by the behaviour `init` already has when it cannot run: `runInit` writes the diagnostic to
@@ -1023,8 +1024,9 @@ repository by naming exactly what is overridden.
 will miss a repository frozen in a way it does not list, and growing it is a reviewed change. A
 repository whose `README.md` is a symlink, or whose `FROZEN.md` is hand-written without a listed
 phrase, cannot be adopted until the owner changes it. An overwrite of an existing artifact
-(`--force-overwrite`) no longer shares the inode with hard links or preserves inode metadata other
-than permission bits (see "Bounded compatibility exception").
+(`--force-overwrite`) would no longer share the inode with hard links or preserve inode metadata
+other than permission bits, **if the owner accepts it** (pending; see "Pending owner confirmation:
+overwrite no longer shares the inode").
 
 **Commits the project to.** Keeping `INDETERMINATE` un-overridable; never naming a repository in the
 implementation (acceptance criterion 3 of #16); treating the vocabulary and text rules in this record
