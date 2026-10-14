@@ -3607,15 +3607,20 @@ export function locateAuditSurface(files, run, surface, options = {}) {
         }
         const o = { file: r, line: lineAt(at), kind, identifier, family: fam.family, idiom: idiom.id };
         fileHit = true;
-        fileObserved.set(`${o.file}\u0000${o.line}\u0000${o.kind}\u0000${o.identifier}`, o);
+        // Keyed by OFFSET, not by line: two occurrences of one identifier on a line (minified or generated
+        // code) are two constructs. Only the same occurrence matched by two idioms is merged.
+        fileObserved.set(`${at}\u0000${o.kind}\u0000${o.identifier}`, { at, o });
       }
     }
     // Files arrive in codepoint order, so a file's observations (sorted here) already follow every earlier
     // file's: the report order is the processing order, and only the first `maxObserved` are retained.
     if (fileObserved.size) {
-      const inFile = [...fileObserved.values()].sort(
-        (a, b) => a.line - b.line || byCodepoint(a.kind, b.kind) || byCodepoint(a.identifier, b.identifier),
-      );
+      const inFile = [...fileObserved.values()]
+        .sort(
+          (a, b) =>
+            a.o.line - b.o.line || byCodepoint(a.o.kind, b.o.kind) || byCodepoint(a.o.identifier, b.o.identifier) || a.at - b.at,
+        )
+        .map((e) => e.o);
       observedCount += inFile.length;
       observedFiles.push(r);
       for (const o of inFile) if (observed.length < maxObserved) observed.push(o);

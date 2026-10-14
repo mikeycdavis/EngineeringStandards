@@ -719,3 +719,33 @@ test("the reporter caps the payload at 500 and still reports the exact total and
       assert.match(f.message, /^521 audit-named construct\(s\) were observed in 2 /);
     },
   ));
+
+// --- Codex P2 on e2bff48: occurrences on one line are separate constructs -------------------------
+
+test("the same identifier twice on one line is two observations, and the count says so", () =>
+  withRepo({ "src/a.js": "recordAuditEvent(a); recordAuditEvent(b);\n" }, (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.equal(f.detail.observedCount, 2);
+    assert.deepEqual(sites(f), ["src/a.js:1 recorder-call recordAuditEvent", "src/a.js:1 recorder-call recordAuditEvent"]);
+    assert.match(f.message, /^2 audit-named construct\(s\)/);
+  }));
+
+test("different identifiers on one line are each observed", () =>
+  withRepo({ "src/a.js": "recordAuditEvent(a); auditLogger.info(b);\n" }, (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.equal(f.detail.observedCount, 2);
+  }));
+
+test("a minified one-line file with three occurrences counts three, and the bound keeps exact totals", async () => {
+  const text = "x=1;recordAuditEvent(a);y=2;recordAuditEvent(b);z=3;recordAuditEvent(c);\n";
+  await withRepo({ "src/min.js": text, "src/z.js": "class AuditZ {}\n" }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.equal(f.detail.observedCount, 4);
+    assert.equal(f.detail.observed.length, 4);
+    const s = await collectSurface(dir);
+    const cut = locateAuditSurface(s.files, s.run, s, { maxObserved: 2 });
+    assert.equal(cut.observedCount, 4);
+    assert.equal(cut.observed.length, 2);
+    assert.deepEqual(cut.observedFiles, ["src/min.js", "src/z.js"]);
+  });
+});
