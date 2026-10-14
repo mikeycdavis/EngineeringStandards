@@ -19,6 +19,7 @@
  * an argument (ADR 0014).
  */
 
+import { humanErr, humanOut } from "./display-safe.mjs";
 import { pathToFileURL } from "node:url";
 
 const EXIT_REFUSED = 1;
@@ -218,7 +219,7 @@ export function evidenceBlock(evidence) {
 async function main(argv) {
   const mode = argv[0] ?? "decide";
   if (!["decide", "pr-body"].includes(mode)) {
-    process.stderr.write("usage: node scripts/submit-gate.mjs <decide|pr-body>  (JSON on stdin)\n");
+    humanErr("usage: node scripts/submit-gate.mjs <decide|pr-body>  (JSON on stdin)\n");
     return EXIT_INVOCATION;
   }
 
@@ -228,16 +229,16 @@ async function main(argv) {
   try {
     input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "null");
   } catch (err) {
-    process.stderr.write(`submit-gate: could not parse stdin as JSON: ${err.message}\n`);
+    humanErr(`submit-gate: could not parse stdin as JSON: ${err.message}\n`);
     return EXIT_INVOCATION;
   }
   if (!input || typeof input !== "object") {
-    process.stderr.write("submit-gate: expected a JSON object on stdin.\n");
+    humanErr("submit-gate: expected a JSON object on stdin.\n");
     return EXIT_INVOCATION;
   }
 
   if (mode === "pr-body") {
-    process.stdout.write(`${evidenceBlock(input)}\n`);
+    humanOut(`${evidenceBlock(input)}\n`);
     return 0;
   }
 

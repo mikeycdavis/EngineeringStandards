@@ -71,6 +71,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
+import { humanLog } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -263,14 +264,14 @@ async function main(argv) {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else if (result.broken.length === 0) {
-    console.log(`OK — ${result.checked} relative links across ${result.files} files all resolve.`);
-    for (const u of result.unread) console.log(`  (not read: ${u.file} — ${u.reason})`);
+    humanLog(`OK — ${result.checked} relative links across ${result.files} files all resolve.`);
+    for (const u of result.unread) humanLog(`  (not read: ${u.file} — ${u.reason})`);
   } else {
-    console.log(`${result.broken.length} of ${result.checked} relative links do not resolve:\n`);
+    humanLog(`${result.broken.length} of ${result.checked} relative links do not resolve:\n`);
     for (const b of result.broken) {
-      console.log(`  ${b.file}:${b.line}`);
-      console.log(`    target   ${b.target}`);
-      console.log(`    resolved ${b.resolved}  (${b.rule} rule)\n`);
+      humanLog(`  ${b.file}:${b.line}`);
+      humanLog(`    target   ${b.target}`);
+      humanLog(`    resolved ${b.resolved}  (${b.rule} rule)\n`);
     }
   }
   // Unread files do not fail the run on their own — nothing about them says a link is broken — but

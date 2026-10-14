@@ -55,6 +55,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
+import { displaySafeText, humanErr, humanOut } from "./display-safe.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -439,12 +440,12 @@ async function main(argv) {
     else if (a === "--issues") issuesFile = argv[++i];
     else if (a === "--json") json = true;
     else {
-      process.stderr.write(`Unknown argument: ${a}\nUsage: ownership.mjs [--root dir] --issues <open-issues.json> [--json]\n`);
+      humanErr(`Unknown argument: ${a}\nUsage: ownership.mjs [--root dir] --issues <open-issues.json> [--json]\n`);
       return EXIT_NOT_EVALUATED;
     }
   }
   if (!issuesFile) {
-    process.stdout.write(
+    humanOut(
       "NOT_EVALUATED: no open-issue snapshot was supplied, so no ownership claim can be made.\n" +
         "Supply one: gh issue list -R <owner/repo> --state open --limit 500 --json number,state > issues.json\n" +
         "then: node scripts/ownership.mjs --issues issues.json\n",
@@ -461,10 +462,10 @@ async function main(argv) {
     const { entries, malformed, containers } = readUnscoped(root);
     result = checkOwnership({ openIssues, claims, unscoped: entries, malformed, containers, planProblems: owned.problems });
   } catch (e) {
-    process.stderr.write(`NOT_EVALUATED: ${e.message}\n`);
+    humanErr(`NOT_EVALUATED: ${e.message}\n`);
     return EXIT_NOT_EVALUATED;
   }
-  process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : `${render(result, claims.length)}\n`);
+  process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : displaySafeText(`${render(result, claims.length)}\n`));
   return result.ok ? EXIT_OK : EXIT_VIOLATION;
 }
 

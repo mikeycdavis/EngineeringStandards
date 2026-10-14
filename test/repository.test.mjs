@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -1762,11 +1762,12 @@ test("control characters in policy strings are escaped in human, JSON and attest
 // ---------------------------------------------------------------------------------------------
 
 const ST41_ESC = String.fromCharCode(27);
+const BS = String.fromCharCode(92);
 const ST41_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
 const ST41_HOSTILE_REVIEWER = `evil${ST41_ESC}[31mRED${ST41_ESC}[0m`;
 const ST41_HOSTILE_EVIDENCE = `ev${ST41_ESC}[2Jidence`;
 
-async function st41Fixture({ status, mutateAfter }) {
+async function st41Fixture({ status, mutateAfter, revision, extra }) {
   const dir = await validateFixture();
   git(dir, "add", "reviewed.txt");
   git(dir, "commit", "-qm", "reviewed content");
@@ -1786,11 +1787,13 @@ async function st41Fixture({ status, mutateAfter }) {
     `        reviewedAt: "2026-10-01"`,
     `        evidence: "${ST41_HOSTILE_EVIDENCE}"`,
     `        reviewedAgainst:`,
+    ...(revision ? [`          revision: "${revision}"`] : []),
     `          digestAlgorithm: "${DIGEST_ALGORITHM}"`,
     `          digest: "${digest}"`,
     `          source: git`,
     `          paths:`,
     `            - "reviewed.txt"`,
+    ...(extra ?? []),
   ];
   await writeFile(path.join(dir, "project-policy.yml"), `${lines.join("\n")}\n`);
   git(dir, "add", "project-policy.yml");
@@ -1829,3 +1832,69 @@ for (const site of [
     }
   });
 }
+
+// ST-41 class repair: every human-readable sink, not only the ones a review named. A schema-valid but
+// hostile `revision`, and schema diagnostics that echo an unknown property name, must be neutral too.
+
+function st41Run(args) {
+  const result = spawnSync(process.execPath, args, { encoding: "utf8", windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  return { code: result.status, text: `${result.stdout}${result.stderr}` };
+}
+
+test("ST-41: the attestations inventory does not print a hostile revision raw", async () => {
+  const dir = await st41Fixture({ status: "approved", revision: `rev${ST41_ESC}[31mBAD` });
+  try {
+    const { text } = st41Run([path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${dir}`]);
+    assert.ok(!ST41_CONTROL.test(text), "raw control character in the attestations inventory");
+    assert.ok(text.includes(`rev${BS}u001b[31mBAD`), text);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("ST-41: a schema-invalid policy with a hostile unknown property name is neutral in validate and the policy command", async () => {
+  const BAD_KEY = `"bad${ST41_ESC}[31mkey": 1`; // a quoted key holding a raw ESC
+  const dir = await st41Fixture({ status: "approved", extra: [BAD_KEY] });
+  try {
+    const file = path.join(dir, "project-policy.yml");
+    const human = st41Run([STANDARDS_CLI, "validate", dir]);
+    assert.equal(human.code, 2, human.text);
+    assert.ok(!ST41_CONTROL.test(human.text), "raw control character in the validate output for a schema-invalid policy");
+    assert.ok(human.text.includes(`bad${BS}u001b[31mkey`), human.text);
+    const policyCli = st41Run([path.join(REPO_ROOT, "scripts", "policy.mjs"), file]);
+    assert.ok(!ST41_CONTROL.test(policyCli.text), "raw control character in the policy command output");
+    assert.ok(policyCli.text.includes(`bad${BS}u001b[31mkey`), policyCli.text);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("ST-41: displaySafeText keeps layout and escapes the rest, and every raw write in scripts/ is accounted for", async () => {
+  const { displaySafeText } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "display-safe.mjs")).href);
+  assert.equal(displaySafeText("a\nb\tc"), "a\nb\tc");
+  assert.equal(displaySafeText(`x${ST41_ESC}[0m`), `x${BS}u001b[0m`);
+  assert.equal(displaySafeText("cr\rline"), `cr${BS}rline`);
+  assert.equal(displaySafeText(`sep${String.fromCharCode(0x2028)}`), `sep${BS}u2028`);
+  // Class guard. A write to stdout/stderr in scripts/ goes through the display-safe chokepoint
+  // (humanOut, humanErr, humanLog, emitText) or is one of these JSON-bearing writes, whose bytes come from
+  // the serializer and must not change. A new raw write fails here until it is routed or justified.
+  const RAW_ALLOWED = {
+    "attestations.mjs": 2,
+    "ci-triage.mjs": 1,
+    "fidelity.mjs": 1,
+    "inventory.mjs": 1,
+    "links.mjs": 1,
+    "ownership.mjs": 1,
+    "pipeline.mjs": 1,
+    "policy.mjs": 1,
+    "standards.mjs": 1,
+    "submit-gate.mjs": 1,
+  };
+  const found = {};
+  for (const name of readdirSync(path.join(REPO_ROOT, "scripts")).filter((n) => n.endsWith(".mjs") && n !== "display-safe.mjs")) {
+    const text = readFileSync(path.join(REPO_ROOT, "scripts", name), "utf8");
+    const count = (text.match(/process\.std(?:out|err)\.write\(|console\.(?:log|error|warn|info)\(/g) ?? []).length;
+    if (count > 0) found[name] = count;
+  }
+  assert.deepEqual(found, RAW_ALLOWED);
+});

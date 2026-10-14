@@ -71,6 +71,7 @@
  *   node scripts/ci-triage.mjs --sha <commit-sha> [--json]
  *   node scripts/ci-triage.mjs --branch <branch-name> [--json]
  */
+import { displaySafeText, humanErr } from "./display-safe.mjs";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -662,19 +663,19 @@ export function main(argv) {
   const json = argv.includes("--json");
   const target = parseTarget(argv);
   if (target.error) {
-    process.stderr.write(`${target.error}\n`);
-    process.stderr.write("usage: node scripts/ci-triage.mjs <pr-number> | --sha <commit> | --branch <name> [--json]\n");
+    humanErr(`${target.error}\n`);
+    humanErr("usage: node scripts/ci-triage.mjs <pr-number> | --sha <commit> | --branch <name> [--json]\n");
     return EXIT[INDETERMINATE];
   }
 
   const observation = extractEvidence(target);
   if (observation.error) {
-    process.stderr.write(`${observation.error}\n`);
+    humanErr(`${observation.error}\n`);
     return EXIT[INDETERMINATE];
   }
 
   const result = classify(observation);
-  process.stdout.write(json ? JSON.stringify({ ...observation, ...result }, null, 2) + "\n" : render(observation, result));
+  process.stdout.write(json ? JSON.stringify({ ...observation, ...result }, null, 2) + "\n" : displaySafeText(render(observation, result)));
   return EXIT[result.verdict];
 }
 

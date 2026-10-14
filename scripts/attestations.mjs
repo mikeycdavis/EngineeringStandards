@@ -19,6 +19,7 @@
  * Usage: node scripts/attestations.mjs [--dir=<path>] [--json]
  */
 
+import { humanErr, humanOut } from "./display-safe.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,13 +68,13 @@ try {
     };
     if (JSON_OUT) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     else {
-      process.stderr.write(
+      humanErr(
         `history integrity: VIOLATED - ${displaySafe(missing.reason)}\nNo attestation is created, listed as valid or renewed.\n`,
       );
     }
     process.exit(EXIT_FINDINGS);
   }
-  process.stderr.write(`project-policy.yml could not be read: ${displaySafe(error.message)}\n`);
+  humanErr(`project-policy.yml could not be read: ${displaySafe(error.message)}\n`);
   process.exit(EXIT_INVOCATION);
 }
 
@@ -159,7 +160,7 @@ const preflight = await reviewHistoryPreflight({ repositoryPath: root, policyPat
 
 if (MIGRATE) {
   if (!preflight.effective) {
-    process.stderr.write(
+    humanErr(
       `Refusing to migrate: review-history integrity is ${preflight.status.toUpperCase()}: ${displaySafe(preflight.reason)}
 ` +
         `No attestation is created, listed as valid or renewed until the history is verified.
@@ -171,12 +172,12 @@ if (MIGRATE) {
   const original = await readFile(file, "utf8");
   const migrated = migrateText(original);
   if (migrated === original) {
-    process.stdout.write("Already in review-event form; nothing to migrate.\n");
+    humanOut("Already in review-event form; nothing to migrate.\n");
     process.exit(EXIT_OK);
   }
   const { writeFile } = await import("node:fs/promises");
   await writeFile(file, migrated);
-  process.stdout.write("project-policy.yml migrated to review events. Verify with npm run policy.\n");
+  humanOut("project-policy.yml migrated to review events. Verify with npm run policy.\n");
   process.exit(EXIT_OK);
 }
 
@@ -291,8 +292,8 @@ if (JSON_OUT) {
   );
 } else {
   const out = [];
-  out.push(`${rows.length} attestation(s) in ${root}`);
-  if (!repo.available) out.push(`  repository content unavailable: ${repo.reason}`);
+  out.push(`${rows.length} attestation(s) in ${displaySafe(root)}`);
+  if (!repo.available) out.push(`  repository content unavailable: ${displaySafe(repo.reason)}`);
   out.push(`  history integrity: ${preflight.status.toUpperCase()}${preflight.reason ? ` - ${displaySafe(preflight.reason)}` : ""}`);
   if (!preflight.effective) out.push("  No attestation is listed as current or valid while history integrity is not verified.");
   out.push(`  ${IDENTITY_NOTE}`);
@@ -309,12 +310,12 @@ if (JSON_OUT) {
   out.push("");
   for (const r of rows) {
     out.push(`  ${displaySafe(r.rule)}`);
-    out.push(`    disposition: ${r.disposition}`);
+    out.push(`    disposition: ${displaySafe(r.disposition)}`);
     out.push(`    reviewer:    ${displaySafe(r.reviewedBy ?? "?")} (asserted, not authenticated)`);
-    out.push(`    algorithm:   ${r.algorithm ?? "(none recorded)"}`);
-    out.push(`    freshness:   ${r.freshness}`);
-    out.push(`    reviewed:    ${displaySafe(r.reviewedAt ?? "?")}${r.revision ? ` at ${r.revision}` : ""}`);
-    out.push(`    action:      ${r.action}`);
+    out.push(`    algorithm:   ${displaySafe(r.algorithm ?? "(none recorded)")}`);
+    out.push(`    freshness:   ${displaySafe(r.freshness)}`);
+    out.push(`    reviewed:    ${displaySafe(r.reviewedAt ?? "?")}${r.revision ? ` at ${displaySafe(r.revision)}` : ""}`);
+    out.push(`    action:      ${displaySafe(r.action)}`);
     out.push("");
   }
   if (violations.length) {
@@ -325,7 +326,7 @@ if (JSON_OUT) {
   out.push("  A digest-algorithm migration may classify existing provenance. It may not upgrade the");
   out.push("  evidentiary strength of that provenance without a new review — which is why no digest");
   out.push("  here is recomputed, and why nothing is ever auto-upgradable.");
-  process.stdout.write(out.join("\n") + "\n");
+  humanOut(out.join("\n") + "\n");
 }
 
 process.exit(violations.length ? EXIT_FINDINGS : EXIT_OK);

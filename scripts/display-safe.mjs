@@ -15,3 +15,21 @@ export function displaySafe(value) {
     return `\\u${character.codePointAt(0).toString(16).padStart(4, "0")}`;
   });
 }
+
+/**
+ * Human-readable output chokepoint. A whole block of text is written with every control character
+ * escaped except the line feed and the tab that lay the text out. Per-field `displaySafe` still applies
+ * where one value must not be able to forge a line (it escapes the line feed too); this is the second
+ * layer, so a string that reaches a terminal or CI log without its own call is still neutralised.
+ * JSON output does not go through here: the serializer escapes it and its bytes must not change.
+ */
+export function displaySafeText(value) {
+  return String(value).replace(CONTROL, (character) => {
+    if (character === "\n" || character === "\t") return character;
+    return displaySafe(character);
+  });
+}
+
+export const humanOut = (text) => process.stdout.write(displaySafeText(text));
+export const humanErr = (text) => process.stderr.write(displaySafeText(text));
+export const humanLog = (text = "") => process.stdout.write(`${displaySafeText(text)}\n`);

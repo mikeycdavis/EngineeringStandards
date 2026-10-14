@@ -35,7 +35,7 @@ import {
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
-import { displaySafe } from "./display-safe.mjs";
+import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -725,7 +725,7 @@ function checkInvocation({ subcommand, maxTotalReadBytes }) {
     return subcommand ? EXIT_OK : EXIT_INVOCATION;
   }
   if (!COMMANDS.has(subcommand)) {
-    process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
+    humanErr(`standards: unknown subcommand '${subcommand}'\n\n`);
     usage();
     return EXIT_INVOCATION;
   }
@@ -735,7 +735,7 @@ function checkInvocation({ subcommand, maxTotalReadBytes }) {
   if (maxTotalReadBytes !== undefined) {
     const bytes = Number(maxTotalReadBytes);
     if (!Number.isFinite(bytes) || bytes <= 0) {
-      process.stderr.write(
+      humanErr(
         `standards: --max-total-read-bytes must be a positive number of bytes, got '${maxTotalReadBytes}'.\n`,
       );
       return EXIT_INVOCATION;
@@ -776,7 +776,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   try {
     report = await planInit(target, { mode: modeFlag, overwrite });
   } catch (error) {
-    process.stderr.write(`standards init: ${error.message}\n`);
+    humanErr(`standards init: ${error.message}\n`);
     return EXIT_INVOCATION;
   }
 
@@ -787,7 +787,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   if (json) {
     emit(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
   } else {
-    emit(renderInit(report, { dryRun }) + "\n");
+    emitText(renderInit(report, { dryRun }) + "\n");
   }
 
   // A conflict is unfinished work, not a failure of the command: nothing was changed and the
@@ -3530,6 +3530,8 @@ export async function main(args) {
     written.push(String(s));
     return process.stdout.write(s);
   };
+  // Human-readable text goes through the display-safe chokepoint; JSON goes through `emit` unchanged.
+  const emitText = (s) => emit(displaySafeText(s));
   let run = null;
   let surface = null;
   const done = (exitCode) => ({ exitCode, stdout: written.join(""), run, surface });
@@ -3542,7 +3544,7 @@ export async function main(args) {
 
   const target = cli.dirFlag ?? cli.positional ?? ".";
   if (!existsSync(target)) {
-    process.stderr.write(`standards: no such directory: ${target}\n`);
+    humanErr(`standards: no such directory: ${target}\n`);
     return done(EXIT_INVOCATION);
   }
   const root = cli.dirFlag ? path.resolve(cli.dirFlag) : findRoot(target);
@@ -3748,8 +3750,8 @@ export async function main(args) {
         ) + "\n",
       );
     } else {
-      emit(renderHuman(files.length, evidenceSurface, run) + "\n");
-      emit(
+      emitText(renderHuman(files.length, evidenceSurface, run) + "\n");
+      emitText(
         "\nThis is evidence, not a verdict. Run `standards validate` for a compliance status.\n",
       );
     }
@@ -3822,7 +3824,7 @@ export async function main(args) {
         ) + "\n",
       );
     } else {
-      process.stderr.write(
+      humanErr(
         `VERSION_MISMATCH\n  ${message}\n\n` +
           `  Resolving a historical rule set is not implemented (Standard 21 R5), so this run cannot\n` +
           `  evaluate ${declaredVersion}. Either execute the framework at ${declaredVersion}, or update\n` +
@@ -4110,7 +4112,7 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emit(renderVerdict(report, policy) + "\n");
+    emitText(renderVerdict(report, policy) + "\n");
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this
@@ -4120,14 +4122,14 @@ export async function main(args) {
       const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
       const current = repositoryDigest(root, against?.paths ?? []);
       if (!current.ok) {
-        emit(
+        emitText(
           `\n  attestation ${ruleId}: no digest can be offered — ${current.missing.join(", ")} ` +
             `has no committed identity.\n`,
         );
         continue;
       }
-      emit(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
-      emit(
+      emitText(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
+      emitText(
         `  Record it as reviewedAgainst.digest with digestAlgorithm: ${DIGEST_ALGORITHM}.\n`,
       );
     }

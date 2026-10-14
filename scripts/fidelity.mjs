@@ -33,6 +33,7 @@
  *   node scripts/fidelity.mjs --json    machine-readable
  */
 
+import { humanOut } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -194,5 +195,5 @@ if (failures.length > 0) {
 } else {
   out.push("Every block claimed as source text appears in the source.");
 }
-process.stdout.write(out.join("\n") + "\n");
+humanOut(out.join("\n") + "\n");
 process.exit(failures.length === 0 ? 0 : 1);

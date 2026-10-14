@@ -28,6 +28,7 @@
  * unchanged by this file's existence.
  */
 
+import { humanErr } from "./display-safe.mjs";
 import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -45,7 +46,7 @@ function main() {
     .sort();
 
   if (files.length === 0) {
-    process.stderr.write(
+    humanErr(
       `No test files found in ${dir}.\n` +
         "A suite that runs nothing must not report success; this is exit 2 rather than a green run.\n",
     );
@@ -58,7 +59,7 @@ function main() {
   });
 
   if (result.error) {
-    process.stderr.write(`Could not start the test runner: ${result.error.message}\n`);
+    humanErr(`Could not start the test runner: ${result.error.message}\n`);
     process.exit(EXIT_INVOCATION);
   }
   // A signal death has no exit status; treating it as 0 would report a killed suite as a passing one.
