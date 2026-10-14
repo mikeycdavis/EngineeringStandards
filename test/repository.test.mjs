@@ -1622,6 +1622,62 @@ test("a malformed chain that records no rejection is NOT_EVALUATED and never a p
   assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
 });
 
+test("the asserted-identity label is pinned exactly on every surface", async () => {
+  const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
+  try {
+    const run = runValidate(fx.work);
+    assert.equal(run.rule.disposition, "attested");
+    assert.equal(run.rule.attestation.identity, IDENTITY_LABEL);
+    assert.ok(run.finding.message.includes(IDENTITY_NOTE_TEXT), run.finding.message);
+
+    const human = spawnSync(process.execPath, [STANDARDS_CLI, "validate", fx.work], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.ok(human.stdout.includes("Reviewer identities are asserted by the policy text, not authenticated."));
+
+    const inventory = runAttestations(fx.work);
+    assert.equal(inventory.json.identityNote, IDENTITY_NOTE_TEXT);
+    for (const row of inventory.json.attestations) assert.equal(row.identity, IDENTITY_LABEL);
+    const table = spawnSync(process.execPath, [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${fx.work}`], {
+      encoding: "utf8",
+    });
+    assert.ok(table.stdout.includes(IDENTITY_NOTE_TEXT));
+    assert.ok(table.stdout.includes("(asserted, not authenticated)"));
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
+test("replacing the attestations section with a flow mapping yields no verdict and no attestation command output as valid", async () => {
+  const fx = await originFixture((digest) => twoRulePolicy(digest));
+  try {
+    git(fx.work, "checkout", "-q", "-b", "feature/flow-empty");
+    const original = readFileSync(path.join(fx.work, "project-policy.yml"), "utf8");
+    const mutated = `${policyWithoutAttestations(original)}attestations: {}\n`;
+    await writeFile(path.join(fx.work, "project-policy.yml"), mutated);
+    commitAll(fx.work, "replace attestations with an empty flow mapping");
+
+    const validate = spawnSync(process.execPath, [STANDARDS_CLI, "validate", fx.work, "--json"], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.equal(validate.status, 2, "a policy that cannot be parsed produces no verdict");
+    assert.ok(!/"disposition":\s*"attested"/.test(validate.stdout), "an approval was reported as established");
+
+    const inventory = runAttestations(fx.work);
+    assert.equal(inventory.status, 2, inventory.stderr);
+    assert.equal(inventory.json, null);
+    const migrate = runAttestations(fx.work, "--migrate");
+    assert.notEqual(migrate.status, 0);
+    assert.equal(await readFile(path.join(fx.work, "project-policy.yml"), "utf8"), mutated);
+  } finally {
+    await cleanup(fx.root);
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // ST-41: policy-controlled text is escaped before it reaches a message a person reads. A control
 // character in an id, a reviewer or a date must never be written raw, and escaping changes no verdict.
@@ -1696,60 +1752,4 @@ test("control characters in policy strings are escaped in human, JSON and attest
   assert.ok(!CONTROL.test(badDate.human), "raw control character in the human output for an invalid date");
   assert.ok(!CONTROL.test(JSON.stringify(badDate.run.report)), "raw control character in the JSON report for an invalid date");
   assert.ok(!CONTROL.test(badDate.tableText), "raw control character in the attestations output for an invalid date");
-});
-
-test("the asserted-identity label is pinned exactly on every surface", async () => {
-  const fx = await originFixture((digest) => policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]));
-  try {
-    const run = runValidate(fx.work);
-    assert.equal(run.rule.disposition, "attested");
-    assert.equal(run.rule.attestation.identity, IDENTITY_LABEL);
-    assert.ok(run.finding.message.includes(IDENTITY_NOTE_TEXT), run.finding.message);
-
-    const human = spawnSync(process.execPath, [STANDARDS_CLI, "validate", fx.work], {
-      encoding: "utf8",
-      windowsHide: true,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    assert.ok(human.stdout.includes("Reviewer identities are asserted by the policy text, not authenticated."));
-
-    const inventory = runAttestations(fx.work);
-    assert.equal(inventory.json.identityNote, IDENTITY_NOTE_TEXT);
-    for (const row of inventory.json.attestations) assert.equal(row.identity, IDENTITY_LABEL);
-    const table = spawnSync(process.execPath, [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${fx.work}`], {
-      encoding: "utf8",
-    });
-    assert.ok(table.stdout.includes(IDENTITY_NOTE_TEXT));
-    assert.ok(table.stdout.includes("(asserted, not authenticated)"));
-  } finally {
-    await cleanup(fx.root);
-  }
-});
-
-test("replacing the attestations section with a flow mapping yields no verdict and no attestation command output as valid", async () => {
-  const fx = await originFixture((digest) => twoRulePolicy(digest));
-  try {
-    git(fx.work, "checkout", "-q", "-b", "feature/flow-empty");
-    const original = readFileSync(path.join(fx.work, "project-policy.yml"), "utf8");
-    const mutated = `${policyWithoutAttestations(original)}attestations: {}\n`;
-    await writeFile(path.join(fx.work, "project-policy.yml"), mutated);
-    commitAll(fx.work, "replace attestations with an empty flow mapping");
-
-    const validate = spawnSync(process.execPath, [STANDARDS_CLI, "validate", fx.work, "--json"], {
-      encoding: "utf8",
-      windowsHide: true,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    assert.equal(validate.status, 2, "a policy that cannot be parsed produces no verdict");
-    assert.ok(!/"disposition":\s*"attested"/.test(validate.stdout), "an approval was reported as established");
-
-    const inventory = runAttestations(fx.work);
-    assert.equal(inventory.status, 2, inventory.stderr);
-    assert.equal(inventory.json, null);
-    const migrate = runAttestations(fx.work, "--migrate");
-    assert.notEqual(migrate.status, 0);
-    assert.equal(await readFile(path.join(fx.work, "project-policy.yml"), "utf8"), mutated);
-  } finally {
-    await cleanup(fx.root);
-  }
 });
