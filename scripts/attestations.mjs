@@ -231,12 +231,12 @@ const rows = entries.flatMap(([ruleId, record]) => {
         freshness === FRESHNESS.fresh
           ? "none"
           : freshness === FRESHNESS.legacyUnverifiable
-            ? "human re-review required — record a new digest, never recompute the old one"
+            ? "human re-review required - record a new digest, never recompute the old one"
             : freshness === FRESHNESS.stale
-              ? "human re-review required — reviewed content changed"
+              ? "human re-review required - reviewed content changed"
               : freshness === FRESHNESS.evidenceUnavailable
-                ? "repository evidence unavailable — establish it, then re-review"
-                : "no digest recorded — record one to make staleness detectable",
+                ? "repository evidence unavailable - establish it, then re-review"
+                : "no digest recorded - record one to make staleness detectable",
     };
   });
 });
