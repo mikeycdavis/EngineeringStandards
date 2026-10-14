@@ -666,3 +666,56 @@ test("an audit-named identifier in a file that already has an observation is not
       assert.match(spot.description, /already hold an observation are not checked for further unclassified identifiers/);
     },
   ));
+
+// --- Codex findings on 03d44ff: test-suffix boundary, bounded retention ----------------------------
+
+test("a test-file suffix is an intentional one: Contest, Latest and Attest are code, FooTest and foo.test are tests", () =>
+  withRepo(
+    {
+      "src/Contest.java": "class AuditContest {}\n",
+      "src/Latest.ts": "class AuditLatest {}\n",
+      "src/Attest.cs": "class AuditAttest {}\n",
+      "src/contest_x.py": "class AuditContestPy: pass\n",
+      "src/FooTest.java": "class AuditInFooTest {}\n",
+      "src/Foo.Tests.cs": "class AuditInFooTests {}\n",
+      "src/foo.test.ts": "class AuditInDotTest {}\n",
+      "src/foo_test.py": "class AuditInUnderscoreTest: pass\n",
+      "src/Test.java": "class AuditInTest {}\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(f.detail.observed.map((o) => o.identifier), ["AuditAttest", "AuditContest", "AuditLatest", "AuditContestPy"]);
+      assert.equal(f.detail.excluded.codeFilesExcluded, 5);
+    },
+  ));
+
+test("a caller can bound retained observations; counts and files stay exact and the prefix is the report order", async () => {
+  const files = {};
+  for (let i = 0; i < 12; i += 1) files[`src/f${String(i).padStart(2, "0")}.js`] = `class AuditA${i} {}\nclass AuditB${i} {}\n`;
+  await withRepo(files, async (dir) => {
+    const s = await collectSurface(dir);
+    const full = locateAuditSurface(s.files, s.run, s);
+    const cut = locateAuditSurface(s.files, s.run, s, { maxObserved: 5 });
+    assert.equal(full.observed.length, 24);
+    assert.equal(full.observedCount, 24);
+    assert.equal(cut.observed.length, 5);
+    assert.deepEqual(cut.observed, full.observed.slice(0, 5));
+    assert.equal(cut.observedCount, 24);
+    assert.equal(cut.observedFiles.length, 12);
+    assert.deepEqual(cut.observedFiles, full.observedFiles);
+    assert.equal(cut.incomplete, full.incomplete);
+  });
+});
+
+test("the reporter caps the payload at 500 and still reports the exact total and every file", () =>
+  withRepo(
+    { "src/big.js": Array.from({ length: 520 }, (_, i) => `class AuditX${i} {}`).join("\n") + "\n", "src/other.js": "class AuditZ {}\n" },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.equal(f.detail.observed.length, 500);
+      assert.equal(f.detail.observedCount, 521);
+      assert.equal(f.detail.observedOmitted, 21);
+      assert.deepEqual(f.evidence, ["src/big.js", "src/other.js"]);
+      assert.match(f.message, /^521 audit-named construct\(s\) were observed in 2 /);
+    },
+  ));

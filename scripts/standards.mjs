@@ -3330,7 +3330,22 @@ function detectSqlConcat(files, run) {
  * configuration directories. A recorder call in a test is a test of recording, not a recorder.
  */
 const AUDIT_EXCLUDED_PATH_RE =
-  /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipelines|ci|e2e|cypress|__mocks__|mocks?|testing|testdata)\/|(^|\/)[^/]*\.tests?\/|Tests?\.(java|kt|cs|py|ts|tsx|js|jsx)$|\.(stories|story|mock|mocks)\.[jt]sx?$/i;
+  /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipelines|ci|e2e|cypress|__mocks__|mocks?|testing|testdata)\/|(^|\/)[^/]*\.tests?\/|\.(stories|story|mock|mocks)\.[jt]sx?$/i;
+
+/**
+ * A test-file SUFFIX must be an intentional one, and the match is case-sensitive: `FooTest.java`, `Foo.Tests.cs`,
+ * `foo.test.ts`, `foo_test.py` and a file named `Test.java` are tests; `Contest.java`, `Latest.ts` and `Attest.cs`
+ * are not, because `Test` there is the end of a word and not a word of its own.
+ */
+const AUDIT_TEST_SUFFIX_RE = /(?:Tests?|[._-]tests?)\.(?:java|kt|cs|py|ts|tsx|js|jsx)$/;
+/**
+ * The shared `TEST_RE` is case-insensitive and unanchored on `Tests?\.cs$` and `test_.*\.py$`, so it also
+ * classifies `Attest.cs` and `contest_x.py` as tests. It is shared with other detectors and left as it is;
+ * the locator uses this narrower form of the same classification (directories, `.test.`/`.spec.` files,
+ * `_test.go`/`_test.py`, `test_*.py` at the start of a file name) plus the intentional suffixes above.
+ */
+const AUDIT_TEST_PATH_RE = /(?:^|\/)(?:tests?|spec|__tests__)\/|\.(?:test|spec)\.[jt]sx?$|_test\.(?:go|py)$|(?:^|\/)test_[^/]*\.py$/i;
+const isAuditExcludedPath = (r) => AUDIT_TEST_PATH_RE.test(r) || AUDIT_EXCLUDED_PATH_RE.test(r) || AUDIT_TEST_SUFFIX_RE.test(r);
 
 /**
  * Code-file extensions by language family. `supported` is the contract with the idiom table below:
@@ -3469,9 +3484,13 @@ const byCodepoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
  * from `loadSurface`/`collectSurface`; it is required because completeness cannot be claimed from
  * the file list alone.
  *
- * @returns {{ observed, unread, incomplete, incompleteReasons, blindSpots, languageFamilies, idioms, excluded }}
+ * `options.maxObserved` bounds the retained `observed` list to its first N in report order; `observedCount` and
+ * `observedFiles` always cover every observation, so a caller that prints a prefix keeps exact totals.
+ *
+ * @returns {{ observed, observedCount, observedFiles, unread, incomplete, incompleteReasons, blindSpots, languageFamilies, idioms, excluded }}
  */
-export function locateAuditSurface(files, run, surface) {
+export function locateAuditSurface(files, run, surface, options = {}) {
+  const maxObserved = options.maxObserved ?? Infinity;
   if (!surface || !surface.surfaceLoss) {
     throw new TypeError("locateAuditSurface needs the surface loss record: completeness cannot be claimed without it");
   }
@@ -3484,7 +3503,9 @@ export function locateAuditSurface(files, run, surface) {
 
   const entries = files.map((f) => ({ f, r: rel(f) })).sort((a, b) => byCodepoint(a.r, b.r));
 
-  const observed = new Map();
+  const observed = [];
+  let observedCount = 0;
+  const observedFiles = [];
   const unread = [];
   const familyCounts = new Map();
   const unclassified = [];
@@ -3495,12 +3516,12 @@ export function locateAuditSurface(files, run, surface) {
     if (!isCode(f)) {
       // A code language this tool does not list is never read, so it is counted from the file list
       // and declared as a blind spot rather than being invisible.
-      if (!TEST_RE.test(r) && !AUDIT_EXCLUDED_PATH_RE.test(r) && AUDIT_UNLISTED_CODE_EXT.has(path.extname(f).toLowerCase())) {
+      if (!isAuditExcludedPath(r) && AUDIT_UNLISTED_CODE_EXT.has(path.extname(f).toLowerCase())) {
         unlistedCodeFiles += 1;
       }
       continue;
     }
-    if (TEST_RE.test(r) || AUDIT_EXCLUDED_PATH_RE.test(r)) {
+    if (isAuditExcludedPath(r)) {
       excludedCodeFiles += 1;
       continue;
     }
@@ -3528,6 +3549,7 @@ export function locateAuditSurface(files, run, surface) {
     if (truncated) unread.push({ file: r, reason: "truncated" });
     if (!fam.supported) continue;
     let fileHit = false;
+    const fileObserved = new Map();
 
     const structure = view.text;
     let newlines = null;
@@ -3585,18 +3607,24 @@ export function locateAuditSurface(files, run, surface) {
         }
         const o = { file: r, line: lineAt(at), kind, identifier, family: fam.family, idiom: idiom.id };
         fileHit = true;
-        observed.set(`${o.file}\u0000${o.line}\u0000${o.kind}\u0000${o.identifier}`, o);
+        fileObserved.set(`${o.file}\u0000${o.line}\u0000${o.kind}\u0000${o.identifier}`, o);
       }
+    }
+    // Files arrive in codepoint order, so a file's observations (sorted here) already follow every earlier
+    // file's: the report order is the processing order, and only the first `maxObserved` are retained.
+    if (fileObserved.size) {
+      const inFile = [...fileObserved.values()].sort(
+        (a, b) => a.line - b.line || byCodepoint(a.kind, b.kind) || byCodepoint(a.identifier, b.identifier),
+      );
+      observedCount += inFile.length;
+      observedFiles.push(r);
+      for (const o of inFile) if (observed.length < maxObserved) observed.push(o);
     }
     // An audit-named identifier in a file with no observation is something the locator saw and could
     // not classify. It is reported, and it makes the search incomplete: silence there is not absence.
     if (!fileHit && AUDIT_NAME_RE.test(structure)) unclassified.push({ file: r, family: fam.family });
   }
 
-  const observations = [...observed.values()].sort(
-    (a, b) =>
-      byCodepoint(a.file, b.file) || a.line - b.line || byCodepoint(a.kind, b.kind) || byCodepoint(a.identifier, b.identifier),
-  );
   unread.sort((a, b) => byCodepoint(a.file, b.file) || byCodepoint(a.reason, b.reason));
 
   // Reasons the SEARCH ITSELF fell short, beyond individual unread files. Each is a place an audit
@@ -3611,7 +3639,9 @@ export function locateAuditSurface(files, run, surface) {
   if (unclassified.length) reasons.push("unclassified-audit-named-identifiers");
 
   return {
-    observed: observations,
+    observed,
+    observedCount,
+    observedFiles,
     unread,
     unclassified: unclassified.sort((a, b) => byCodepoint(a.file, b.file)),
     incomplete: reasons.length > 0,
@@ -3635,8 +3665,9 @@ export function locateAuditSurface(files, run, surface) {
     })),
     excluded: {
       reason: "test and CI paths never count as audit presence",
-      testPathPattern: `/${TEST_RE.source}/${TEST_RE.flags}`,
+      testPathPattern: `/${AUDIT_TEST_PATH_RE.source}/${AUDIT_TEST_PATH_RE.flags}`,
       ciPathPattern: `/${AUDIT_EXCLUDED_PATH_RE.source}/${AUDIT_EXCLUDED_PATH_RE.flags}`,
+      testSuffixPattern: `/${AUDIT_TEST_SUFFIX_RE.source}/${AUDIT_TEST_SUFFIX_RE.flags}`,
       codeFilesExcluded: excludedCodeFiles,
     },
   };
@@ -3652,12 +3683,12 @@ const AUDIT_PAYLOAD_MAX_UNREAD = 200;
  * would be indistinguishable from a tool that never looked.
  */
 export function reportAuditSurface(files, run, surface) {
-  const found = locateAuditSurface(files, run, surface);
-  const observedFiles = uniq(found.observed.map((o) => o.file));
+  const found = locateAuditSurface(files, run, surface, { maxObserved: AUDIT_PAYLOAD_MAX_OBSERVED });
+  const observedFiles = found.observedFiles;
   const parts = [];
-  if (found.observed.length) {
+  if (found.observedCount) {
     parts.push(
-      `${found.observed.length} audit-named construct(s) were observed in ${observedFiles.length} non-test code file(s) of the working tree ` +
+      `${found.observedCount} audit-named construct(s) were observed in ${observedFiles.length} non-test code file(s) of the working tree ` +
         `by a fixed list of name idioms. This locates where audit-related code is. It is not evidence that business-state changes are ` +
         `audited, that events carry the Standard 3 R2 fields, or that the code is committed, and no rule is evaluated from it.`,
     );
@@ -3690,8 +3721,8 @@ export function reportAuditSurface(files, run, surface) {
     standardRef: R.audit,
     detail: {
       observed: found.observed.slice(0, AUDIT_PAYLOAD_MAX_OBSERVED),
-      observedCount: found.observed.length,
-      observedOmitted: Math.max(0, found.observed.length - AUDIT_PAYLOAD_MAX_OBSERVED),
+      observedCount: found.observedCount,
+      observedOmitted: Math.max(0, found.observedCount - found.observed.length),
       unread: found.unread.slice(0, AUDIT_PAYLOAD_MAX_UNREAD),
       unreadCount: found.unread.length,
       unreadOmitted: Math.max(0, found.unread.length - AUDIT_PAYLOAD_MAX_UNREAD),
