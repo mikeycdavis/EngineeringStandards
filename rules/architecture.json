@@ -83,7 +83,7 @@
       "deprecatedIn": null,
       "supersededBy": null,
       "removedIn": null,
-      "$assuranceNote": "Requires knowing where this project's boundaries are, which is a project-specific fact no scan has. Only a boundary declared by the repository's architecture manifest or standards configuration can be bypassed (Standard 51 R2), and any detector or attestation must state its observation scope and the mechanisms it did not observe."
+      "$assuranceNote": "Requires knowing where this project's boundaries are, which is a project-specific fact no scan has. Only a boundary declared by the repository's architecture manifest or standards configuration can be bypassed (Standard 51 R2), and any detector or attestation must state its observation scope and the mechanisms it did not observe. The reviewer verifies that scope; `validate` does not enforce it in this version (it checks only that the attestation exists and is fresh)."
     },
     {
       "id": "architecture.no-duplicate-implementations",

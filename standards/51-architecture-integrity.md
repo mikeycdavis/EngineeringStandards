@@ -90,6 +90,12 @@ scope and list the mechanisms it did not observe. Static dependency evidence can
 about unobserved runtime reflection, generated code, subprocesses or network paths; a claim that
 omits that exclusion list is wider than its evidence.
 
+The human reviewer verifies this requirement; `validate` does not enforce it in this version. The machine-checked
+part is only that an attestation for the rule exists and is fresh: the attestation schema requires an evidence
+string, not an observation scope, so an attestation that states no scope is nonconforming here yet can still be
+reported as satisfied by the tool. Enforcing the scope mechanically would change the attestation schema and
+validator and is the owner's decision, not part of this text.
+
 **Exception conditions:**
 
 | Field | Requirement |
@@ -184,7 +190,8 @@ whether or not it crosses a network boundary.
 - R2's combination of circular dependencies and boundary bypass into one failure family, with the
   reason.
 - R2's definitions of *architectural boundary* and *boundary bypass*, and the requirement that a
-  detector or attestation state its observation scope and the mechanisms it did not observe.
+  detector or attestation state its observation scope and the mechanisms it did not observe, verified by the human
+  reviewer and not machine-enforced by `validate` in this version.
 - R3's routing of UI-embedded business rules to [Standard 1](01-human-and-ai-operability.md) R1 as
   the stronger statement.
 - R4's classification as `required`/`warning` rather than `forbidden`, with the reason, and the use
@@ -215,7 +222,7 @@ exception discipline.
 | Requirement | Rule | State |
 | --- | --- | --- |
 | R1 | `architecture.no-hidden-global-state` | `manual-review`. A module-level mutable binding is trivial to find and says nothing about whether the state is hidden or owned. **This repository has a real subject for it**, and discharges R1 the way R1 asks, with [ADR 0014](../artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md) naming the state, its owner, and its reset boundary: run state is constructed by the invocation that uses it and cannot outlive it, so the owner is the invocation and the reset is its return. Enumeration was tried first and abandoned — [ADR 0007](../artifacts/adr/0007-cli-scripts-are-single-run-programs-with-module-scoped-state.md) records five consecutive reviews at which the list of governed bindings was incomplete, and is kept unrepaired as the evidence for the change |
-| R2 | `architecture.no-boundary-bypass` | `manual-review`. Requires knowing where the boundaries are, which is a project-specific fact no scan has, and only a *declared* boundary can be crossed (R2 definitions). Any detector or attestation states its observation scope and unobserved mechanisms |
+| R2 | `architecture.no-boundary-bypass` | `manual-review`. Requires knowing where the boundaries are, which is a project-specific fact no scan has, and only a *declared* boundary can be crossed (R2 definitions). Any detector or attestation states its observation scope and unobserved mechanisms; the reviewer verifies this, `validate` checks only that the attestation exists and is fresh |
 | R3 | `architecture.no-duplicate-implementations` | `manual-review`. Similar code is not duplicated logic, and duplicated logic is often not similar code |
 | R4 | `architecture.dependency-evaluation` | `manual-review`, `required`/`warning`. A manifest shows which dependencies exist, never which were evaluated |
 
