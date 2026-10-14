@@ -56,9 +56,10 @@ exit codes and `audit --strict`, which do not change, and not of the `findings[]
 The finding reports where audit-named types, tables, recorder calls and framework attributes appear in non-test,
 non-CI code of the working tree (C#, Java/Kotlin, JavaScript/TypeScript, Python, SQL DDL), by a small fixed idiom list
 carried in `detail.idioms`. `detail` holds `observed`, `unread`, `unclassified`, `incomplete`/`incompleteReasons`,
-`blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. Test paths are the paths `TEST_RE`
-classifies plus a fixed audit-specific list (CI directories, `e2e`, `cypress`, `__mocks__`, `mocks`, `testing`,
-`*.Tests/`, `*Test.java`, stories); a test helper outside both is read as code and declared as a blind spot. A comment, a
+`blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. Test paths are those matched by the
+locator's own narrower patterns (`AUDIT_TEST_PATH_RE`, `AUDIT_TEST_SUFFIX_RE`) plus a fixed audit-specific list (CI
+directories, `e2e`, `cypress`, `__mocks__`, `mocks`, `testing`, `*.Tests/`, `*Test.java`, stories), which is narrower
+than the shared `TEST_RE` (`Attest.cs` and `contest_x.py` are searched); a test helper outside both is read as code and declared as a blind spot. A comment, a
 string literal, Markdown or a test path is a mention and never an observation; DDL embedded in an application-language
 string literal, Vue/Svelte/Razor components and code languages the tool does not read are declared blind spots. It is
 `INFERRED` and never a pass: `audit.business-state` and `audit.actor-attribution` stay not-evaluated.
