@@ -55,7 +55,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
-import { displaySafeText, humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, displaySafeText, humanErr, humanOut } from "./display-safe.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -417,11 +417,11 @@ function render(result, claimCount) {
   const out = [];
   out.push(`Issue-to-item ownership: ${result.issues.length} open issue(s), ${claimCount} plan claim(s) read.`);
   for (const i of result.issues) {
-    const by = i.owners.map((o) => `${o.file} :: ${o.title}`).join("; ");
+    const by = i.owners.map((o) => `${displaySafe(o.file)} :: ${displaySafe(o.title)}`).join("; ");
     const tail = i.releaseEligible ? "release-eligible" : "not release-eligible";
-    out.push(`  #${i.number}  ${i.classification}  (${tail})${by ? `  ${by}` : ""}`);
+    out.push(`  #${i.number}  ${displaySafe(i.classification)}  (${tail})${by ? `  ${by}` : ""}`);
   }
-  for (const p of result.problems) out.push(`  problem: ${p.message}`);
+  for (const p of result.problems) out.push(`  problem: ${displaySafe(p.message)}`);
   out.push(
     result.ok
       ? `PASSED: no ownership violation. Release-ready: ${result.releaseReady ? "yes" : "no (temporary-unscoped issues are legal but not release-eligible)"}.`

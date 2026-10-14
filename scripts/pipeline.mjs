@@ -32,7 +32,7 @@
  * Holds no module-level run state: every mutable value is local to a call.
  */
 
-import { humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -300,17 +300,17 @@ function main(argv) {
   // only party that actually knows what it ran.
   const field = (k) => `${k}`.padEnd(17);
   humanOut("\n");
-  humanOut(`${field("repository")}: ${report.repository ?? "(no origin remote)"}\n`);
-  humanOut(`${field("branch")}: ${report.branch}\n`);
-  humanOut(`${field("verified commit")}: ${report.commit}\n`);
+  humanOut(`${field("repository")}: ${displaySafe(report.repository ?? "(no origin remote)")}\n`);
+  humanOut(`${field("branch")}: ${displaySafe(report.branch)}\n`);
+  humanOut(`${field("verified commit")}: ${displaySafe(report.commit)}\n`);
   humanOut(`${field("scope")}: ${report.scope}\n`);
   humanOut(
     `${field("environment")}: ${report.environment.containerized ? "Docker" : "host"} ` +
-      `${report.environment.image ?? ""} Node ${report.environment.node}\n`,
+      `${displaySafe(report.environment.image ?? "")} Node ${report.environment.node}\n`,
   );
   humanOut(`${field("stages")}:\n`);
   for (const c of report.checks) {
-    humanOut(`  ${c.outcome.padEnd(16)} ${c.id}${c.gating ? "" : "  [advisory]"}\n`);
+    humanOut(`  ${c.outcome.padEnd(16)} ${displaySafe(c.id)}${c.gating ? "" : "  [advisory]"}\n`);
   }
   humanOut(`${field("result")}: ${report.result.toUpperCase()}\n`);
   humanOut(`${field("completed")}: ${report.completedAt}\n`);

@@ -1898,3 +1898,23 @@ test("ST-41: displaySafeText keeps layout and escapes the rest, and every raw wr
   }
   assert.deepEqual(found, RAW_ALLOWED);
 });
+
+test("ST-41: a newline inside an untrusted field cannot forge a line in the rendered report", async () => {
+  const { render } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "init.mjs")).href);
+  const { displaySafeText } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "display-safe.mjs")).href);
+  const report = {
+    mode: "adopt",
+    modeConfidence: "INFERRED",
+    modeEvidence: ["evidence\nFORGED-EVIDENCE"],
+    created: ["a/b\nFORGED-CREATED"],
+    overwrites: [],
+    preserved: [],
+    conflicts: [{ path: "p\nFORGED-PATH", reason: "r\nFORGED-REASON", remediation: "fix" }],
+    reconstructionRequired: false,
+    nextStep: "next",
+  };
+  // The chokepoint alone preserves newlines, so the per-field escape is what keeps the field on one line.
+  const shown = displaySafeText(render(report, { dryRun: true }));
+  for (const line of shown.split("\n")) assert.ok(!/^\s*FORGED/.test(line), `forged line: ${JSON.stringify(line)}`);
+  assert.ok(shown.includes(`${String.fromCharCode(92)}nFORGED-CREATED`), shown);
+});

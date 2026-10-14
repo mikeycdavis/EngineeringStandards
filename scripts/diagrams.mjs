@@ -14,7 +14,7 @@
  * Exit 0 when every diagram is in sync, 1 when any is stale, 2 on invocation error.
  */
 
-import { humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -153,7 +153,7 @@ async function main() {
   try {
     result = await check(ROOT);
   } catch (error) {
-    humanErr(`standards diagrams: ${error.message}\n`);
+    humanErr(`standards diagrams: ${displaySafe(error.message)}\n`);
     process.exit(EXIT_INVOCATION);
   }
 
@@ -162,7 +162,7 @@ async function main() {
   humanOut(`Stale diagrams:   ${result.findings.length}\n\n`);
 
   for (const finding of result.findings) {
-    humanOut(`! ${finding.file}\n    ${finding.message}\n    ${finding.remediation}\n\n`);
+    humanOut(`! ${displaySafe(finding.file)}\n    ${displaySafe(finding.message)}\n    ${displaySafe(finding.remediation)}\n\n`);
   }
 
   if (result.findings.length > 0) {

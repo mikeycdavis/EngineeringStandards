@@ -71,7 +71,7 @@
  *   node scripts/ci-triage.mjs --sha <commit-sha> [--json]
  *   node scripts/ci-triage.mjs --branch <branch-name> [--json]
  */
-import { displaySafeText, humanErr } from "./display-safe.mjs";
+import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -641,13 +641,13 @@ function render(observation, result) {
   // The subject is named the same way in every mode. A verdict that does not say which commit it is
   // about cannot be checked against one, and after a rebase merge that is exactly the mistake to make.
   const sha = String(observation.head ?? "").slice(0, 7);
-  out.push(observation.pr ? `PR #${observation.pr} — ${sha}` : `commit ${sha}${observation.base ? ` on ${observation.base}` : ""}`);
-  out.push(`required checks        : ${observation.requiredChecks === null ? observation.requiredChecksNote ?? "unreadable" : observation.requiredChecks.join(", ") || "none"}`);
-  out.push(`established rejections : ${observation.establishedRejections === null ? "unreadable" : observation.establishedRejections.join(", ") || "none"}`);
+  out.push(observation.pr ? `PR #${observation.pr} — ${sha}` : `commit ${displaySafe(sha)}${observation.base ? ` on ${displaySafe(observation.base)}` : ""}`);
+  out.push(`required checks        : ${observation.requiredChecks === null ? observation.requiredChecksNote ?? "unreadable" : displaySafe(observation.requiredChecks.join(", ") || "none")}`);
+  out.push(`established rejections : ${observation.establishedRejections === null ? "unreadable" : displaySafe(observation.establishedRejections.join(", ") || "none")}`);
   out.push("");
   for (const f of result.findings) {
-    out.push(`  ${f.class.padEnd(14)}${f.check}`);
-    out.push(`                ${f.why}`);
+    out.push(`  ${f.class.padEnd(14)}${displaySafe(f.check)}`);
+    out.push(`                ${displaySafe(f.why)}`);
   }
   out.push("");
   out.push(result.verdict);

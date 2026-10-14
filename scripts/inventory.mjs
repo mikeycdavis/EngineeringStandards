@@ -36,7 +36,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
-import { humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -97,7 +97,7 @@ const orphans = inventory.standards.filter(
 for (const source of inventory.sources) {
   const sourcePath = path.join(ROOT, source.path);
   if (!existsSync(sourcePath)) {
-    humanErr(`inventory: source not found: ${source.path}\n`);
+    humanErr(`inventory: source not found: ${displaySafe(source.path)}\n`);
     process.exit(1);
   }
   const text = await readFile(sourcePath, "utf8");
@@ -147,7 +147,7 @@ for (const source of inventory.sources) {
     continue;
   }
 
-  humanErr(`inventory: unknown extraction mode: ${source.extraction}\n`);
+  humanErr(`inventory: unknown extraction mode: ${displaySafe(source.extraction)}\n`);
   process.exit(1);
 }
 
@@ -196,7 +196,7 @@ if (JSON_OUT) {
   process.exit(problems === 0 ? 0 : 1);
 }
 
-const line = (label, value) => `${label.padEnd(28)} ${value}`;
+const line = (label, value) => `${label.padEnd(28)} ${displaySafe(value)}`;
 const list = (xs) => (xs.length === 0 ? "none" : xs.join(", "));
 
 const out = [
