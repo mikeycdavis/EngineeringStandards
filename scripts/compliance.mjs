@@ -30,6 +30,9 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
 // A malformed history that records a rejection: the rejection is negative evidence and stays in force.
 export const MALFORMED_HISTORY_REMEDIATION =
   "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, chronological order).";
+export const MALFORMED_NOT_ATTESTABLE_REMEDIATION =
+  "This rule is not attestable, so no review can clear a recorded rejection or satisfy it. Remove the attestation "
+  + "and make the rule compliant through its automated check.";
 export const MALFORMED_WITH_REJECTION_REMEDIATION =
   MALFORMED_HISTORY_REMEDIATION +
   " A recorded rejection in this history stays in force until then, and only a later well-formed review clears it.";
@@ -142,8 +145,11 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
             : ""),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
-        remediation:
-          rejections.length > 0
+        // A rule the catalog does not mark attestable can never be cleared by a review, so promising that a
+        // later one clears the rejection would send the operator round a loop that cannot end.
+        remediation: !rule.attestable
+          ? MALFORMED_NOT_ATTESTABLE_REMEDIATION
+          : rejections.length > 0
             ? MALFORMED_WITH_REJECTION_REMEDIATION
             : MALFORMED_HISTORY_REMEDIATION,
       });

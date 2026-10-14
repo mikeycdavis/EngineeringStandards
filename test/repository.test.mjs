@@ -1812,3 +1812,39 @@ test("ST-44: the documented fail-closed rule is scoped to a rule that applies; a
     assert.match(text, /not-applicable` is not evaluated, so a rejection recorded for it is not consulted/, `${file} must say what a not-applicable rule does`);
   }
 });
+
+test("ST-44: for a rule the catalog does not mark attestable, the remediation says no review clears a recorded rejection", () => {
+  const make = (attestable) => ({
+    id: "testing.synthetic",
+    level: "required",
+    severity: "error",
+    validationType: attestable ? "manual-review" : "static-analysis",
+    attestable,
+    nonExemptible: false,
+  });
+  const remediation = (rule, reviews) => {
+    const verdict = evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { attestations: { [rule.id]: { reviews } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "fresh", detail: null }]]),
+    });
+    const result = verdict.results.find((entry) => entry.ruleId === rule.id);
+    assert.equal(result.disposition, "invalid-attestation", JSON.stringify(result));
+    return result.remediation;
+  };
+  const rejectedThenBroken = [review({ id: "r1", status: "rejected" }), review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" })];
+  const approvedThenBroken = [review({ id: "r1" }), review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" })];
+  const attestable = remediation(make(true), rejectedThenBroken);
+  assert.match(attestable, /later well-formed review clears it/);
+  assert.doesNotMatch(attestable, /not attestable/);
+  for (const reviews of [rejectedThenBroken, approvedThenBroken]) {
+    const text = remediation(make(false), reviews);
+    assert.match(text, /not attestable/);
+    assert.match(text, /no review can clear/);
+    assert.match(text, /automated check/);
+    assert.doesNotMatch(text, /later well-formed review clears it/);
+  }
+});

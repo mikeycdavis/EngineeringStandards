@@ -126,8 +126,8 @@ disregarded and recorded rejections stay effective**: negative evidence may be c
 never removed because a comparison was unavailable. The same holds for a history that is malformed (a successor
 naming a missing predecessor, a duplicate id, a fork): a rejection it records stays in force, and the result
 names it, until the history is repaired and a later well-formed review clears it. A malformed history with
-no recorded rejection establishes nothing and is never read as an approval. All of this applies to a rule that
-applies: a rule declared `not-applicable` is not evaluated, so a rejection recorded for it is not consulted
+no recorded rejection establishes nothing and is never read as an approval. All of this applies to an attestable rule that
+applies, and a rule the catalog does not mark attestable is never cleared by a review: a rule declared `not-applicable` is not evaluated, so a rejection recorded for it is not consulted
 (the evaluator returns at the applicability declaration, before any review history is read). This is an
 owner-reviewable choice. Reviewer identity is
 asserted by the policy text, not authenticated. A genesis event may omit its digest (the first-pass workflow above);
