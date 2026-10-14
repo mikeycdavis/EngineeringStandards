@@ -206,7 +206,7 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy) {
+function renderVerdict(report, policy, policyFindings = []) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -290,6 +290,15 @@ function renderVerdict(report, policy) {
     out.push("  Attested (human review):");
     for (const r of attested) out.push(`    ${r.ruleId} — ${r.attestation.reviewedBy}, ${r.attestation.reviewedAt}`);
     out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
+    out.push("");
+  }
+
+  if (policyFindings.length) {
+    out.push("  Policy findings (the verdict above is unchanged by these):");
+    for (const f of policyFindings) {
+      out.push(`    ${f.message}`);
+      out.push(`      -> ${f.remediation}`);
+    }
     out.push("");
   }
 
@@ -4080,6 +4089,11 @@ export async function main(args) {
     freshness,
   });
 
+  // A rejection recorded on a rule declared not-applicable is surfaced as a finding that carries no
+  // rule, so it cannot change any result or the verdict (ST-47). It is added here, after evaluate,
+  // because only evaluate sees the not-applicable declaration and the record together.
+  for (const f of verdict.policyFindings ?? []) findings.push(f);
+
   // Framework maturity, read from this framework's own inventory rather than the target repository.
   // It travels beside the verdict and never inside it: a coverage improvement must never be able to
   // look like a compliance improvement.
@@ -4117,7 +4131,7 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emit(renderVerdict(report, policy) + "\n");
+    emit(renderVerdict(report, policy, verdict.policyFindings ?? []) + "\n");
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this

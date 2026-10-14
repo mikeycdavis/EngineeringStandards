@@ -233,6 +233,13 @@ The distinction that matters most: **not-applicable is a claim about your projec
 rule.** *We have no background jobs* stops being true the day you add one — which is what
 `revisitWhen` records.
 
+A review history that records a **rejection** on a rule you declared not-applicable does not change the
+verdict: the declaration stands, and the rule stays `skipped` / `not-applicable`. `validate` reports it as a
+`policy-compliance` finding (in the JSON `findings` and under *Policy findings* in the human report), naming
+the rule and the rejection's id, reviewer and date with control characters escaped. Either remove the
+declaration, because the rule applies, or remove the stray review record; a not-applicable rule with no
+rejection emits nothing.
+
 **Some rules are non-exemptible.** `security.no-secrets-in-artifacts` and `ai.destructive-approval`
 declare this in the catalog, and an exception against either is **rejected, not recorded** — you get
 `policy.non-exemptible-rule` from the policy checker and a `NON_COMPLIANT` verdict from the audit. If

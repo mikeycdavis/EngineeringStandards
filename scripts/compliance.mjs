@@ -94,6 +94,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
   const results = [];
   const silencedRules = new Set();
+  const policyFindings = [];
   for (const rule of catalog.rules.values()) {
     const level = levelOf(rule);
     const applies = applicability[rule.id];
@@ -101,6 +102,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // Not applicable: the rule's subject does not exist here. Visible, never a silent exclusion.
     if (applies?.status === "not-applicable") {
       results.push(base(rule, level, RESULT.skipped, "not-applicable", applies.reason));
+      // A rejection recorded against a rule declared not-applicable is not evaluated here and must
+      // not vanish: it is reported as a policy-compliance FINDING and nowhere else. The result above,
+      // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
+      // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
+      // alone, so a malformed history is still reported by identity (see recordedRejections).
+      const stray = recordedRejections(attestations[rule.id]);
+      if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray));
       continue;
     }
 
@@ -314,7 +322,64 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     });
   }
 
-  return { ...summarise(results, policy), silencedRules };
+  return { ...summarise(results, policy), silencedRules, policyFindings };
+}
+
+/**
+ * Policy-controlled text is repository-controlled, not trusted: a control character in a review
+ * identity must reach CI logs and terminals as visible text, never as a raw escape or line break.
+ * JSON string escaping covers C0, quotes and backslash; the rest are the C1, line-separator and
+ * bidirectional controls it leaves alone. Local to this file: PR #141 adds a shared display-safe
+ * module and will need to integrate this call.
+ */
+function displaySafe(value) {
+  // Decided by code point, not by a regex literal: a regex that names U+2028 literally is itself a
+  // line terminator in source and would be a hazard to whoever next edits this file.
+  const unsafe = (cp) =>
+    (cp >= 0x7f && cp <= 0x9f) ||
+    cp === 0x61c ||
+    cp === 0x200e ||
+    cp === 0x200f ||
+    cp === 0x2028 ||
+    cp === 0x2029 ||
+    (cp >= 0x202a && cp <= 0x202e) ||
+    (cp >= 0x2066 && cp <= 0x2069);
+  let out = "";
+  for (const ch of JSON.stringify(String(value))) {
+    const cp = ch.codePointAt(0);
+    out += unsafe(cp) ? "\\u" + cp.toString(16).padStart(4, "0") : ch;
+  }
+  return out;
+}
+
+function strayRejectionFinding(ruleId, rejections) {
+  const named = rejections
+    .map((r) =>
+      [
+        r.id === null ? "(no id)" : `id ${displaySafe(r.id)}`,
+        r.reviewedBy === null ? null : `by ${displaySafe(r.reviewedBy)}`,
+        r.reviewedAt === null ? null : `on ${displaySafe(r.reviewedAt)}`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join("; ");
+  return {
+    id: "rejection-on-not-applicable-rule",
+    category: "policy-compliance",
+    severity: "warning",
+    label: "OBSERVED",
+    // Not `rule`: that field makes a finding evidence FOR a rule, and this one must never be able to
+    // fail, pass or withdraw one.
+    rule: null,
+    ruleId,
+    evidence: ["project-policy.yml"],
+    message:
+      `${ruleId} is declared not-applicable but a rejection is recorded on it (${named}). ` +
+      "The verdict is unchanged: the declaration stands and the rejection is not evaluated.",
+    remediation:
+      "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record if the rejection no longer describes this project.",
+  };
 }
 
 /**

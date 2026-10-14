@@ -126,3 +126,15 @@ disregarded and recorded rejections stay effective**: negative evidence may be c
 never removed because a comparison was unavailable. This is an owner-reviewable choice. Reviewer identity is
 asserted by the policy text, not authenticated. A genesis event may omit its digest (the first-pass workflow above);
 that is bootstrap behaviour and not authenticated history.
+
+## Amendment (ST-47, #150): a rejection on a not-applicable rule is a finding, not a verdict
+
+A rule declared `not-applicable` is skipped before its review history is read, so a rejection recorded on it
+used to vanish without a trace. The owner chose **finding only**: the declaration stands, so the rule's status
+and disposition (`skipped` / `not-applicable`) and the aggregate verdict are unchanged, and a
+`policy-compliance` finding is emitted that names the rule, says that a rejection is recorded on a
+not-applicable rule, and gives the rejection's identity (id, reviewer and date, escaped so control characters
+are visible, never raw). The finding carries no rule, so it cannot fail, pass or withdraw one. It is emitted for
+a well-formed and a malformed history alike, and not at all for a not-applicable rule that records no
+rejection. An applicable rule is unchanged: its recorded rejection still fails it. The rejection is not
+evaluated while the declaration stands; reconciling the two is the owner's decision.
