@@ -316,7 +316,8 @@ named by the condition used in the human report and in tests:
 | a matching regular file cannot be opened or read (including a read that fails after a successful `lstat`, or a disappearance) | `unreadable` | the signal's presence is established and its content is not |
 | `FROZEN.md` is readable and contains neither listed phrase (empty, whitespace-only, or other text) | `no-listed-phrase` | a file named for freezing whose meaning the closed vocabulary does not cover is not evidence of eligibility (Q4 A) |
 | `lstat` on a matching entry fails **on first classification** (the entry was returned by the listing), or fails after the read with an error **other than** "no such entry" (for example a permission or I/O error) | `stat-failed` | it cannot be classified, so neither its presence nor its content is known |
-| a matching source file was classified and read, and **afterwards its entry no longer names the identity that was classified**: `lstat` succeeds and reports a different identity (replaced by another file), **or `lstat` reports the entry missing** (`ENOENT`, `ENOTDIR`, or the platform's not-found equivalent: renamed away or removed without replacement) | `source-changed` | the content read may not be the content of the file the name now designates; not overridable; a human diagnostic name, not frozen |
+| a matching source file was classified and read, and **afterwards its entry no longer names the identity that was classified**: `lstat` succeeds and reports a different identity (replaced by another file), **or `lstat` reports the entry missing** (`ENOENT`, `ENOTDIR`, or the platform's not-found equivalent: renamed away or removed without replacement), **or the file's size or modification stamps changed during the read** (an `fstat` through the same handle after the read differs from the `fstat` before it in size, in `mtime` or `ctime` where the platform provides them, or in identity) | `source-changed` | the content read may not be the content of the file the name designates, or may mix bytes written during the read; not overridable; a human diagnostic name, not frozen |
+| a matching name set that **differs between the first enumeration and a re-enumeration after the sources were read** (a matching name, case-folded, appeared, disappeared or changed) | `listing-changed` | concurrent-directory enumeration need not return an entry added after its position passed, so the first set cannot be trusted; resolver-side, applies to `eligibility` and `init`; not overridable; a human diagnostic name, not frozen |
 | a matching entry is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | `not-regular-file` | the link is not followed, so its content is not what was examined |
 | a matching file is strictly larger than the per-file read cap | `over-read-cap` | the banner could be in the part not examined |
 | a matching file does not decode as UTF-8 under fatal decoding | `not-utf8` | the text cannot be read |
@@ -388,6 +389,22 @@ is not opened, resolved or inspected.
   implementation exists, and nothing here may be cited as evidence that Windows support is already
   implemented. Completion and per-platform verification are later work, and a 3.0.0 release without
   a passing Windows-safe implementation of `eligibility` is not permitted by this record.
+
+#### Read-time consistency and its limit
+
+After a source file is read, the resolver (a) takes `fstat` through the **same handle** and requires
+size, `mtime`, `ctime` (where the platform provides them) and identity equal to the `fstat` taken
+before the read, **in addition to** the entry-identity check above; any difference is
+`INDETERMINATE` (`source-changed`). After all sources are read, the resolver (b) **re-enumerates the
+directory through the same held handle** and requires the set of matching names (ASCII-case-folded)
+to equal the first enumeration's; any difference is `INDETERMINATE` (`listing-changed`).
+
+**Remaining limit, stated honestly.** These checks are point-in-time observations. A writer that
+restores identical stamps and an identical listing between the checks, or that acts after the final
+check, is outside what such an observation can establish. **Eligibility is evidence at observation
+time, not a lock**, and nothing here claims to prevent a concurrent writer; it narrows the window
+and fails closed where a change is observed. This is a documented limit for the owner's awareness;
+no approval of it is claimed.
 
 #### Precedence
 
@@ -779,7 +796,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
 
   | Condition | `eligibility` | `init` |
   | --- | --- | --- |
-  | `unreadable`, `no-listed-phrase`, `stat-failed`, `source-changed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
+  | `unreadable`, `no-listed-phrase`, `stat-failed`, `source-changed`, `listing-changed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
   | `target-changed` | **does not apply**: one invocation holds one handle and there is no second identity to compare | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
   | `entry-changed` (P6) | does not apply (it never writes artifacts) | post-write class; not an `INDETERMINATE` condition; tested separately |
 
@@ -830,6 +847,15 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   "no such entry") is `INDETERMINATE` (`stat-failed`); in no case does the replacement's content
   decide eligibility; a mutation check removes the post-read identity check and requires the first two
   tests to fail.
+- **Read-time consistency, injected:** (a) a source file written through the same inode (including
+  through a hard link) **during** the capped read so that size, `mtime` or `ctime` differ between
+  the `fstat` before and after the read is `INDETERMINATE` (`source-changed`) and the bytes read do
+  not decide eligibility; (b) a matching name that appears in the directory **between the first
+  enumeration and the read of the sources**, and one that appears or disappears **between the read
+  and the re-enumeration**, is `INDETERMINATE` (`listing-changed`), through a seam between enumeration
+  and read and a seam between read and re-enumeration; (c) an unchanged directory and unchanged
+  sources are not flagged. Mutation checks remove the same-handle `fstat` comparison, and remove the
+  re-enumeration, and require tests (a) and (b) to fail respectively.
 - **Permission, link and mode conditions** (`unreadable`, `stat-failed`, `not-regular-file` for
   every link kind, `over-read-cap`, `not-utf8`, an incomplete listing) go through the injected
   interface on every platform. Real `chmod 000` and real-symlink tests are separate and
