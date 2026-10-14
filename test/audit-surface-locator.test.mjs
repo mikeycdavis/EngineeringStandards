@@ -645,3 +645,24 @@ test("the reporter itself writes exactly one unbound finding and records no unkn
     assert.equal(s.run.findings[0].rule, null);
     assert.equal(s.run.findings[0].severity, "info");
   }));
+
+// --- Review round 2 (owned part): the unclassified check does not run in a file that has an observation ---
+
+test("an audit-named identifier in a file that already has an observation is not listed, and that limit is declared", () =>
+  withRepo(
+    {
+      // `class AuditWriter` is an observation; `auditService` beside it is the same kind of unclassified
+      // identifier that is reported (and makes the search incomplete) in a file with no observation.
+      "src/with-observation.js": "class AuditWriter {}\nconst auditService = make();\nauditService.run();\n",
+      "src/clean.js": "export const x = 1;\n",
+    },
+    (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(sites(f), ["src/with-observation.js:1 type AuditWriter"]);
+      assert.deepEqual(f.detail.unclassified, [], "the check is per file and skipped where something was observed");
+      assert.equal(f.detail.incomplete, false);
+      // Because that is silent, it has to be said where a consumer reads blind spots.
+      const spot = f.detail.blindSpots.find((b) => b.id === "construct:audit-named-identifiers-outside-idioms");
+      assert.match(spot.description, /already hold an observation are not checked for further unclassified identifiers/);
+    },
+  ));

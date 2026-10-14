@@ -36,6 +36,10 @@ string literal, Vue/Svelte/Razor components and code languages the tool does not
 `locateAuditSurface(files, run, surface)` and `reportAuditSurface` are exported for the audit detectors (#125, #126),
 which must pass `{ surfaceLoss, unreadableFiles }` from `collectSurface`.
 
+Read `incomplete: true` on that finding as UNKNOWN, never as absence. It is set repository-wide whenever any file was
+unread, the walk fell short, or any code file holds an audit-named identifier the idioms do not classify
+(`detail.unclassified`); that last check runs only in files that have no observation.
+
 Correction to ST-14 (#64, ST14-001): a single-file CI candidate (`Jenkinsfile`, `azure-pipelines.yml`, and the
 others) now counts only when it is a regular file, so a directory named `Jenkinsfile` no longer suppresses
 `no-ci-configuration`. A candidate that exists but cannot be inspected (for example a symlink loop) is unknown and
