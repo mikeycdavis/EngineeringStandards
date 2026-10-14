@@ -260,26 +260,23 @@ someone to lie to make the build go green.
 - **Ready scope (owner-approved content only), as implementation slices** (each its own pull
   request; none is implemented by the ADR):
   1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
-     **Windows-safe source inspection** of `README.md` and `FROZEN.md`;
-  2. READY: the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
+     **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the acceptance-time read
+     cap (strictly larger than `MAX_READ_BYTES` is `over-read-cap`);
+  2. READY: `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
+     writes nothing before its first write), with the held-directory binding, the component and leaf
+     binding, and `entry-changed`, as re-approved by the owner on 2026-10-14 (ADR 0016, "Decision
+     history");
+  3. READY: the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
      and its SVG, `CHANGELOG.md`), with a no-catalog-rule test.
-- **BLOCKED slice: `init` consults the resolver** and refuses on `OUT_OF_SCOPE` or `INDETERMINATE`
-  (exit `2`, writes nothing), as decided in Q2. It needs the write binding that ADR 0016's
-  post-acceptance additions define (the held-directory-handle binding, the component-wise and leaf
-  binding, and the post-write race class: rows 1, 2 and 4 of its "Post-acceptance additions
-  (pending owner reapproval)" table, restructured as row 3). **It is blocked on the owner's
-  approve-or-amend decision on rows 1-4 of that table**; the slice becomes READY when that decision
-  is recorded.
-- **Release classification:** the owner classified the complete change MAJOR, targeted to 3.0.0. A
-  Windows-safe `eligibility` is required in 3.0.0. No `VERSION` change, tag or release is
-  authorised by the ADR or by this item.
-- **Pending owner reapproval: do not implement until approved.** This block is **not** part of the
-  ready scope and is **not** a release blocker until the owner approves it. It lists the additions
-  made to ADR 0016 after its acceptance (see the ADR's "Post-acceptance additions (pending owner
-  reapproval)"): the held-directory-handle binding between the resolver and `init`; the component-wise
-  and leaf binding of `init`'s reads and writes; the post-write race class and its `entry-changed`
-  condition; the non-skipped real-filesystem Windows `init` and race-gate release requirements; and
-  the capped read. Each may be approved, amended or withdrawn by the owner.
+- **Release classification and gates:** the owner classified the complete change MAJOR, targeted to
+  3.0.0. A Windows-safe `eligibility` and the mandatory, non-skippable real-filesystem Windows safety
+  tests (including the synchronized replacement-race cases) are required for the 3.0.0 release gate.
+  No `VERSION` change, tag or release is authorised by the ADR or by this item.
+- **BLOCKED: signal-file size limits.** Not approved. ADR 0016's "Pending: size limits" section lists
+  what a decision packet must state (exact byte limits, raw bytes or decoded text, boundary behaviour,
+  truncation or refusal or INDETERMINATE, Unicode and newline handling, Windows and container
+  performance evidence, false-negative consequences, compatibility classification and tests). Nothing
+  above depends on it; do not implement it until the owner approves the packet.
 
 ### Prepare a truthful Engineering adapter release candidate
 

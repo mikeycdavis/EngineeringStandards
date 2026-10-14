@@ -1,10 +1,11 @@
 # 0016 — Adoption eligibility is resolved before any adoption write
 
-- **Status:** Accepted, by the owner on 2026-10-12T18:59:50Z (Standard 11 R5, `Proposed | Accepted`),
-  on top of the seven decisions of 2026-10-12T16:52:55Z and the four confirmations of
-  2026-10-12T18:36:55Z recorded below. This record states what must be true of the implementation;
-  it does not claim any of it is implemented.
-- **Date:** 2026-10-11, revised 2026-10-12
+- **Status:** Accepted, by the owner on 2026-10-12T18:59:50Z (Standard 11 R5, `Proposed | Accepted`);
+  amended by the owner on 2026-10-14 (re-approval at 00:24:50Z, final set at 00:25:20Z), recorded as a
+  dated entry in "Decision history" below. Signal-file size limits beyond what the 2026-10-12
+  acceptance contained are **not** approved (see "Pending: size limits"). This record states what
+  must be true of the implementation; it does not claim any of it is implemented.
+- **Date:** 2026-10-11; accepted 2026-10-12; amended 2026-10-14
 - **Deciders:** Project owner
 - **Tracks:** ST-06, [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
 - **Related:** [ADR 0004](0004-audit-and-validate-are-separate-commands.md),
@@ -106,32 +107,61 @@ vocabulary; D2 named per-signal overrides with INDETERMINATE not overridable; D3
 `eligibility` subcommand; D4 this record before implementation; D5 Standard 22 step 0 with no
 catalog rule.
 
-## Post-acceptance additions (pending owner reapproval)
+## Decision history
 
-The owner accepted this record on 2026-10-12T18:59:50Z. The additions below were made **after** that
-acceptance, in response to review of PR #105, and this record does **not** assert that the owner
-approved them. They are listed with their source, the choice made and the alternative, so the owner
-can approve or amend them in one pass; until then they are proposals within an Accepted record. The
-status line and attribution above are deliberately unchanged pending that decision.
+**2026-10-11:** decisions D1-D5 (owner). **2026-10-12T16:52:55Z:** decisions Q1-Q7. **2026-10-12T18:36:55Z:**
+four confirmations. **2026-10-12T18:59:50Z: this record was accepted.** The text accepted then is the
+text at commit `f4615dd` of PR #105 (with the platform requirement, `target-changed`, and a Windows
+`eligibility` release gate).
 
-| # | Addition | Source (Codex finding, commit) | Choice made | Alternative |
-| --- | --- | --- | --- | --- |
-| 1 | The resolver acquires the held directory handle before resolution and reads relative to it; `init` writes through it, and checking identity then writing by path is not acceptable. (The identity check with `target-changed` before `planInit` and `applyInit` was already in f4615dd and is approved.) | 4251464916, 4251544511, 4251801205; commits 2c542b9, 18b0f9d, 4762e0f (merged as 03ac0e7) | binding by held handle | the f4615dd identity check followed by a path-based write (rejected: not atomic) |
-| 2 | Every path component and the leaf are bound; links, FIFOs, devices and a directory where a file is expected are refused (exit `2`, nothing written) | 4264398202, 4264725716, 4264835581, 4264835588, 4264835599; commits aa8abcc, ebefbcb, 0f77ff7 | refuse, never follow, never replace a link by rename | follow links inside the target, or replace a link as a link |
-| 3 | Properties-only normative text with a non-normative mechanism note (P1-P7); scope limited to paths within the target | 4264881405; commits 0f77ff7, 563167c | properties only; framework-side reads (`templates/*`, `VERSION`) outside the binding | prescribe system calls in the normative text |
-| 4 | The post-write race class (P6): that write is refused, earlier artifacts remain, no rollback; named `entry-changed` | 4264881418, 4264926220, 4264964402; commits 563167c, 9687685, 3adfed5 | partial retention, narrowest honest wording | rollback or transactional placement of all artifacts |
-| 5 | Windows release gates beyond the one in f4615dd: a **non-skipped** real symlink or reparse-point test for `eligibility`, and non-skipped real-filesystem `init` tests (linked intermediate, leaf link, synchronized replacement races for absent and existing leaves, deletion, and an intermediate junction) in the 3.0.0 run, with a seam in the implementation's test surface | 4251464935, 4264881420, 4264926224, 4264964409; commits 2c542b9, 563167c, 9687685, 3adfed5 | release-blocking requirements, stated as requirements and not as existing | injected-only tests, or skippable real tests |
-| 6 | Capped read at cap-plus-one bytes with an injected grow-after-classification test | 4265009543; commit ade7f24 | bounded read | size check then unbounded read |
+### Amendment of 2026-10-14 (owner re-approval)
 
-**Approved at acceptance, not additions (verified against f4615dd):** the platform requirement
-(every supported platform inspects `README.md` and `FROZEN.md` safely; Windows is not declared
-unsupported); the runtime fail-closed rule where safe inspection cannot be established (the entry
-is not opened as a regular file and is `INDETERMINATE`, `unreadable`); the condition
-`target-changed` with identity verified before `planInit` and `applyInit`; and a release gate of a
-passing Windows run of the file-safety tests for `eligibility`.
+**On 2026-10-14T00:24:50Z, with the final decision set at 00:25:20Z, the owner re-approved the
+following additions.** They were **added after** the 2026-10-12T18:59:50Z acceptance, in response to
+review of PR #105, between commits `2c542b9` and `3adfed5` and later repairs; **they did not exist at
+the acceptance timestamp** and are not part of what was accepted then. They are approved from the
+amendment date:
 
-Condition names (`target-changed`, which was approved at acceptance, and `entry-changed`, which is
-an addition) are human diagnostics and are not part of the frozen surface.
+1. the file-safety properties **P1-P7** (held directory bound before resolution; every path
+   component bound; the leaf bound; designation of directory and file artifacts; refusal before the
+   first write; the post-write failure class; Windows required and fail closed);
+2. `init` **refuses before its first write** when required path entries are unsafe;
+3. refusal for a **link, special file or directory where a regular file is required**;
+4. refusal for a **linked `.github` or `artifacts`** (and any linked intermediate directory);
+5. **`entry-changed`** when a path entry changes during `init` (replaced by a link, special file,
+   directory or newly created regular file, or deleted);
+6. files already written before `entry-changed` **remain, with no rollback**;
+7. `entry-changed` remains **outside the frozen surface**;
+8. **real-filesystem Windows safety tests are mandatory and cannot be skipped** for the 3.0.0
+   release gate (including the synchronized replacement-race cases and the `init` cases).
+
+**Not approved, and withheld from the amended record:** unspecified signal-file size limits. The
+per-file read cap that the acceptance of 2026-10-12 already contained (strictly larger than
+`MAX_READ_BYTES` is `over-read-cap`, INDETERMINATE) is unchanged. A capped read that stops after
+cap-plus-one bytes, a grow-after-classification test, and any other size-limit semantics are in the
+non-normative section "Pending: size limits" and nothing in the normative text, the tests or the
+plan depends on them.
+
+**Replaced detail, stated plainly.** The acceptance text verified a directory identity before
+`planInit` and again before `applyInit` and named a mismatch `target-changed`. The amendment
+strengthens that to binding by a held directory handle (P1); `target-changed` keeps its name and
+meaning, and the owner's re-approval covers that change.
+
+**Reading of Standard 11 R5.** R5 says "ADRs are not deleted and not rewritten. A decision that no
+longer holds becomes `Superseded` or `Deprecated`, and a superseding ADR names the one it replaces."
+Three facts govern, stated without weakening R5:
+- ADR 0016 has **not been merged**; `origin/develop` holds no `0016` file. The "Accepted" version at
+  `f4615dd` is a state inside the unmerged PR, not a recorded version of the repository, so no
+  recorded Accepted ADR is being rewritten by this PR. When merged, the first recorded version is
+  this one, with its history above.
+- Nothing in the 2026-10-12 decisions is deleted or reversed; the amendment is appended, dated,
+  attributed and lists exactly what it adds, so a reader can tell what was accepted when. The replaced
+  detail above is named.
+- The repository's own practice permits this on Accepted ADRs on `develop`: ADR 0005 carries
+  "Amendment (ST-17, #95)" and ADR 0006 carries "Amended after acceptance".
+If the owner reads the replaced identity-check detail as "a decision that no longer holds", R5's
+compliant route is a **successor ADR** (the next free number) that holds only the items above and
+names ADR 0016 as the record it extends; that alternative was not chosen here.
 
 ## Decision
 
@@ -192,13 +222,11 @@ Every character-class decision is fixed here, ASCII-only and locale-independent,
 implementations cannot differ on Unicode whitespace or case. Where this record is silent, nothing is
 implied.
 
-- **Decoding.** A matching file is read with a **capped read that stops after at most cap-plus-one
-  bytes**, where the cap is the audit collector's per-file read cap (`MAX_READ_BYTES`, 400,000 bytes
-  at e341dba). It is not a size check followed by an unbounded read: a file that grows after
-  classification is bounded by the same cap-plus-one read. If more than the cap is observed the file
-  is `over-read-cap` and nothing is decoded. A file within the cap is decoded as UTF-8 with errors
-  fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is removed. NUL and other control
-  characters are valid text.
+- **Decoding.** A matching file is read as bytes, no larger than the audit collector's per-file read
+  cap (`MAX_READ_BYTES`, 400,000 bytes at e341dba; a file strictly larger is `over-read-cap`) and
+  decoded as UTF-8 with errors fatal (an invalid sequence is `not-utf8`). One leading U+FEFF is
+  removed. NUL and other control characters are valid text. (This is the text approved at
+  acceptance; any other size-limit behaviour is pending, below.)
 - **Line terminators.** LF, CRLF and a lone CR each end a line.
 - **Whitespace and blank.** The whitespace set is exactly U+0020 and U+0009. A line is blank if it is
   empty or contains only that set. U+00A0, U+3000, U+200B and every other Unicode space or format
@@ -781,11 +809,8 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   open, the same-handle classification with a path-based check, the no-replace or identity-checked
   rename with a replacing rename, and the non-blocking classification with a plain open, and require
   these tests to fail on each.
-- **Capped read.** Injected: a matching file that is within the cap when classified and **grows
-  past the cap before or during the read** is `INDETERMINATE` (`over-read-cap`) and no more than
-  cap-plus-one bytes are requested or retained; a file of exactly the cap is read in full. A
-  mutation check replaces the capped read with a size check followed by an unbounded read and
-  requires the test to fail.
+- **Read cap.** A matching file strictly larger than the per-file read cap is `INDETERMINATE`
+  (`over-read-cap`) and is not decoded; a file of exactly the cap is read in full.
 - **Replacement race.** Through the injected interface, on every platform: a regular `README.md` or
   `FROZEN.md` that `lstat` reports as a regular file and that is replaced by a link (to a file
   outside the target carrying the banner or a listed phrase, and to a benign file) before the read
@@ -885,6 +910,21 @@ ADR before any consumer depends on one.
 - The first version has no machine-readable output; callers use the exit code.
 - `init <subdir>` does not see a freeze marker at an ancestor repository root (confirmation 4).
 - This record freezes no flag spelling and no part of the invocation grammar (confirmation 2).
+
+## Pending: size limits (not approved, non-normative)
+
+**Nothing in this section is a requirement.** The owner has not approved signal-file size limits
+beyond the acceptance-time cap (strictly larger than `MAX_READ_BYTES`, 400,000 bytes at e341dba, is
+`over-read-cap`, INDETERMINATE). Withheld from the amended record: a capped read that stops after at
+most cap-plus-one bytes (so a file that grows after classification is bounded by the same read), and
+an injected grow-after-classification test with its mutation check.
+
+A decision packet must state, before any of it is approved: exact byte limits per file; whether
+limits operate on raw bytes or decoded text; behaviour at and above the boundary; whether truncation,
+refusal or `INDETERMINATE` results; Unicode and newline handling; performance and memory evidence on
+Windows and in container CI; the false-negative consequences for markers beyond the limit; and the
+compatibility classification and tests. The packet is
+`F:\Repos\StandardsPortfolio-evidence\eng-adr0016-size-limit-packet-2026-10-14.md`.
 
 ## Appendix: deferred machine-readable contract (non-normative)
 
