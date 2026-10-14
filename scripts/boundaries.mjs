@@ -631,10 +631,11 @@ function analyse(toks) {
         break;
       }
       case "require":
-        if (isP(k + 1, "(")) {
-          // module.require and module?.require calls are require calls too.
-          if (!afterDot || followsModule(k)) flag("require-call", tk.line);
-        }
+        // Any reference, not only a call: require.call / .apply / .bind, an alias (const q = require),
+        // a destructured or passed value all reach the same loader the scan cannot follow.
+        // module.require and module?.require are the same function. An object key or a method of
+        // some other object is not.
+        if ((!afterDot || followsModule(k)) && !isP(k + 1, ":")) flag("require-call", tk.line);
         break;
       case "module":
         // a bracketed access on module: the string "require", or a computed key
@@ -642,8 +643,11 @@ function analyse(toks) {
           // module[...], module?.[...] and (module)[...]
           let b = k + 1;
           if (isP(b, ")") && isP(k - 1, "(")) b++;
-          if (isP(b, "?") && isP(b + 1, ".")) b += 2;
+          const optional = isP(b, "?") && isP(b + 1, ".");
+          if (optional) b += 2;
           if (isP(b, "[") && (!isStr(b + 1) || toks[b + 1].v === "require")) flag("require-call", tk.line);
+          // The module object used as a value (const m = module; f(module)) carries .require with it.
+          else if (!optional && !isP(b, ".") && !isP(b, "[") && !isP(b, ":")) flag("require-call", tk.line);
         }
         break;
       case "createRequire":
@@ -851,7 +855,7 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
   const packageNames = repositoryPackageNames(repoRoot, scan.files);
   for (const prefix of allowPrefixes) {
     for (const name of packageNames) {
-      if (name.startsWith(prefix) || prefix.startsWith(name)) {
+      if (name.startsWith(prefix) || prefix === name || prefix.startsWith(`${name}/`)) {
         violations.push({
           kind: "external-prefix-shadows-member",
           file: DECLARATION_FILE,

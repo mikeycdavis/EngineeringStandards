@@ -914,3 +914,71 @@ test("a repository with a package name no prefix admits, and no import of it, is
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------------------------------------------------
+// 10. Reviewer: every reference to require that is not a plain call is unexaminable. A crossing
+//     reached through .call, .apply, .bind, an alias or a passed value must never come back OK.
+// ------------------------------------------------------------------------------------------
+
+const CROSSING_REQUIRE_SPELLINGS = [
+  'module.require.call(module, "./core.mjs");',
+  'module.require.apply(module, ["./core.mjs"]);',
+  'module.require.bind(module)("./core.mjs");',
+  'module?.require.call(module, "./core.mjs");',
+  'require.call(null, "./core.mjs");',
+  'require.apply(null, ["./core.mjs"]);',
+  'require.bind(null)("./core.mjs");',
+  'const q = require; q("./core.mjs");',
+  'const { call } = require; call("./core.mjs");',
+  'const m = module; m.require("./core.mjs");',
+  'const f = module.require; f("./core.mjs");',
+  'run(require, "./core.mjs");',
+  'module.require("./core.mjs");',
+];
+
+for (const src of CROSSING_REQUIRE_SPELLINGS) {
+  test(`REQUIRE spelling is flagged, never OK, when it crosses an undeclared boundary: ${src}`, () => {
+    assert.ok(scanSource(src).mechanisms["require-call"].length > 0, `not detected: ${src}`);
+    const t = tiny({ ...FILES, "src/app.mjs": src + "\n" }, { ...baseDeclaration(), edges: [] });
+    try {
+      const v = checkBoundaries(t.dir, t.declaration);
+      assert.ok(v.length > 0, `false pass for: ${src}`);
+      assert.ok(kinds(v).includes("unobserved-mechanism"), JSON.stringify(v));
+    } finally {
+      rmSync(t.dir, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const src of [
+  "const o = { require: 1 };",
+  "const r = checker.require(1);",
+  "const r = this.module.exports;",
+  "module.exports = { a: 1 };",
+  "module.exports.run = function () {};",
+]) {
+  test(`not a require reference: ${src}`, () => {
+    assert.equal(scanSource(src).mechanisms["require-call"].length, 0, src);
+  });
+}
+
+test("a longer external prefix does not collide with a shorter repository package name", () => {
+  // package "@acme/core"; allowPrefix "@acme/core-extra/" cannot admit an import of "@acme/core".
+  const d = { ...baseDeclaration(), external: { allowPrefixes: ["node:", "@acme/core-extra/"], evidence: ["NOTES.md:1"] } };
+  const t = tiny(withPackage(), d);
+  try {
+    assert.deepEqual(checkBoundaries(t.dir, t.declaration), []);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("a prefix naming a subpath of a repository package still shadows it", () => {
+  const d = { ...baseDeclaration(), external: { allowPrefixes: ["node:", "@acme/core/lib/"], evidence: ["NOTES.md:1"] } };
+  const t = tiny(withPackage(), d);
+  try {
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["external-prefix-shadows-member"]);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
