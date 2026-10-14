@@ -350,3 +350,34 @@ test("no-ci-configuration is withheld when .github/workflows exists but cannot b
       await restoreListing(workflows);
     }
   }));
+
+// ST14-001 (#64): a single-file CI candidate counts only as a regular file.
+test("a directory named Jenkinsfile is not CI configuration", () =>
+  bare(async (dir) => {
+    await mkdir(path.join(dir, "Jenkinsfile"), { recursive: true });
+    assert.deepEqual(idsOf(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI)), [NO_CI]);
+  }));
+
+test("a regular-file Jenkinsfile still suppresses no-ci-configuration", () =>
+  bare(async (dir) => {
+    await writeFile(path.join(dir, "Jenkinsfile"), "pipeline {}\n");
+    assert.deepEqual(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI), []);
+  }));
+
+test("no-ci-configuration is withheld when a single-file candidate cannot be inspected", () =>
+  bare(async (dir) => {
+    if (process.platform === "win32") return; // symlink creation needs privileges there
+    // A self-referential link: lstat succeeds, stat fails with ELOOP, which is neither ENOENT nor ENOTDIR.
+    await symlink("Jenkinsfile", path.join(dir, "Jenkinsfile"));
+    let code;
+    try { statSync(path.join(dir, "Jenkinsfile")); } catch (e) { code = e.code; }
+    assert.equal(code, "ELOOP", "precondition: the candidate must be uninspectable, not absent");
+    assert.deepEqual(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI), [], "absence claimed over an entry nobody could inspect");
+  }));
+
+test("a file where a CI candidate's parent directory belongs is an absence, not an unknown", () =>
+  bare(async (dir) => {
+    // `.circleci/config.yml` under a regular file `.circleci` is ENOTDIR: nothing is there to inspect.
+    await writeFile(path.join(dir, ".circleci"), "not a directory\n");
+    assert.deepEqual(idsOf(cli("audit", dir).json.findings.filter((f) => f.id === NO_CI)), [NO_CI]);
+  }));

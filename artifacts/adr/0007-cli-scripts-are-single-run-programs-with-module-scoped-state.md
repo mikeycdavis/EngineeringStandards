@@ -53,8 +53,10 @@ holds run state is governed by this decision the moment it exists**, whether or 
 has been updated to name it. `scripts/attestations.mjs` was added and was governed from its first
 line, and this record was stale until it said so. `scripts/repository.mjs` and `scripts/reviews.mjs`
 were added in the same cycle and are *not* in the set, not by omission but because they hold no
-module-level bindings at all beyond exported frozen identifiers — every function takes its inputs
-and returns its answer. That was a deliberate design constraint when repository provenance was
+mutable module-level state — every function takes its inputs and returns its answer. `reviews.mjs`
+holds only immutable module-level constants (patterns and one deep-frozen manifest, read once at
+import and exported), and `review-history.mjs` holds none and writes only short-lived comparison files
+under the operating-system temp directory, which it removes. That was a deliberate design constraint when repository provenance was
 introduced, precisely so that opening the Git seam did not enlarge the state this decision governs.
 
 Frozen lookup tables and immutable configuration are excluded. **A derived binding assigned once from

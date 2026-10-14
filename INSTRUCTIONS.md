@@ -220,6 +220,16 @@ mark attestable; it goes **stale** when the reviewed paths change, returning the
 `not-evaluated`; and an expired one is not verified. Omit `digest` on a first pass — `validate`
 prints the current one so you can record it.
 
+That first-pass omission is **bootstrap behaviour for a genesis event only**, not authenticated history:
+every later event in a rule's chain must carry its `digest`, `reviewerRole`, reviewed commit, tree and
+scope. Reviewer identity (`reviewedBy`, `reviewerRole`) is **asserted by the policy text, not
+authenticated**. History is append-only: `validate` and `npm run attestations` compare it with the
+policy at `merge-base(HEAD, origin default branch)`. When that base cannot be determined (no remote
+ref, shallow history without it) the result is `NOT_EVALUATED` and every approval is disregarded in
+that run (run `git fetch origin`); a rewritten history withdraws them too. Only approvals are disregarded:
+a recorded **rejection stays effective**, because negative evidence is never removed for want of a
+comparison. Deleting or emptying the attestations section is itself a rewrite when a base exists.
+
 The distinction that matters most: **not-applicable is a claim about your project, not about the
 rule.** *We have no background jobs* stops being true the day you add one — which is what
 `revisitWhen` records.

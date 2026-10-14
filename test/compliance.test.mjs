@@ -430,15 +430,15 @@ test("an attested rule does NOT make the project COMPLIANT_WITH_EXCEPTIONS", () 
 test("an attestation cannot override an automated failure", () => {
   // Evidence outranks assertion (Standard 38 R4). This is also why an attestation cannot bypass a
   // nonExemptible rule — not a separate prohibition, the automated failure simply survives.
-  // ai.destructive-approval is both manual-review (so genuinely attestable) and nonExemptible, so
+  // data.no-silent-discard is both manual-review (so genuinely attestable) and nonExemptible, so
   // this case covers both prohibitions at once.
-  const rule = catalog.rules.get("ai.destructive-approval");
+  const rule = catalog.rules.get("data.no-silent-discard");
   assert.equal(rule.attestable, true);
   assert.equal(rule.nonExemptible, true);
 
   const verdict = run({
-    policy: policy({ attestations: { "ai.destructive-approval": attest() } }),
-    findings: [{ rule: "ai.destructive-approval", message: "delete runs unguarded", evidence: ["cli.js"] }],
+    policy: unestablishing("data.no-silent-discard", { attestations: { "data.no-silent-discard": attest() } }),
+    findings: [{ rule: "data.no-silent-discard", message: "delete runs unguarded", evidence: ["cli.js"] }],
   });
   assert.equal(verdict.status, STATUS.NON_COMPLIANT);
   assert.ok(
@@ -1180,4 +1180,48 @@ test("the exception on a manual-review rule reaches the validate CLI output and 
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("an approval that succeeds a recorded rejection says so, and an ordinary approval does not", () => {
+  const base = {
+    reviewedBy: "project-owner",
+    reviewedAt: "2026-08-09",
+    evidence: "Reviewed the implementation and its tests.",
+  };
+  const rejected = { id: "r1", status: "rejected", ...base };
+  const approved = {
+    id: "r2",
+    supersedes: "r1",
+    status: "approved",
+    ...base,
+    reviewedAt: "2026-08-10",
+    reviewerRole: "synthetic-role",
+    reviewedAgainst: {
+      revision: "1111111111111111111111111111111111111111",
+      tree: "2222222222222222222222222222222222222222",
+      digest: "abcdef1234567890",
+      paths: ["a.mjs"],
+    },
+  };
+  const messageFor = (reviews) =>
+    run({ policy: policy({ attestations: { "ai.propose-execute": { reviews } } }) }).results.find(
+      (r) => r.ruleId === "ai.propose-execute",
+    );
+
+  const cleared = messageFor([rejected, approved]);
+  assert.equal(cleared.disposition, "attested");
+  assert.match(cleared.message, /^Attested by project-owner on 2026-08-10: /);
+  assert.match(cleared.message, /\(attested, successor to rejected event r1\)$/);
+
+  const ordinary = messageFor([{ id: "r1", status: "approved", ...base }]);
+  assert.equal(ordinary.disposition, "attested");
+  assert.doesNotMatch(ordinary.message, /successor to rejected event/);
+
+  // approved -> approved: the predecessor is an approval, so no rejection is mentioned.
+  const renewed = messageFor([{ id: "r1", status: "approved", ...base }, approved]);
+  assert.equal(renewed.disposition, "attested");
+  assert.doesNotMatch(renewed.message, /successor to rejected event/);
+
+  const stillRejected = messageFor([{ id: "r1", status: "approved", ...base }, { ...approved, status: "rejected" }]);
+  assert.equal(stillRejected.disposition, "attested-rejected");
 });

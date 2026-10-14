@@ -1,16 +1,22 @@
 /**
- * Committed conflict markers are reported; documentation of them is not.
+ * Conflict markers in tracked files are reported; documentation of them is not.
  *
  * Issue #21 framed this as one question about one layer. The measurement split it into two
  * propositions that share a vocabulary and nothing else, and this file covers only the first:
- * *this tracked file's committed content contains a conflict-marker group*. The second — *this
- * working tree is mid-conflict* — cannot reach a commit at all, so it lives in the local preflight
- * (`scripts/ci-context.sh` / `.ps1`) rather than here.
+ * *this tracked file contains a conflict-marker group*. The detector asks `git ls-files` which paths
+ * are tracked and reads their bytes from the WORKING TREE, not from HEAD or the index, so a group
+ * in the working copy of a tracked file is reported even if the committed content is clean (a test
+ * pins this). The second proposition — *this working tree is mid-conflict*, meaning unmerged index
+ * stages — is a different thing: the index state itself is not inspected here, and it lives in the
+ * local preflight (`scripts/ci-context.sh` / `.ps1`) rather than in this suite.
  *
- * They are disjoint, and each misses the other's case entirely. A delete/modify conflict leaves
- * unmerged stages in the index over a file whose content holds no markers. A committed marker
- * leaves a clean index and clean status. `git diff --check` sees neither: it reads added lines in a
- * diff, so it went silent the moment `8870a43` committed the specimen this file is built from.
+ * They overlap only partly. An ordinary textual merge conflict writes marker lines into the tracked
+ * file, so the detector reads and reports them from the working tree. A delete/modify conflict leaves
+ * unmerged stages in the index over a file whose content holds no markers, so the detector misses
+ * it and only the preflight sees it. A committed marker leaves a clean index and clean status, so the
+ * preflight misses it and only this detector sees it. Once the markers are committed, `git diff
+ * --check` reports nothing either: it reads added lines in a diff, so it went silent the moment
+ * `8870a43` committed the specimen this file is built from.
  *
  * The known-negative half is the hard half, and it is why every fixture here is a real repository
  * rather than a directory. A well-formed group is lexically identical to an illustration of one, so
@@ -26,7 +32,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, cp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -357,5 +363,158 @@ test("a repository with no markers raises nothing", async () => {
     const json = cli("audit", root);
     assert.deepEqual(markerEvidence(json), []);
     assert.deepEqual(unavailableEvidence(json), []);
+  });
+});
+
+// ------------------------------------- the pinned P1 contract: warning, unbound, no compliance effect
+//
+// Owner decision (issue #58, 2026-10-01; strict behaviour confirmed 2026-10-11): committed
+// conflict-marker detection is permanently audit-only evidence. It is unbound to a catalog rule and
+// has no compliance effect. Its severity is `warning`, which is deliberate rather than accidental:
+// `audit --strict` exits 1 on any non-`info` finding, so a group in a tracked file fails a strict
+// audit, while the default audit exits 0 and the `validate` verdict is unchanged by it
+// (`validate --json` still lists the finding, but with no rule the compliance engine skips it). The tests below pin each half of
+// that, because the contract is as much what the finding must NOT do as what it reports.
+
+const COMPLIANT = path.join(HERE, "fixtures", "compliant");
+const GROUP = ["const a = 1;", `${OPEN} HEAD`, "const b = 2;", SEP, "const b = 3;", `${END} other`, ""].join("\n");
+const RESOLVED = "const a = 1;\nconst b = 3;\n\n\n\n\n";
+
+/** Like `cli`, but keeps the exit code, and accepts extra flags. */
+function run(command, dir, extra = []) {
+  const r = spawnSync(
+    process.execPath,
+    [CLI, command, `--dir=${dir}`, "--json", `--max-total-read-bytes=${AMPLE}`, ...extra],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  assert.equal(r.error, undefined, `spawn failed: ${r.error}`);
+  try {
+    return { code: r.status, json: JSON.parse(r.stdout) };
+  } catch {
+    return assert.fail(`${command} stdout was not JSON.\nstderr: ${r.stderr.slice(0, 2000)}`);
+  }
+}
+
+/**
+ * A copy of the `compliant` fixture, committed, carrying `src/merged.mjs` with or without a group.
+ *
+ * The two variants hold the same file set and differ only in that file's bytes, so any difference in
+ * a `validate` result would be the marker finding leaking into the verdict. `policy` adds a
+ * project-policy.yml so `validate` reaches a verdict instead of exiting 2 over a missing policy;
+ * `skip` omits one directory of the fixture so a rule really fails and the verdict is NON_COMPLIANT.
+ */
+async function withCompliantRepo({ marker, policy = false, skip = null }, fn) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conflict-markers-pin-"));
+  try {
+    await cp(COMPLIANT, root, {
+      recursive: true,
+      filter: (src) => skip === null || !src.split(path.sep).includes(skip),
+    });
+    await writeFile(path.join(root, "src", "merged.mjs"), marker ? GROUP : RESOLVED);
+    if (policy) {
+      const version = (await readFile(path.join(HERE, "..", "VERSION"), "utf8")).trim();
+      const base = await readFile(path.join(HERE, "fixtures", "policies", "valid.yml"), "utf8");
+      await writeFile(
+        path.join(root, "project-policy.yml"),
+        base.replace('standardVersion: "1.0.0"', `standardVersion: "${version}"`),
+      );
+    }
+    git(root, ["init", "--quiet"]);
+    git(root, ["config", "user.email", "fixture@example.invalid"]);
+    git(root, ["config", "user.name", "fixture"]);
+    git(root, ["config", "core.autocrlf", "false"]);
+    git(root, ["add", "--", "."]);
+    git(root, ["commit", "--quiet", "-m", "fixture"]);
+    return await fn(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+const needsAttention = (json) => json.findings.filter((f) => f.severity !== "info");
+
+test("the finding is a warning with no rule, so audit --strict exits 1 and a plain audit exits 0", async () => {
+  await withCompliantRepo({ marker: true }, (root) => {
+    const plain = run("audit", root);
+    const [finding, ...rest] = findingsById(plain.json, "committed-conflict-markers");
+    assert.ok(finding && rest.length === 0, "exactly one committed-conflict-markers finding was expected");
+    assert.equal(finding.severity, "warning", "severity is the strict contract: info would not fail --strict");
+    assert.equal(finding.rule, null, "the finding must stay unbound to any catalog rule");
+    // Non-vacuity: the marker is the ONLY thing that needs attention in this fixture, so the strict
+    // exit below is attributable to it and to nothing else.
+    assert.deepEqual(
+      needsAttention(plain.json).map((f) => f.id),
+      ["committed-conflict-markers"],
+    );
+    assert.equal(plain.code, 0, "a warning alone must not fail a default audit");
+    assert.equal(run("audit", root, ["--strict"]).code, 1, "--strict must fail on a committed group");
+  });
+});
+
+test("the same repository with the group resolved passes audit --strict", async () => {
+  // The negative partner of the test above: without it, an audit that exited 1 under --strict for
+  // an unrelated reason would let the exit-1 assertion pass.
+  await withCompliantRepo({ marker: false }, (root) => {
+    const strict = run("audit", root, ["--strict"]);
+    assert.deepEqual(markerEvidence(strict.json), []);
+    assert.deepEqual(needsAttention(strict.json), []);
+    assert.equal(strict.code, 0);
+  });
+});
+
+for (const [name, skip] of [
+  ["a repository the policy evaluates without failures", null],
+  ["a repository where a required rule really fails", "adr"],
+]) {
+  test(`validate reaches the same verdict with and without a committed group: ${name}`, async () => {
+    const shape = ({ code, json }) => ({
+      code,
+      status: json.status,
+      score: json.score,
+      summary: json.summary,
+      assurance: json.assurance,
+      denominator: json.denominator,
+      results: json.results.map((r) => [r.ruleId, r.status, r.severity, r.disposition, r.evidence]),
+    });
+    const view = (marker) =>
+      withCompliantRepo({ marker, policy: true, skip }, (root) => ({
+        validate: shape(run("validate", root)),
+        strictValidate: shape(run("validate", root, ["--strict"])),
+        audited: markerEvidence(run("audit", root).json),
+        listed: findingsById(run("validate", root).json, "committed-conflict-markers"),
+      }));
+    const [with_, without] = [await view(true), await view(false)];
+    // The pair must differ in exactly the one thing under test, and the verdict must be a real one.
+    assert.deepEqual(with_.audited, ["src/merged.mjs:2-6"], "the group must be present in the variant");
+    // validate --json lists the finding, unbound: present in the variant, absent from the control,
+    // and the verdict below is nonetheless identical.
+    assert.equal(with_.listed.length, 1, "validate --json should list the finding");
+    assert.equal(with_.listed[0].rule, null, "the listed finding must stay unbound");
+    assert.deepEqual(without.listed, []);
+    assert.deepEqual(without.audited, [], "the control must not carry the group");
+    assert.notEqual(with_.validate.code, 2, "validate must reach a verdict, not an invocation error");
+    assert.equal(with_.validate.status, skip === null ? "NOT_EVALUATED" : "NON_COMPLIANT");
+    assert.deepEqual(with_.validate, without.validate, "a committed conflict marker changed the validate verdict");
+    assert.deepEqual(with_.strictValidate, without.strictValidate, "--strict made validate see the marker");
+  });
+}
+
+test("the detector reads the working-tree copy of a tracked file, so an uncommitted group is reported", async () => {
+  // Pins what the detector actually does, which the finding's id ("committed-...") undersells.
+  // `git ls-files` decides WHICH paths are checked; the bytes are read from the working tree. A
+  // tracked file whose committed content is clean but whose working copy holds a group is reported,
+  // and `audit --strict` fails on that working-tree state. The bytes in HEAD are not consulted.
+  await withCompliantRepo({ marker: false }, async (root) => {
+    const clean = run("audit", root, ["--strict"]);
+    assert.deepEqual(markerEvidence(clean.json), [], "the committed content must be clean at the start");
+    assert.equal(clean.code, 0);
+
+    await writeFile(path.join(root, "src", "merged.mjs"), GROUP);
+    const dirty = run("audit", root, ["--strict"]);
+    assert.deepEqual(markerEvidence(dirty.json), ["src/merged.mjs:2-6"], "the working-tree group was not read");
+    assert.equal(dirty.code, 1, "--strict must fail on a working-tree group in a tracked file");
+    // The same file is still clean in HEAD; this is the working tree being read, not the commit.
+    const head = spawnSync("git", ["-C", root, "show", "HEAD:src/merged.mjs"], { encoding: "utf8" });
+    assert.equal(head.stdout, RESOLVED);
   });
 });

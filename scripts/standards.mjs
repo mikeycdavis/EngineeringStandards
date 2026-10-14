@@ -35,6 +35,7 @@ import {
   FRESHNESS,
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
+import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -300,6 +301,7 @@ function renderVerdict(report, policy) {
   if (attested.length) {
     out.push("  Attested (human review):");
     for (const r of attested) out.push(`    ${r.ruleId} — ${r.attestation.reviewedBy}, ${r.attestation.reviewedAt}`);
+    out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
     out.push("");
   }
 
@@ -1581,7 +1583,9 @@ const CI_FILES = [
  * cannot be listed — the caller must not claim absence from that.
  */
 function hasCiConfiguration(root, c) {
-  if (c !== ".github/workflows") return existsSync(path.join(root, c));
+  // A single-file system counts only as a regular file: a directory named `Jenkinsfile` is not a
+  // pipeline. An entry that cannot be inspected is unknown (null), never absent.
+  if (c !== ".github/workflows") return statSyncIsFile(path.join(root, c));
   const dir = path.join(root, c);
   try {
     if (!statSync(dir).isDirectory()) return false;
@@ -4004,7 +4008,76 @@ export async function main(args) {
     return { states: out, repo };
   }
 
-  const { states: freshness, repo } = attestationFreshness(policy.document, root, repoAvailability);
+  /**
+   * History-integrity preflight, shared with `npm run attestations` (reviewHistoryPreflight).
+   *
+   * The policy's review histories are ALWAYS compared with the policy at merge-base(HEAD, origin
+   * default branch) when a base exists, even when the policy now records none (deleting or emptying
+   * the attestations section, removing a rule key or the file is a violation). The result is
+   * reported whenever anything is recorded or was removed, never silently skipped:
+   *   - verified:       attestations are effective.
+   *   - violated:       the policy rewrites or removes recorded history.
+   *   - not-evaluated:  no trusted base could be determined (no remote ref, shallow history without
+   *                     the base, not a work tree).
+   * In the last two cases APPROVALS (and every freshness-established attestation) are disregarded
+   * for this run, but recorded REJECTIONS stay effective: negative evidence is never removed because
+   * a comparison was unavailable or because history was rewritten (on a violation the rejections
+   * recorded at the trusted base are kept). A disregarded approval reports as unreviewed, exactly as
+   * if it had not been recorded.
+   *
+   * Limits, stated rather than hidden: when HEAD is the default-branch tip the base is HEAD, so only
+   * uncommitted edits are visible (an already-rewritten tip cannot be proved against itself without
+   * an external anchor; the pinned manifest anchors only the eleven histories that existed at its
+   * base). Without a base the removal of a whole policy section cannot be detected. Identities are
+   * asserted by the policy text and are not authenticated.
+   */
+  const reviewHistoryBase = await reviewHistoryPreflight({
+    repositoryPath: root,
+    policyPath: "project-policy.yml",
+  });
+  const headAttestations = policy.document?.attestations ?? {};
+  // Every rule that recorded an attestation at the trusted base or at the head: a whole-section
+  // deletion leaves the head empty, but what was recorded at the base is exactly what was withdrawn.
+  // The base set exists only when the comparison ran and found a violation; without a base the count
+  // can only be taken from the head.
+  const recordedAttestationRules = new Set([
+    ...Object.keys(reviewHistoryBase.baseAttestations ?? {}),
+    ...Object.keys(headAttestations),
+  ]);
+  const reviewHistoryEffective = effectiveAttestations(headAttestations, reviewHistoryBase);
+  const keptRejections = Object.keys(reviewHistoryEffective).length;
+  const disregardedAttestations = recordedAttestationRules.size - keptRejections;
+  if (reviewHistoryBase.status !== "not-applicable") {
+    const base = reviewHistoryBase;
+    const consequence =
+      `${disregardedAttestations} attestation(s) that were not ` +
+      `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.`;
+    addFinding({
+      id: "review-history-append-only",
+      category: "evidence-surface",
+      severity: base.status === "verified" ? "info" : base.status === "violated" ? "error" : "warning",
+      label: "OBSERVED",
+      evidence: ["project-policy.yml"],
+      message:
+        base.status === "verified"
+          ? `Review histories are append-only relative to ${base.baseCommit} (merge-base with ${base.ref}).` +
+            (base.headIsBase ? " HEAD is the base, so only uncommitted edits to the policy were compared." : "") +
+            ` ${IDENTITY_NOTE}`
+          : base.status === "violated"
+            ? `Review history was rewritten relative to ${base.baseCommit} (merge-base with ${base.ref}): ` +
+              `${base.reason}. ${consequence}`
+            : `Review-history immutability is NOT_EVALUATED: ${base.reason}. ${consequence} Their validity ` +
+              `depends on a history that could not be compared with a trusted base (supply the ` +
+              `default-branch ref, for example with git fetch origin, and run again). ${IDENTITY_NOTE}`,
+      standardRef: R.search,
+    });
+  }
+  const evaluationDocument =
+    !reviewHistoryBase.effective && policy.document
+      ? { ...policy.document, attestations: reviewHistoryEffective }
+      : policy.document;
+
+  const { states: freshness, repo } = attestationFreshness(evaluationDocument, root, repoAvailability);
 
   // Repository content is the source of truth for attestation freshness, and its absence is a fact
   // about the search mechanism rather than about the project (Standard 44 R12). It is reported as an
@@ -4159,7 +4232,7 @@ export async function main(args) {
 
   const verdict = evaluate({
     catalog,
-    policy: policy.document,
+    policy: evaluationDocument,
     findings,
     evaluated: evaluatedThisRun,
     today,
@@ -4178,6 +4251,13 @@ export async function main(args) {
       return null;
     }
   })();
+
+  // Additive: wherever a reviewer identity is shown it is labelled as asserted, never authenticated.
+  for (const result of verdict.results) {
+    if (result.attestation) {
+      result.attestation = { ...result.attestation, identity: "asserted, not authenticated" };
+    }
+  }
 
   const report = envelope({
     verdict,

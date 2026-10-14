@@ -16,7 +16,7 @@
  */
 
 import { resolve } from "./catalog.mjs";
-import { currentReview, reviewProblems } from "./reviews.mjs";
+import { currentReview, recordedRejections, reviewProblems, reviewsOf } from "./reviews.mjs";
 
 export const STATUS = {
   COMPLIANT: "COMPLIANT",
@@ -114,6 +114,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     const record = attestations[rule.id];
     const structural = reviewProblems(rule.id, record);
     if (structural.length > 0) {
+      const rejections = recordedRejections(record);
       // A malformed history establishes nothing rather than establishing whatever happens to be
       // last. Selecting by position from a sequence whose order is unverified would make the file's
       // layout the chronology.
@@ -125,7 +126,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         validationType: "configuration",
         assurance: "full",
         disposition: "invalid-attestation",
-        message: `${rule.id} has a malformed review history: ${structural.join("; ")}.`,
+        message:
+          `${rule.id} has a malformed review history: ${structural.join("; ")}.` +
+          (rejections.length > 0
+            ? ` It records a rejection that stays effective: ${rejections
+                .map((r) => `${r.id ?? "(no id)"}${r.reviewedBy ? ` by ${r.reviewedBy}` : ""}${r.reviewedAt ? ` on ${r.reviewedAt}` : ""}`)
+                .join(", ")}.`
+            : ""),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
         remediation: "Give every review a unique id and record them in chronological order.",
@@ -141,6 +148,14 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // the project's own code, so it is not offered as a contradiction (ST-19a).
       const hits = (byRule.get(rule.id) ?? []).filter((h) => !h.fixtureExemption);
       const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);
+      // Additive only: an approval whose immediate predecessor is a recorded rejection says so, so a
+      // cleared rejection is never read as an acceptance that was always there (ST-18).
+      if (verdict?.disposition === "attested" && attestation.status === "approved") {
+        const predecessor = reviewsOf(record).find((review) => review?.id === attestation.supersedes);
+        if (predecessor?.status === "rejected") {
+          verdict.message = `${verdict.message} (attested, successor to rejected event ${predecessor.id})`;
+        }
+      }
       if (verdict?.disposition === "not-evaluated" && verdict.freshness) {
         nonEstablishing = verdict;
       } else if (verdict) {
