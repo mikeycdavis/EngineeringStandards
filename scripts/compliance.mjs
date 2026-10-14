@@ -182,7 +182,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         level,
         RESULT.skipped,
         "excepted",
-        `${rule.id} is excepted by ${manualException.approvedBy} (approved ${manualException.approvedAt}): ${manualException.reason}`,
+        `${rule.id} is excepted by ${displaySafe(manualException.approvedBy)} (approved ${displaySafe(manualException.approvedAt)}): ${displaySafe(manualException.reason)}`,
       );
       result.evidence = ["project-policy.yml"];
       result.files = ["project-policy.yml"];
@@ -346,7 +346,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   if (hits.length > 0) {
     return fail(
       "contradicted-attestation",
-      `${rule.id} is attested as approved, but an automated check found: ${hits[0].message}`,
+      `${rule.id} is attested as approved, but an automated check found: ${displaySafe(hits[0].message)}`,
       "Fix the finding. An attestation records human evidence; it never overrides what a check observed.",
     );
   }
@@ -354,7 +354,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   if (attestation.status === "rejected") {
     return fail(
       "attested-rejected",
-      `${rule.id} was reviewed by ${attestation.reviewedBy} and found unmet.`,
+      `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} and found unmet.`,
       "Satisfy the rule, then re-attest. A recorded rejection is a failure, not silence.",
     );
   }
@@ -393,7 +393,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
       disposition: "not-evaluated",
       freshness: fresh.state,
       message:
-        `${rule.id} was reviewed by ${attestation.reviewedBy} on ${attestation.reviewedAt}, but that ` +
+        `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}, but that ` +
         `review does not establish the current state: ${fresh.detail}.`,
       evidence: against?.paths ?? ["project-policy.yml"],
       files: against?.paths ?? ["project-policy.yml"],
@@ -416,7 +416,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
     // the assurance breakdown is the honest home for it — never `automated`.
     assurance: "full",
     disposition: "attested",
-    message: `Attested by ${attestation.reviewedBy} on ${attestation.reviewedAt}: ${attestation.evidence}`,
+    message: `Attested by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}: ${displaySafe(attestation.evidence)}`,
     evidence: against?.paths ?? [],
     files: against?.paths ?? [],
     remediation: rule.remediation,

@@ -1753,3 +1753,79 @@ test("control characters in policy strings are escaped in human, JSON and attest
   assert.ok(!CONTROL.test(JSON.stringify(badDate.run.report)), "raw control character in the JSON report for an invalid date");
   assert.ok(!CONTROL.test(badDate.tableText), "raw control character in the attestations output for an invalid date");
 });
+
+// ---------------------------------------------------------------------------------------------
+// ST-41 repair: the same guarantee for the ordinary (well-formed history) paths. Every site that
+// interpolates a policy string into a message, and the human `validate` renderer, is checked on the
+// text a person reads. JSON output is always escaped by the serializer, so it is not evidence here:
+// the message string is parsed back out of the JSON and must itself hold no raw control character.
+// ---------------------------------------------------------------------------------------------
+
+const ST41_ESC = String.fromCharCode(27);
+const ST41_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
+const ST41_HOSTILE_REVIEWER = `evil${ST41_ESC}[31mRED${ST41_ESC}[0m`;
+const ST41_HOSTILE_EVIDENCE = `ev${ST41_ESC}[2Jidence`;
+
+async function st41Fixture({ status, mutateAfter }) {
+  const dir = await validateFixture();
+  git(dir, "add", "reviewed.txt");
+  git(dir, "commit", "-qm", "reviewed content");
+  const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+  const lines = [
+    `standardVersion: "${readFileSync(path.join(REPO_ROOT, "VERSION"), "utf8").trim()}"`,
+    `project: "synthetic"`,
+    `rules:`,
+    `  ${RULE}:`,
+    `    level: required`,
+    `attestations:`,
+    `  ${RULE}:`,
+    `    reviews:`,
+    `      - id: "r1"`,
+    `        status: ${status}`,
+    `        reviewedBy: "${ST41_HOSTILE_REVIEWER}"`,
+    `        reviewedAt: "2026-10-01"`,
+    `        evidence: "${ST41_HOSTILE_EVIDENCE}"`,
+    `        reviewedAgainst:`,
+    `          digestAlgorithm: "${DIGEST_ALGORITHM}"`,
+    `          digest: "${digest}"`,
+    `          source: git`,
+    `          paths:`,
+    `            - "reviewed.txt"`,
+  ];
+  await writeFile(path.join(dir, "project-policy.yml"), `${lines.join("\n")}\n`);
+  git(dir, "add", "project-policy.yml");
+  git(dir, "commit", "-qm", "policy");
+  git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+  if (mutateAfter) {
+    await writeFile(path.join(dir, "reviewed.txt"), "one\ntwo\n");
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content changed");
+  }
+  return dir;
+}
+
+function st41Human(dir) {
+  const result = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir], { encoding: "utf8", windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  return `${result.stdout}${result.stderr}`;
+}
+
+for (const site of [
+  { name: "ordinary rejection (compliance.mjs attested-rejected message)", status: "rejected", mutateAfter: false, disposition: "attested-rejected", humanShows: "message" },
+  { name: "stale review (compliance.mjs freshness message)", status: "approved", mutateAfter: true, disposition: "not-evaluated", humanShows: null },
+  { name: "attested review (compliance.mjs attested message and standards.mjs Attested list)", status: "approved", mutateAfter: false, disposition: "attested", humanShows: "attested" },
+]) {
+  test(`ST-41: policy strings are display-safe in the text a person reads: ${site.name}`, async () => {
+    const dir = await st41Fixture(site);
+    try {
+      const run = runValidate(dir);
+      assert.equal(run.rule.disposition, site.disposition, JSON.stringify(run.rule));
+      assert.ok(!ST41_CONTROL.test(run.rule.message), `raw control character in the result message: ${JSON.stringify(run.rule.message)}`);
+      assert.ok(run.rule.message.includes("evil\\u001b[31mRED"), run.rule.message);
+      const human = st41Human(dir);
+      assert.ok(!ST41_CONTROL.test(human), "raw control character in the human validate output");
+      if (site.humanShows) assert.ok(human.includes("evil\\u001b[31mRED"), "the escaped reviewer is not shown in the human output");
+    } finally {
+      await cleanup(dir);
+    }
+  });
+}

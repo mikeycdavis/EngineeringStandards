@@ -235,8 +235,8 @@ function renderVerdict(report, policy) {
   if (failed.length) {
     out.push("  Failing:");
     for (const r of failed) {
-      out.push(`    ${r.ruleId} [${r.level}] ${r.message}`);
-      out.push(`      -> ${r.remediation}`);
+      out.push(`    ${displaySafe(r.ruleId)} [${r.level}] ${displaySafe(r.message)}`);
+      out.push(`      -> ${displaySafe(r.remediation)}`);
     }
     out.push("");
   }
@@ -283,13 +283,13 @@ function renderVerdict(report, policy) {
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
     out.push("  Excepted:");
-    for (const r of excepted) out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
+    for (const r of excepted) out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
     out.push("");
   }
   const attested = report.results.filter((r) => r.disposition === "attested");
   if (attested.length) {
     out.push("  Attested (human review):");
-    for (const r of attested) out.push(`    ${r.ruleId} — ${r.attestation.reviewedBy}, ${r.attestation.reviewedAt}`);
+    for (const r of attested) out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.attestation.reviewedBy)}, ${displaySafe(r.attestation.reviewedAt)}`);
     out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
     out.push("");
   }
@@ -3351,8 +3351,8 @@ function renderHuman(fileCount, surface, run) {
     }
     for (const f of hits) {
       lines.push(`  ${title} [${f.label}]`);
-      lines.push(`    ${f.message}`);
-      for (const e of f.evidence) lines.push(`      ${e}`);
+      lines.push(`    ${displaySafe(f.message)}`);
+      for (const e of f.evidence) lines.push(`      ${displaySafe(e)}`);
     }
   }
 
@@ -3367,8 +3367,8 @@ function renderHuman(fileCount, surface, run) {
     lines.push("What needs attention");
     for (const f of attention) {
       lines.push(`  [${f.severity}] ${f.category} [${f.label}]`);
-      lines.push(`    ${f.message}`);
-      for (const e of f.evidence) lines.push(`      ${e}`);
+      lines.push(`    ${displaySafe(f.message)}`);
+      for (const e of f.evidence) lines.push(`      ${displaySafe(e)}`);
       lines.push(`    see ${f.standardRef}`);
     }
   }
