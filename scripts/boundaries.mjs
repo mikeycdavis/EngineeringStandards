@@ -23,7 +23,7 @@
  * built-in objects other than the ones named here.
  */
 
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { builtinModules } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -230,6 +230,9 @@ export function inScopeFiles(repoRoot, observation) {
 // ---------------------------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------------------------
+
+// Stands in a destructuring pattern for a key that is not a plain name (computed or rest).
+const COMPUTED_KEY = "<computed-key>";
 
 const REGEX_AFTER_KEYWORD = new Set([
   "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await",
@@ -449,7 +452,13 @@ function analyse(toks) {
     let x = from;
     while (x < to) {
       if (isId(x, "type") && (isId(x + 1) || isStr(x + 1)) && !isId(x + 1, "as")) x++;
-      if (isId(x) || isStr(x)) {
+      if (isP(x, "[")) {
+        // A computed key: a string literal is a plain name, anything else cannot be resolved.
+        if (isStr(x + 1) && isP(x + 2, "]")) out.push(toks[x + 1].v);
+        else out.push(COMPUTED_KEY);
+      } else if (isP(x, ".") && isP(x + 1, ".") && isP(x + 2, ".")) {
+        out.push(COMPUTED_KEY); // a rest element aliases everything not named
+      } else if (isId(x) || isStr(x)) {
         out.push(toks[x].v);
         if (isId(x + 1, "as")) x += 2;
       }
@@ -551,7 +560,9 @@ function analyse(toks) {
       case "process": {
         if (afterDot) break;
         if (isP(k - 1, "=") && isP(k - 2, "}")) {
-          if (bracedBefore(k).some((b) => TERMINATING.has(b))) terminates.push(tk.line);
+          const bound = bracedBefore(k);
+          if (bound.some((b) => TERMINATING.has(b))) terminates.push(tk.line);
+          else if (bound.includes(COMPUTED_KEY)) flag("termination-indirect", tk.line);
           break;
         }
         let m = k + 1;
@@ -577,7 +588,15 @@ function analyse(toks) {
         break;
       }
       case "require":
-        if (!afterDot && isP(k + 1, "(")) flag("require-call", tk.line);
+        if (isP(k + 1, "(")) {
+          // module.require(...) and module?.require(...) are require calls too.
+          const viaModule = isP(k - 1, ".") && (isId(k - 2, "module") || (isP(k - 2, "?") && isId(k - 3, "module")));
+          if (!afterDot || viaModule) flag("require-call", tk.line);
+        }
+        break;
+      case "module":
+        // module["require"](...) and module[computed](...)
+        if (!afterDot && isP(k + 1, "[") && (!isStr(k + 2) || toks[k + 2].v === "require")) flag("require-call", tk.line);
         break;
       case "createRequire":
         flag("require-call", tk.line);
@@ -707,6 +726,25 @@ function ownerOf(members, file) {
   return members.find((m) => m.paths.some((p) => covers(p, file))) ?? null;
 }
 
+/** "file" | "missing" | a description of why an evidence path is not a regular in-repository file. */
+function evidenceTarget(repoRoot, abs) {
+  let st;
+  try {
+    st = lstatSync(abs);
+  } catch {
+    return "missing";
+  }
+  if (st.isSymbolicLink()) return "a symbolic link";
+  if (!st.isFile()) return "not a regular file (a directory or special file)";
+  try {
+    const rel = path.relative(realpathSync(repoRoot), realpathSync(abs));
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return "reached through a link that leaves the repository";
+  } catch {
+    return "missing";
+  }
+  return "file";
+}
+
 function parseEvidence(e) {
   const i = e.lastIndexOf(":");
   return { file: e.slice(0, i), line: Number(e.slice(i + 1)) };
@@ -720,7 +758,7 @@ function parseEvidence(e) {
  * Violation kinds: unowned-file, dead-member-path, undeclared-edge, undeclared-interface,
  * undeclared-external, unresolved-import, process-termination, unobserved-mechanism,
  * known-site-missing, symlink-not-followed, evidence-missing, evidence-out-of-range, evidence-mismatch,
- * evidence-outside-observation.
+ * evidence-outside-observation, evidence-not-regular-file.
  *
  * A side-effect import across a declared edge is a use of the interface named "side-effect": the
  * edge's `via` must list it, or `*`.
@@ -847,10 +885,18 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
   for (const { owner, e, edge } of evidence) {
     const { file, line } = parseEvidence(e);
     const abs = path.resolve(repoRoot, file);
-    if (path.relative(path.resolve(repoRoot), abs).startsWith("..")) {
+    const target = evidenceTarget(repoRoot, abs);
+    if (path.relative(path.resolve(repoRoot), abs).startsWith("..") || path.isAbsolute(path.relative(path.resolve(repoRoot), abs))) {
       violations.push({ kind: "evidence-missing", file, line, message: `${owner}: evidence '${e}' points outside the repository` });
-    } else if (!existsSync(abs)) {
+    } else if (target === "missing") {
       violations.push({ kind: "evidence-missing", file, line, message: `${owner}: evidence '${e}' names a file that does not exist` });
+    } else if (target !== "file") {
+      violations.push({
+        kind: "evidence-not-regular-file",
+        file,
+        line,
+        message: `${owner}: evidence '${e}' is ${target}; evidence must be a regular file inside the repository, not a directory or a link`,
+      });
     } else if (line > readFileSync(abs, "utf8").split(/\r?\n/).length) {
       violations.push({ kind: "evidence-out-of-range", file, line, message: `${owner}: evidence '${e}' is past the end of the file` });
     } else if (edge && !fileSet.has(file)) {

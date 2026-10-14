@@ -217,6 +217,10 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   detected as a link: a stated limit. Edge evidence must be an import in a scanned file (inside the roots, with an
   observed extension), otherwise `evidence-outside-observation`. `export type { X } from`, `export type * from` and
   `export type * as ns from` are read as re-exports.
+  `module.require(...)`, `module?.require(...)` and `module[...]` are require calls. A computed or rest key in
+  a destructuring of `process` is read when it is a string literal and is `termination-indirect` otherwise. Evidence
+  must be a regular file reached without a symbolic link and inside the repository; a directory or link is
+  `evidence-not-regular-file`, not a crash.
 - A second file to keep: the declaration lives apart from the policy, by design (section 2).
 - This repository's declaration describes `scripts/` only. `test/`, shell wrappers and workflows are
   outside it and listed as such.

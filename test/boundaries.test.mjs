@@ -746,3 +746,80 @@ test("a symlink to a file outside the repository is not read as an in-repository
     rmSync(outside.dir, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------------------------------------------------
+// 9. Review findings: module.require, computed destructuring keys, evidence targets
+// ------------------------------------------------------------------------------------------
+
+for (const src of [
+  'const r = module.require("./other.cjs");',
+  'const r = module?.require("./other.cjs");',
+  'const r = module["require"]("./other.cjs");',
+  'const k = "require"; const r = module[k]("./other.cjs");',
+]) {
+  test(`REQUIRE reached through module is a require-call: ${src}`, () => {
+    assert.ok(scanSource(src).mechanisms["require-call"].length > 0, src);
+  });
+}
+
+test("an unrelated .require method on another object is not a require-call", () => {
+  assert.equal(scanSource("const r = checker.require(1);").mechanisms["require-call"].length, 0);
+});
+
+for (const src of [
+  'const { ["exit"]: quit } = process; quit(1);',
+  "const { ['exit']: quit } = process; quit(1);",
+  'const { a, ["kill"]: k } = process;',
+]) {
+  test(`TERMINATION through a computed destructuring key is classified: ${src}`, () => {
+    assert.ok(scanSource(src).terminates.length > 0, src);
+  });
+}
+
+for (const src of ["const k = 'exit'; const { [k]: quit } = process; quit(1);", "const { ...all } = process; all.exit(1);"]) {
+  test(`UNCLASSIFIED termination-indirect: unresolved key or rest in process destructuring: ${src}`, () => {
+    assert.ok(scanSource(src).mechanisms["termination-indirect"].length > 0, src);
+  });
+}
+
+test("evidence naming a directory is a violation, not a crash", () => {
+  const d = baseDeclaration();
+  d.members[0].evidence = ["src:1"];
+  const t = tiny(FILES, d);
+  try {
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.deepEqual(kinds(v), ["evidence-not-regular-file"], JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("evidence that is a symlink to a file outside the repository is not followed", (t0) => {
+  const outside = tiny({ "secret.txt": "line\n" }, null);
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    if (!linkOrSkip(path.join(outside.dir, "secret.txt"), path.join(t.dir, "LINK.md"), "file")) return t0.skip("symlinks not permitted here");
+    const d = baseDeclaration();
+    d.members[0].evidence = ["LINK.md:1"];
+    const v = checkBoundaries(t.dir, d);
+    assert.deepEqual(kinds(v), ["evidence-not-regular-file"], JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+    rmSync(outside.dir, { recursive: true, force: true });
+  }
+});
+
+test("evidence reached through a symlinked directory that leaves the repository is a violation", (t0) => {
+  const outside = tiny({ "docs/n.md": "line\n" }, null);
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    if (!linkOrSkip(outside.dir, path.join(t.dir, "linked"), "dir")) return t0.skip("symlinks not permitted here");
+    const d = baseDeclaration();
+    d.members[0].evidence = ["linked/docs/n.md:1"];
+    const v = checkBoundaries(t.dir, d);
+    assert.deepEqual(kinds(v), ["evidence-not-regular-file"], JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+    rmSync(outside.dir, { recursive: true, force: true });
+  }
+});
