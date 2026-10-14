@@ -265,7 +265,12 @@ someone to lie to make the build go green.
   2. READY: `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
      writes nothing before its first write), with the held-directory binding, the component and leaf
      binding, and `entry-changed`, as re-approved by the owner on 2026-10-14 (ADR 0016, "Decision
-     history");
+     history"), **for creation, preservation and directory artifacts only**;
+  2a. **BLOCKED on the owner's choice: the existing-artifact overwrite path** (`--force-overwrite`).
+     The entry-bound replacement changes hard-link sharing and inode metadata versus today's
+     in-place `writeFile`; the owner must choose (a) accept the exception or (b) in-place overwrite
+     (ADR 0016, "Pending owner confirmation: overwrite no longer shares the inode"). The overwrite
+     path, AC4's exception and its tests are PENDING and are excluded from the READY scope;
   3. READY: the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
      and its SVG, `CHANGELOG.md`), with a no-catalog-rule test.
 - **Release classification and gates:** the owner classified the complete change MAJOR, targeted to

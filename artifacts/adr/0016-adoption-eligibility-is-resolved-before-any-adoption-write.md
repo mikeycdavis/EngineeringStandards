@@ -305,6 +305,7 @@ named by the condition used in the human report and in tests:
 | a matching regular file cannot be opened or read (including a read that fails after a successful `lstat`, or a disappearance) | `unreadable` | the signal's presence is established and its content is not |
 | `FROZEN.md` is readable and contains neither listed phrase (empty, whitespace-only, or other text) | `no-listed-phrase` | a file named for freezing whose meaning the closed vocabulary does not cover is not evidence of eligibility (Q4 A) |
 | a matching entry is returned by the listing but `lstat` on it fails | `stat-failed` | it cannot be classified, so neither its presence nor its content is known |
+| a matching source file was classified and read, and **afterwards its entry no longer names the identity that was classified** (the name now refers to another file, or none), although `lstat` succeeds | `source-changed` | the content read may not be the content of the file the name now designates; not overridable; a human diagnostic name, not frozen |
 | a matching entry is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | `not-regular-file` | the link is not followed, so its content is not what was examined |
 | a matching file is strictly larger than the per-file read cap | `over-read-cap` | the banner could be in the part not examined |
 | a matching file does not decode as UTF-8 under fatal decoding | `not-utf8` | the text cannot be read |
@@ -350,7 +351,7 @@ is not opened, resolved or inspected.
   a link before any `fstat` could notice, and can block or have side effects on a pipe or device.
   Reading through the handle binds the file object, not its directory entry; after the read the
   resolver confirms that the entry still names the identity it classified, and a changed entry is
-  `INDETERMINATE` (`stat-failed`), so a source file that was renamed away during the read does not
+  `INDETERMINATE` (`source-changed`), so a source file that was renamed away or replaced during the read does not
   decide eligibility.
 
 **Platform requirement (normative, owner decision of 2026-10-12T18:59:50Z).**
@@ -528,7 +529,8 @@ therefore be **bound to the directory entry**: the new content is written to a t
 exclusively in the held directory, and it replaces the artifact by an atomic rename relative to the
 held directory handle that **verifies the destination entry's identity** (or a no-replace
 placement followed by that verification), so that a destination entry that has changed is refused
-with `entry-changed` and nothing lands at, or through, the moved object. This entry binding is a
+with `entry-changed` and nothing lands at, or through, the moved object. (The hard-link and
+inode-metadata consequence of replacing the entry is **pending owner confirmation**, below.) This entry binding is a
 clarification within properties P3 and P6, not a new property. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
 place: an overwrite or temp-plus-rename that could recreate the missing path must not. The
 guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
@@ -708,7 +710,14 @@ project; there is no project for a rule to apply to until the answer is yes. The
 requests MUST carry, as a test, that the rule catalog is byte-identical and that `validate` output
 for every existing fixture is unchanged.
 
-## Bounded compatibility exception: overwrite no longer shares the inode
+## Pending owner confirmation: overwrite no longer shares the inode (not normative until approved)
+
+**Status of this section: PENDING OWNER CONFIRMATION. It is not normative until the owner chooses.**
+The approved baseline is the entry binding of the leaf in P3 and P6 (re-approved 2026-10-14). What
+the owner has **not** seen or approved is the observable consequence below for overwriting an
+**existing** artifact, which awaits the owner's choice between **(a)** accept it and **(b)** an
+in-place overwrite. Until that choice, the existing-artifact overwrite path is excluded from the
+READY implementation scope; creation, preservation and directory artifacts are unaffected.
 
 **Verified against `scripts/init.mjs` on develop (`fff2e99`):** `apply()` writes each artifact with
 `writeFile(path, content)`, which opens the existing file and truncates and writes it **in place**.
@@ -725,7 +734,8 @@ artifact that is overwritten under `--force-overwrite`:
 
 This applies only to overwrite of an existing artifact. A newly created artifact, a preserved
 artifact and a directory artifact are unaffected. **This is the only departure from "behaves exactly
-as before" for an eligible repository**, and it is under the MAJOR 3.0.0 classification.
+as before" for an eligible repository**, and it would sit under the MAJOR 3.0.0 classification if
+accepted.
 
 **Recommendation, option (a), for the owner:** accept this exception. The alternative, (b), an
 in-place overwrite that opens the identity-verified entry's file without following links, verifies
@@ -734,7 +744,7 @@ hard-link semantics but **cannot bind the write to the directory entry**: a rena
 between that last check and the write would still be written through the handle, which is the race
 the entry binding exists to close. The two requirements conflict, and this record chooses the
 entry binding. This choice has a consequence the owner has not seen before and is flagged in the PR
-body; it is not silently picked.
+body; it is not silently picked, and nothing here is binding until the owner decides.
 
 ## Implementation slicing
 
@@ -764,7 +774,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
 
   | Condition | `eligibility` | `init` |
   | --- | --- | --- |
-  | `unreadable`, `no-listed-phrase`, `stat-failed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
+  | `unreadable`, `no-listed-phrase`, `stat-failed`, `source-changed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
   | `target-changed` | **does not apply**: one invocation holds one handle and there is no second identity to compare | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
   | `entry-changed` (P6) | does not apply (it never writes artifacts) | post-write class; not an `INDETERMINATE` condition; tested separately |
 
@@ -783,10 +793,11 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   source for `StandardsOrchestrator`); a differently named fixture with the same signal is
   `OUT_OF_SCOPE`.
 - **AC4.** The greenfield, scaffold, nested-monorepo and reconstruction-required fixtures classify
-  and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`. **The exception list has
-  one entry:** an overwrite of an existing artifact (`--force-overwrite`) places a replacement entry
-  and so does not preserve hard-link sharing or inode metadata (see "Bounded compatibility
-  exception"); a test asserts the new behaviour and the preserved file mode.
+  and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`. **Exception list: one
+  entry, PENDING OWNER CONFIRMATION and not normative until approved:** an overwrite of an existing
+  artifact (`--force-overwrite`) places a replacement entry and so would not preserve hard-link
+  sharing or inode metadata (see "Pending owner confirmation: overwrite no longer shares the
+  inode"); the test of that behaviour and of the preserved file mode is likewise pending.
 - **`init` output on refusal and on success.** For a repository with a fired signal and for one with
   an indeterminate condition, each of `init`, `init --dry-run`, `init --json` and
   `init --dry-run --json`: exit `2`, stdout byte-empty, stderr non-empty and naming the signal or
@@ -803,6 +814,11 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   asserting `OUT_OF_SCOPE` or `INDETERMINATE`, never `IN_SCOPE`. (2) *Real filesystem, only where it
   can exist:* the on-disk fixture runs only after a case-sensitivity probe, and is otherwise an
   explicit reported skip naming that reason, never a pass.
+- **Source identity after the read, injected:** a matching regular source file that is replaced by
+  **another regular file** (and one that is renamed away) after its handle is opened and before the
+  post-read identity check is `INDETERMINATE` (`source-changed`) while `lstat` still succeeds; the
+  replacement's content does not decide eligibility; a mutation check removes the post-read identity
+  check and requires the test to fail.
 - **Permission, link and mode conditions** (`unreadable`, `stat-failed`, `not-regular-file` for
   every link kind, `over-read-cap`, `not-utf8`, an incomplete listing) go through the injected
   interface on every platform. Real `chmod 000` and real-symlink tests are separate and
