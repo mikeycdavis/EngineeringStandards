@@ -314,6 +314,39 @@ test("an entry whose bytes match but whose rule no longer fires is reported as s
   assert.equal(resultOf(res, CERT_RULE).disposition, "evaluated", "a dead pin must not turn a clean rule into an exception");
 });
 
+test("an incomplete read never makes a pin stale: budget exhausted, the entry is 'not established' and is kept", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const res = cli("validate", root, "--max-total-read-bytes=1");
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json.findings.map((f) => f.id)));
+  const ne = findingsOf(res, "fixture-exemption-not-established");
+  assert.equal(ne.length, 1);
+  assert.doesNotMatch(ne[0].message, /remove the entry|found no violation/);
+  assert.equal(resultOf(res, CERT_RULE).disposition, "not-evaluated");
+});
+
+test("an incomplete read never makes a pin stale: the violation lies past the truncation boundary", async () => {
+  const big = `// ${"x".repeat(80)}${NL}`.repeat(5700) + CERT;
+  const root = await repo({ "test/fixtures/bad/big.js": big }, [pin("test/fixtures/bad/big.js", big, CERT_RULE)]);
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json.findings.map((f) => f.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 1);
+  assert.equal(resultOf(res, CERT_RULE).disposition, "not-evaluated");
+});
+
+for (const bad of ["2026-02-30", "2027-02-29", "2026-04-31", "2026-00-10", "2026-13-01", "2026-01-00", "2026-06-31"]) {
+  test(`an impossible expiry date (${bad}) waives nothing`, async () => {
+    const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [{ ...GOOD(), expires: bad }]);
+    const res = cli("validate", root);
+    assert.equal(findingsOf(res, "fixture-exemption-bad-expiry").length, 1);
+    assert.equal(resultOf(res, CERT_RULE).disposition, "evaluated");
+  });
+}
+
+test("a real leap-day expiry in the future is accepted", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [{ ...GOOD(), expires: "2096-02-29" }]);
+  assert.equal(resultOf(cli("validate", root), CERT_RULE).disposition, "excepted");
+});
+
 // ---- evidence surface ----------------------------------------------------------------------------
 
 test("a `fixtures` directory with no exemptions no longer makes the surface incomplete, and is scanned", async () => {

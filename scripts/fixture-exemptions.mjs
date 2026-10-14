@@ -38,6 +38,18 @@ export const FIXTURE_EXEMPTIBLE_RULES = [
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+/**
+ * A calendar date that exists. `Date.parse` normalises impossible dates (2026-02-30 becomes March 2),
+ * so the parsed UTC components must round-trip to the written year, month and day.
+ */
+function isRealDate(value) {
+  if (typeof value !== "string" || !DATE_RE.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number);
+  if (y < 1 || m < 1 || m > 12 || d < 1) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
 const WILDCARD_RE = /[*?]/;
 
 /** SHA-256 hex of `bytes` with CRLF read as LF. See the module comment. */
@@ -111,7 +123,7 @@ export function checkEntries(entries, { catalog, today }) {
     if (!hasExpiry && !hasReview) {
       problem("fixture-exemption-no-lifetime", "an expiry date (expires) or a review condition (reviewWhen) is required");
     }
-    if (hasExpiry && (typeof entry.expires !== "string" || !DATE_RE.test(entry.expires) || Number.isNaN(Date.parse(entry.expires)))) {
+    if (hasExpiry && (typeof entry.expires !== "string" || !isRealDate(entry.expires))) {
       problem("fixture-exemption-bad-expiry", "expires must be a real YYYY-MM-DD date");
     }
     // The rule must be named canonically. An alias would be a second spelling of one identity

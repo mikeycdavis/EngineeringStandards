@@ -3853,6 +3853,28 @@ export async function main(args) {
   }
   for (const entry of exemptionCheck.bound) {
     if (entry.state === "matches" && run.fixtureExemptionsUsed.has(`${entry.rule}\0${entry.path}`)) continue;
+    // A file this run did not read in full cannot show that its rule "found no violation": the read
+    // budget was spent before it was retained, or a violation may lie past the truncation boundary.
+    // That is "not established", never "stale", and it must not tell anyone to remove the entry.
+    if (entry.state === "matches") {
+      const abs = files.find((f) => rel(f) === entry.path);
+      const incomplete = abs === undefined || !run.textOf(abs).available || run.truncated.has(abs);
+      if (incomplete) {
+        addFinding({
+          id: "fixture-exemption-not-established",
+          category: "Fixture exemptions",
+          severity: "warning",
+          label: "OBSERVED",
+          evidence: [entry.path],
+          message:
+            `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the file's bytes match ` +
+            `the pin, but this run did not read the whole file (read budget spent or read cap reached), so whether ` +
+            `${entry.rule} still fires there is unknown. Keep the entry; rerun with a larger budget.`,
+          standardRef: R.search,
+        });
+        continue;
+      }
+    }
     const why = {
       "not-scanned": "the path is not in the scanned surface (absent, ignored by the repository, or excluded)",
       unreadable: "the file could not be read",
