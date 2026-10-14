@@ -402,7 +402,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
       freshness: fresh.state,
       message:
         `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}, but that ` +
-        `review does not establish the current state: ${fresh.detail}.`,
+        `review does not establish the current state: ${displaySafe(fresh.detail)}.`,
       evidence: against?.paths ?? ["project-policy.yml"],
       files: against?.paths ?? ["project-policy.yml"],
       remediation:

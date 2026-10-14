@@ -2027,3 +2027,26 @@ test("ST-41: a line feed inside a repository-controlled path cannot forge a line
     assert.ok(text.includes(`${BS}n${name}`), `${name} not shown escaped`);
   }
 });
+
+// Reviewer P2 on e04be10: the freshness `detail` carries reviewed path names (policy-controlled), and
+// reached the message raw. Unit-level on purpose: a path name with a control character cannot be
+// created, or tracked, on a Windows host.
+test("ST-41: a control character in a reviewed path name inside the freshness detail is display-safe", () => {
+  const rule = { id: "testing.synthetic", level: "required", severity: "error", validationType: "manual-review", attestable: true, nonExemptible: false };
+  const hostile = `gone${String.fromCharCode(27)}[2Jfile.txt`;
+  for (const detail of [`reviewed path(s) deleted since review: ${hostile}`, `reviewed path(s) modified in the working tree: ${hostile}`, `reviewed path(s) have no committed identity: ${hostile}`]) {
+    const verdict = evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { attestations: { [rule.id]: { reviews: [review({ id: "r1" })] } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "stale", detail }]]),
+    });
+    const result = verdict.results.find((entry) => entry.ruleId === rule.id);
+    assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
+    assert.ok(result.message.includes("gone"), result.message);
+    assert.ok(!ST41_CONTROL.test(result.message), `raw control character: ${JSON.stringify(result.message)}`);
+    assert.ok(result.message.includes("gone" + String.fromCharCode(92) + "u001b[2Jfile.txt"), result.message);
+  }
+});
