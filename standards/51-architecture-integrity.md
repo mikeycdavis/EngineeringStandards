@@ -71,8 +71,10 @@ that goes around it: the diagram now describes a system that does not exist, whi
 > “Boundary bypass” means a dependency, execution path or data-access path that crosses a declared boundary without using an interface or mechanism explicitly permitted by that declaration.
 
 A boundary that is only believed, or only drawn in a diagram, is not an architectural boundary here:
-there is nothing for a reviewer or a detector to measure the crossing against until it is declared. Moving a boundary through an ADR (above) is the decision; the declaration named in the
-definition is amended to match in the same change, and until it is, the declared boundary is the one in force.
+there is nothing for a reviewer or a detector to measure the crossing against until it is declared.
+
+Moving a boundary through an ADR (above) is the decision; the declaration named in the definition is amended to
+match in the same change, and until it is, the declared boundary is the one in force.
 
 **Observation scope.** Any detector, and any attestation, for this rule MUST state its observation
 scope and list the mechanisms it did not observe. Static dependency evidence cannot support a claim
