@@ -474,10 +474,13 @@ test("the malformed-history remediation states that a recorded rejection stays i
     return result.remediation;
   };
   const missingPredecessor = review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" });
-  assert.equal(
-    remediation([review({ id: "r1", status: "rejected" }), missingPredecessor]),
-    "A recorded rejection in this history stays in force until the history is repaired (unique ids, chronological order) and a later well-formed review clears it.",
-  );
+  const withRejection = remediation([review({ id: "r1", status: "rejected" }), missingPredecessor]);
+  assert.equal(withRejection, "A recorded rejection in this history stays in force until every reported structural problem is fixed (predecessor links, required event fields, ids, chronological order) and a later well-formed review clears it.");
+  // A missing predecessor is not cured by appending a later review: the disconnected event keeps the whole
+  // history malformed. The text must name the structural problems to fix, not only ids and order.
+  assert.match(withRejection, /every reported structural problem/);
+  assert.match(withRejection, /predecessor links/);
+  assert.match(withRejection, /required event fields/);
   assert.equal(
     remediation([review({ id: "r1" }), missingPredecessor]),
     "Give every review a unique id and record them in chronological order.",

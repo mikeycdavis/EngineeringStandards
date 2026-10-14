@@ -29,8 +29,8 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
 
 // A malformed history that records a rejection: the rejection is negative evidence and stays in force.
 export const MALFORMED_WITH_REJECTION_REMEDIATION =
-  "A recorded rejection in this history stays in force until the history is repaired (unique ids, chronological order) " +
-  "and a later well-formed review clears it.";
+  "A recorded rejection in this history stays in force until every reported structural problem is fixed " +
+  "(predecessor links, required event fields, ids, chronological order) and a later well-formed review clears it.";
 
 /**
  * @param catalog   from loadCatalog()
