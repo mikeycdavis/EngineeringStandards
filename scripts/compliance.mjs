@@ -140,6 +140,9 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
             : ""),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
+        ...(rejections.length > 0
+          ? { attestation: { ...rejections.at(-1), status: "rejected" } }
+          : {}),
         remediation:
           rejections.length > 0
             ? MALFORMED_WITH_REJECTION_REMEDIATION
@@ -358,11 +361,20 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   }
 
   if (attestation.status === "rejected") {
-    return fail(
-      "attested-rejected",
-      `${rule.id} was reviewed by ${attestation.reviewedBy} and found unmet.`,
-      "Satisfy the rule, then re-attest. A recorded rejection is a failure, not silence.",
-    );
+    return {
+      ...fail(
+        "attested-rejected",
+        `${rule.id} was reviewed by ${attestation.reviewedBy} and found unmet.`,
+        "Satisfy the rule, then re-attest. A recorded rejection is a failure, not silence.",
+      ),
+      attestation: {
+        reviewedBy: attestation.reviewedBy,
+        reviewedAt: attestation.reviewedAt,
+        evidence: attestation.evidence,
+        reference: attestation.reference ?? null,
+        expires: attestation.expires ?? null,
+      },
+    };
   }
 
   if (attestation.expires && attestation.expires < today) {
