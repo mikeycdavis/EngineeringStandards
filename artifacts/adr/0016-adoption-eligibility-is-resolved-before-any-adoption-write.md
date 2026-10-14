@@ -1,8 +1,9 @@
 # 0016 — Adoption eligibility is resolved before any adoption write
 
 - **Status:** Accepted, by the owner on 2026-10-12T18:59:50Z (Standard 11 R5, `Proposed | Accepted`);
-  amended by the owner on 2026-10-14 in two dated entries (re-approval at 00:24:50Z, final set at
-  00:25:20Z; further decisions relayed at 01:34Z), recorded in "Decision history" below. This record
+  amended by the owner on 2026-10-14 in three dated entries (re-approval at 00:24:50Z, final set at
+  00:25:20Z; further decisions relayed at 01:34Z; the hard-link decision at 13:34Z), recorded in
+  "Decision history" below. This record
   states what must be true of the implementation; it does not claim any of it is implemented.
 - **Date:** 2026-10-11; accepted 2026-10-12; amended 2026-10-14
 - **Deciders:** Project owner
@@ -177,6 +178,16 @@ backdated to it. They did not exist at 00:24:50Z.
    usage to stdout and **exits `2`**, with empty stderr, and examines no directory, so exit `0` only
    ever means `IN_SCOPE`. This differs from top-level `standards --help`, which stays exit `0` and is
    unchanged.
+
+### Amendment of 2026-10-14, third entry (owner decision card, 13:34Z)
+
+Recorded on **2026-10-14**, from the owner's decision card relayed at **13:34Z**; **not backdated** to
+the earlier entries and it did not exist at 00:24:50Z or 01:34Z. The owner's answer was "Accept,
+document", and the decision as relayed reads: "ADR 0016 #105 hard-link behaviour: record it as the
+ONE documented exception under MAJOR 3.0.0 and keep the race-safe temp-and-rename (entry-bound)
+write; permission bits are preserved." Effect: the former "Pending owner confirmation" section is
+now the normative section "Documented exception: overwrite does not share the inode", and AC4's
+exception list (one entry) and its test are normative.
 
 ## Decision
 
@@ -431,9 +442,9 @@ same code and the same override flag. On `OUT_OF_SCOPE` (not overridden) or `IND
 exits `2`, writes nothing, and names the signals; `--dry-run` runs the same check and reports the same
 refusal. These are pre-write refusals; the one post-write failure class is the race in P6. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
 unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
-classify and write exactly as before (a test) for creation, preservation and directory artifacts;
-the existing-artifact overwrite path is **pending owner confirmation** (see "Pending owner
-confirmation: overwrite no longer shares the inode").
+classify and write exactly as before (a test), with **one documented exception**: overwriting an
+existing artifact under `--force-overwrite` (see "Documented exception: overwrite does not share
+the inode").
 
 *Clarification (review of #105; not a new owner decision).* What `init` writes to stdout on a refusal
 is fixed by the behaviour `init` already has when it cannot run: `runInit` writes the diagnostic to
@@ -531,7 +542,7 @@ exclusively in the held directory, and it replaces the artifact by an atomic ren
 held directory handle that **verifies the destination entry's identity** (or a no-replace
 placement followed by that verification), so that a destination entry that has changed is refused
 with `entry-changed` and nothing lands at, or through, the moved object. (The hard-link and
-inode-metadata consequence of replacing the entry is **pending owner confirmation**, below.) This entry binding is a
+inode-metadata consequence of replacing the entry is the documented exception, below.) This entry binding is a
 clarification within properties P3 and P6, not a new property. A disappeared entry is refused with `entry-changed` and **nothing is created** in its
 place: an overwrite or temp-plus-rename that could recreate the missing path must not. The
 guarantee is the same for every raced-in kind: **that write is refused**; nothing is written through
@@ -711,41 +722,34 @@ project; there is no project for a rule to apply to until the answer is yes. The
 requests MUST carry, as a test, that the rule catalog is byte-identical and that `validate` output
 for every existing fixture is unchanged.
 
-## Pending owner confirmation: overwrite no longer shares the inode (not normative until approved)
+## Documented exception: overwrite does not share the inode
 
-**Status of this section: PENDING OWNER CONFIRMATION. It is not normative until the owner chooses.**
-The approved baseline is the entry binding of the leaf in P3 and P6 (re-approved 2026-10-14). What
-the owner has **not** seen or approved is the observable consequence below for overwriting an
-**existing** artifact, which awaits the owner's choice between **(a)** accept it and **(b)** an
-in-place overwrite. Until that choice, the existing-artifact overwrite path is excluded from the
-READY implementation scope; creation, preservation and directory artifacts are unaffected.
+**Normative.** Owner decision of 2026-10-14 (13:34Z, "Accept, document"; see the third amendment
+entry): this is the **one** documented exception to "an eligible repository behaves exactly as
+before", under the MAJOR 3.0.0 classification, and the race-safe temporary-file-and-rename
+(entry-bound) write of P3 and P6 is kept.
 
 **Verified against `scripts/init.mjs` on develop (`fff2e99`):** `apply()` writes each artifact with
 `writeFile(path, content)`, which opens the existing file and truncates and writes it **in place**.
 That updates the shared inode, so a hard link to an artifact sees the new content, and the inode's
 metadata (ownership, ACL, extended attributes, hard-link count) is kept. The entry-bound overwrite
-required by P3 and P6 (a temporary file created exclusively in the held directory, placed by an atomic
-rename that verifies the destination entry) replaces the directory **entry**, so for an existing
-artifact that is overwritten under `--force-overwrite`:
+(a temporary file created exclusively in the held directory, placed by an atomic rename that
+verifies the destination entry) replaces the directory **entry**, so for an existing artifact that
+is overwritten under `--force-overwrite`:
 
-- a hard link to the old file no longer shares content with the artifact (it keeps the old content);
-- inode metadata is not preserved; the implementation preserves the **permission bits** of the
-  replaced file where the platform allows and does not promise ownership, ACL or extended
-  attributes.
+- a hard link to the old file **keeps the old content** and no longer shares content with the
+  artifact;
+- inode metadata other than **permission bits** is not preserved; the **permission bits of the
+  replaced file are preserved**, and ownership, ACL and extended attributes are not promised.
 
-This applies only to overwrite of an existing artifact. A newly created artifact, a preserved
-artifact and a directory artifact are unaffected. **This is the only departure from "behaves exactly
-as before" for an eligible repository**, and it would sit under the MAJOR 3.0.0 classification if
-accepted.
+**Scope.** This applies **only** to overwrite of an existing artifact under `--force-overwrite`. A
+newly created artifact, a preserved artifact and a directory artifact are unaffected.
 
-**Recommendation, option (a), for the owner:** accept this exception. The alternative, (b), an
-in-place overwrite that opens the identity-verified entry's file without following links, verifies
-the identity again after the open and before the first byte, and writes through the handle, keeps
-hard-link semantics but **cannot bind the write to the directory entry**: a rename of the file
-between that last check and the write would still be written through the handle, which is the race
-the entry binding exists to close. The two requirements conflict, and this record chooses the
-entry binding. This choice has a consequence the owner has not seen before and is flagged in the PR
-body; it is not silently picked, and nothing here is binding until the owner decides.
+**Why not in place.** An in-place overwrite that opens the identity-verified entry's file without
+following links, verifies the identity again after the open and before the first byte, and writes
+through the handle would keep hard-link semantics but **cannot bind the write to the directory
+entry**: a rename of the file between that last check and the write would still be written through
+the handle, which is the race the entry binding exists to close. The owner chose the entry binding.
 
 ## Implementation slicing
 
@@ -795,10 +799,13 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `OUT_OF_SCOPE`.
 - **AC4.** The greenfield, scaffold, nested-monorepo and reconstruction-required fixtures classify
   and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`. **Exception list: one
-  entry, PENDING OWNER CONFIRMATION and not normative until approved:** an overwrite of an existing
-  artifact (`--force-overwrite`) places a replacement entry and so would not preserve hard-link
-  sharing or inode metadata (see "Pending owner confirmation: overwrite no longer shares the
-  inode"); the test of that behaviour and of the preserved file mode is likewise pending.
+  entry (normative, owner decision of 2026-10-14):** an overwrite of an existing artifact
+  (`--force-overwrite`) places a replacement entry, so a hard link to the old file keeps the old
+  content and inode metadata other than permission bits is not preserved. **Test:** a hard link to an
+  existing artifact is made, the artifact is overwritten under `--force-overwrite`, and the test
+  asserts that the artifact has the new content, the hard link keeps the old content, and the
+  artifact's permission bits equal those of the replaced file; creation, preservation and directory
+  artifacts are asserted unchanged.
 - **`init` output on refusal and on success.** For a repository with a fired signal and for one with
   an indeterminate condition, each of `init`, `init --dry-run`, `init --json` and
   `init --dry-run --json`: exit `2`, stdout byte-empty, stderr non-empty and naming the signal or
@@ -1027,9 +1034,9 @@ repository by naming exactly what is overridden.
 will miss a repository frozen in a way it does not list, and growing it is a reviewed change. A
 repository whose `README.md` is a symlink, or whose `FROZEN.md` is hand-written without a listed
 phrase, cannot be adopted until the owner changes it. An overwrite of an existing artifact
-(`--force-overwrite`) would no longer share the inode with hard links or preserve inode metadata
-other than permission bits, **if the owner accepts it** (pending; see "Pending owner confirmation:
-overwrite no longer shares the inode").
+(`--force-overwrite`) no longer shares the inode with hard links and does not preserve inode
+metadata other than permission bits (the documented exception; see "Documented exception:
+overwrite does not share the inode").
 
 **Commits the project to.** Keeping `INDETERMINATE` un-overridable; never naming a repository in the
 implementation (acceptance criterion 3 of #16); treating the vocabulary and text rules in this record
