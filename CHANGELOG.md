@@ -15,6 +15,20 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Standard 51 R2 now defines *architectural boundary* (one explicitly declared by the repository's architecture manifest or
+standards configuration between named packages, layers, plugins, processes or trust domains) and *boundary bypass* (a
+dependency, execution path or data-access path that crosses a declared boundary without an interface or mechanism that
+declaration explicitly permits), and requires any detector or attestation for the rule to state its observation scope and
+the mechanisms it did not observe: static dependency evidence cannot support claims about unobserved runtime reflection,
+generated code, subprocesses or network paths (ST-23, #112; owner decision of 2026-10-12). The catalog's
+`$assuranceNote` for `architecture.no-boundary-bypass` carries the same sentence. Standards text only: no detector, schema
+or script changes. Level: a clarification that narrows what counts as a bypass and adds a statement requirement to
+attestations, so no currently compliant project becomes non-compliant; `VERSION` is **not** bumped here and the level
+(PATCH under [Standard 21](standards/21-versioning.md) R2, or MINOR if the owner treats the new attestation requirement as
+a capability) is the owner's call at release. The recorded review events for `architecture.no-boundary-bypass` are
+untouched; because `standards/51-architecture-integrity.md` is a reviewed path, that attestation is now stale by design
+([ADR 0011](artifacts/adr/0011-attestation-freshness-is-repository-content-not-checkout-bytes.md)).
+
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 The one exception is the review-history entry directly below, which widens the policy schema.
