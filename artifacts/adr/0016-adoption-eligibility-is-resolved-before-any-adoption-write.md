@@ -430,7 +430,8 @@ same code and the same override flag. On `OUT_OF_SCOPE` (not overridden) or `IND
 exits `2`, writes nothing, and names the signals; `--dry-run` runs the same check and reports the same
 refusal. These are pre-write refusals; the one post-write failure class is the race in P6. `INDETERMINATE` is not overridable here either. For an `IN_SCOPE` repository `init` is
 unchanged, and the greenfield, scaffold, nested-monorepo and reconstruction-required fixtures
-classify and write exactly as before (a test).
+classify and write exactly as before (a test), **except for the one bounded exception stated
+under "Bounded compatibility exception"**.
 
 *Clarification (review of #105; not a new owner decision).* What `init` writes to stdout on a refusal
 is fixed by the behaviour `init` already has when it cannot run: `runInit` writes the diagnostic to
@@ -471,7 +472,13 @@ again and requires its identity to equal the one the resolver examined; a mismat
 **P2. Every path component is bound.** Every component of every read and write path **within the
 target directory** in `init` is bound to the held directory in the same way as the root: **no component is followed through a
 symbolic link or junction**. A linked intermediate directory (for example `.github` or `artifacts`)
-is refused, not traversed.
+is refused, not traversed. Type is not enough: a component that is a real directory at
+classification has its **identity** (device and inode, or the platform's file identifier) captured,
+and at use the identity of the component handle must equal the identity of the directory entry the
+write is bound to. A component that was renamed away and replaced by **another real directory** no
+longer matches (reopening the name would write into an unchecked replacement, and keeping the
+original handle could write into the renamed-away directory); it is refused with `entry-changed`.
+This is a clarification within property P2, not a new property.
 
 **P3. The leaf is bound.** The final entry of every path within the target is also bound: no link is followed, a
 special file (FIFO, device, any non-regular file) is **never opened with an open that blocks or has
@@ -548,8 +555,8 @@ otherwise. This record does not prescribe the call and does not claim that a mec
 **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
 pre-write refusal** (P5): zero writes and an unchanged tree. The **only** exception is the single
 race class in P6 (an entry that no longer matches its classification when written: replaced by a
-link, special file or directory, deleted, replaced by another regular file, or a newly created
-regular file), which is not an
+link, special file or directory, deleted, replaced by another regular file, a newly created
+regular file, or a directory component renamed away and replaced by another real directory), which is not an
 `INDETERMINATE` condition: that write is refused, earlier artifacts already written remain, and no
 later write is made. `target-changed` is raised only when the
 identity of the directory held differs from the resolver's, which happens before the first write;
@@ -701,6 +708,34 @@ project; there is no project for a rule to apply to until the answer is yes. The
 requests MUST carry, as a test, that the rule catalog is byte-identical and that `validate` output
 for every existing fixture is unchanged.
 
+## Bounded compatibility exception: overwrite no longer shares the inode
+
+**Verified against `scripts/init.mjs` on develop (`fff2e99`):** `apply()` writes each artifact with
+`writeFile(path, content)`, which opens the existing file and truncates and writes it **in place**.
+That updates the shared inode, so a hard link to an artifact sees the new content, and the inode's
+metadata (ownership, ACL, extended attributes, hard-link count) is kept. The entry-bound overwrite
+required by P3 and P6 (a temporary file created exclusively in the held directory, placed by an atomic
+rename that verifies the destination entry) replaces the directory **entry**, so for an existing
+artifact that is overwritten under `--force-overwrite`:
+
+- a hard link to the old file no longer shares content with the artifact (it keeps the old content);
+- inode metadata is not preserved; the implementation preserves the **permission bits** of the
+  replaced file where the platform allows and does not promise ownership, ACL or extended
+  attributes.
+
+This applies only to overwrite of an existing artifact. A newly created artifact, a preserved
+artifact and a directory artifact are unaffected. **This is the only departure from "behaves exactly
+as before" for an eligible repository**, and it is under the MAJOR 3.0.0 classification.
+
+**Recommendation, option (a), for the owner:** accept this exception. The alternative, (b), an
+in-place overwrite that opens the identity-verified entry's file without following links, verifies
+the identity again after the open and before the first byte, and writes through the handle, keeps
+hard-link semantics but **cannot bind the write to the directory entry**: a rename of the file
+between that last check and the write would still be written through the handle, which is the race
+the entry binding exists to close. The two requirements conflict, and this record chooses the
+entry binding. This choice has a consequence the owner has not seen before and is flagged in the PR
+body; it is not silently picked.
+
 ## Implementation slicing
 
 Each is its own pull request, now that this record is `Accepted`. None changes `audit` or `validate`;
@@ -736,7 +771,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   There is no INDETERMINATE condition that is a post-write refusal. The single post-write class is
   the P6 race (an entry that no longer matches its classification when written), which is tested
   separately for **every** raced-in kind (link, FIFO, device, directory, newly created regular file,
-  deletion, regular-to-regular replacement) with the same assertions (that write refused, earlier
+  deletion, regular-to-regular replacement, directory-component replacement) with the same assertions (that write refused, earlier
   artifacts remain, no later write, exit `2`) and is not an `INDETERMINATE` condition.
 - **A readable `FROZEN.md` with no listed phrase is never `IN_SCOPE`.** An empty file, a
   whitespace-only file, a file of other prose, and a file whose phrase is broken by U+00A0, each with
@@ -748,7 +783,10 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   source for `StandardsOrchestrator`); a differently named fixture with the same signal is
   `OUT_OF_SCOPE`.
 - **AC4.** The greenfield, scaffold, nested-monorepo and reconstruction-required fixtures classify
-  and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`.
+  and write exactly as before; eligible fixtures are `IN_SCOPE`, exit `0`. **The exception list has
+  one entry:** an overwrite of an existing artifact (`--force-overwrite`) places a replacement entry
+  and so does not preserve hard-link sharing or inode metadata (see "Bounded compatibility
+  exception"); a test asserts the new behaviour and the preserved file mode.
 - **`init` output on refusal and on success.** For a repository with a fired signal and for one with
   an indeterminate condition, each of `init`, `init --dry-run`, `init --json` and
   `init --dry-run --json`: exit `2`, stdout byte-empty, stderr non-empty and naming the signal or
@@ -802,7 +840,8 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   separately **deleted**, **replaced by another regular file**, and **renamed away with a
   replacement put in its place after the identity verification**, between classification and the
   `--force-overwrite` overwrite; and (c) an **intermediate
-  directory** replaced by a **junction** between the check and the write. Each asserts that nothing
+  directory** replaced by a **junction**, and separately **renamed away and replaced by another real
+  directory**, between the check and the write. Each asserts that nothing
   lands through the link or junction or over the newly appeared file, the target of the link is
   unchanged, and `init` exits `2` naming `entry-changed` with the P6 guarantees (earlier artifacts
   remain, no later write). The implementation's test surface must provide a seam (a hook at the
@@ -855,9 +894,15 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   `entry-changed`, nothing is written to the moved file or through it, the replacement is not
   overwritten, exit `2`; the test seam at the verification-to-write boundary is part of the
   implementation's test surface; a mutation check replaces the entry-bound atomic replacement with
-  a write through the already-verified handle and requires this test to fail; (d) **the directory
+  a write through the already-verified handle and requires this test to fail; (c4) **directory-component identity, injected:** an intermediate directory (`.github` or `artifacts`)
+  that is a real directory at classification and is renamed away and replaced by another real
+  directory before the write is refused with `entry-changed`, nothing is written into the
+  replacement or into the renamed-away directory, exit `2`; a mutation check removes the component
+  identity verification (and, separately, reopens the component by name) and requires this test to
+  fail; (d) **the directory
   artifacts `artifacts/project-plan-breakdown/` and `artifacts/adr/` present as real directories are
-  preserved**, and a repeat run on an eligible fixture behaves exactly as before (AC4), while a link
+  preserved**, and a repeat run on an eligible fixture behaves as before (AC4, apart from the one
+  exception), while a link
   at either path is refused; (e) the table above, one case per cell. A temp-plus-rename placement
   is tested with a link at the destination, which must be refused and not replaced. **Disappearance,
   injected:** a file artifact that is a regular file at classification and is **deleted** between
@@ -961,7 +1006,9 @@ repository by naming exactly what is overridden.
 **Makes harder.** A `MAJOR` classification (3.0.0) because `init` now refuses a repository it previously bootstrapped, so existing automation that ran `init` against a repository carrying a listed signal sees exit `2`. A new frozen surface (the name, three states and exit codes). A closed vocabulary
 will miss a repository frozen in a way it does not list, and growing it is a reviewed change. A
 repository whose `README.md` is a symlink, or whose `FROZEN.md` is hand-written without a listed
-phrase, cannot be adopted until the owner changes it.
+phrase, cannot be adopted until the owner changes it. An overwrite of an existing artifact
+(`--force-overwrite`) no longer shares the inode with hard links or preserves inode metadata other
+than permission bits (see "Bounded compatibility exception").
 
 **Commits the project to.** Keeping `INDETERMINATE` un-overridable; never naming a repository in the
 implementation (acceptance criterion 3 of #16); treating the vocabulary and text rules in this record
