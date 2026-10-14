@@ -20,7 +20,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Full history, deliberately: the review-history integrity check compares the policy with its
+      # merge-base with the default branch, and a shallow checkout has neither. With fetch-depth: 0
+      # the checkout fetches every branch as refs/remotes/origin/*, which is where the verifier
+      # looks (origin/HEAD, then origin/develop, origin/main, origin/master). A shallow checkout
+      # would report the check as NOT_EVALUATED and disregard recorded approvals.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -89,7 +96,14 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      # Full history, deliberately: the review-history integrity check compares the policy with its
+      # merge-base with the default branch, and a shallow checkout has neither. With fetch-depth: 0
+      # the checkout fetches every branch as refs/remotes/origin/*, which is where the verifier
+      # looks (origin/HEAD, then origin/develop, origin/main, origin/master). A shallow checkout
+      # would report the check as NOT_EVALUATED and disregard recorded approvals.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:

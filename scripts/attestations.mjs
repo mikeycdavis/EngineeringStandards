@@ -30,7 +30,8 @@ import {
   LEGACY_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
-import { reviewsOf, currentReview, reviewProblems, isLegacyShape } from "./reviews.mjs";
+import { currentReview, reviewsOf, reviewProblems, isLegacyShape } from "./reviews.mjs";
+import { reviewHistoryPreflight, IDENTITY_NOTE } from "./review-history.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -46,6 +47,31 @@ let document;
 try {
   document = parseYaml(await readFile(path.join(root, "project-policy.yml"), "utf8"));
 } catch (error) {
+  // A policy that no longer exists at its path (deleted, moved, renamed) is a violation when the
+  // trusted base recorded attestations; it is not merely "could not be read".
+  const missing = await reviewHistoryPreflight({ repositoryPath: root, policyPath: "project-policy.yml" });
+  if (missing.status === "violated") {
+    const report = {
+      historyIntegrity: {
+        status: "violated",
+        effective: false,
+        reason: missing.reason,
+        baseCommit: missing.baseCommit ?? null,
+        ref: missing.ref ?? null,
+      },
+      identityNote: IDENTITY_NOTE,
+      total: 0,
+      attestations: [],
+      violations: [`review history: ${missing.reason}`],
+    };
+    if (JSON_OUT) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    else {
+      process.stderr.write(
+        `history integrity: VIOLATED - ${missing.reason}\nNo attestation is created, listed as valid or renewed.\n`,
+      );
+    }
+    process.exit(EXIT_FINDINGS);
+  }
   process.stderr.write(`project-policy.yml could not be read: ${error.message}\n`);
   process.exit(EXIT_INVOCATION);
 }
@@ -124,7 +150,22 @@ function migrateText(text) {
   return out.join("\n");
 }
 
+// The same history-integrity preflight `standards validate` runs, before anything is created, listed as
+// valid or migrated. An attestation is only as good as the history it sits in: when that history was
+// rewritten (violated) or could not be compared with a trusted base (not-evaluated), no event is
+// listed as current, and the migration refuses to write.
+const preflight = await reviewHistoryPreflight({ repositoryPath: root, policyPath: "project-policy.yml" });
+
 if (MIGRATE) {
+  if (!preflight.effective) {
+    process.stderr.write(
+      `Refusing to migrate: review-history integrity is ${preflight.status.toUpperCase()}: ${preflight.reason}
+` +
+        `No attestation is created, listed as valid or renewed until the history is verified.
+`,
+    );
+    process.exit(preflight.status === "violated" ? EXIT_FINDINGS : EXIT_INVOCATION);
+  }
   const file = path.join(root, "project-policy.yml");
   const original = await readFile(file, "utf8");
   const migrated = migrateText(original);
@@ -146,39 +187,57 @@ const entries = Object.entries(document?.attestations ?? {});
 // now" are different questions and a report that only showed the current event could answer just
 // one of them.
 const rows = entries.flatMap(([ruleId, record]) => {
+  const reviews = reviewsOf(record);
   const current = currentReview(ruleId, record);
-  return reviewsOf(record).map((attestation) => {
-  const against = attestation?.reviewedAgainst;
-  const algorithm = against?.digestAlgorithm ?? (against?.digest ? LEGACY_ALGORITHM : null);
-  const freshness = against?.paths?.length
-    ? classifyFreshness(root, against, repo).state
-    : FRESHNESS.unrecorded;
-  return {
-    rule: ruleId,
-    id: attestation?.id ?? null,
-    current: attestation === current,
-    shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
-    supersedes: attestation?.supersedes ?? null,
-    disposition: attestation?.status ?? null,
-    algorithm,
-    freshness,
-    reviewedAt: attestation?.reviewedAt ?? null,
-    revision: against?.revision ?? null,
-    paths: against?.paths ?? [],
-    // The only value this column ever takes. Stated per row rather than once at the bottom, so a
-    // reader scanning for something to automate finds the refusal beside every candidate for it.
-    autoUpgradable: false,
-    action:
-      freshness === FRESHNESS.fresh
-        ? "none"
-        : freshness === FRESHNESS.legacyUnverifiable
-          ? "human re-review required — record a new digest, never recompute the old one"
-          : freshness === FRESHNESS.stale
-            ? "human re-review required — reviewed content changed"
-            : freshness === FRESHNESS.evidenceUnavailable
-              ? "repository evidence unavailable — establish it, then re-review"
-              : "no digest recorded — record one to make staleness detectable",
-  };
+  return reviews.map((attestation) => {
+    const against = attestation?.reviewedAgainst;
+    const algorithm = against?.digestAlgorithm ?? (against?.digest ? LEGACY_ALGORITHM : null);
+    const freshness = against?.paths?.length
+      ? classifyFreshness(root, against, repo).state
+      : FRESHNESS.unrecorded;
+    const paths = against?.paths ?? [];
+    return {
+      rule: ruleId,
+      id: attestation?.id ?? null,
+      current: preflight.effective && attestation === current,
+      identity: "asserted, not authenticated",
+      rejectionEffective: !preflight.effective && attestation === current && attestation?.status === "rejected",
+      shape: isLegacyShape(record) ? "single-record (pre-migration)" : "review-event",
+      predecessor: attestation?.supersedes ?? null,
+      supersedes: attestation?.supersedes ?? null,
+      status: attestation?.status ?? null,
+      disposition: attestation?.status ?? null,
+      reviewedBy: attestation?.reviewedBy ?? null,
+      reviewerRole: attestation?.reviewerRole ?? null,
+      reviewedAt: attestation?.reviewedAt ?? null,
+      evidence: attestation?.evidence ?? null,
+      reference: attestation?.reference ?? null,
+      reviewedCommit: against?.revision ?? null,
+      revision: against?.revision ?? null,
+      reviewedTree: against?.tree ?? null,
+      tree: against?.tree ?? null,
+      digest: against?.digest ?? null,
+      digestAlgorithm: algorithm,
+      algorithm,
+      source: against?.source ?? (against ? "git" : null),
+      reviewedPaths: paths,
+      scope: paths,
+      paths,
+      freshness,
+      // The only value this column ever takes. Stated per row rather than once at the bottom, so a
+      // reader scanning for something to automate finds the refusal beside every candidate for it.
+      autoUpgradable: false,
+      action:
+        freshness === FRESHNESS.fresh
+          ? "none"
+          : freshness === FRESHNESS.legacyUnverifiable
+            ? "human re-review required - record a new digest, never recompute the old one"
+            : freshness === FRESHNESS.stale
+              ? "human re-review required - reviewed content changed"
+              : freshness === FRESHNESS.evidenceUnavailable
+                ? "repository evidence unavailable - establish it, then re-review"
+                : "no digest recorded - record one to make staleness detectable",
+    };
   });
 });
 
@@ -188,6 +247,7 @@ const rows = entries.flatMap(([ruleId, record]) => {
  * for. A violation exits 1: the policy is internally inconsistent about its own provenance.
  */
 const violations = [];
+if (preflight.status === "violated") violations.push(`review history: ${preflight.reason}`);
 for (const [ruleId, record] of entries) violations.push(...reviewProblems(ruleId, record));
 for (const r of rows) {
   if (r.algorithm === null && r.paths.length > 0 && r.freshness !== FRESHNESS.unrecorded) {
@@ -209,6 +269,14 @@ if (JSON_OUT) {
     JSON.stringify(
       {
         repository: { available: repo.available, reason: repo.reason },
+        historyIntegrity: {
+          status: preflight.status,
+          effective: preflight.effective,
+          reason: preflight.reason ?? null,
+          baseCommit: preflight.baseCommit ?? null,
+          ref: preflight.ref ?? null,
+        },
+        identityNote: IDENTITY_NOTE,
         total: rows.length,
         counts,
         safelyAutoUpgradable: 0,
@@ -224,6 +292,9 @@ if (JSON_OUT) {
   const out = [];
   out.push(`${rows.length} attestation(s) in ${root}`);
   if (!repo.available) out.push(`  repository content unavailable: ${repo.reason}`);
+  out.push(`  history integrity: ${preflight.status.toUpperCase()}${preflight.reason ? ` - ${preflight.reason}` : ""}`);
+  if (!preflight.effective) out.push("  No attestation is listed as current or valid while history integrity is not verified.");
+  out.push(`  ${IDENTITY_NOTE}`);
   out.push("");
   for (const [status, n] of Object.entries(
     rows.reduce((a, r) => ((a[r.disposition] = (a[r.disposition] ?? 0) + 1), a), {}),
@@ -238,6 +309,7 @@ if (JSON_OUT) {
   for (const r of rows) {
     out.push(`  ${r.rule}`);
     out.push(`    disposition: ${r.disposition}`);
+    out.push(`    reviewer:    ${r.reviewedBy ?? "?"} (asserted, not authenticated)`);
     out.push(`    algorithm:   ${r.algorithm ?? "(none recorded)"}`);
     out.push(`    freshness:   ${r.freshness}`);
     out.push(`    reviewed:    ${r.reviewedAt ?? "?"}${r.revision ? ` at ${r.revision}` : ""}`);
