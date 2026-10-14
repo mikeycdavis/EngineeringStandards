@@ -126,7 +126,10 @@ disregarded and recorded rejections stay effective**: negative evidence may be c
 never removed because a comparison was unavailable. The same holds for a history that is malformed (a successor
 naming a missing predecessor, a duplicate id, a fork): a rejection it records stays in force, and the result
 names it, until the history is repaired and a later well-formed review clears it. A malformed history with
-no recorded rejection establishes nothing and is never read as an approval. All of this applies to an attestable rule that
+no recorded rejection establishes nothing and is never read as an approval. A malformed history can be repaired
+only while its malformed events are in an unmerged change: once it is on the trusted default branch the
+append-only comparison rejects both editing and appending, and no recovery path exists yet (a known
+limitation that needs an owner decision). All of this applies to an attestable rule that
 applies, and a rule the catalog does not mark attestable is never cleared by a review: a rule declared `not-applicable` is not evaluated, so a rejection recorded for it is not consulted
 (the evaluator returns at the applicability declaration, before any review history is read). This is an
 owner-reviewable choice. Reviewer identity is

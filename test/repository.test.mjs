@@ -475,7 +475,17 @@ test("the malformed-history remediation states that a recorded rejection stays i
   };
   const missingPredecessor = review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" });
   const withRejection = remediation([review({ id: "r1", status: "rejected" }), missingPredecessor]);
-  assert.equal(withRejection, "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, chronological order). A recorded rejection in this history stays in force until then, and only a later well-formed review clears it.");
+  assert.match(withRejection, /A recorded rejection in this history stays in force/);
+  assert.match(withRejection, /only a later well-formed review clears it/);
+  // Truthful about recovery: a malformed history already on the trusted branch cannot be repaired by editing
+  // or appending (the append-only check rejects both) and no recovery path exists, so the text must not promise one.
+  for (const text of [withRejection]) {
+    assert.match(text, /still only in your unmerged change/);
+    assert.match(text, /already on the trusted default branch/);
+    assert.match(text, /neither editing nor appending can repair them/);
+    assert.match(text, /no recovery path exists yet/);
+    assert.match(text, /owner decision/);
+  }
   // A missing predecessor is not cured by appending a later review: the disconnected event keeps the whole
   // history malformed. The text must name the structural problems to fix, not only ids and order.
   assert.match(withRejection, /every reported structural problem/);
@@ -484,7 +494,8 @@ test("the malformed-history remediation states that a recorded rejection stays i
   // The same structural guidance applies with no rejection (a missing predecessor satisfies "unique ids" and
   // "chronological order"), and the rejection-clearing explanation is absent.
   const withoutRejection = remediation([review({ id: "r1" }), missingPredecessor]);
-  assert.equal(withoutRejection, "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, chronological order).");
+  assert.match(withoutRejection, /already on the trusted default branch/);
+  assert.match(withoutRejection, /no recovery path exists yet/);
   assert.match(withoutRejection, /predecessor links/);
   assert.match(withoutRejection, /required event fields/);
   assert.doesNotMatch(withoutRejection, /rejection/);
@@ -1809,6 +1820,7 @@ test("ST-44: the documented fail-closed rule is scoped to a rule that applies; a
   for (const file of ["INSTRUCTIONS.md", "artifacts/adr/0005-attestations-are-recorded-human-evidence.md"]) {
     const text = readFileSync(path.join(REPO_ROOT, file), "utf8").replace(/\s+/g, " ");
     assert.match(text, /rule that applies/, `${file} must scope the rule`);
+    assert.match(text, /no recovery path/, `${file} must not promise a recovery that does not exist`);
     assert.match(text, /not-applicable` is not evaluated, so a rejection recorded for it is not consulted/, `${file} must say what a not-applicable rule does`);
   }
 });

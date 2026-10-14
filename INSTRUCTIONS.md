@@ -231,7 +231,9 @@ comparison. Deleting or emptying the attestations section is itself a rewrite wh
 For an attestable rule that applies, a rejection recorded in a history that is malformed, rewritten or not comparable
 with a trusted base stays in force: the rule fails with the rejection named, and only a later well-formed
 review in a repaired history (and, once authenticated review exists, an authenticated one) clears it. A
-malformed history that records no rejection establishes nothing: it is never read as an approval. This holds
+malformed history that records no rejection establishes nothing: it is never read as an approval. Repair is possible only while the malformed events are in an unmerged
+change: once a malformed history is on the trusted default branch the append-only check rejects both editing
+and appending, and there is no recovery path yet (a known limitation that needs an owner decision). This holds
 only for a rule that applies: a rule declared `not-applicable` is not evaluated, so a rejection recorded for
 it is not consulted. Remove the declaration or the attestation rather than relying on either. A rule the
 catalog does not mark attestable is never cleared by a review: an attestation recorded for it is an invalid
