@@ -1975,3 +1975,33 @@ test("ST-41: a newline inside an untrusted field cannot forge a line in the rend
   for (const line of shown.split("\n")) assert.ok(!/^\s*FORGED/.test(line), `forged line: ${JSON.stringify(line)}`);
   assert.ok(shown.includes(`${String.fromCharCode(92)}nFORGED-CREATED`), shown);
 });
+
+test("ST-41: invisible and bidirectional format characters are escaped, ordinary non-ASCII text is not", async () => {
+  const { displaySafe, displaySafeText } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "display-safe.mjs")).href);
+  const classes = {
+    "soft hyphen": [0x00ad],
+    "arabic letter mark": [0x061c],
+    "mongolian vowel separator": [0x180e],
+    "zero-width and directional marks": [0x200b, 0x200c, 0x200d, 0x200e, 0x200f],
+    "line and paragraph separators and embedding/override controls": [0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e],
+    "word joiner and invisible operators": [0x2060, 0x2061, 0x2062, 0x2063, 0x2064],
+    "isolates": [0x2066, 0x2067, 0x2068, 0x2069],
+    "byte order mark": [0xfeff],
+    "interlinear annotation": [0xfff9, 0xfffa, 0xfffb],
+    "tag characters": [0xe0000, 0xe0041, 0xe007f],
+  };
+  for (const [name, points] of Object.entries(classes)) {
+    for (const point of points) {
+      const raw = `a${String.fromCodePoint(point)}b`;
+      const hex = point.toString(16);
+      const expected = point > 0xffff ? `a${BS}u{${hex}}b` : `a${BS}u${hex.padStart(4, "0")}b`;
+      assert.equal(displaySafe(raw), expected, `${name} U+${hex}`);
+      assert.equal(displaySafeText(raw), expected, `${name} U+${hex} (text)`);
+    }
+  }
+  // Ordinary non-ASCII letters and symbols stay readable, including neighbours of the escaped ranges.
+  for (const keep of ["é", "ß", "日本語", "שלום", "مرحبا", "Ω", "—", `a${String.fromCodePoint(0x00a0)}b`, String.fromCodePoint(0x202f), String.fromCodePoint(0x1f600)]) {
+    assert.equal(displaySafe(keep), keep);
+    assert.equal(displaySafeText(keep), keep);
+  }
+});
