@@ -211,6 +211,12 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   a declaration that silently stops describing the tree.
 - The declaration is only as good as its evidence. `evidence` is checked for existence and line
   range, not for truth; a reviewer still reads it.
+- **Scan scope details.** `observation.roots` may name directories or single files. Symbolic links inside a root
+  are never followed and are reported as `symlink-not-followed`, so a link can neither recurse nor be read as a
+  repository file when it points elsewhere. A Windows junction that `lstat` reports as a directory is not
+  detected as a link: a stated limit. Edge evidence must be an import in a scanned file (inside the roots, with an
+  observed extension), otherwise `evidence-outside-observation`. `export type { X } from`, `export type * from` and
+  `export type * as ns from` are read as re-exports.
 - A second file to keep: the declaration lives apart from the policy, by design (section 2).
 - This repository's declaration describes `scripts/` only. `test/`, shell wrappers and workflows are
   outside it and listed as such.

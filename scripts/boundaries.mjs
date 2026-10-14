@@ -23,7 +23,7 @@
  * built-in objects other than the ones named here.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -187,25 +187,44 @@ export function loadDeclaration(dir) {
   return { state: "ok", declaration };
 }
 
-/** Repository-relative, forward-slash files under `repoRoot` for the declared roots and extensions. */
+/**
+ * Repository-relative, forward-slash files under `repoRoot` for the declared roots and extensions.
+ *
+ * A root may be a directory or a single file. Symbolic links are never followed: a link met inside
+ * a root is recorded on the returned array's `links` and reported by checkBoundaries as
+ * `symlink-not-followed`, so a link cannot recurse, and cannot be read as a repository-relative file
+ * when it points outside the repository. Windows junctions that lstat reports as directories are
+ * not detected as links; that is a stated limit (ADR 0018).
+ */
 export function inScopeFiles(repoRoot, observation) {
   const out = [];
+  const links = [];
   const walk = (rel) => {
     const abs = path.join(repoRoot, rel);
-    if (!existsSync(abs)) return;
+    let st;
+    try {
+      st = lstatSync(abs);
+    } catch {
+      return;
+    }
+    if (st.isSymbolicLink()) {
+      links.push(rel);
+      return;
+    }
+    if (st.isFile()) {
+      if (observation.extensions.some((ext) => rel.endsWith(ext))) out.push(rel);
+      return;
+    }
+    if (!st.isDirectory()) return;
     for (const name of readdirSync(abs).sort()) {
-      const child = path.posix.join(rel, name);
-      const st = statSync(path.join(repoRoot, child));
-      if (st.isDirectory()) {
-        if (name === "node_modules" || name === ".git") continue;
-        walk(child);
-      } else if (observation.extensions.some((ext) => name.endsWith(ext))) {
-        out.push(child);
-      }
+      if (name === "node_modules" || name === ".git") continue;
+      walk(path.posix.join(rel, name));
     }
   };
-  for (const r of observation.roots) walk(r.replace(/\/$/, ""));
-  return out.sort();
+  for (const r of observation.roots) walk(r.replace(/\/$/, "") || ".");
+  const result = [...new Set(out)].sort();
+  result.links = [...new Set(links)].sort();
+  return result;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -508,16 +527,19 @@ function analyse(toks) {
       }
       case "export": {
         if (afterDot) break;
-        if (isP(k + 1, "*")) {
-          let j = k + 2;
+        // `export type { X } from` and `export type * from` are re-exports like the untyped forms.
+        let a = k + 1;
+        if (isId(a, "type") && (isP(a + 1, "{") || isP(a + 1, "*"))) a++;
+        if (isP(a, "*")) {
+          let j = a + 1;
           while (j < toks.length && j < k + 10 && !(isId(j, "from") && isStr(j + 1))) j++;
           if (isId(j, "from") && isStr(j + 1)) {
             imports.push({ spec: toks[j + 1].v, kind: "reexport", names: ["*"], line: tk.line, sideEffect: false });
           }
-        } else if (isP(k + 1, "{")) {
-          const close = matching("{", k + 1);
+        } else if (isP(a, "{")) {
+          const close = matching("{", a);
           if (close > 0 && isId(close + 1, "from") && isStr(close + 2)) {
-            imports.push({ spec: toks[close + 2].v, kind: "reexport", names: namesInBraces(k + 2, close), line: tk.line, sideEffect: false });
+            imports.push({ spec: toks[close + 2].v, kind: "reexport", names: namesInBraces(a + 1, close), line: tk.line, sideEffect: false });
           }
         }
         break;
@@ -674,7 +696,7 @@ export function scanRepository(repoRoot, declaration) {
   const files = inScopeFiles(repoRoot, declaration.observation);
   const scanned = new Map();
   for (const f of files) scanned.set(f, scanSource(readFileSync(path.join(repoRoot, f), "utf8")));
-  return { files, scanned };
+  return { files, scanned, links: files.links ?? [] };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -697,7 +719,8 @@ function parseEvidence(e) {
  *
  * Violation kinds: unowned-file, dead-member-path, undeclared-edge, undeclared-interface,
  * undeclared-external, unresolved-import, process-termination, unobserved-mechanism,
- * known-site-missing, evidence-missing, evidence-out-of-range, evidence-mismatch.
+ * known-site-missing, symlink-not-followed, evidence-missing, evidence-out-of-range, evidence-mismatch,
+ * evidence-outside-observation.
  *
  * A side-effect import across a declared edge is a use of the interface named "side-effect": the
  * edge's `via` must list it, or `*`.
@@ -709,6 +732,15 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
   const fileSet = new Set(scan.files);
   const allowPrefixes = declaration.external?.allowPrefixes ?? [];
   const crossings = new Map(); // file -> Map(line -> [{ from, to }])
+
+  for (const link of scan.links ?? []) {
+    violations.push({
+      kind: "symlink-not-followed",
+      file: link,
+      line: 1,
+      message: `${link} is a symbolic link inside the observed roots; links are not followed, so what it points to is not observed`,
+    });
+  }
 
   for (const m of members) {
     for (const p of m.paths) {
@@ -821,7 +853,14 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
       violations.push({ kind: "evidence-missing", file, line, message: `${owner}: evidence '${e}' names a file that does not exist` });
     } else if (line > readFileSync(abs, "utf8").split(/\r?\n/).length) {
       violations.push({ kind: "evidence-out-of-range", file, line, message: `${owner}: evidence '${e}' is past the end of the file` });
-    } else if (edge && fileSet.has(file)) {
+    } else if (edge && !fileSet.has(file)) {
+      violations.push({
+        kind: "evidence-outside-observation",
+        file,
+        line,
+        message: `${owner}: evidence '${e}' names a file outside observation.roots or with an unobserved extension; edge evidence must be an import in the scanned graph`,
+      });
+    } else if (edge) {
       const hits = crossings.get(file)?.get(line) ?? [];
       if (!hits.some((h) => h.from === edge.from && h.to === edge.to)) {
         violations.push({

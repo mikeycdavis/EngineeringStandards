@@ -19,7 +19,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync, symlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -657,4 +657,92 @@ test("the shipped template is schema-valid and internally consistent", () => {
   const template = parseYaml(readFileSync(path.join(ROOT, "templates/architecture-boundaries/architecture-boundaries.yml"), "utf8"));
   assert.deepEqual(validate(template, SCHEMA), []);
   assert.deepEqual(declarationProblems(template), []);
+});
+
+// ------------------------------------------------------------------------------------------
+// 8. Review findings: type re-exports, evidence scope, file roots, symbolic links
+// ------------------------------------------------------------------------------------------
+
+test("TYPE re-exports are read as re-exports: export type { X } from, export type * from, export type * as ns from", () => {
+  const scan = scanSource(
+    'export type { A } from "./a.mjs";\nexport type * from "./b.mjs";\nexport type * as ns from "./c.mjs";\nexport type { D };\n',
+  );
+  assert.deepEqual(specs(scan).sort(), ["./a.mjs", "./b.mjs", "./c.mjs"]);
+  assert.ok(scan.imports.every((i) => i.kind === "reexport"));
+});
+
+test("an undeclared edge through export type * from is reported, not missed", () => {
+  const files = { ...FILES, "src/core.mjs": 'export type * from "./app.mjs";\nexport function run() {}\n' };
+  const t = tiny(files, baseDeclaration());
+  try {
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.ok(kinds(v).includes("undeclared-edge"), JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("edge evidence naming a file outside observation.roots or an unobserved extension is rejected", () => {
+  const files = { ...FILES, "other/app.mjs": 'import { run } from "../src/core.mjs";\n', "NOTES.md": "import { run } from './src/core.mjs'\n" };
+  for (const evidence of ["other/app.mjs:1", "NOTES.md:1"]) {
+    const d = baseDeclaration();
+    d.edges[0].evidence = [evidence];
+    const t = tiny(files, d);
+    try {
+      const v = checkBoundaries(t.dir, t.declaration);
+      assert.deepEqual(kinds(v), ["evidence-outside-observation"], evidence + JSON.stringify(v));
+    } finally {
+      rmSync(t.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a root that is a single file is observed, and the walk does not crash on it", () => {
+  const d = baseDeclaration();
+  d.observation.roots = ["src/app.mjs", "src/core.mjs"];
+  const t = tiny(FILES, d);
+  try {
+    const scan = scanRepository(t.dir, t.declaration);
+    assert.deepEqual([...scan.files], ["src/app.mjs", "src/core.mjs"]);
+    assert.deepEqual(checkBoundaries(t.dir, t.declaration, scan), []);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+function linkOrSkip(target, link, type) {
+  try {
+    symlinkSync(target, link, type);
+    return true;
+  } catch {
+    return false; // symlinks need privilege on some Windows hosts
+  }
+}
+
+test("a directory symlink that points back at its parent is not followed and is reported", (t0) => {
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    if (!linkOrSkip(".", path.join(t.dir, "src", "loop"), "dir")) return t0.skip("symlinks not permitted here");
+    const scan = scanRepository(t.dir, t.declaration);
+    assert.deepEqual([...scan.files], ["src/app.mjs", "src/core.mjs"]);
+    assert.deepEqual(scan.links, ["src/loop"]);
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration, scan)), ["symlink-not-followed"]);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("a symlink to a file outside the repository is not read as an in-repository file", (t0) => {
+  const outside = tiny({ "secret.mjs": 'export const leaked = 1;\n' }, null);
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    if (!linkOrSkip(path.join(outside.dir, "secret.mjs"), path.join(t.dir, "src", "ext.mjs"), "file")) return t0.skip("symlinks not permitted here");
+    const scan = scanRepository(t.dir, t.declaration);
+    assert.ok(!scan.files.includes("src/ext.mjs"));
+    assert.deepEqual(scan.links, ["src/ext.mjs"]);
+    assert.ok(kinds(checkBoundaries(t.dir, t.declaration, scan)).includes("symlink-not-followed"));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+    rmSync(outside.dir, { recursive: true, force: true });
+  }
 });
