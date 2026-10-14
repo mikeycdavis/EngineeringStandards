@@ -304,8 +304,8 @@ named by the condition used in the human report and in tests:
 | --- | --- | --- |
 | a matching regular file cannot be opened or read (including a read that fails after a successful `lstat`, or a disappearance) | `unreadable` | the signal's presence is established and its content is not |
 | `FROZEN.md` is readable and contains neither listed phrase (empty, whitespace-only, or other text) | `no-listed-phrase` | a file named for freezing whose meaning the closed vocabulary does not cover is not evidence of eligibility (Q4 A) |
-| a matching entry is returned by the listing but `lstat` on it fails | `stat-failed` | it cannot be classified, so neither its presence nor its content is known |
-| a matching source file was classified and read, and **afterwards its entry no longer names the identity that was classified** (the name now refers to another file, or none), although `lstat` succeeds | `source-changed` | the content read may not be the content of the file the name now designates; not overridable; a human diagnostic name, not frozen |
+| `lstat` on a matching entry fails **on first classification** (the entry was returned by the listing), or fails after the read with an error **other than** "no such entry" (for example a permission or I/O error) | `stat-failed` | it cannot be classified, so neither its presence nor its content is known |
+| a matching source file was classified and read, and **afterwards its entry no longer names the identity that was classified**: `lstat` succeeds and reports a different identity (replaced by another file), **or `lstat` reports the entry missing** (`ENOENT`, `ENOTDIR`, or the platform's not-found equivalent: renamed away or removed without replacement) | `source-changed` | the content read may not be the content of the file the name now designates; not overridable; a human diagnostic name, not frozen |
 | a matching entry is not a regular file as reported by `lstat` on the entry itself: a directory, a symbolic link of any kind, or any other non-file | `not-regular-file` | the link is not followed, so its content is not what was examined |
 | a matching file is strictly larger than the per-file read cap | `over-read-cap` | the banner could be in the part not examined |
 | a matching file does not decode as UTF-8 under fatal decoding | `not-utf8` | the text cannot be read |
@@ -816,10 +816,13 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   can exist:* the on-disk fixture runs only after a case-sensitivity probe, and is otherwise an
   explicit reported skip naming that reason, never a pass.
 - **Source identity after the read, injected:** a matching regular source file that is replaced by
-  **another regular file** (and one that is renamed away) after its handle is opened and before the
-  post-read identity check is `INDETERMINATE` (`source-changed`) while `lstat` still succeeds; the
-  replacement's content does not decide eligibility; a mutation check removes the post-read identity
-  check and requires the test to fail.
+  **another regular file** after its handle is opened and before the post-read identity check is
+  `INDETERMINATE` (`source-changed`) while `lstat` succeeds; one that is **renamed away or removed with
+  no replacement** (the post-read `lstat` reports the entry missing) is `INDETERMINATE`
+  (`source-changed`); an **unexpected `lstat` error after the read** (a permission or I/O error, not
+  "no such entry") is `INDETERMINATE` (`stat-failed`); in no case does the replacement's content
+  decide eligibility; a mutation check removes the post-read identity check and requires the first two
+  tests to fail.
 - **Permission, link and mode conditions** (`unreadable`, `stat-failed`, `not-regular-file` for
   every link kind, `over-read-cap`, `not-utf8`, an incomplete listing) go through the injected
   interface on every platform. Real `chmod 000` and real-symlink tests are separate and
