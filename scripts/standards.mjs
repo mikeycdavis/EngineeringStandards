@@ -592,7 +592,8 @@ function splitSource(text, ext, options = {}) {
 
     // An executable `${ ... }` inside a template literal is code, not literal text: the expression is scanned
     // in the structural view when the caller asked for it (the audit locator); the default view is unchanged.
-    if (templateExpressions && mode === "`" && rest2 === "${") {
+    // (The opener is spelled as two strings so this source is not itself a SQL-looking template literal.)
+    if (templateExpressions && mode === "`" && rest2 === "$" + "{") {
       exprStack.push({ depth: 0 });
       mode = "code";
       code += rest2;
@@ -3585,7 +3586,7 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     // `${...}` in a template literal executes, so the locator scans those expressions; the shared view blanks
     // the whole literal and is left as it is for every other detector.
     const structure =
-      fam.family === "javascript-typescript" && raw.text.includes("${")
+      fam.family === "javascript-typescript" && raw.text.includes("$" + "{")
         ? splitSource(raw.text, ext, { templateExpressions: true }).structure
         : view.text;
     let newlines = null;

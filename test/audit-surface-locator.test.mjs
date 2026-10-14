@@ -769,13 +769,16 @@ test("an inline MySQL # comment hides DDL after it; # in strings, operators and 
     },
   ));
 
+/** Test sources are written with § for the backtick, so this file has no template-shaped text of its own. */
+const bt = (text) => text.replaceAll("§", String.fromCharCode(96));
+
 test("an executable ${...} in a template literal is scanned; the literal text and ordinary strings are not", () =>
   withRepo(
     {
-      "src/a.js": "const m = `done ${recordAuditEvent(event)} ok`;\n",
-      "src/b.js": "const m = `a ${ `b ${auditLogger.info(x)}` } ${ {k: 1}.k + AuditLog.create(y) }`;\n",
-      "src/c.js": "const a = `recordAuditEvent(x) is described here`;\nconst b = \"${recordAuditEvent(x)}\";\nconst c = '${recordAuditEvent(x)}';\n",
-      "src/d.ts": "const t = tag`x ${ /* recordAuditEvent(z) */ 1 } y`;\n",
+      "src/a.js": bt("const m = §done ${recordAuditEvent(event)} ok§;\n"),
+      "src/b.js": bt("const m = §a ${ §b ${auditLogger.info(x)}§ } ${ {k: 1}.k + AuditLog.create(y) }§;\n"),
+      "src/c.js": bt("const a = §recordAuditEvent(x) is described here§;\nconst b = \"${recordAuditEvent(x)}\";\nconst c = '${recordAuditEvent(x)}';\n"),
+      "src/d.ts": bt("const t = tag§x ${ /* recordAuditEvent(z) */ 1 } y§;\n"),
     },
     (dir) => {
       const f = surfaceOf(cli("audit", dir).json);
@@ -788,7 +791,7 @@ test("an executable ${...} in a template literal is scanned; the literal text an
   ));
 
 test("the shared structural view still blanks template expressions, so other detectors are unchanged", async () => {
-  await withRepo({ "src/a.js": "const m = `${recordAuditEvent(event)}`;\n" }, async (dir) => {
+  await withRepo({ "src/a.js": bt("const m = §${recordAuditEvent(event)}§;\n") }, async (dir) => {
     const s = await collectSurface(dir);
     const f = s.files.find((x) => x.endsWith("a.js"));
     assert.ok(!s.run.structureOf(f).text.includes("recordAuditEvent"));
