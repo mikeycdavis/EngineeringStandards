@@ -589,13 +589,13 @@ function analyse(toks) {
       }
       case "require":
         if (isP(k + 1, "(")) {
-          // module.require(...) and module?.require(...) are require calls too.
+          // module.require and module?.require calls are require calls too.
           const viaModule = isP(k - 1, ".") && (isId(k - 2, "module") || (isP(k - 2, "?") && isId(k - 3, "module")));
           if (!afterDot || viaModule) flag("require-call", tk.line);
         }
         break;
       case "module":
-        // module["require"](...) and module[computed](...)
+        // a bracketed access on module: the string "require", or a computed key
         if (!afterDot && isP(k + 1, "[") && (!isStr(k + 2) || toks[k + 2].v === "require")) flag("require-call", tk.line);
         break;
       case "createRequire":
