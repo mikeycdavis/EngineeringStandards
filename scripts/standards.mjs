@@ -787,7 +787,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   if (json) {
     emit(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
   } else {
-    emitText(renderInit(report, { dryRun }) + "\n");
+    emit(displaySafeText(renderInit(report, { dryRun })) + "\n");
   }
 
   // A conflict is unfinished work, not a failure of the command: nothing was changed and the
