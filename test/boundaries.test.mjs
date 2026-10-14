@@ -39,7 +39,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = JSON.parse(readFileSync(path.join(ROOT, "schemas/architecture-boundaries.schema.json"), "utf8"));
-const DECLARATION_TEXT = readFileSync(path.join(ROOT, DECLARATION_FILE), "utf8");
+const DECLARATION_TEXT = readFileSync(path.join(ROOT, DECLARATION_FILE), "utf8").replace(/\r\n/g, "\n");
 const DECLARATION = parseYaml(DECLARATION_TEXT);
 const VERSION = readFileSync(path.join(ROOT, "VERSION"), "utf8").trim();
 
