@@ -440,7 +440,7 @@ async function main(argv) {
     else if (a === "--issues") issuesFile = argv[++i];
     else if (a === "--json") json = true;
     else {
-      humanErr(`Unknown argument: ${a}\nUsage: ownership.mjs [--root dir] --issues <open-issues.json> [--json]\n`);
+      humanErr(`Unknown argument: ${displaySafe(a)}\nUsage: ownership.mjs [--root dir] --issues <open-issues.json> [--json]\n`);
       return EXIT_NOT_EVALUATED;
     }
   }
@@ -462,7 +462,7 @@ async function main(argv) {
     const { entries, malformed, containers } = readUnscoped(root);
     result = checkOwnership({ openIssues, claims, unscoped: entries, malformed, containers, planProblems: owned.problems });
   } catch (e) {
-    humanErr(`NOT_EVALUATED: ${e.message}\n`);
+    humanErr(`NOT_EVALUATED: ${displaySafe(e.message)}\n`);
     return EXIT_NOT_EVALUATED;
   }
   process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : displaySafeText(`${render(result, claims.length)}\n`));

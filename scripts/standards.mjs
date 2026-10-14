@@ -3277,10 +3277,10 @@ function detectSqlConcat(files, run) {
 
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
-function renderHuman(fileCount, surface, run) {
+export function renderHuman(fileCount, surface, run) {
   const { root, findings, strict } = run;
   const lines = [];
-  lines.push(`standards audit — ${path.basename(root)} (${root.split(path.sep).join("/")})`);
+  lines.push(`standards audit — ${displaySafe(path.basename(root))} (${displaySafe(root.split(path.sep).join("/"))})`);
   lines.push(`${fileCount} file(s) scanned, ${findings.length} finding(s).`);
   // The scanned count above is the sentence that would otherwise imply a complete search. When the
   // surface has holes in it, say so on the same line rather than leaving it to be inferred from a
@@ -3314,7 +3314,7 @@ function renderHuman(fileCount, surface, run) {
       const rest = all.length > 6 ? ` and ${all.length - 6} more` : "";
       parts.push(
         `${all.length} directory(ies) excluded by this tool rather than by the repository ` +
-          `(${all.slice(0, 6).join(", ")}${rest})`,
+          `(${displaySafe(all.slice(0, 6).join(", "))}${rest})`,
       );
     }
     lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
@@ -3324,7 +3324,7 @@ function renderHuman(fileCount, surface, run) {
   // which directories were left out cannot tell a focused audit from a blind one. The count is the
   // part that matters at a glance; the paths are in `evidenceSurface.excludedDirectories`.
   if (surface.excludedDirectories.length) {
-    const shown = surface.excludedDirectories.slice(0, 6).map((e) => e.path).join(", ");
+    const shown = displaySafe(surface.excludedDirectories.slice(0, 6).map((e) => e.path).join(", "));
     const rest = surface.excludedDirectories.length - 6;
     lines.push(
       `${surface.excludedDirectories.length} directory(ies) excluded as not this project's own code: ` +
@@ -3334,7 +3334,7 @@ function renderHuman(fileCount, surface, run) {
   // Ignored FILES, stated at the granularity they are recorded: enough for a reader to see that
   // coverage shrank, not so much that it buries the directory-level exclusions above.
   if (surface.excludedFiles.count) {
-    const shown = surface.excludedFiles.sample.join(", ");
+    const shown = displaySafe(surface.excludedFiles.sample.join(", "));
     lines.push(
       `${surface.excludedFiles.count} file(s) excluded as ignored by the repository` +
         `${shown ? ` (for example ${shown})` : ""}.`,
@@ -3544,7 +3544,7 @@ export async function main(args) {
 
   const target = cli.dirFlag ?? cli.positional ?? ".";
   if (!existsSync(target)) {
-    humanErr(`standards: no such directory: ${target}\n`);
+    humanErr(`standards: no such directory: ${displaySafe(target)}\n`);
     return done(EXIT_INVOCATION);
   }
   const root = cli.dirFlag ? path.resolve(cli.dirFlag) : findRoot(target);
@@ -4131,12 +4131,12 @@ export async function main(args) {
       const current = repositoryDigest(root, against?.paths ?? []);
       if (!current.ok) {
         emitText(
-          `\n  attestation ${ruleId}: no digest can be offered — ${current.missing.join(", ")} ` +
+          `\n  attestation ${displaySafe(ruleId)}: no digest can be offered — ${displaySafe(current.missing.join(", "))} ` +
             `has no committed identity.\n`,
         );
         continue;
       }
-      emitText(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
+      emitText(`\n  attestation ${displaySafe(ruleId)}: current digest is ${displaySafe(current.digest)}\n`);
       emitText(
         `  Record it as reviewedAgainst.digest with digestAlgorithm: ${DIGEST_ALGORITHM}.\n`,
       );

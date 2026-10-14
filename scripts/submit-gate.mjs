@@ -19,7 +19,7 @@
  * an argument (ADR 0014).
  */
 
-import { humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { pathToFileURL } from "node:url";
 
 const EXIT_REFUSED = 1;
@@ -229,7 +229,7 @@ async function main(argv) {
   try {
     input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "null");
   } catch (err) {
-    humanErr(`submit-gate: could not parse stdin as JSON: ${err.message}\n`);
+    humanErr(`submit-gate: could not parse stdin as JSON: ${displaySafe(err.message)}\n`);
     return EXIT_INVOCATION;
   }
   if (!input || typeof input !== "object") {

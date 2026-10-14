@@ -2005,3 +2005,25 @@ test("ST-41: invisible and bidirectional format characters are escaped, ordinary
     assert.equal(displaySafeText(keep), keep);
   }
 });
+
+test("ST-41: a line feed inside a repository-controlled path cannot forge a line in the audit header", async () => {
+  const { renderHuman } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "standards.mjs")).href);
+  const evil = "evil\nFORGED-IGNORED.txt";
+  const surface = {
+    complete: false,
+    unreadableFiles: [],
+    unreadableDirectories: [],
+    truncatedFiles: [],
+    fileCapReached: false,
+    readBudget: { exhausted: false, unreadFiles: 0, limitBytes: 0 },
+    frameworkExcludedDirectories: ["fw\nFORGED-FRAMEWORK"],
+    excludedDirectories: [{ path: "dir\nFORGED-DIRECTORY" }],
+    excludedFiles: { count: 1, sample: [evil] },
+  };
+  const text = renderHuman(1, surface, { root: path.join(os.tmpdir(), "r\nFORGED-ROOT"), findings: [], strict: false });
+  const forged = text.split("\n").filter((line) => /^\s*FORGED-/.test(line));
+  assert.deepEqual(forged, []);
+  for (const name of ["FORGED-IGNORED", "FORGED-FRAMEWORK", "FORGED-DIRECTORY", "FORGED-ROOT"]) {
+    assert.ok(text.includes(`${BS}n${name}`), `${name} not shown escaped`);
+  }
+});

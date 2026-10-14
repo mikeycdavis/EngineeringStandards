@@ -286,7 +286,7 @@ function main(argv) {
       verbose: flags.includes("--verbose") || process.env.LOCAL_CI_VERBOSE === "1",
     });
   } catch (err) {
-    humanErr(`pipeline: ${err.message}\n`);
+    humanErr(`pipeline: ${displaySafe(err.message)}\n`);
     return EXIT_INVOCATION;
   }
 
