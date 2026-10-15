@@ -1083,3 +1083,67 @@ test("a line comment ends at a lone carriage return", async () => {
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:2 type AuditEvent"]);
   });
 });
+
+test("an apostrophe in JSX text does not blank executable code later on the same line", async () => {
+  const NL = String.fromCharCode(10);
+  const jsx = "const view = <p>don't</p>; recordAuditEvent(x);" + NL + "const w = <q>it's</q>; recordAuditEvent(y);" + NL;
+  await withRepo({ "src/a.jsx": jsx }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/a.jsx:1 recorder-call recordAuditEvent",
+      "src/a.jsx:2 recorder-call recordAuditEvent",
+    ]);
+  });
+});
+
+test("a postfix update before a slash is a division", async () => {
+  await withRepo({ "src/a.js": "let i = 0; const n = i++ / recordAuditEvent(x) / 2;\n" }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
+  });
+});
+
+test("a MySQL # attached to the preceding token starts a comment; operators and temp tables do not", async () => {
+  const NL = String.fromCharCode(10);
+  const sql = ["SELECT 1#comment CREATE TABLE audit_hidden (id int);", "SELECT a #> 'k'; CREATE TABLE audit_real (id int);", ""].join(NL);
+  await withRepo({ "db/a.sql": sql }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["db/a.sql:2 table audit_real"]);
+  });
+});
+
+test("a declaration with a nested generic return type is a definition", async () => {
+  const NL = String.fromCharCode(10);
+  const cs = ["interface IRec {", "  Task<Result<Event>> RecordAuditEvent(Event item);", "  Dictionary<string, List<int>> RecordAuditEvent2(Event item);", "}", ""].join(NL);
+  await withRepo({ "src/R.cs": cs }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/R.cs:2 recorder-definition RecordAuditEvent",
+    ]);
+  });
+});
+
+test("a long line of escaped quotes is tokenized in linear time", async () => {
+  const BS = String.fromCharCode(92);
+  const line = (BS + String.fromCharCode(34)).repeat(100000) + String.fromCharCode(10);
+  await withRepo({ "src/a.js": line }, async (dir) => {
+    const started = Date.now();
+    surfaceOf(cli("audit", dir).json);
+    assert.ok(Date.now() - started < 6000, "took " + (Date.now() - started) + " ms");
+  });
+});
+
+test("T-SQL temporary tables and # inside identifiers are not MySQL comments", async () => {
+  const NL = String.fromCharCode(10);
+  const sql = [
+    "DROP TABLE #a, #b; CREATE TABLE AuditA (id int);",
+    "SELECT * FROM tempdb..#t; CREATE TABLE AuditB (id int);",
+    "MERGE x USING #t ON 1=1; CREATE TABLE AuditC (id int);",
+    "SELECT emp#no FROM x; CREATE TABLE AuditD (id int);",
+    "",
+  ].join(NL);
+  await withRepo({ "db/a.sql": sql }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "db/a.sql:1 table AuditA",
+      "db/a.sql:2 table AuditB",
+      "db/a.sql:3 table AuditC",
+      "db/a.sql:4 table AuditD",
+    ]);
+  });
+});

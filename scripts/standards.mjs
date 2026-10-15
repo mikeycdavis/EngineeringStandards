@@ -470,6 +470,52 @@ const isCode = (f) => CODE_EXT.has(path.extname(f));
  *  in Python, `--` is decrement in JavaScript, `#` starts a private field in JavaScript. */
 const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
 const HASH = [".py", ".rb", ".sh", ".ps1"];
+/**
+ * Whether the quote at `i` is not a string delimiter. See the call site in splitSource.
+ */
+function isQuoteInText(text, i, cache) {
+  const q = text[i];
+  // Per-line index of unescaped quote positions, built once per line: a scan per quote was quadratic on a long
+  // line of escaped quotes.
+  if (cache.start === undefined || i < cache.start || i > cache.end) {
+    let start = i;
+    while (start > 0 && text[start - 1] !== "\n" && text[start - 1] !== "\r") start -= 1;
+    let end = i;
+    while (end < text.length && text[end] !== "\n" && text[end] !== "\r") end += 1;
+    const closers = { "'": [], '"': [] };
+    let slashes = 0;
+    for (let k = start; k < end; k += 1) {
+      const ch = text[k];
+      if (ch === "\\") slashes += 1;
+      else {
+        if ((ch === "'" || ch === '"') && slashes % 2 === 0) closers[ch].push(k);
+        slashes = 0;
+      }
+    }
+    cache.start = start;
+    cache.end = end;
+    cache.closers = closers;
+    cache.continues = slashes % 2 === 1;
+  }
+  const list = cache.closers[q];
+  // The first closer strictly after i (binary search).
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid] <= i) lo = mid + 1;
+    else hi = mid;
+  }
+  const closed = lo < list.length;
+  // A trailing backslash continues the literal onto the next line, so it is a string, not text.
+  if (!closed) return !cache.continues;
+  if (q === "'" && /[A-Za-z]/.test(text[i - 1] ?? "") && /[A-Za-z]/.test(text[i + 1] ?? "")) {
+    const word = /([A-Za-z_$][\w$]*)$/.exec(text.slice(Math.max(0, i - 24), i));
+    if (word && !/^(?:return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await|default|export|import|from|as|instanceof|extends|module|namespace|declare|enum|interface|type|async|static|public|private|protected|readonly|abstract|get|set|let|var|const)$/.test(word[1])) return true;
+  }
+  return false;
+}
+
 const TRIPLE_DOUBLE_QUOTE_EXT = new Set([".java", ".kt", ".cs"]);
 const STRING_ENDS_AT_EOL = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".py"]);
 const COMMENT_SYNTAX = new Map([
@@ -541,8 +587,16 @@ function splitSource(text, ext, options = {}) {
     }
     return false;
   };
+  // `i++ / x`: after a postfix update the slash divides (a regex cannot follow `++` or `--`). Bounded scan.
+  const afterPostfixUpdate = () => {
+    let end = code.length;
+    const stop = Math.max(0, end - 64);
+    while (end > stop && /\s/.test(code[end - 1])) end -= 1;
+    return end - 2 >= stop && code[end - 1] === code[end - 2] && (code[end - 1] === "+" || code[end - 1] === "-");
+  };
   const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
 
+  const quoteCache = {};
   let mode = "code";
   let i = 0;
   while (i < text.length) {
@@ -622,6 +676,15 @@ function splitSource(text, ext, options = {}) {
         i = stop;
         continue;
       }
+      // A quote that is JSX text rather than a string delimiter: in a JS-family file a `'` or `"` whose literal
+      // would not close on its own line is not a string (JS strings cannot span lines), and an apostrophe between
+      // two letters after a non-keyword word is a contraction in text (`don't`).
+      if ((c === "'" || c === '"') && STRING_ENDS_AT_EOL.has(ext) && ext !== ".py" && isQuoteInText(text, i, quoteCache)) {
+        code += c;
+        keep(c);
+        i++;
+        continue;
+      }
       if (c === "'" || c === '"' || c === "`") {
         mode = c;
         code += c;
@@ -634,7 +697,7 @@ function splitSource(text, ext, options = {}) {
       // inside the unfinished-work pattern table is a description of a stub, not a stub, and the
       // detector could not tell the difference. Contents stay in `code`, because sourceOf() exists
       // for import matching and a specifier is never a regex.
-      if (syntax.block && c === "/" && (REGEX_MAY_START_AFTER.has(lastCode()) || followsRegexKeyword())) {
+      if (syntax.block && c === "/" && ((REGEX_MAY_START_AFTER.has(lastCode()) && !afterPostfixUpdate()) || followsRegexKeyword())) {
         const close = regexLiteralEnd(text, i);
         if (close !== -1) {
           code += text.slice(i, close + 1);
@@ -3754,10 +3817,46 @@ const NOT_A_TYPE_WORD = new Set([
  * before the name on the same line and nothing but `;` after the closing parenthesis; a call statement is preceded by
  * an operator, `.`, `(`, a statement start or a keyword such as `return`.
  */
+/**
+ * The type word just before a declared name, as `[typeWord]` or null: `Event`, `List<Event>`,
+ * `Task<Result<Event>>`, `Event[]`, `Event?`. Generic arguments may nest, so the angle brackets are matched by
+ * depth (bounded) rather than with a single-level pattern.
+ */
+function typeWordBefore(prefix) {
+  let end = prefix.length;
+  if (!/\s/.test(prefix[end - 1] ?? "")) return null;
+  while (end > 0 && /\s/.test(prefix[end - 1])) end -= 1;
+  while (end > 0 && (prefix[end - 1] === "?" || prefix[end - 1] === "]")) {
+    if (prefix[end - 1] === "?") end -= 1;
+    else {
+      end -= 1;
+      while (end > 0 && /\s/.test(prefix[end - 1])) end -= 1;
+      if (prefix[end - 1] !== "[") return null;
+      end -= 1;
+    }
+  }
+  if (prefix[end - 1] === ">") {
+    let depth = 0;
+    let k = end - 1;
+    const floor = Math.max(0, end - 300);
+    for (; k >= floor; k -= 1) {
+      if (prefix[k] === ">") depth += 1;
+      else if (prefix[k] === "<") {
+        depth -= 1;
+        if (depth === 0) break;
+      } else if (prefix[k] === ";" || prefix[k] === "(" || prefix[k] === ")") return null;
+    }
+    if (depth !== 0) return null;
+    end = k;
+  }
+  const word = /([A-Za-z_$][\w$]*)$/.exec(prefix.slice(0, end));
+  return word ? [word[1], word[1]] : null;
+}
+
 function isSignatureOnly(text, nameAt, open) {
   const lineStart = Math.max(text.lastIndexOf("\n", nameAt - 1), text.lastIndexOf("\r", nameAt - 1)) + 1;
   const prefix = text.slice(lineStart, nameAt);
-  const typed = /([A-Za-z_$][\w$]*)(?:<[^<>;()]*>)?(?:\[\s*\])*\??\s+$/.exec(prefix);
+  const typed = typeWordBefore(prefix);
   // TypeScript member syntax puts the type after the parameters: `recordAuditEvent(event: Event): void;`, so
   // the name may be preceded by nothing but modifiers.
   const memberOnly = /^\s*(?:(?:public|private|protected|abstract|readonly|static|declare|export|async)\s+)*$/.test(prefix);
@@ -3924,12 +4023,19 @@ export function locateAuditSurface(files, run, surface, options = {}) {
           if (/^[ \t]*#/.test(before) || /(?:^|[^#<>@\w])#(?=\s|$)/.test(before)) continue;
           // `#comment` with no space after the marker: a `#` that starts a word and is not where a temporary
           // table name goes (`FROM #t`, `INTO #t`, `JOIN #t`, `TABLE #t`) is a MySQL comment as well.
-          const bare = /(?:^|[\s;,(])#[A-Za-z_]/g;
+          // A `#` is a comment even when attached to the preceding token (`SELECT 1#comment ...`), except the
+          // Postgres operator forms (`#>`, `#>>`, `#-`, `##`, `#=`, `<#>`) and a T-SQL temporary table name.
+          const bare = /#(?![>\-#=])/g;
           let hash;
           let comment = false;
           while ((hash = bare.exec(before)) !== null) {
+            const prev = hash.index > 0 ? before[hash.index - 1] : "";
+            if (/[#<@.,(]/.test(prev)) continue; // operator, or the start of a temporary-table name
             const prefix = before.slice(0, hash.index);
-            if (!/\b(?:TABLE|INTO|FROM|JOIN|UPDATE|EXISTS|ON|REFERENCES|TRUNCATE|DELETE|INSERT|ALTER|DROP|EXEC|EXECUTE)\s*$/i.test(prefix)) {
+            if (/[.,(]\s*$/.test(prefix)) continue; // `, #b`, `x..#t`, `(#t`: a temporary-table name
+            // `emp#no`: `#` inside an identifier (T-SQL, Oracle); a number or closing token before it is not one.
+            if (/[A-Za-z_][\w$]*$/.test(prefix)) continue;
+            if (!/\b(?:TABLE|INTO|FROM|JOIN|USING|APPLY|UPDATE|EXISTS|ON|REFERENCES|TRUNCATE|DELETE|INSERT|ALTER|DROP|EXEC|EXECUTE)\s*$/i.test(prefix)) {
               comment = true;
               break;
             }

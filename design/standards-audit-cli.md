@@ -254,7 +254,7 @@ requirement that produced it, so a reader can go from a finding to the rule with
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": "1.1.0",
   "repo": "F:/Repos/ExampleProject",
   "auditedAt": "2026-08-08T16:40:00Z",
   "findings": [
