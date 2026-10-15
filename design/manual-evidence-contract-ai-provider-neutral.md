@@ -96,19 +96,27 @@ files they occur in, and its stated blind spots. A detector finding is a violati
 overridden by an attestation (section 10). An absence of findings is not evidence of confinement,
 because the blind spots below are exactly what it cannot see.
 
-## 8. What the contract cannot establish
+## 8. Within the claim, and what it cannot establish
 
-- Raw HTTP calls to a provider endpoint written without an SDK, and endpoints assembled at runtime.
-- Model identifiers and prompt formats embedded in code, configuration or data files.
-- SDKs outside the detector's recognised list.
+**Within the claim, examined by the reviewer even though the detector cannot see them.** These are in
+the claim of section 2, so an approval does cover them, but only as far as the reviewer reads S:
+
+- Raw HTTP calls to a provider endpoint written without an SDK, where the endpoint is a literal in S.
+- Model identifiers and prompt formats embedded in files of S.
+- SDKs outside the detector's recognised list, found by reading the dependency manifest and imports.
+
+**Not within the claim, and not established by the contract.** An approval says nothing about:
+
+- Endpoints, model identifiers or prompt formats assembled at run time, or supplied by configuration,
+  environment or data files outside S.
 - Dynamic loading, plugin systems, subprocess invocations and shelling out to provider CLIs.
 - Runtime provider selection driven by configuration or environment.
 - Whether the abstraction would actually keep capabilities stable under a model change; the third clause
   checks that no provider-specific shape crosses the interface, not that the interface is well chosen.
 - Behaviour of any other repository or service the project calls.
 
-A reviewer who has examined these still produces a claim limited to the artefacts and set S. The claim
-text says "confined to the listed adapter modules", not "provider neutral".
+The claim text says "confined to the listed adapter modules", not "provider neutral", and it is limited
+to the artefacts and set S.
 
 Also noted: Standard 1 R4 words provider neutrality as SHOULD, while the catalog level is `required`
 (`rules/ai.json`). Establishing a `required` rule from SHOULD wording is a standard-versus-catalog policy
