@@ -151,6 +151,18 @@ function complianceFindings(document, today, catalog, repoRoot = null) {
       });
     }
   }
+  // The same contradiction through a fixture exemption: a waiver of a departure from a rule that is
+  // declared to have no subject here.
+  for (const entry of fixtureCheck.valid) {
+    if (notApplicable.has(entry.rule)) {
+      findings.push({
+        id: "policy.conflicting-classification",
+        severity: "error",
+        message: `'${entry.rule}' is declared not-applicable and also carries a fixture exemption (${entry.path})`,
+        remediation: "Remove one. not-applicable means the rule has no subject; a fixture exemption waives a departure from a rule that applies.",
+      });
+    }
+  }
 
   return findings;
 }

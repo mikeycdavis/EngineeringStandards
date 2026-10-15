@@ -659,3 +659,13 @@ test("a spaced or quoted fixtureExemptions key that does not parse is still repo
     assert.equal(findingsOf(res, "fixture-exemption-schema-invalid").length, 1, key);
   }
 });
+
+test("policy.mjs rejects a fixture exemption on a rule declared not-applicable", async () => {
+  const root = await scratch();
+  const file = path.join(root, "p.yml");
+  const body = policyText([pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const extra = ["applicability:", "  security.no-cert-bypass:", "    status: not-applicable", '    reason: "no TLS clients"', '    revisitWhen: "a client is added"', ""].join(String.fromCharCode(10));
+  await writeFile(file, body + extra);
+  const result = await checkPolicy(file, SCHEMA, "2026-10-12");
+  assert.ok(result.findings.some((f) => f.id === "policy.conflicting-classification" && /fixture exemption/.test(f.message)), JSON.stringify(result));
+});
