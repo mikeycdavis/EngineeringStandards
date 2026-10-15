@@ -143,8 +143,9 @@ not claim to be. These spellings remain invisible, and the check prints OK for t
   brackets, then called); only the property access `.constructor` and a string-literal index are detected;
 - `URL` reached by another name: `new globalThis.URL("../c/z.mjs", import.meta.url)`,
   `const U = URL; new U("../c/z.mjs", import.meta.url)`; only `new URL(` is detected;
-- aliases of the network globals: `const f = fetch; f("x")`, `const W = WebSocket; new W("x")`; only
-  direct use of `fetch(`, `WebSocket`, `EventSource` and `XMLHttpRequest` is detected;
+- calls made through an alias of a network global: creating the alias (`const f = fetch`, `const W = WebSocket`)
+  is itself a reference and is reported as `network`, but what is later called through the alias is not resolved;
+  a property, object key, method name or destructuring binding that merely shares the name is not a reference;
 - a module path built in one place and handed to a loader the repository defines itself, and any module
   reached only through a subprocess;
 - the effect of a global the scanner does not name (it names `eval`, `Function`, `Reflect`, `Proxy`,

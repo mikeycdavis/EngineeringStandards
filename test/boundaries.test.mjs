@@ -19,7 +19,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync, symlinkSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync, symlinkSync, chmodSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -1219,7 +1219,7 @@ test("generated family: every denylisted member through its namespace is reporte
   const reported = (src) => notOk(scanSource(src));
   const bad = [];
   for (const m of SCAN_LISTS.terminating) for (const ns of ["process", "globalThis.process", "self.process"]) {
-    const src = `${ns}["${m}"](1);`;
+    const src = m === "exitCode" ? `${ns}["${m}"] = 1;` : `${ns}["${m}"](1);`;
     if (!reported(src)) bad.push(src);
   }
   for (const m of SCAN_LISTS.processReach) {
@@ -1590,4 +1590,42 @@ test("named regression: a braced default import bound as process is the process 
     assert.equal(notOk(scanSource(src)), false, src);
   }
   assert.ok(scanSource('import { default as p } from "node:process";').mechanisms["termination-indirect"].length > 0);
+});
+
+// Round 14
+test("named regression: reading process.exitCode or process.exit is not a termination", () => {
+  for (const src of ["console.log(process.exitCode);", "if (process.exitCode === 1) {}", "if (process.exitCode == 1) {}", "const ok = process.exitCode >= 0;", "const f = () => process.exitCode;"]) {
+    assert.deepEqual(scanSource(src).terminates, [], src);
+  }
+  const ref = scanSource("const saved = process.exit;");
+  assert.deepEqual(ref.terminates, []);
+  assert.ok(ref.mechanisms["termination-indirect"].length > 0);
+});
+test("named regression: calling process.exit and writing process.exitCode still terminate", () => {
+  for (const src of ["process.exit(1);", "process.exit?.(1);", "(process.exit)(1);", "process.exit.call(process, 1);", "process.exitCode = 1;", "process.exitCode += 1;", "process.exitCode ||= 2;", "process.exitCode++;", "++process.exitCode;", "process['exitCode'] = 1;", "process.kill(process.pid);", "process.abort();"]) {
+    assert.ok(scanSource(src).terminates.length > 0, src);
+  }
+});
+test("named regression: method definitions and destructuring bindings named like a network global are not the global", () => {
+  for (const src of ["class C { WebSocket() {} }", "const o = { EventSource() {} };", "const { XMLHttpRequest } = client;", "const { a, WebSocket: W } = client;", "function f({ EventSource }) {}", "({ WebSocket } = client);"]) {
+    assert.equal(scanSource(src).mechanisms.network.length, 0, src);
+  }
+  for (const src of ["new WebSocket(u);", "const f = { run() { return new EventSource(u); } };", "run(WebSocket);"]) {
+    assert.ok(scanSource(src).mechanisms.network.length > 0, src);
+  }
+});
+test("named regression: an unreadable observed directory is reported, not a crash", (t0) => {
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    mkdirSync(path.join(t.dir, "src", "locked"));
+    writeFileSync(path.join(t.dir, "src", "locked", "x.mjs"), "export {};\n");
+    chmodSync(path.join(t.dir, "src", "locked"), 0o000);
+    try { readdirSync(path.join(t.dir, "src", "locked")); chmodSync(path.join(t.dir, "src", "locked"), 0o755); return t0.skip("directory permissions are not enforced here"); } catch { /* unreadable, as intended */ }
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.ok(kinds(v).includes("unreadable-path"), JSON.stringify(v));
+    chmodSync(path.join(t.dir, "src", "locked"), 0o755);
+  } finally {
+    try { chmodSync(path.join(t.dir, "src", "locked"), 0o755); } catch { /* absent */ }
+    rmSync(t.dir, { recursive: true, force: true });
+  }
 });

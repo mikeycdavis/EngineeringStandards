@@ -199,6 +199,8 @@ export function loadDeclaration(dir) {
 export function inScopeFiles(repoRoot, observation) {
   const out = [];
   const links = [];
+  const unreadable = [];
+  const unusable = [];
   // A root reached through a symlinked ancestor (linked/src, linked a link) is a link too.
   const linkedAncestor = (rel) => {
     const parts = rel.split("/").filter((x) => x && x !== ".");
@@ -236,12 +238,18 @@ export function inScopeFiles(repoRoot, observation) {
       return;
     }
     if (!st.isDirectory()) return;
-    for (const name of readdirSync(abs).sort()) {
+    let names;
+    try {
+      names = readdirSync(abs).sort();
+    } catch {
+      unreadable.push(rel);
+      return;
+    }
+    for (const name of names) {
       if (name === "node_modules" || name === ".git") continue;
       walk(path.posix.join(rel, name));
     }
   };
-  const unusable = [];
   for (const r of observation.roots) {
     const before = out.length;
     const linksBefore = links.length;
@@ -253,6 +261,7 @@ export function inScopeFiles(repoRoot, observation) {
   const result = [...new Set(out)].sort();
   result.links = [...new Set(links)].sort();
   result.unusableRoots = unusable;
+  result.unreadable = unreadable;
   return result;
 }
 
@@ -503,6 +512,7 @@ function builtinName(spec) {
 // loading and network lists name. A chain rooted at one of these namespaces that is not in its
 // list is REPORTED, never OK: the scanner allows what it recognises instead of denying what it
 // has thought of (ADR 0018).
+const WRITE_OPERATORS = new Set(["=", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=", "&=", "^=", "|=", "&&=", "||=", "??=", "++", "--"]);
 const OBJECT_BENIGN = new Set([
   "keys", "values", "entries", "fromEntries", "assign", "freeze", "isFrozen", "seal", "isSealed",
   "is", "hasOwn", "getOwnPropertyNames", "getOwnPropertySymbols", "create", "preventExtensions",
@@ -679,6 +689,31 @@ function analyse(rawToks) {
     }
     flag("reflection", line);
   };
+  // process.exit(...) and friends terminate when called; process.exitCode terminates when written.
+  // A read of exitCode is nothing; a method used as a value escapes the scan (termination-indirect).
+  const classifyTermination = (a, st, line, start) => {
+    let q = a.next;
+    for (let n = st.opens; n > 0 && isP(q, ")"); n--) q++;
+    if (a.v === "exitCode") {
+      const ops = [];
+      for (let x = q; ops.length < 4 && toks[x]?.t === "p"; x++) ops.push(toks[x].v);
+      let assign = false;
+      for (let n = 1; n <= ops.length; n++) {
+        const joined = ops.slice(0, n).join("");
+        if (!WRITE_OPERATORS.has(joined)) continue;
+        // `=` is a write unless it is the start of `==`, `===` or `=>`
+        if (joined === "=" && (ops[1] === "=" || ops[1] === ">")) continue;
+        assign = true;
+      }
+      const prefix = (isP(start - 1, "+") && isP(start - 2, "+")) || (isP(start - 1, "-") && isP(start - 2, "-"));
+      if (assign || prefix) terminates.push(line);
+      return;
+    }
+    const called = isP(q, "(") || (isP(q, "?") && isP(q + 1, ".") && isP(q + 2, "(")) ||
+      (isP(q, ".") && (isId(q + 1, "call") || isId(q + 1, "apply") || isId(q + 1, "bind")));
+    if (called) terminates.push(line);
+    else flag("termination-indirect", line);
+  };
   // Classify the chain rooted at token k. Reports into terminates / mechanisms.
   const resolveRoot = (k) => {
     const tk = toks[k];
@@ -715,7 +750,7 @@ function analyse(rawToks) {
       }
       if (name === "process") {
         if (a.kind === "name") {
-          if (TERMINATING.has(a.v)) terminates.push(tk.line);
+          if (TERMINATING.has(a.v)) classifyTermination(a, st, tk.line, start);
           else if (PROCESS_REACH.has(a.v)) flag(PROCESS_REACH.get(a.v), tk.line);
           else if (!PROCESS_BENIGN.has(a.v)) flag("termination-indirect", tk.line);
           return;
@@ -744,6 +779,39 @@ function analyse(rawToks) {
       return;
     }
     flag("termination-indirect", tk.line); // a chain too long to follow is not guessed at
+  };
+
+  // Is the identifier at k a reference to the global of that name, rather than a property, an object
+  // key, a method name, a destructuring binding, a parameter or a declaration of a local?
+  const enclosingBrace = (k) => {
+    let d = 0;
+    for (let x = k - 1; x >= 0; x--) {
+      if (isP(x, "}")) d++;
+      else if (isP(x, "{")) { if (d === 0) return x; d--; }
+    }
+    return -1;
+  };
+  const isGlobalReference = (k, afterDot) => {
+    if (afterDot || isP(k + 1, ":")) return false;
+    for (const kw of ["typeof", "function", "const", "let", "var", "class"]) if (isId(k - 1, kw)) return false;
+    // a method definition: name ( ... ) {
+    if (isP(k + 1, "(")) {
+      const close = matching("(", k + 1);
+      const before = toks[k - 1];
+      const defPrefix = before && ((before.t === "p" && ["{", "}", ",", ";", "*"].includes(before.v)) ||
+        (before.t === "id" && ["static", "async", "get", "set"].includes(before.v)));
+      if (close > 0 && isP(close + 1, "{") && defPrefix) return false;
+    }
+    // a binding in a destructuring pattern: { name }, { a, name }, { x: name } before = or as a parameter
+    const open = enclosingBrace(k);
+    if (open >= 0) {
+      const close = matching("{", open);
+      const eq = isP(close + 1, "=") && !isP(close + 2, "=") && !isP(close + 2, ">");
+      const param = isP(close + 1, ")") && (isP(close + 2, "{") || (isP(close + 2, "=") && isP(close + 3, ">")));
+      const inBinding = isP(k - 1, "{") || isP(k - 1, ",") || isP(k - 1, ":");
+      if ((eq || param) && inBinding && (isP(k + 1, "}") || isP(k + 1, ",") || isP(k + 1, "=") || isP(k - 1, ":"))) return false;
+    }
+    return true;
   };
 
   for (let k = 0; k < toks.length; k++) {
@@ -892,22 +960,14 @@ function analyse(rawToks) {
         flag("reflection", tk.line);
         break;
       case "fetch":
-        // Any reference to the global is network reach: a call, `fetch?.()`, `(fetch)()`,
-        // `fetch.call`, an alias or a value. Not a property (`x.fetch`), an object key or method
-        // name, a declaration of a local, or `typeof fetch`.
-        if (!afterDot && !isP(k + 1, ":") && !isId(k - 1, "typeof") && !isId(k - 1, "function") &&
-            !isId(k - 1, "const") && !isId(k - 1, "let") && !isId(k - 1, "var") && !isId(k - 1, "class")) {
-          flag("network", tk.line);
-        }
+        // Any reference to the global is network reach: a call, `fetch?.()`, `(fetch)()`, `fetch.call`,
+        // an alias or a value. Not a property, an object key, a method name, a binding or a declaration.
+        if (isGlobalReference(k, afterDot)) flag("network", tk.line);
         break;
       case "WebSocket":
       case "EventSource":
       case "XMLHttpRequest":
-        // the global, not a property (`client.WebSocket`), an object key or a local declaration
-        if (!afterDot && !isP(k + 1, ":") && !isId(k - 1, "typeof") && !isId(k - 1, "function") &&
-            !isId(k - 1, "const") && !isId(k - 1, "let") && !isId(k - 1, "var") && !isId(k - 1, "class")) {
-          flag("network", tk.line);
-        }
+        if (isGlobalReference(k, afterDot)) flag("network", tk.line);
         break;
       case "URL": {
         if (isId(k - 1, "new") && isP(k + 1, "(")) {
@@ -1004,7 +1064,16 @@ export function scanSource(text) {
 export function scanRepository(repoRoot, declaration) {
   const files = inScopeFiles(repoRoot, declaration.observation);
   const scanned = new Map();
-  for (const f of files) scanned.set(f, scanSource(readFileSync(path.join(repoRoot, f), "utf8")));
+  const unreadable = [...(files.unreadable ?? [])];
+  for (const f of files) {
+    try {
+      scanned.set(f, scanSource(readFileSync(path.join(repoRoot, f), "utf8")));
+    } catch {
+      unreadable.push(f);
+      scanned.set(f, { imports: [], terminates: [], mechanisms: Object.fromEntries(DETECTED_MECHANISMS.map((m) => [m, []])) });
+    }
+  }
+  files.unreadable = unreadable;
   return { files, scanned, links: files.links ?? [] };
 }
 
@@ -1124,7 +1193,7 @@ function parseEvidence(e) {
  * construct the scanner could not classify is acknowledged by the declaration.
  *
  * Violation kinds: unowned-file, dead-member-path, undeclared-edge, undeclared-interface,
- * undeclared-external, unresolved-import, unusable-observation-root, process-termination, unobserved-mechanism,
+ * undeclared-external, unresolved-import, unusable-observation-root, unreadable-path, process-termination, unobserved-mechanism,
  * known-site-missing, symlink-not-followed, evidence-missing, evidence-out-of-range, evidence-mismatch,
  * evidence-outside-observation, evidence-not-regular-file, repository-package-import,
  * external-prefix-shadows-member.
@@ -1154,6 +1223,14 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
     }
   }
 
+  for (const u of scan.files.unreadable ?? []) {
+    violations.push({
+      kind: "unreadable-path",
+      file: u,
+      line: 1,
+      message: `${u} is inside the observed roots but cannot be read; what it contains is not observed`,
+    });
+  }
   for (const r of scan.files.unusableRoots ?? []) {
     violations.push({
       kind: "unusable-observation-root",
