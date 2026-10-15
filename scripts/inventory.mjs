@@ -36,6 +36,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -96,7 +97,7 @@ const orphans = inventory.standards.filter(
 for (const source of inventory.sources) {
   const sourcePath = path.join(ROOT, source.path);
   if (!existsSync(sourcePath)) {
-    process.stderr.write(`inventory: source not found: ${source.path}\n`);
+    humanErr(`inventory: source not found: ${displaySafe(source.path)}\n`);
     process.exit(1);
   }
   const text = await readFile(sourcePath, "utf8");
@@ -146,7 +147,7 @@ for (const source of inventory.sources) {
     continue;
   }
 
-  process.stderr.write(`inventory: unknown extraction mode: ${source.extraction}\n`);
+  humanErr(`inventory: unknown extraction mode: ${displaySafe(source.extraction)}\n`);
   process.exit(1);
 }
 
@@ -195,7 +196,7 @@ if (JSON_OUT) {
   process.exit(problems === 0 ? 0 : 1);
 }
 
-const line = (label, value) => `${label.padEnd(28)} ${value}`;
+const line = (label, value) => `${label.padEnd(28)} ${displaySafe(value)}`;
 const list = (xs) => (xs.length === 0 ? "none" : xs.join(", "));
 
 const out = [
@@ -224,10 +225,10 @@ out.push(
 );
 
 if (inventory.expectedCount !== inventory.standards.length) {
-  out.push("", `! inventory declares expectedCount ${inventory.expectedCount} but lists ${inventory.standards.length} standards`);
+  out.push("", `! inventory declares expectedCount ${displaySafe(inventory.expectedCount)} but lists ${inventory.standards.length} standards`);
 }
 if (inventory.expectedCount !== sumOfSources) {
-  out.push("", `! expectedCount ${inventory.expectedCount} is not the sum of its sources (${sumOfSources})`);
+  out.push("", `! expectedCount ${displaySafe(inventory.expectedCount)} is not the sum of its sources (${sumOfSources})`);
 }
 if (problems > 0) {
   out.push(
@@ -240,5 +241,5 @@ if (problems > 0) {
   out.push("", "Source extraction agrees with the reviewed inventory.");
 }
 
-process.stdout.write(out.join("\n") + "\n");
+humanOut(out.join("\n") + "\n");
 process.exit(problems === 0 ? 0 : 1);
