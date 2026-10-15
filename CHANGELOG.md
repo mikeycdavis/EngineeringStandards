@@ -15,6 +15,18 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Standard 51 R2 now defines *architectural boundary* (one explicitly declared by the repository's architecture manifest or
+standards configuration between named packages, layers, plugins, processes or trust domains) and *boundary bypass* (a
+dependency, execution path or data-access path that crosses a declared boundary without an interface or mechanism that
+declaration explicitly permits), and requires any detector or attestation for the rule to state its observation scope and
+the mechanisms it did not observe: static dependency evidence cannot support claims about unobserved runtime reflection,
+generated code, subprocesses or network paths (ST-23, #112; owner decision of 2026-10-12). The catalog's
+description no longer says "layer or module boundary": it names the declared kinds the owner's wording lists, so a boundary between modules that no declaration names is not within the rule (the owner's verbatim definition does not list modules; widening it is the owner's call). The catalog's
+`$assuranceNote` for `architecture.no-boundary-bypass` carries the same sentence. R2 also names where a declaration appears: the *Architectural rules* section of the project manifest (Standard 6) or `project-policy.yml` (Standard 18, which holds no boundary field today); whether `docs/architecture.md`, a README or a diagram can declare one is left to the owner. Standards text only: no detector, schema
+or script changes. Level: **MAJOR** under [Standard 21](standards/21-versioning.md) R2. The new `MUST` means an existing attestation that omits the list of unobserved mechanisms no longer conforms, and R2's test is the effect on a currently compliant project ("If a project that passed yesterday fails today, the change was `MAJOR` however it was described"), which does not depend on a detector enforcing it today. The scope requirement is verified by the human reviewer and is not machine-enforced by `validate` in this version: the attestation schema requires only an evidence string, so the machine-checked part is the attestation's existence and freshness. `VERSION`, tags and releases are not changed here; the release decision stays the owner's. The recorded review events for `architecture.no-boundary-bypass` are
+untouched; because `standards/51-architecture-integrity.md` is a reviewed path, that attestation is now stale by design
+([ADR 0011](artifacts/adr/0011-attestation-freshness-is-repository-content-not-checkout-bytes.md)).
+
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
 The one exception is the review-history entry directly below, which widens the policy schema.

@@ -71,6 +71,7 @@
  *   node scripts/ci-triage.mjs --sha <commit-sha> [--json]
  *   node scripts/ci-triage.mjs --branch <branch-name> [--json]
  */
+import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -369,7 +370,7 @@ export function classify(observation) {
 
 function gh(args, { json = false } = {}) {
   const r = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (r.error || r.status !== 0) return { ok: false, out: `${r.stderr ?? r.error?.message ?? ""}`.trim() };
+  if (r.error || r.status !== 0) return { ok: false, out: displaySafe(`${r.stderr ?? r.error?.message ?? ""}`.trim()) };
   let data;
   if (json) {
     try {
@@ -417,19 +418,19 @@ export function parseTarget(argv) {
     const a = args[i];
     if (a === "--sha" || a === "--branch") {
       const value = args[i + 1];
-      if (!value || value.startsWith("--")) return { error: `${a} needs a value` };
+      if (!value || value.startsWith("--")) return { error: `${displaySafe(a)} needs a value` };
       targets.push({ mode: a.slice(2), value });
       i += 1;
     } else if (/^\d+$/.test(a)) {
       targets.push({ mode: "pr", value: a });
     } else {
-      return { error: `unrecognised argument: ${a}` };
+      return { error: `unrecognised argument: ${displaySafe(a)}` };
     }
   }
 
   if (targets.length === 0) return { error: "no target given" };
   if (targets.length > 1) {
-    return { error: `more than one target given (${targets.map((t) => `${t.mode} ${t.value}`).join(", ")}) — name one subject` };
+    return { error: `more than one target given (${targets.map((t) => `${t.mode} ${displaySafe(t.value)}`).join(", ")}) — name one subject` };
   }
   return targets[0];
 }
@@ -472,7 +473,7 @@ export function collectCheckRunPages(fetchPage) {
   for (let page = 1; ; page += 1) {
     if (page > 100) return { error: "check run pagination did not terminate after 100 pages" };
     const r = fetchPage(page);
-    if (!r.ok) return { error: `page ${page} could not be read: ${r.out ?? ""}`.trim() };
+    if (!r.ok) return { error: `page ${page} could not be read: ${displaySafe(r.out ?? "")}`.trim() };
     pages.push(r.data);
 
     const returned = (r.data?.check_runs ?? []).length;
@@ -490,7 +491,7 @@ export function collectCheckRunPages(fetchPage) {
 function allCheckRuns(repo, head) {
   const result = collectCheckRunPages((page) =>
     gh(["api", `repos/${repo}/commits/${head}/check-runs?per_page=${CHECK_RUNS_PER_PAGE}&page=${page}`], { json: true }));
-  return result.error ? { error: `could not read check runs for ${head}: ${result.error}` } : result;
+  return result.error ? { error: `could not read check runs for ${displaySafe(head)}: ${result.error}` } : result;
 }
 
 /**
@@ -510,7 +511,7 @@ function allCheckRuns(repo, head) {
 function resolveSubject(target, repo) {
   if (target.mode === "pr") {
     const view = gh(["pr", "view", target.value, "--json", "statusCheckRollup,baseRefName,headRefOid,number,url"], { json: true });
-    if (!view.ok) return { error: `could not read pull request ${target.value}: ${view.out}` };
+    if (!view.ok) return { error: `could not read pull request ${displaySafe(target.value)}: ${view.out}` };
     return {
       pr: view.data.number,
       url: view.data.url,
@@ -529,9 +530,9 @@ function resolveSubject(target, repo) {
   // it even when a sha was given is what turns an abbreviated or stale sha into an explicit failure
   // rather than an empty check list read as "nothing ran".
   const commit = gh(["api", `repos/${repo}/commits/${target.value}`], { json: true });
-  if (!commit.ok) return { error: `could not resolve ${target.mode} ${target.value}: ${commit.out}` };
+  if (!commit.ok) return { error: `could not resolve ${target.mode} ${displaySafe(target.value)}: ${commit.out}` };
   const head = commit.data?.sha;
-  if (!head) return { error: `${target.mode} ${target.value} resolved to no commit` };
+  if (!head) return { error: `${target.mode} ${displaySafe(target.value)} resolved to no commit` };
 
   const runs = allCheckRuns(repo, head);
   if (runs.error) return runs;
@@ -643,13 +644,13 @@ function render(observation, result) {
   // The subject is named the same way in every mode. A verdict that does not say which commit it is
   // about cannot be checked against one, and after a rebase merge that is exactly the mistake to make.
   const sha = String(observation.head ?? "").slice(0, 7);
-  out.push(observation.pr ? `PR #${observation.pr} — ${sha}` : `commit ${sha}${observation.base ? ` on ${observation.base}` : ""}`);
-  out.push(`required checks        : ${observation.requiredChecks === null ? observation.requiredChecksNote ?? "unreadable" : observation.requiredChecks.join(", ") || "none"}`);
-  out.push(`established rejections : ${observation.establishedRejections === null ? "unreadable" : observation.establishedRejections.join(", ") || "none"}`);
+  out.push(observation.pr ? `PR #${displaySafe(observation.pr)} — ${displaySafe(sha)}` : `commit ${displaySafe(sha)}${observation.base ? ` on ${displaySafe(observation.base)}` : ""}`);
+  out.push(`required checks        : ${observation.requiredChecks === null ? displaySafe(observation.requiredChecksNote ?? "unreadable") : displaySafe(observation.requiredChecks.join(", ") || "none")}`);
+  out.push(`established rejections : ${observation.establishedRejections === null ? "unreadable" : displaySafe(observation.establishedRejections.join(", ") || "none")}`);
   out.push("");
   for (const f of result.findings) {
-    out.push(`  ${f.class.padEnd(14)}${f.check}`);
-    out.push(`                ${f.why}`);
+    out.push(`  ${f.class.padEnd(14)}${displaySafe(f.check)}`);
+    out.push(`                ${displaySafe(f.why)}`);
   }
   out.push("");
   out.push(result.verdict);
@@ -665,19 +666,19 @@ export function main(argv) {
   const json = argv.includes("--json");
   const target = parseTarget(argv);
   if (target.error) {
-    process.stderr.write(`${target.error}\n`);
-    process.stderr.write("usage: node scripts/ci-triage.mjs <pr-number> | --sha <commit> | --branch <name> [--json]\n");
+    humanErr(`${displaySafe(target.error)}\n`);
+    humanErr("usage: node scripts/ci-triage.mjs <pr-number> | --sha <commit> | --branch <name> [--json]\n");
     return EXIT[INDETERMINATE];
   }
 
   const observation = extractEvidence(target);
   if (observation.error) {
-    process.stderr.write(`${observation.error}\n`);
+    humanErr(`${displaySafe(observation.error)}\n`);
     return EXIT[INDETERMINATE];
   }
 
   const result = classify(observation);
-  process.stdout.write(json ? JSON.stringify({ ...observation, ...result }, null, 2) + "\n" : render(observation, result));
+  process.stdout.write(json ? JSON.stringify({ ...observation, ...result }, null, 2) + "\n" : displaySafeText(render(observation, result)));
   return EXIT[result.verdict];
 }
 
