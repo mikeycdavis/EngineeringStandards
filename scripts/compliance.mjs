@@ -417,7 +417,7 @@ function strayRejectionFinding(ruleId, rejections, establishedRejections = null)
     remediation: established
       ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base, and review history is " +
         "append-only (ADR 0005, ST-17), so when the comparison runs, deleting or relabeling it is reported as " +
-        "review-history-append-only and the base rejection stays effective; when the comparison cannot run (for example an " +
+        "review-history-append-only and the base rejection remains recorded and is still named by this finding (it is never evaluated, so it does not enter the verdict); when the comparison cannot run (for example an " +
         "unrelated base record is malformed) that is reported as NOT_EVALUATED, and the base rejection is still named here. Remove the not-applicable declaration if the rule applies, then record a later " +
         "review whose `supersedes` names the chain's current (latest) review, because every successor must reference its immediate " +
         "predecessor (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +

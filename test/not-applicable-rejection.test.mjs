@@ -232,6 +232,8 @@ test("remediation: with the base unknown, neither deletion nor a base-enforced r
     const text = remediationOf(unknown);
     assert.ok(!/remove the stray review record/.test(text), `advised deletion: ${text}`);
     assert.ok(!/stays effective/.test(text), `claimed base enforcement: ${text}`);
+    assert.ok(!/stay(s)? effective/.test(remediationOf(new Set([RULE_ID]))), "a not-applicable rejection was called effective");
+    assert.match(remediationOf(new Set([RULE_ID])), /remains recorded and is still named by this finding/);
     assert.ok(!/is reported as review-history-append-only/.test(text));
     assert.ok(!/is recorded at the trusted base/.test(text));
     assert.match(text, /no trusted base could be read/);
