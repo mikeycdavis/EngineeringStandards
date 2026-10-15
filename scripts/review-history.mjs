@@ -11,12 +11,19 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { constants as bufferConstants } from "node:buffer";
 import { parseYaml } from "./yaml.mjs";
 import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recordedRejections } from "./reviews.mjs";
 
 // Policy blobs are read whole through git. A bound here turns a large (or deeply nested) trusted base into
 // "could not be compared", which drops the base's recorded rejections; keep it far above any real policy.
-const GIT_MAX_BUFFER = 512 * 1024 * 1024;
+// It stays well under V8's maximum string length (about 512 MiB): at or above that, decoding the output
+// throws ERR_STRING_TOO_LONG out of spawnSync instead of returning an error the caller can classify.
+// The bound is also clamped to this runtime's actual maximum string length (2^28 - 16 on 32-bit V8 builds).
+// `spawnSync` can read one pipe chunk past `maxBuffer` before it reports ENOBUFS, and the output is then
+// decoded, so the bound keeps headroom below the limit rather than sitting on it.
+const STRING_HEADROOM = 1024 * 1024;
+export const GIT_MAX_BUFFER = Math.min(256 * 1024 * 1024, bufferConstants.MAX_STRING_LENGTH - STRING_HEADROOM);
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
@@ -451,10 +458,12 @@ export function effectiveAttestations(headAttestations, preflight) {
   const base = preflight.baseAttestations && typeof preflight.baseAttestations === "object" ? preflight.baseAttestations : {};
   const kept = {};
   for (const ruleId of new Set([...Object.keys(base), ...Object.keys(head)])) {
-    if (base[ruleId] !== undefined && holdsRejection(ruleId, base[ruleId])) {
-      kept[ruleId] = base[ruleId];
-    } else if (head[ruleId] !== undefined && holdsRejection(ruleId, head[ruleId])) {
-      kept[ruleId] = head[ruleId];
+    // Own properties only, and assigned as own data properties: a `__proto__` rule key is an ordinary entry.
+    const keep = (value) => Object.defineProperty(kept, ruleId, { value, enumerable: true, writable: true, configurable: true });
+    if (Object.hasOwn(base, ruleId) && holdsRejection(ruleId, base[ruleId])) {
+      keep(base[ruleId]);
+    } else if (Object.hasOwn(head, ruleId) && holdsRejection(ruleId, head[ruleId])) {
+      keep(head[ruleId]);
     }
   }
   return kept;

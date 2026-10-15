@@ -122,6 +122,15 @@ function tokenize(text) {
 }
 
 /** Parse a block at `indent`, starting at `lines[start]`. Returns [value, nextIndex]. */
+/**
+ * Assign a mapping entry as an OWN data property. A plain `map[key] = value` with the key `__proto__` sets the
+ * object's prototype instead and the entry vanishes from `Object.keys`/`Object.values`, which would hide an
+ * event (a recorded rejection) from every reader that enumerates a parsed mapping.
+ */
+function setKey(map, key, value) {
+  Object.defineProperty(map, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
 const isDash = (text) => text === "-" || text.startsWith("- ");
 
 /**
@@ -145,7 +154,7 @@ function parseBlock(lines, start, indent) {
 
     if (f.t === "map") {
       if (finished) {
-        f.map[f.key] = finished[0];
+        setKey(f.map, f.key, finished[0]);
         f.i = finished[1];
         finished = null;
       }
@@ -170,7 +179,7 @@ function parseBlock(lines, start, indent) {
 
         const rest = pair[1].trim();
         if (rest !== "") {
-          f.map[key] = parseScalar(rest, line.lineNo);
+          setKey(f.map, key, parseScalar(rest, line.lineNo));
           f.i++;
           continue;
         }
@@ -178,7 +187,7 @@ function parseBlock(lines, start, indent) {
         // No inline value: a nested block must follow at a deeper indent, or the value is empty.
         const next = lines[f.i + 1];
         if (!next || next.indent <= f.indent) {
-          f.map[key] = null;
+          setKey(f.map, key, null);
           f.i++;
           continue;
         }
