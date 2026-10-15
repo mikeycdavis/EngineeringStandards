@@ -35,6 +35,7 @@ import {
   DECLARATION_FILE,
   MECHANISMS,
   SCAN_LISTS,
+  resolveSpecifier,
   DETECTED_MECHANISMS,
 } from "../scripts/boundaries.mjs";
 
@@ -1265,5 +1266,99 @@ test("allowlist: recognised-benign Object, process and module uses stay OK", () 
     "const m = { [\"k\"]: 1 };",
   ]) {
     assert.equal(notOk(scanSource(src)), false, src);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Round 6: binding positions in import/export clauses; specifier resolution before allowances
+// ---------------------------------------------------------------------------------------------
+
+test("named regression: clause binding names that spell a global are not references to it", () => {
+  for (const src of [
+    'export { process } from "./core.mjs";',
+    'export { module, Object, require } from "./core.mjs";',
+    'export { x as process } from "./core.mjs";',
+    'export * as process from "./core.mjs";',
+    'export * as Object from "./core.mjs";',
+    'import { process } from "./core.mjs";',
+    'import { module, Object } from "./core.mjs";',
+    'import * as Object from "./core.mjs";',
+    'import * as process from "./core.mjs";',
+    'import module from "./core.mjs";',
+  ]) {
+    const r = scanSource(src);
+    assert.equal(notOk(r), false, src + JSON.stringify(r.mechanisms));
+    assert.equal(r.imports.length, 1, src);
+  }
+});
+test("a real global reference next to a clause is still seen", () => {
+  assert.ok(scanSource('export { a } from "./core.mjs"; process.exit(1);').terminates.length > 0);
+  assert.ok(scanSource('export { process } from "./core.mjs"; Object.getPrototypeOf(x);').mechanisms.reflection.length > 0);
+});
+
+const RES_ROOT = path.resolve(os.tmpdir(), "res-root");
+const abs = path.join(RES_ROOT, "src", "core.mjs").split(path.sep).join("/");
+const fileUrl = `file:///${abs.replace(/^\//, "")}`;
+const RESOLUTIONS = [
+  // [specifier, kind, target]
+  ["./core.mjs", "internal", "src/core.mjs"],
+  ["../src/core.mjs", "internal", "src/core.mjs"],
+  ["./core.mjs?v=1", "internal", "src/core.mjs"],
+  ["./core.mjs#frag", "internal", "src/core.mjs"],
+  ["./co%72e.mjs", "internal", "src/core.mjs"],
+  ["./c%6Fre.mjs?x#y", "internal", "src/core.mjs"],
+  ["./..%2Fsrc%2Fcore.mjs", "unresolved"],
+  ["../../outside.mjs", "unresolved"],
+  [".\core.mjs", "unresolved"],
+  [fileUrl, "internal", "src/core.mjs"],
+  [`${fileUrl}?q=1#h`, "internal", "src/core.mjs"],
+  [fileUrl.replace("core", "c%6Fre"), "internal", "src/core.mjs"],
+  ["file:///elsewhere/other.mjs", "external"],
+  ["node:fs", "external"],
+  ["fs", "external"],
+  ["lodash", "external"],
+  ["@acme/pkg/x", "external"],
+  ["data:text/javascript,export default 1", "external"],
+  ["https://example.test/x.mjs", "external"],
+];
+for (const [spec, kind, target] of RESOLUTIONS) {
+  test(`specifier resolution: ${spec} is ${kind}${target ? " " + target : ""}`, () => {
+    const r = resolveSpecifier(RES_ROOT, "src/app.mjs", spec);
+    assert.equal(r.kind, kind, JSON.stringify(r));
+    if (target) assert.equal(r.target, target);
+  });
+}
+
+test("named regression: an absolute or file: specifier naming a repository file is checked, whatever external prefixes allow", () => {
+  const file = (name) => path.join("PLACEHOLDER", name);
+  for (const mk of [(d) => `file://${pathToFileURLish(d)}/src/core.mjs`, (d) => `${d.split(path.sep).join("/").replace(/^[A-Za-z]:/, "")}/src/core.mjs`]) {
+    const d = baseDeclaration();
+    d.external.allowPrefixes = ["node:", "file:", "/"];
+    const t = tiny({ ...FILES }, d);
+    try {
+      writeFileSync(path.join(t.dir, "src/app.mjs"), `import { other } from ${JSON.stringify(mk(t.dir))};\n`);
+      const v = checkBoundaries(t.dir, t.declaration);
+      assert.deepEqual(kinds(v), ["undeclared-interface"], JSON.stringify(v));
+    } finally {
+      rmSync(t.dir, { recursive: true, force: true });
+    }
+  }
+  void file;
+});
+function pathToFileURLish(d) {
+  const p = d.split(path.sep).join("/");
+  return p.startsWith("/") ? p : `/${p}`;
+}
+test("an absolute specifier outside the repository stays external and obeys the prefixes", () => {
+  const d = baseDeclaration();
+  d.edges = [];
+  const t = tiny(FILES, d);
+  try {
+    writeFileSync(path.join(t.dir, "src/app.mjs"), 'import "file:///elsewhere/x.mjs";\n');
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["undeclared-external"]);
+    t.declaration.external.allowPrefixes = ["node:", "file:"];
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), []);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
   }
 });

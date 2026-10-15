@@ -249,6 +249,13 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   name that merely begins with two dots (`..cache/note.md`) is inside the repository. Listed spelling (not by
   construction): which names the benign lists contain, which member names are treated as terminating, loading or
   network-reaching on the global objects, and which parenthesised forms count as grouping rather than a call.
+  **Specifier resolution precedes external allowances.** Every specifier is resolved as a module loader would
+  before `external.allowPrefixes` is consulted: `./x`, `../x`, `/abs/x` and `file:///abs/x` are read as paths with
+  any query or hash dropped and percent-escapes decoded; a path inside the repository is internal (subject to
+  member, edge and interface rules, whatever prefixes allow), a relative form that leaves it or contains an encoded
+  separator or a backslash is `unresolved-import`, and an absolute path outside the repository stays external.
+  `node:`, bare, `data:` and `http(s):` specifiers are external. Binding names in import and export clauses
+  (`export { process } from`, `import * as Object from`) are not references to the global of that name.
   **Bare imports of repository packages.** A full workspace resolver is out of scope, so the check fails
   closed: the package names resolved are the `name` of `package.json` at the repository root and in each
   directory above an observed file. A bare import equal to, or under, such a name is

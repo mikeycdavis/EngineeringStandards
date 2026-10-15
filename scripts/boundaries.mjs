@@ -26,7 +26,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { builtinModules } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseYaml } from "./yaml.mjs";
 import { validate } from "./jsonschema.mjs";
 
@@ -767,6 +767,8 @@ function analyse(rawToks) {
           // export * from "x"   export * as ns from "x"   export * as "str" from "x"
           const j = isId(a + 1, "as") ? a + 3 : a + 1;
           if (isId(j, "from") && isStr(j + 1)) {
+            // the clause names are binding positions, not references to a global
+            for (let s2 = k; s2 <= j + 1; s2++) skip.add(s2);
             imports.push({ spec: toks[j + 1].v, kind: "reexport", names: ["*"], line: tk.line, sideEffect: false });
           } else {
             flag("ambiguous-token", tk.line);
@@ -775,6 +777,7 @@ function analyse(rawToks) {
           const close = matching("{", a);
           if (close < 0) flag("ambiguous-token", tk.line);
           else if (isId(close + 1, "from") && isStr(close + 2)) {
+            for (let s2 = k; s2 <= close + 2; s2++) skip.add(s2);
             imports.push({ spec: toks[close + 2].v, kind: "reexport", names: namesInBraces(a + 1, close), line: tk.line, sideEffect: false });
           } else if (isId(close + 1, "from")) {
             flag("ambiguous-token", tk.line);
@@ -949,6 +952,38 @@ function outsideRepo(rel) {
   return rel === ".." || rel.startsWith(`..${path.sep}`) || rel.startsWith("../") || path.isAbsolute(rel);
 }
 
+/**
+ * Resolve an import specifier the way the module loader would, before any external allowance is
+ * applied. Returns { kind: "internal", target } for a path inside the repository (posix, relative to
+ * the root), { kind: "unresolved" } for a relative form that leaves the repository or cannot be read
+ * as a path, and { kind: "external" } for node:, bare, data:, http(s): and any file path outside the
+ * repository. Query and hash parts are ignored and percent-escapes decoded, as for a file URL.
+ */
+export function resolveSpecifier(repoRoot, file, spec) {
+  const rootHref = pathToFileURL(path.resolve(repoRoot)).href;
+  const rootUrl = rootHref.endsWith("/") ? rootHref : `${rootHref}/`;
+  const relativeForm = spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../");
+  const absoluteForm = spec.startsWith("/") || spec.startsWith("file:");
+  if (!relativeForm && !absoluteForm) return spec.startsWith(".") ? { kind: "unresolved" } : { kind: "external" };
+  if (/%2f|%5c/i.test(spec)) return { kind: "unresolved" };
+  let url;
+  try {
+    const base = new URL(path.posix.dirname(file) === "." ? "" : `${path.posix.dirname(file)}/`, rootUrl);
+    url = new URL(spec, base);
+  } catch {
+    return { kind: "unresolved" };
+  }
+  if (url.protocol !== "file:") return { kind: "external" };
+  if (!url.href.startsWith(rootUrl)) return relativeForm ? { kind: "unresolved" } : { kind: "external" };
+  let rel;
+  try {
+    rel = decodeURIComponent(url.pathname.slice(new URL(rootUrl).pathname.length));
+  } catch {
+    return { kind: "unresolved" };
+  }
+  return rel ? { kind: "internal", target: rel } : { kind: "unresolved" };
+}
+
 /** "file" | "missing" | a description of why an evidence path is not a regular in-repository file. */
 function evidenceTarget(repoRoot, abs) {
   let st;
@@ -1036,9 +1071,10 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
       continue;
     }
     for (const imp of info.imports) {
-      if (imp.spec.startsWith(".")) {
-        const target = path.posix.normalize(path.posix.join(path.posix.dirname(file), imp.spec));
-        if (!fileSet.has(target)) {
+      const res = resolveSpecifier(repoRoot, file, imp.spec);
+      if (res.kind === "internal" || res.kind === "unresolved") {
+        const target = res.kind === "internal" ? res.target : null;
+        if (target === null || !fileSet.has(target)) {
           violations.push({ kind: "unresolved-import", file, line: imp.line, message: `${file}:${imp.line} imports '${imp.spec}', which is not an in-scope file` });
           continue;
         }
