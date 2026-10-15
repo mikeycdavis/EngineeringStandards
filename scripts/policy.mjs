@@ -15,6 +15,7 @@
  * Usage: node scripts/policy.mjs [path/to/project-policy.yml] [--json] [--schema <path>]
  */
 
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -179,7 +180,7 @@ async function main() {
   try {
     options = parseArgs(process.argv.slice(2));
   } catch (error) {
-    process.stderr.write(`standards policy: ${error.message}\n`);
+    humanErr(`standards policy: ${displaySafe(error.message)}\n`);
     process.exit(EXIT_INVOCATION);
   }
 
@@ -189,7 +190,7 @@ async function main() {
     result = await checkPolicy(options.policy, options.schema, today);
   } catch (error) {
     const detail = error instanceof SchemaError ? `schema: ${error.message}` : error.message;
-    process.stderr.write(`standards policy: ${detail}\n`);
+    humanErr(`standards policy: ${displaySafe(detail)}\n`);
     process.exit(EXIT_INVOCATION);
   }
 
@@ -211,29 +212,29 @@ async function main() {
       ) + "\n",
     );
   } else {
-    process.stdout.write(`Policy: ${relative}\n\n`);
+    humanOut(`Policy: ${displaySafe(relative)}\n\n`);
     for (const alias of result.aliases) {
-      process.stdout.write(`  legacy key '${alias.alias}' — canonical form is '${alias.canonical}' (ADR 0002)\n`);
+      humanOut(`  legacy key '${displaySafe(alias.alias)}' — canonical form is '${displaySafe(alias.canonical)}' (ADR 0002)\n`);
     }
-    if (result.aliases.length > 0) process.stdout.write("\n");
+    if (result.aliases.length > 0) humanOut("\n");
     for (const error of result.errors) {
-      process.stdout.write(`  ${error.path || "(document)"}: ${error.message}\n`);
+      humanOut(`  ${displaySafe(error.path || "(document)")}: ${displaySafe(error.message)}\n`);
     }
     for (const finding of result.findings) {
-      process.stdout.write(`  ${finding.severity.toUpperCase()} ${finding.id}: ${finding.message}\n`);
-      process.stdout.write(`        ${finding.remediation}\n`);
+      humanOut(`  ${displaySafe(finding.severity.toUpperCase())} ${displaySafe(finding.id)}: ${displaySafe(finding.message)}\n`);
+      humanOut(`        ${displaySafe(finding.remediation)}\n`);
     }
     if (result.status === "ok") {
-      process.stdout.write("Valid against schemas/project-policy.schema.json.\n\n");
-      process.stdout.write(
+      humanOut("Valid against schemas/project-policy.schema.json.\n\n");
+      humanOut(
         "This says the policy is well-formed and internally consistent. It says nothing\n" +
           "about whether the project satisfies the rules it declares — that is a validation\n" +
           "run, not a schema check.\n",
       );
     } else if (result.status === "invalid") {
-      process.stdout.write(`\n${result.errors.length} schema error(s). The policy could not be evaluated.\n`);
+      humanOut(`\n${result.errors.length} schema error(s). The policy could not be evaluated.\n`);
     } else {
-      process.stdout.write(`\n${result.findings.length} compliance finding(s).\n`);
+      humanOut(`\n${result.findings.length} compliance finding(s).\n`);
     }
   }
 

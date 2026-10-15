@@ -22,6 +22,7 @@
  * scaffold creation, while an overwrite stays guarded.
  */
 
+import { displaySafe } from "./display-safe.mjs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { readdirSync, readFileSync, lstatSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";
@@ -426,7 +427,7 @@ export function render(report, { dryRun }) {
   out.push(dryRun ? "standards init — dry run, nothing was written" : "standards init");
   out.push("");
   out.push(`  Mode: ${report.mode} [${report.modeConfidence}]`);
-  for (const line of report.modeEvidence) out.push(`        ${line}`);
+  for (const line of report.modeEvidence) out.push(`        ${displaySafe(line)}`);
   if (report.modeConfidence === "INFERRED") {
     out.push(`        If this guess is wrong, override it: --mode=<${Object.values(MODES).join("|")}>`);
   }
@@ -435,21 +436,21 @@ export function render(report, { dryRun }) {
   const label = dryRun ? "would create" : "created";
   if (report.created.length) {
     out.push(`  ${label}:`);
-    for (const p of report.created) out.push(`    + ${p}`);
+    for (const p of report.created) out.push(`    + ${displaySafe(p)}`);
   }
   if (report.overwrites.length) {
     out.push(`  ${dryRun ? "would overwrite" : "overwrote"} (approved):`);
-    for (const p of report.overwrites) out.push(`    ! ${p}`);
+    for (const p of report.overwrites) out.push(`    ! ${displaySafe(p)}`);
   }
   if (report.preserved.length) {
     out.push("  preserved:");
-    for (const p of report.preserved) out.push(`    = ${p}`);
+    for (const p of report.preserved) out.push(`    = ${displaySafe(p)}`);
   }
   if (report.conflicts.length) {
     out.push("  conflicts — nothing was changed:");
     for (const c of report.conflicts) {
-      out.push(`    ? ${c.path}`);
-      out.push(`        ${c.reason}`);
+      out.push(`    ? ${displaySafe(c.path)}`);
+      out.push(`        ${displaySafe(c.reason)}`);
       out.push(`        ${c.remediation}`);
     }
   }

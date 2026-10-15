@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -1789,5 +1789,321 @@ test("replacing the attestations section with a flow mapping yields no verdict a
     assert.equal(await readFile(path.join(fx.work, "project-policy.yml"), "utf8"), mutated);
   } finally {
     await cleanup(fx.root);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// ST-41: policy-controlled text is escaped before it reaches a message a person reads. A control
+// character in an id, a reviewer or a date must never be written raw, and escaping changes no verdict.
+// ---------------------------------------------------------------------------------------------
+
+test("control characters in policy strings are escaped in human, JSON and attestations output, and change no verdict", async () => {
+  const ESC = String.fromCharCode(27);
+  const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+  const build = (id, reviewedBy, reviewedAt) => (digest) => {
+    const lines = [
+      policyText([{ id: "r1", reviewedAt: "2026-10-01", digest }]).trimEnd(),
+      `  ${REJECTED_RULE}:`,
+      `    reviews:`,
+      `      - id: "${id}"`,
+      `        status: rejected`,
+      `        reviewedBy: "${reviewedBy}"`,
+      `        reviewedAt: "${reviewedAt}"`,
+      `        evidence: "synthetic rejection"`,
+      `      - id: "p2"`,
+      `        supersedes: "no-such-event"`,
+      `        status: approved`,
+      `        reviewedBy: "x"`,
+      `        reviewedAt: "2026-10-02"`,
+      `        evidence: "makes the chain malformed"`,
+    ];
+    return `${lines.join("\n")}\n`;
+  };
+  const verdict = async (id, reviewedBy, reviewedAt) => {
+    const dir = await validateFixture();
+    try {
+      git(dir, "add", "reviewed.txt");
+      git(dir, "commit", "-qm", "reviewed content");
+      const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+      await writeFile(path.join(dir, "project-policy.yml"), build(id, reviewedBy, reviewedAt)(digest));
+      git(dir, "add", "project-policy.yml");
+      git(dir, "commit", "-qm", "policy");
+      const run = runValidate(dir); // no default-branch ref: the comparison is NOT_EVALUATED
+      const human = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir], { encoding: "utf8", windowsHide: true });
+      const table = runAttestations(dir);
+      const tableText = spawnSync(process.execPath, [path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${dir}`], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      return { run, human: human.stdout, table, tableText: tableText.stdout + tableText.stderr };
+    } finally {
+      await cleanup(dir);
+    }
+  };
+
+  const plain = await verdict("p1", "reviewer-plain", "2026-10-01");
+  const hostile = await verdict(`p${ESC}[31m1`, `evil${ESC}[31mRED${ESC}[0m`, "2026-10-01");
+
+  const plainRule = plain.run.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+  const hostileRule = hostile.run.report.results.find((entry) => entry.ruleId === REJECTED_RULE);
+  // Escaping changes how a value is shown, never what is decided.
+  assert.equal(hostileRule.status, plainRule.status);
+  assert.equal(hostileRule.disposition, plainRule.disposition);
+  assert.equal(hostile.run.report.status, plain.run.report.status);
+
+  // The raw character appears nowhere a person reads, and the escape is visible instead.
+  assert.ok(!CONTROL.test(hostileRule.message), JSON.stringify(hostileRule.message));
+  assert.ok(hostileRule.message.includes("evil\\u001b[31mRED\\u001b[0m"), hostileRule.message);
+  assert.ok(!CONTROL.test(hostile.human), "raw control character in the human validate output");
+  assert.ok(hostile.human.includes("evil\\u001b[31mRED"), "the escaped reviewer is not shown");
+  assert.ok(!CONTROL.test(JSON.stringify(hostile.run.report)), "raw control character in the JSON report");
+  assert.ok(!CONTROL.test(hostile.tableText), "raw control character in the attestations table");
+  assert.ok(!CONTROL.test(JSON.stringify(hostile.table.json)), "raw control character in the attestations JSON");
+
+  // A control character in a date makes the policy schema-invalid: no verdict (exit 2), and the value is
+  // not echoed raw by any surface.
+  const badDate = await verdict("p1", "plain-reviewer", `2026-10-01${ESC}[2J`);
+  assert.ok(!CONTROL.test(badDate.human), "raw control character in the human output for an invalid date");
+  assert.ok(!CONTROL.test(JSON.stringify(badDate.run.report)), "raw control character in the JSON report for an invalid date");
+  assert.ok(!CONTROL.test(badDate.tableText), "raw control character in the attestations output for an invalid date");
+});
+
+// ---------------------------------------------------------------------------------------------
+// ST-41 repair: the same guarantee for the ordinary (well-formed history) paths. Every site that
+// interpolates a policy string into a message, and the human `validate` renderer, is checked on the
+// text a person reads. JSON output is always escaped by the serializer, so it is not evidence here:
+// the message string is parsed back out of the JSON and must itself hold no raw control character.
+// ---------------------------------------------------------------------------------------------
+
+const ST41_ESC = String.fromCharCode(27);
+const BS = String.fromCharCode(92);
+const ST41_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
+const ST41_HOSTILE_REVIEWER = `evil${ST41_ESC}[31mRED${ST41_ESC}[0m`;
+const ST41_HOSTILE_EVIDENCE = `ev${ST41_ESC}[2Jidence`;
+
+async function st41Fixture({ status, mutateAfter, revision, extra }) {
+  const dir = await validateFixture();
+  git(dir, "add", "reviewed.txt");
+  git(dir, "commit", "-qm", "reviewed content");
+  const digest = repositoryDigest(dir, ["reviewed.txt"]).digest;
+  const lines = [
+    `standardVersion: "${readFileSync(path.join(REPO_ROOT, "VERSION"), "utf8").trim()}"`,
+    `project: "synthetic"`,
+    `rules:`,
+    `  ${RULE}:`,
+    `    level: required`,
+    `attestations:`,
+    `  ${RULE}:`,
+    `    reviews:`,
+    `      - id: "r1"`,
+    `        status: ${status}`,
+    `        reviewedBy: "${ST41_HOSTILE_REVIEWER}"`,
+    `        reviewedAt: "2026-10-01"`,
+    `        evidence: "${ST41_HOSTILE_EVIDENCE}"`,
+    `        reviewedAgainst:`,
+    ...(revision ? [`          revision: "${revision}"`] : []),
+    `          digestAlgorithm: "${DIGEST_ALGORITHM}"`,
+    `          digest: "${digest}"`,
+    `          source: git`,
+    `          paths:`,
+    `            - "reviewed.txt"`,
+    ...(extra ?? []),
+  ];
+  await writeFile(path.join(dir, "project-policy.yml"), `${lines.join("\n")}\n`);
+  git(dir, "add", "project-policy.yml");
+  git(dir, "commit", "-qm", "policy");
+  git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+  if (mutateAfter) {
+    await writeFile(path.join(dir, "reviewed.txt"), "one\ntwo\n");
+    git(dir, "add", "reviewed.txt");
+    git(dir, "commit", "-qm", "reviewed content changed");
+  }
+  return dir;
+}
+
+function st41Human(dir) {
+  const result = spawnSync(process.execPath, [STANDARDS_CLI, "validate", dir], { encoding: "utf8", windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  return `${result.stdout}${result.stderr}`;
+}
+
+for (const site of [
+  { name: "ordinary rejection (compliance.mjs attested-rejected message)", status: "rejected", mutateAfter: false, disposition: "attested-rejected", humanShows: "message" },
+  { name: "stale review (compliance.mjs freshness message)", status: "approved", mutateAfter: true, disposition: "not-evaluated", humanShows: null },
+  { name: "attested review (compliance.mjs attested message and standards.mjs Attested list)", status: "approved", mutateAfter: false, disposition: "attested", humanShows: "attested" },
+]) {
+  test(`ST-41: policy strings are display-safe in the text a person reads: ${site.name}`, async () => {
+    const dir = await st41Fixture(site);
+    try {
+      const run = runValidate(dir);
+      assert.equal(run.rule.disposition, site.disposition, JSON.stringify(run.rule));
+      assert.ok(!ST41_CONTROL.test(run.rule.message), `raw control character in the result message: ${JSON.stringify(run.rule.message)}`);
+      assert.ok(run.rule.message.includes("evil\\u001b[31mRED"), run.rule.message);
+      const human = st41Human(dir);
+      assert.ok(!ST41_CONTROL.test(human), "raw control character in the human validate output");
+      if (site.humanShows) assert.ok(human.includes("evil\\u001b[31mRED"), "the escaped reviewer is not shown in the human output");
+    } finally {
+      await cleanup(dir);
+    }
+  });
+}
+
+// ST-41 class repair: every human-readable sink, not only the ones a review named. A schema-valid but
+// hostile `revision`, and schema diagnostics that echo an unknown property name, must be neutral too.
+
+function st41Run(args) {
+  const result = spawnSync(process.execPath, args, { encoding: "utf8", windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  return { code: result.status, text: `${result.stdout}${result.stderr}` };
+}
+
+test("ST-41: the attestations inventory does not print a hostile revision raw", async () => {
+  const dir = await st41Fixture({ status: "approved", revision: `rev${ST41_ESC}[31mBAD` });
+  try {
+    const { text } = st41Run([path.join(REPO_ROOT, "scripts", "attestations.mjs"), `--dir=${dir}`]);
+    assert.ok(!ST41_CONTROL.test(text), "raw control character in the attestations inventory");
+    assert.ok(text.includes(`rev${BS}u001b[31mBAD`), text);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("ST-41: a schema-invalid policy with a hostile unknown property name is neutral in validate and the policy command", async () => {
+  const BAD_KEY = `"bad${ST41_ESC}[31mkey": 1`; // a quoted key holding a raw ESC
+  const dir = await st41Fixture({ status: "approved", extra: [BAD_KEY] });
+  try {
+    const file = path.join(dir, "project-policy.yml");
+    const human = st41Run([STANDARDS_CLI, "validate", dir]);
+    assert.equal(human.code, 2, human.text);
+    assert.ok(!ST41_CONTROL.test(human.text), "raw control character in the validate output for a schema-invalid policy");
+    assert.ok(human.text.includes(`bad${BS}u001b[31mkey`), human.text);
+    const policyCli = st41Run([path.join(REPO_ROOT, "scripts", "policy.mjs"), file]);
+    assert.ok(!ST41_CONTROL.test(policyCli.text), "raw control character in the policy command output");
+    assert.ok(policyCli.text.includes(`bad${BS}u001b[31mkey`), policyCli.text);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("ST-41: displaySafeText keeps layout and escapes the rest, and every raw write in scripts/ is accounted for", async () => {
+  const { displaySafeText } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "display-safe.mjs")).href);
+  assert.equal(displaySafeText("a\nb\tc"), "a\nb\tc");
+  assert.equal(displaySafeText(`x${ST41_ESC}[0m`), `x${BS}u001b[0m`);
+  assert.equal(displaySafeText("cr\rline"), `cr${BS}rline`);
+  assert.equal(displaySafeText(`sep${String.fromCharCode(0x2028)}`), `sep${BS}u2028`);
+  // Class guard. A write to stdout/stderr in scripts/ goes through the display-safe chokepoint
+  // (humanOut, humanErr, humanLog, emitText) or is one of these JSON-bearing writes, whose bytes come from
+  // the serializer and must not change. A new raw write fails here until it is routed or justified.
+  const RAW_ALLOWED = {
+    "attestations.mjs": 2,
+    "ci-triage.mjs": 1,
+    "fidelity.mjs": 1,
+    "inventory.mjs": 1,
+    "links.mjs": 1,
+    "ownership.mjs": 1,
+    "pipeline.mjs": 1,
+    "policy.mjs": 1,
+    "standards.mjs": 1,
+    "submit-gate.mjs": 1,
+  };
+  const found = {};
+  for (const name of readdirSync(path.join(REPO_ROOT, "scripts")).filter((n) => n.endsWith(".mjs") && n !== "display-safe.mjs")) {
+    const text = readFileSync(path.join(REPO_ROOT, "scripts", name), "utf8");
+    const count = (text.match(/process\.std(?:out|err)\.write\(|console\.(?:log|error|warn|info)\(/g) ?? []).length;
+    if (count > 0) found[name] = count;
+  }
+  assert.deepEqual(found, RAW_ALLOWED);
+});
+
+test("ST-41: a newline inside an untrusted field cannot forge a line in the rendered report", async () => {
+  const { render } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "init.mjs")).href);
+  const { displaySafeText } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "display-safe.mjs")).href);
+  const report = {
+    mode: "adopt",
+    modeConfidence: "INFERRED",
+    modeEvidence: ["evidence\nFORGED-EVIDENCE"],
+    created: ["a/b\nFORGED-CREATED"],
+    overwrites: [],
+    preserved: [],
+    conflicts: [{ path: "p\nFORGED-PATH", reason: "r\nFORGED-REASON", remediation: "fix" }],
+    reconstructionRequired: false,
+    nextStep: "next",
+  };
+  // The chokepoint alone preserves newlines, so the per-field escape is what keeps the field on one line.
+  const shown = displaySafeText(render(report, { dryRun: true }));
+  for (const line of shown.split("\n")) assert.ok(!/^\s*FORGED/.test(line), `forged line: ${JSON.stringify(line)}`);
+  assert.ok(shown.includes(`${String.fromCharCode(92)}nFORGED-CREATED`), shown);
+});
+
+test("ST-41: invisible and bidirectional format characters are escaped, ordinary non-ASCII text is not", async () => {
+  const { displaySafe, displaySafeText } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "display-safe.mjs")).href);
+  const classes = {
+    "soft hyphen": [0x00ad],
+    "arabic letter mark": [0x061c],
+    "mongolian vowel separator": [0x180e],
+    "zero-width and directional marks": [0x200b, 0x200c, 0x200d, 0x200e, 0x200f],
+    "line and paragraph separators and embedding/override controls": [0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e],
+    "word joiner and invisible operators": [0x2060, 0x2061, 0x2062, 0x2063, 0x2064],
+    "isolates": [0x2066, 0x2067, 0x2068, 0x2069],
+    "byte order mark": [0xfeff],
+    "interlinear annotation": [0xfff9, 0xfffa, 0xfffb],
+    "tag characters": [0xe0000, 0xe0041, 0xe007f],
+  };
+  for (const [name, points] of Object.entries(classes)) {
+    for (const point of points) {
+      const raw = `a${String.fromCodePoint(point)}b`;
+      const hex = point.toString(16);
+      const expected = point > 0xffff ? `a${BS}u{${hex}}b` : `a${BS}u${hex.padStart(4, "0")}b`;
+      assert.equal(displaySafe(raw), expected, `${name} U+${hex}`);
+      assert.equal(displaySafeText(raw), expected, `${name} U+${hex} (text)`);
+    }
+  }
+  // Ordinary non-ASCII letters and symbols stay readable, including neighbours of the escaped ranges.
+  for (const keep of ["é", "ß", "日本語", "שלום", "مرحبا", "Ω", "—", `a${String.fromCodePoint(0x00a0)}b`, String.fromCodePoint(0x202f), String.fromCodePoint(0x1f600)]) {
+    assert.equal(displaySafe(keep), keep);
+    assert.equal(displaySafeText(keep), keep);
+  }
+});
+
+test("ST-41: a line feed inside a repository-controlled path cannot forge a line in the audit header", async () => {
+  const { renderHuman } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "standards.mjs")).href);
+  const evil = "evil\nFORGED-IGNORED.txt";
+  const surface = {
+    complete: false,
+    unreadableFiles: [],
+    unreadableDirectories: [],
+    truncatedFiles: [],
+    fileCapReached: false,
+    readBudget: { exhausted: false, unreadFiles: 0, limitBytes: 0 },
+    frameworkExcludedDirectories: ["fw\nFORGED-FRAMEWORK"],
+    excludedDirectories: [{ path: "dir\nFORGED-DIRECTORY" }],
+    excludedFiles: { count: 1, sample: [evil] },
+  };
+  const text = renderHuman(1, surface, { root: path.join(os.tmpdir(), "r\nFORGED-ROOT"), findings: [], strict: false });
+  const forged = text.split("\n").filter((line) => /^\s*FORGED-/.test(line));
+  assert.deepEqual(forged, []);
+  for (const name of ["FORGED-IGNORED", "FORGED-FRAMEWORK", "FORGED-DIRECTORY", "FORGED-ROOT"]) {
+    assert.ok(text.includes(`${BS}n${name}`), `${name} not shown escaped`);
+  }
+});
+
+// Reviewer P2 on e04be10: the freshness `detail` carries reviewed path names (policy-controlled), and
+// reached the message raw. Unit-level on purpose: a path name with a control character cannot be
+// created, or tracked, on a Windows host.
+test("ST-41: a control character in a reviewed path name inside the freshness detail is display-safe", () => {
+  const rule = { id: "testing.synthetic", level: "required", severity: "error", validationType: "manual-review", attestable: true, nonExemptible: false };
+  const hostile = `gone${String.fromCharCode(27)}[2Jfile.txt`;
+  for (const detail of [`reviewed path(s) deleted since review: ${hostile}`, `reviewed path(s) modified in the working tree: ${hostile}`, `reviewed path(s) have no committed identity: ${hostile}`]) {
+    const verdict = evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { attestations: { [rule.id]: { reviews: [review({ id: "r1" })] } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "stale", detail }]]),
+    });
+    const result = verdict.results.find((entry) => entry.ruleId === rule.id);
+    assert.equal(result.disposition, "not-evaluated", JSON.stringify(result));
+    assert.ok(result.message.includes("gone"), result.message);
+    assert.ok(!ST41_CONTROL.test(result.message), `raw control character: ${JSON.stringify(result.message)}`);
+    assert.ok(result.message.includes("gone" + String.fromCharCode(92) + "u001b[2Jfile.txt"), result.message);
   }
 });

@@ -35,6 +35,7 @@ import {
 } from "./repository.mjs";
 import { currentReview } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
+import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -238,8 +239,8 @@ function renderVerdict(report, policy) {
   if (failed.length) {
     out.push("  Failing:");
     for (const r of failed) {
-      out.push(`    ${r.ruleId} [${r.level}] ${r.message}`);
-      out.push(`      -> ${r.remediation}`);
+      out.push(`    ${displaySafe(r.ruleId)} [${r.level}] ${displaySafe(r.message)}`);
+      out.push(`      -> ${displaySafe(r.remediation)}`);
     }
     out.push("");
   }
@@ -286,13 +287,13 @@ function renderVerdict(report, policy) {
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
     out.push("  Excepted:");
-    for (const r of excepted) out.push(`    ${r.ruleId} — ${r.exception.reason} (expires ${r.exception.expires ?? "never"})`);
+    for (const r of excepted) out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
     out.push("");
   }
   const attested = report.results.filter((r) => r.disposition === "attested");
   if (attested.length) {
     out.push("  Attested (human review):");
-    for (const r of attested) out.push(`    ${r.ruleId} — ${r.attestation.reviewedBy}, ${r.attestation.reviewedAt}`);
+    for (const r of attested) out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.attestation.reviewedBy)}, ${displaySafe(r.attestation.reviewedAt)}`);
     out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
     out.push("");
   }
@@ -763,7 +764,7 @@ function checkInvocation({ subcommand, maxTotalReadBytes }) {
     return subcommand ? EXIT_OK : EXIT_INVOCATION;
   }
   if (!COMMANDS.has(subcommand)) {
-    process.stderr.write(`standards: unknown subcommand '${subcommand}'\n\n`);
+    humanErr(`standards: unknown subcommand '${displaySafe(subcommand)}'\n\n`);
     usage();
     return EXIT_INVOCATION;
   }
@@ -773,8 +774,8 @@ function checkInvocation({ subcommand, maxTotalReadBytes }) {
   if (maxTotalReadBytes !== undefined) {
     const bytes = Number(maxTotalReadBytes);
     if (!Number.isFinite(bytes) || bytes <= 0) {
-      process.stderr.write(
-        `standards: --max-total-read-bytes must be a positive number of bytes, got '${maxTotalReadBytes}'.\n`,
+      humanErr(
+        `standards: --max-total-read-bytes must be a positive number of bytes, got '${displaySafe(maxTotalReadBytes)}'.\n`,
       );
       return EXIT_INVOCATION;
     }
@@ -814,7 +815,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   try {
     report = await planInit(target, { mode: modeFlag, overwrite });
   } catch (error) {
-    process.stderr.write(`standards init: ${error.message}\n`);
+    humanErr(`standards init: ${displaySafe(error.message)}\n`);
     return EXIT_INVOCATION;
   }
 
@@ -825,7 +826,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   if (json) {
     emit(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
   } else {
-    emit(renderInit(report, { dryRun }) + "\n");
+    emit(displaySafeText(renderInit(report, { dryRun })) + "\n");
   }
 
   // A conflict is unfinished work, not a failure of the command: nothing was changed and the
@@ -3793,10 +3794,10 @@ export function reportAuditSurface(files, run, surface) {
 
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
-function renderHuman(fileCount, surface, run) {
+export function renderHuman(fileCount, surface, run) {
   const { root, findings, strict } = run;
   const lines = [];
-  lines.push(`standards audit — ${path.basename(root)} (${root.split(path.sep).join("/")})`);
+  lines.push(`standards audit — ${displaySafe(path.basename(root))} (${displaySafe(root.split(path.sep).join("/"))})`);
   lines.push(`${fileCount} file(s) scanned, ${findings.length} finding(s).`);
   // The scanned count above is the sentence that would otherwise imply a complete search. When the
   // surface has holes in it, say so on the same line rather than leaving it to be inferred from a
@@ -3830,7 +3831,7 @@ function renderHuman(fileCount, surface, run) {
       const rest = all.length > 6 ? ` and ${all.length - 6} more` : "";
       parts.push(
         `${all.length} directory(ies) excluded by this tool rather than by the repository ` +
-          `(${all.slice(0, 6).join(", ")}${rest})`,
+          `(${displaySafe(all.slice(0, 6).join(", "))}${rest})`,
       );
     }
     lines.push(`Evidence surface INCOMPLETE — ${parts.join(", ")}. Results below cover what was read, and nothing else.`);
@@ -3840,7 +3841,7 @@ function renderHuman(fileCount, surface, run) {
   // which directories were left out cannot tell a focused audit from a blind one. The count is the
   // part that matters at a glance; the paths are in `evidenceSurface.excludedDirectories`.
   if (surface.excludedDirectories.length) {
-    const shown = surface.excludedDirectories.slice(0, 6).map((e) => e.path).join(", ");
+    const shown = displaySafe(surface.excludedDirectories.slice(0, 6).map((e) => e.path).join(", "));
     const rest = surface.excludedDirectories.length - 6;
     lines.push(
       `${surface.excludedDirectories.length} directory(ies) excluded as not this project's own code: ` +
@@ -3850,7 +3851,7 @@ function renderHuman(fileCount, surface, run) {
   // Ignored FILES, stated at the granularity they are recorded: enough for a reader to see that
   // coverage shrank, not so much that it buries the directory-level exclusions above.
   if (surface.excludedFiles.count) {
-    const shown = surface.excludedFiles.sample.join(", ");
+    const shown = displaySafe(surface.excludedFiles.sample.join(", "));
     lines.push(
       `${surface.excludedFiles.count} file(s) excluded as ignored by the repository` +
         `${shown ? ` (for example ${shown})` : ""}.`,
@@ -3867,8 +3868,8 @@ function renderHuman(fileCount, surface, run) {
     }
     for (const f of hits) {
       lines.push(`  ${title} [${f.label}]`);
-      lines.push(`    ${f.message}`);
-      for (const e of f.evidence) lines.push(`      ${e}`);
+      lines.push(`    ${displaySafe(f.message)}`);
+      for (const e of f.evidence) lines.push(`      ${displaySafe(e)}`);
     }
   }
 
@@ -3883,8 +3884,8 @@ function renderHuman(fileCount, surface, run) {
     lines.push("What needs attention");
     for (const f of attention) {
       lines.push(`  [${f.severity}] ${f.category} [${f.label}]`);
-      lines.push(`    ${f.message}`);
-      for (const e of f.evidence) lines.push(`      ${e}`);
+      lines.push(`    ${displaySafe(f.message)}`);
+      for (const e of f.evidence) lines.push(`      ${displaySafe(e)}`);
       lines.push(`    see ${f.standardRef}`);
     }
   }
@@ -4046,6 +4047,8 @@ export async function main(args) {
     written.push(String(s));
     return process.stdout.write(s);
   };
+  // Human-readable text goes through the display-safe chokepoint; JSON goes through `emit` unchanged.
+  const emitText = (s) => emit(displaySafeText(s));
   let run = null;
   let surface = null;
   const done = (exitCode) => ({ exitCode, stdout: written.join(""), run, surface });
@@ -4058,7 +4061,7 @@ export async function main(args) {
 
   const target = cli.dirFlag ?? cli.positional ?? ".";
   if (!existsSync(target)) {
-    process.stderr.write(`standards: no such directory: ${target}\n`);
+    humanErr(`standards: no such directory: ${displaySafe(target)}\n`);
     return done(EXIT_INVOCATION);
   }
   const root = cli.dirFlag ? path.resolve(cli.dirFlag) : findRoot(target);
@@ -4266,8 +4269,8 @@ export async function main(args) {
         ) + "\n",
       );
     } else {
-      emit(renderHuman(files.length, evidenceSurface, run) + "\n");
-      emit(
+      emitText(renderHuman(files.length, evidenceSurface, run) + "\n");
+      emitText(
         "\nThis is evidence, not a verdict. Run `standards validate` for a compliance status.\n",
       );
     }
@@ -4322,7 +4325,7 @@ export async function main(args) {
 
   if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
     const message =
-      `project-policy.yml declares standardVersion ${declaredVersion}, but the framework executing ` +
+      `project-policy.yml declares standardVersion ${displaySafe(declaredVersion)}, but the framework executing ` +
       `this run is ${FRAMEWORK_VERSION}. No verdict was produced: a compliance status reported under ` +
       `a version that did not evaluate it would misstate its own provenance.`;
     if (cli.json) {
@@ -4340,10 +4343,10 @@ export async function main(args) {
         ) + "\n",
       );
     } else {
-      process.stderr.write(
+      humanErr(
         `VERSION_MISMATCH\n  ${message}\n\n` +
           `  Resolving a historical rule set is not implemented (Standard 21 R5), so this run cannot\n` +
-          `  evaluate ${declaredVersion}. Either execute the framework at ${declaredVersion}, or update\n` +
+          `  evaluate ${displaySafe(declaredVersion)}. Either execute the framework at ${displaySafe(declaredVersion)}, or update\n` +
           `  project-policy.yml to ${FRAMEWORK_VERSION} deliberately and review the failures the newer\n` +
           `  rule set reports. Upgrading the governing version is an engineering event, not a default.\n`,
       );
@@ -4429,8 +4432,8 @@ export async function main(args) {
             ` ${IDENTITY_NOTE}`
           : base.status === "violated"
             ? `Review history was rewritten relative to ${base.baseCommit} (merge-base with ${base.ref}): ` +
-              `${base.reason}. ${consequence}`
-            : `Review-history immutability is NOT_EVALUATED: ${base.reason}. ${consequence} Their validity ` +
+              `${displaySafe(base.reason)}. ${consequence}`
+            : `Review-history immutability is NOT_EVALUATED: ${displaySafe(base.reason)}. ${consequence} Their validity ` +
               `depends on a history that could not be compared with a trusted base (supply the ` +
               `default-branch ref, for example with git fetch origin, and run again). ${IDENTITY_NOTE}`,
       standardRef: R.search,
@@ -4636,7 +4639,7 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emit(renderVerdict(report, policy) + "\n");
+    emitText(renderVerdict(report, policy) + "\n");
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this
@@ -4646,14 +4649,14 @@ export async function main(args) {
       const against = currentReview(ruleId, policy.document?.attestations?.[ruleId])?.reviewedAgainst;
       const current = repositoryDigest(root, against?.paths ?? []);
       if (!current.ok) {
-        emit(
-          `\n  attestation ${ruleId}: no digest can be offered — ${current.missing.join(", ")} ` +
+        emitText(
+          `\n  attestation ${displaySafe(ruleId)}: no digest can be offered — ${displaySafe(current.missing.join(", "))} ` +
             `has no committed identity.\n`,
         );
         continue;
       }
-      emit(`\n  attestation ${ruleId}: current digest is ${current.digest}\n`);
-      emit(
+      emitText(`\n  attestation ${displaySafe(ruleId)}: current digest is ${displaySafe(current.digest)}\n`);
+      emitText(
         `  Record it as reviewedAgainst.digest with digestAlgorithm: ${DIGEST_ALGORITHM}.\n`,
       );
     }

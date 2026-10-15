@@ -19,6 +19,7 @@
  * an argument (ADR 0014).
  */
 
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { pathToFileURL } from "node:url";
 
 const EXIT_REFUSED = 1;
@@ -88,13 +89,13 @@ export function evaluateSubmission(facts) {
   if (PROTECTED_BRANCHES.includes(branch)) {
     return refuse(
       "protected-branch",
-      `Refusing to submit from '${branch}'. It is an integration branch, not a feature branch; ` +
+      `Refusing to submit from '${displaySafe(branch)}'. It is an integration branch, not a feature branch; ` +
         "the workflow never pushes directly to one.",
     );
   }
 
   if (branch === base) {
-    return refuse("branch-is-base", `The branch and the base are both '${branch}'. There is nothing to compare.`);
+    return refuse("branch-is-base", `The branch and the base are both '${displaySafe(branch)}'. There is nothing to compare.`);
   }
 
   if (dirty.length > 0) {
@@ -105,12 +106,12 @@ export function evaluateSubmission(facts) {
       "dirty-tree",
       `The working tree has ${dirty.length} uncommitted change(s). Commit or stash them: CI verifies a ` +
         "commit, and an uncommitted change is not in one.\n  " +
-        dirty.slice(0, 20).join("\n  "),
+        dirty.slice(0, 20).map((entry) => displaySafe(entry)).join("\n  "),
     );
   }
 
   if (!isSha(shaBefore)) {
-    return refuse("no-pre-sha", `Could not resolve HEAD before CI (got ${JSON.stringify(shaBefore)}).`);
+    return refuse("no-pre-sha", `Could not resolve HEAD before CI (got ${displaySafe(JSON.stringify(shaBefore))}).`);
   }
 
   if (ciExitCode !== 0) {
@@ -118,11 +119,11 @@ export function evaluateSubmission(facts) {
   }
 
   if (!isSha(shaAfter)) {
-    return refuse("no-post-sha", `Could not resolve HEAD after CI (got ${JSON.stringify(shaAfter)}).`);
+    return refuse("no-post-sha", `Could not resolve HEAD after CI (got ${displaySafe(JSON.stringify(shaAfter))}).`);
   }
 
   if (shaAfter !== shaBefore) {
-    return refuse("head-moved", `${MESSAGES.headMoved}\n  verified: ${shaBefore}\n  current:  ${shaAfter}`);
+    return refuse("head-moved", `${MESSAGES.headMoved}\n  verified: ${displaySafe(shaBefore)}\n  current:  ${displaySafe(shaAfter)}`);
   }
 
   // The evidence cross-check, and the reason it is not redundant with the comparison above.
@@ -140,7 +141,7 @@ export function evaluateSubmission(facts) {
   if (evidence.scope !== "complete") {
     return refuse(
       "evidence-partial",
-      `The verification record covers scope '${evidence.scope}', not the complete pipeline. ` +
+      `The verification record covers scope '${displaySafe(evidence.scope)}', not the complete pipeline. ` +
         "A subset of stages passing is not the pipeline passing.",
     );
   }
@@ -154,21 +155,21 @@ export function evaluateSubmission(facts) {
   if (evidence.result !== "passed") {
     return refuse(
       "evidence-not-passed",
-      `The verification record reports '${evidence.result}', not 'passed'. ${MESSAGES.ciFailed}`,
+      `The verification record reports '${displaySafe(evidence.result)}', not 'passed'. ${MESSAGES.ciFailed}`,
     );
   }
   if (evidence.commit !== shaBefore) {
     return refuse(
       "evidence-commit-mismatch",
       "The verification record names a different commit than the one being pushed. " +
-        `${MESSAGES.headMoved}\n  record:   ${evidence.commit}\n  pushing:  ${shaBefore}`,
+        `${MESSAGES.headMoved}\n  record:   ${displaySafe(evidence.commit)}\n  pushing:  ${displaySafe(shaBefore)}`,
     );
   }
 
   return {
     allowed: true,
     reason: "verified",
-    message: `Verified commit ${shaBefore} on '${branch}' passed the complete local Docker CI pipeline.`,
+    message: `Verified commit ${displaySafe(shaBefore)} on '${displaySafe(branch)}' passed the complete local Docker CI pipeline.`,
   };
 }
 
@@ -185,7 +186,7 @@ function refuse(reason, message) {
  */
 export function evidenceBlock(evidence) {
   const stages = (evidence.checks ?? [])
-    .map((c) => `- \`${c.id}\` — ${c.outcome} (exit ${c.exitCode})${c.gating ? "" : " _[advisory, non-gating]_"}`)
+    .map((c) => `- \`${displaySafe(c.id)}\` — ${displaySafe(c.outcome)} (exit ${displaySafe(c.exitCode)})${c.gating ? "" : " _[advisory, non-gating]_"}`)
     .join("\n");
   return [
     "## Local CI",
@@ -193,11 +194,11 @@ export function evidenceBlock(evidence) {
     "This pipeline ran in an ephemeral Docker container on the author's machine.",
     "It is **not** a GitHub-hosted Actions run and makes no claim about one.",
     "",
-    `- Verified commit: \`${evidence.commit}\``,
-    `- Branch: \`${evidence.branch}\``,
+    `- Verified commit: \`${displaySafe(evidence.commit)}\``,
+    `- Branch: \`${displaySafe(evidence.branch)}\``,
     "- Result: **PASS**",
-    `- Environment: Docker (\`${evidence.environment?.image ?? "unknown image"}\`, Node ${evidence.environment?.node ?? "unknown"})`,
-    `- Completed: ${evidence.completedAt}`,
+    `- Environment: Docker (\`${displaySafe(evidence.environment?.image ?? "unknown image")}\`, Node ${displaySafe(evidence.environment?.node ?? "unknown")})`,
+    `- Completed: ${displaySafe(evidence.completedAt)}`,
     "",
     "<details><summary>Stages executed</summary>",
     "",
@@ -218,7 +219,7 @@ export function evidenceBlock(evidence) {
 async function main(argv) {
   const mode = argv[0] ?? "decide";
   if (!["decide", "pr-body"].includes(mode)) {
-    process.stderr.write("usage: node scripts/submit-gate.mjs <decide|pr-body>  (JSON on stdin)\n");
+    humanErr("usage: node scripts/submit-gate.mjs <decide|pr-body>  (JSON on stdin)\n");
     return EXIT_INVOCATION;
   }
 
@@ -228,16 +229,16 @@ async function main(argv) {
   try {
     input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "null");
   } catch (err) {
-    process.stderr.write(`submit-gate: could not parse stdin as JSON: ${err.message}\n`);
+    humanErr(`submit-gate: could not parse stdin as JSON: ${displaySafe(err.message)}\n`);
     return EXIT_INVOCATION;
   }
   if (!input || typeof input !== "object") {
-    process.stderr.write("submit-gate: expected a JSON object on stdin.\n");
+    humanErr("submit-gate: expected a JSON object on stdin.\n");
     return EXIT_INVOCATION;
   }
 
   if (mode === "pr-body") {
-    process.stdout.write(`${evidenceBlock(input)}\n`);
+    humanOut(`${evidenceBlock(input)}\n`);
     return 0;
   }
 
