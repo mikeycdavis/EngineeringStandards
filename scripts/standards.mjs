@@ -4085,6 +4085,8 @@ export async function main(args) {
     policy: evaluationDocument,
     // The unfiltered recorded histories, for the not-applicable rejection lookup only.
     recordedAttestations: headAttestations,
+    // The base's raw histories, present when the preflight found a violated rewrite.
+    baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? null,
     findings,
     evaluated: evaluatedThisRun,
     today: new Date().toISOString().slice(0, 10),

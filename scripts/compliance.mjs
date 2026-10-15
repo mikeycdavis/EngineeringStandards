@@ -36,7 +36,7 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null, recordedAttestations = null }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -107,13 +107,21 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
       // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
       // alone, so a malformed history is still reported by identity (see recordedRejections).
-      // The EFFECTIVE record first: on a violated rewrite it is the base-restored history, and the
-      // untrusted head text must not be named in its place. Only when the effective record holds no
-      // rejection is the RETAINED (unfiltered) history read: without a trusted base the evaluated
-      // document keeps only chains whose CURRENT event is a rejection, so an older rejection followed
-      // by an approval would otherwise vanish from this lookup.
+      // Trusted history first. On a violated rewrite the base's raw history (every event, not only
+      // chains whose current event is a rejection: a base reject-then-approve chain is not effective
+      // but its rejection was recorded) is what is named, never the untrusted head replacement. Then
+      // the effective record (base-restored on a violation), and only when neither holds a rejection
+      // the RETAINED head history: without a trusted base the evaluated document keeps only chains
+      // whose CURRENT event is a rejection, so an older rejection followed by an approval would
+      // otherwise vanish from this lookup.
+      const baseRaw = recordedRejections(baseRecordedAttestations?.[rule.id]);
       const effective = recordedRejections(attestations[rule.id]);
-      const stray = effective.length > 0 ? effective : recordedRejections(recordedAttestations?.[rule.id]);
+      const stray =
+        baseRaw.length > 0
+          ? baseRaw
+          : effective.length > 0
+            ? effective
+            : recordedRejections(recordedAttestations?.[rule.id]);
       if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }

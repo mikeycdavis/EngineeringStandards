@@ -337,6 +337,56 @@ test("CLI: an established rejection edited into a different one names the base r
   }
 });
 
+const APPROVAL_LINES = [
+  '      - id: "p2"',
+  "        status: approved",
+  '        supersedes: "p1"',
+  '        reviewedBy: "synthetic-reviewer"',
+  '        reviewedAt: "2026-10-02"',
+  '        evidence: "synthetic approval"',
+  '        reviewerRole: "synthetic-role"',
+  "        reviewedAgainst:",
+  '          revision: "1111111111111111111111111111111111111111"',
+  '          tree: "2222222222222222222222222222222222222222"',
+  '          digest: "abcdef1234567890"',
+  '          digestAlgorithm: "git-blob-set-sha256-v1"',
+  "          source: git",
+  "          paths:",
+  '            - "synthetic.txt"',
+];
+test("CLI: a base chain of rejection then approval whose rejection the head removes or edits still names the base rejection", async () => {
+  for (const mutate of [
+    (y) => y.replace('id: "p1"', 'id: "p9"'),
+    (y) => {
+      const lines = y.split(String.fromCharCode(10));
+      const i = lines.findIndex((l) => l.includes('id: "p1"'));
+      return lines.filter((_, k) => k < i || k >= i + 5).join(String.fromCharCode(10));
+    },
+  ]) {
+    const nl = String.fromCharCode(10);
+    const full = policyYaml({ withRejection: true }) + APPROVAL_LINES.join(nl) + nl;
+    const dir = await mkdtemp(path.join(os.tmpdir(), "st47-baseapproved-"));
+    try {
+      git(dir, "init", "-q", "-b", "main");
+      await writeFile(path.join(dir, "project-policy.yml"), full);
+      git(dir, "add", ".");
+      git(dir, "commit", "-q", "-m", "base");
+      git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+      git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+      await writeFile(path.join(dir, "project-policy.yml"), mutate(full));
+      const { report } = validate(dir);
+      assert.equal(report.findings.find((f) => f.id === "review-history-append-only")?.severity, "error");
+      const stray = report.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
+      assert.ok(stray, "base rejection vanished from the lookup");
+      assert.match(stray.message, /"p1"/);
+      assert.ok(!/p9/.test(stray.message));
+      assert.match(stray.remediation, /without rewriting history/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("CLI: a rejection added only after the merge base may be removed", async () => {
   const added = await repoWith({ committedRejection: false, headRejection: true });
   try {
