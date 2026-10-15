@@ -16,7 +16,9 @@ import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recorded
 
 // Policy blobs are read whole through git. A bound here turns a large (or deeply nested) trusted base into
 // "could not be compared", which drops the base's recorded rejections; keep it far above any real policy.
-const GIT_MAX_BUFFER = 512 * 1024 * 1024;
+// It stays well under V8's maximum string length (about 512 MiB): at or above that, decoding the output
+// throws ERR_STRING_TOO_LONG out of spawnSync instead of returning an error the caller can classify.
+const GIT_MAX_BUFFER = 256 * 1024 * 1024;
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
