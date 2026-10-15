@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
 import { evaluate, envelope } from "./compliance.mjs";
-import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
+import { plan as planInit, apply as applyInit, render as renderInit, PLAN_DIR } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
 import { validate } from "./jsonschema.mjs";
@@ -1744,7 +1744,7 @@ function detectArchitectureArtifacts(files, run) {
  */
 function detectMissingPlanningArtifacts(files, run) {
   const { has, addFinding, rel } = run;
-  const dir = "artifacts/project-plan-breakdown";
+  const dir = PLAN_DIR;
   if (!has(dir)) {
     addFinding({
       id: "missing-planning-artifacts",
@@ -2266,6 +2266,72 @@ export function parsePlanItems(text, file) {
 }
 
 /**
+ * The plan directory, re-exported so a consumer of the plan reader names it through the same module
+ * that owns the reader. Defined once in `scripts/init.mjs`, a leaf, so this module can import it
+ * without a cycle (see the note there).
+ */
+export { PLAN_DIR };
+
+const PLAN_FILE_PATTERN = new RegExp(
+  "^" + PLAN_DIR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/.+\\.md$",
+);
+
+/**
+ * Is this repository-relative path a plan file: a `.md` anywhere under the plan directory.
+ *
+ * THE ONE PREDICATE. `detectPlanDiscrepancies` and `collectPlanOwnership` each carried their own copy
+ * of this test. It is deliberately the CURRENT definition and nothing narrower: a `README.md` and a
+ * nested `notes/scratch.md` are plan files today, and the numbered-filename inventory that would
+ * exclude them is a separate, owner-decided change (ST-24 part B).
+ */
+export function isPlanFile(relPath) {
+  return PLAN_FILE_PATTERN.test(relPath);
+}
+
+/**
+ * Is this plan item executable: does it carry a `Status` field. The one definition both plan rules
+ * evaluate over.
+ */
+export function isExecutableItem(item) {
+  return item.fields.has("Status");
+}
+
+/**
+ * Read every plan file once and return what both plan rules and the ownership collector derive from it.
+ *
+ *   planFiles   the plan files (`isPlanFile`), in the order `files` supplied them
+ *   items       the `###` items of every plan file that WAS read, in file order then document order,
+ *               exactly as `parsePlanItems` returns them (malformed-field diagnostics read these)
+ *   executable  `items` filtered by `isExecutableItem`
+ *   documents   `{ file, items, orphans }` per plan file that was read, from `parsePlanDocument`
+ *   unreadable  `{ file, reason }` per plan file whose text is unavailable. It is never given text.
+ *   truncated   repository-relative paths of plan files that were read only up to the read cap. They
+ *               ARE parsed (that is today's behaviour; making a truncated plan withdraw its rule is
+ *               #118), but they are listed so no consumer has to present them as whole.
+ *
+ * No input is read twice and nothing is recorded on `run`: whether an unread file becomes an unknown
+ * check is the caller's decision, because the two callers decide it differently (the audit records
+ * an unknown against two rules; ownership refuses to answer).
+ */
+export function readPlanItems(files, run) {
+  const planFiles = files.filter((f) => isPlanFile(run.rel(f)));
+  const unreadable = [];
+  const truncated = [];
+  const documents = [];
+  for (const f of planFiles) {
+    const content = run.textOf(f);
+    if (!content.available) {
+      unreadable.push({ file: run.rel(f), reason: content.reason });
+      continue;
+    }
+    if (run.truncated.has(f)) truncated.push(run.rel(f));
+    documents.push({ file: run.rel(f), ...parsePlanDocument(content.text, run.rel(f)) });
+  }
+  const items = documents.flatMap((d) => d.items);
+  return { planFiles, items, executable: items.filter(isExecutableItem), documents, unreadable, truncated };
+}
+
+/**
  * The canonical lifecycle vocabulary — Standard 8, decided in ADR 0001. Legacy tokens are accepted
  * as aliases during migration (Standard 8 R6); a reference to another system is never a status, so
  * `tracked as <id>` has no entry here and is read from a separate `Tracked by` field instead.
@@ -2284,8 +2350,8 @@ const canonicalStatus = (raw) => {
 
 async function detectPlanDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
-  const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
-  if (planFiles.length === 0) return;
+  const read = readPlanItems(files, run);
+  if (read.planFiles.length === 0) return;
 
   // One read, two rules, and they must move together. `planning.item-fields` and
   // `planning.plan-code-consistency` are both derived from these bytes, and today one is withdrawn
@@ -2295,14 +2361,11 @@ async function detectPlanDiscrepancies(files, run) {
   //
   // Files that WERE read are still parsed: a violation found in one plan file is established
   // regardless of another going unread, and aggregation keeps it.
-  for (const f of planFiles.filter((f) => !run.textOf(f).available)) {
-    const reason = run.textOf(f).reason;
-    run.unknown("planning.item-fields", rel(f), reason);
-    run.unknown("planning.plan-code-consistency", rel(f), reason);
+  for (const { file, reason } of read.unreadable) {
+    run.unknown("planning.item-fields", file, reason);
+    run.unknown("planning.plan-code-consistency", file, reason);
   }
-  const items = planFiles
-    .filter((f) => run.textOf(f).available)
-    .flatMap((f) => parsePlanItems(run.textOf(f).text, rel(f)));
+  const { items } = read;
   // BEFORE the executable filter, and before its early return, because a malformed `Status` is
   // exactly what stops an item being executable. A diagnostic that ran after this point could not
   // see the case that most needs reporting: a plan whose every item has a broken Status would be
@@ -2340,7 +2403,7 @@ async function detectPlanDiscrepancies(files, run) {
     });
   }
 
-  const executable = items.filter((i) => i.fields.has("Status"));
+  const { executable } = read;
   if (executable.length === 0) return;
 
   const dangling = [];
@@ -2884,6 +2947,55 @@ const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const FENCED_EXT = new Set([".md", ".markdown"]);
 
 /**
+ * Walk Markdown text one line at a time with fenced code tracked. The ONE fence-aware line walk.
+ *
+ * Returns one record per line, in order: `{ line, text, inFence, fenceLine }`.
+ *
+ *   line        the 1-based line number
+ *   text        the line, without its terminator (`LF` or `CRLF`)
+ *   inFence     true for every line of a fenced block: the opening fence, the content, and the closing
+ *               fence. A fence line is never itself content for the caller to match against.
+ *   fenceLine   true only for the opening and closing fence lines
+ *
+ * With `fenced: false` (a file type that has no fences) every record has `inFence: false`, so the
+ * caller does not need two code paths.
+ *
+ * The fence rule is CommonMark's, as `conflictGroups` has always applied it: up to three leading
+ * spaces and three or more backticks or tildes open a block; a closing fence must use the same
+ * character and be at least as long as the opener; anything else inside is content. An unterminated
+ * fence runs to the end of the text. This function only classifies lines. What a caller does with a
+ * fenced line (`conflictGroups` skips it) is the caller's decision, so a second content detector can
+ * share the fence definition without sharing that policy.
+ */
+export function markdownLines(text, { fenced = true } = {}) {
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let fence = null; // the opening run, when inside a fenced block
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const record = { line: i + 1, text: line, inFence: false, fenceLine: false };
+    if (fenced) {
+      const f = line.match(FENCE_OPEN);
+      if (fence !== null) {
+        // Closing requires the same character and at least the opening length; anything else is
+        // ordinary content inside the block.
+        record.inFence = true;
+        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) {
+          fence = null;
+          record.fenceLine = true;
+        }
+      } else if (f) {
+        fence = f[1];
+        record.inFence = true;
+        record.fenceLine = true;
+      }
+    }
+    out.push(record);
+  }
+  return out;
+}
+
+/**
  * Line numbers of every conflict-marker group in a file, ignoring fenced regions where the file
  * type has them.
  *
@@ -2891,36 +3003,21 @@ const FENCED_EXT = new Set([".md", ".markdown"]);
  * prose or a file so damaged that a marker group is the least of it, and reporting partial groups
  * would reintroduce the token-level matching this check exists to avoid.
  */
-function conflictGroups(text, fenced) {
-  const lines = text.split(/\r?\n/);
+export function conflictGroups(text, fenced) {
   const groups = [];
-  let fence = null; // the opening run, when inside a fenced block
   // `open` and `sep` deliberately survive a fenced block rather than resetting at its edge. A real
   // conflict region can contain a fence -- the merge cut through a code example -- and pairing
   // across it catches that case. The cost is theoretical: two column-0 marker lines of opposite
   // kinds, in prose, on either side of a block.
   let open = null;
   let sep = null;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (fenced) {
-      const f = line.match(FENCE_OPEN);
-      if (fence !== null) {
-        // Closing requires the same character and at least the opening length; anything else is
-        // ordinary content inside the block, and out of scope.
-        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-        continue;
-      }
-      // A fence line is never itself a marker. Everything else outside a block falls through to
-      // the matching below, which is where the `8870a43` specimen lived: immediately after a
-      // closing fence, not inside one.
-      if (f) {
-        fence = f[1];
-        continue;
-      }
-    }
+  for (const { line: lineNumber, text: line, inFence } of markdownLines(text, { fenced })) {
+    // A fenced line, fence lines included, is never itself a marker. Everything else outside a
+    // block falls through to the matching below, which is where the `8870a43` specimen lived:
+    // immediately after a closing fence, not inside one.
+    if (inFence) continue;
     if (CONFLICT_OPEN.test(line)) {
-      open = i + 1;
+      open = lineNumber;
       sep = null;
       continue;
     }
@@ -2929,11 +3026,11 @@ function conflictGroups(text, fenced) {
     // consumed rather than treated as a reset, so `merge.conflictStyle=diff3` is covered.
     if (CONFLICT_BASE.test(line)) continue;
     if (CONFLICT_SEP.test(line)) {
-      sep = i + 1;
+      sep = lineNumber;
       continue;
     }
     if (sep !== null && CONFLICT_END.test(line)) {
-      groups.push({ open, end: i + 1 });
+      groups.push({ open, end: lineNumber });
       open = null;
       sep = null;
     }

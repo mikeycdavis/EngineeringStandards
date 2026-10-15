@@ -295,6 +295,19 @@ is recorded as `temporarilyUnscoped` in `artifacts/backlog/github-mapping.json`.
 snapshot of the open issues and reports `NOT_EVALUATED`, exit 2, without one; it is not a pipeline
 stage. No change to the framework, rule catalog, policy schema or any published contract.
 
+Extracted one plan-item reader, one plan-directory constant and one fence-aware line walk (ST-24 part A,
+#117). **A pure refactor: no rule result, finding, message, exit code or JSON member changes.**
+`readPlanItems(files, run)` in `scripts/standards.mjs` is now the only place plan files are collected and
+parsed, and returns the plan files, the items, the executable items, the unreadable files with their reasons and
+the truncated ones; `detectPlanDiscrepancies` and `scripts/ownership.mjs` both consume it, with `isPlanFile` and
+`isExecutableItem` as the one plan-file and executable definitions. `PLAN_DIR` is defined once, in
+`scripts/init.mjs` (a leaf, so no import cycle and no new module) and re-exported from `standards.mjs`.
+`markdownLines()` is the shared fence-aware walk, and `conflictGroups` now consumes it. Both are exported.
+`test/plan-reader.test.mjs` proves the equivalence against frozen copies of the replaced code, and against a
+named baseline checkout with `ES_GOLDEN_BASE`. The README and nested-file classification is deliberately NOT
+part of this change (ST-24 part B): a `README.md` or a nested file with a `###` heading and a `Status` is still an
+executable item today.
+
 ## 2.0.0 — 2026-08-09
 
 **`MAJOR`.** The must-never layer: nine new standards, 26 new rules, and a change to what the verdict
