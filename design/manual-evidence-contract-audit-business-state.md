@@ -38,8 +38,10 @@ or unreviewed, and the rule is not established by it. If a writer is outside Z b
 the system's scope, the declaration states why, and that statement is itself reviewed.
 
 **Durable retention.** K must durably record each accepted event in a store that is queryable for
-reconstruction, and must define what happens when recording fails: the mutation fails, or the failure
-is itself recorded and surfaced. A sink that is a no-op, or that logs to an ephemeral stream with no
+reconstruction. A mutation must not commit without its audit record: either recording and mutation
+succeed or fail together, or the event is written transactionally to a durable outbox that guarantees
+the original event is eventually recorded. "The failure is recorded and surfaced" is not enough, because
+the state change would then stand with no reconstructable audit record. A sink that is a no-op, or that logs to an ephemeral stream with no
 retention, does not satisfy the claim even if every entry point calls it. The sink's source and its
 persistence configuration are reviewed, and a test per sink shows that an accepted event is retrievable
 and that a recording failure is handled as defined.
@@ -50,7 +52,10 @@ that. The project must define, and the inventory must cite, the fields an event 
 change (Standard 3 R2 requires a project to "decide and record which fields are mandatory for it", and
 lists `entityType`, `entityId`, `action`, `before`, `after` and `reason` among candidates). The
 per-entry-point test asserts that the emitted event contains those fields with the values the mutation
-changed, not merely that K was called. Whether the recorded content is *sufficient* to reconstruct state
+changed, not merely that K was called. For credentials, tokens and personal data, Standard 3 R5 requires
+the event to record that the value changed without reproducing it: the payload definition names those
+fields, specifies a change marker or redaction in place of the value, and the test accepts the marker and
+fails if the raw value appears. Whether the recorded content is *sufficient* to reconstruct state
 is still a reviewer judgement against the stated minimum.
 
 The exclusion predicate is Standard 3 R1's, which is narrower than the catalog's wording and governs.
@@ -65,9 +70,10 @@ relied on here.
 | Artefact | Why |
 | --- | --- |
 | The committed inventory: path, symbol, store, emitted event, or exclusion rationale | The subject of the claim; committed, so inside the digest. |
-| The sink source | Shows what "emits an audit event" means. |
+| The sink source and its persistence configuration (store, retention, failure and outbox behaviour) | Shows what "emits an audit event" and "durably retains" mean. Inside the digest. |
+| The committed declaration of Z (repository roots, components, writable stores, stated scope exclusions) | Defines the boundary of Z. Inside the digest. |
 | One test per listed entry point asserting the minimum payload (changed fields and their values), not just that K was called | An artefact the reviewer reads; not by itself evidence of completeness (section 8). |
-| The project's recorded minimum event payload (Standard 3 R2) | Defines what "captures what changed" means for the sufficiency clause. |
+| The project's recorded minimum event payload (Standard 3 R2), including its redaction rules (R5) | Defines what "captures what changed" means for the sufficiency clause. Inside the digest. |
 | The complete in-scope source set Z (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over *the only* writers, so freshness must cover every file. See section 5. |
 | The detector's mutation-site observations (#126, not built) | Cross-check input. |
 
@@ -85,8 +91,9 @@ the author of the change under review.
 
 ## 5. Invalidation rule
 
-Digest-bound `reviewedAgainst` over the inventory, the sink **and the complete in-scope source set Z**,
-using `git-blob-set-sha256-v1` (ADR 0011). Stale on any change to a file in Z or the addition of a file
+Digest-bound `reviewedAgainst` over every artefact the claim depends on: the inventory, the sink source
+and its persistence configuration, the declaration of Z, the recorded minimum payload definition and
+redaction rules, **and the complete in-scope source set Z**, using `git-blob-set-sha256-v1` (ADR 0011). Stale on any change to a file in Z or the addition of a file
 to Z:
 
 > **Freshness is a separate axis from what the human decided.** (ADR 0011)
