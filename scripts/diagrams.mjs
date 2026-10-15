@@ -14,6 +14,7 @@
  * Exit 0 when every diagram is in sync, 1 when any is stale, 2 on invocation error.
  */
 
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -152,23 +153,23 @@ async function main() {
   try {
     result = await check(ROOT);
   } catch (error) {
-    process.stderr.write(`standards diagrams: ${error.message}\n`);
+    humanErr(`standards diagrams: ${displaySafe(error.message)}\n`);
     process.exit(EXIT_INVOCATION);
   }
 
-  process.stdout.write(`Mermaid sources:  ${result.sources.length}\n`);
-  process.stdout.write(`Embedded copies:  ${[...result.embedded.values()].flat().length}\n`);
-  process.stdout.write(`Stale diagrams:   ${result.findings.length}\n\n`);
+  humanOut(`Mermaid sources:  ${result.sources.length}\n`);
+  humanOut(`Embedded copies:  ${[...result.embedded.values()].flat().length}\n`);
+  humanOut(`Stale diagrams:   ${result.findings.length}\n\n`);
 
   for (const finding of result.findings) {
-    process.stdout.write(`! ${finding.file}\n    ${finding.message}\n    ${finding.remediation}\n\n`);
+    humanOut(`! ${displaySafe(finding.file)}\n    ${displaySafe(finding.message)}\n    ${displaySafe(finding.remediation)}\n\n`);
   }
 
   if (result.findings.length > 0) {
-    process.stdout.write("A derived copy no longer matches its Mermaid source.\n");
+    humanOut("A derived copy no longer matches its Mermaid source.\n");
     process.exit(EXIT_FINDINGS);
   }
-  process.stdout.write("Every diagram matches its Mermaid source.\n");
+  humanOut("Every diagram matches its Mermaid source.\n");
   process.exit(EXIT_OK);
 }
 

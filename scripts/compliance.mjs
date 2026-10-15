@@ -16,6 +16,7 @@
  */
 
 import { resolve } from "./catalog.mjs";
+import { displaySafe } from "./display-safe.mjs";
 import { currentReview, recordedRejections, reviewProblems, reviewsOf } from "./reviews.mjs";
 
 export const STATUS = {
@@ -142,13 +143,14 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         validationType: "configuration",
         assurance: "full",
         disposition: "invalid-attestation",
-        message:
+        message: displaySafe(
           `${rule.id} has a malformed review history: ${structural.join("; ")}.` +
           (rejections.length > 0
             ? ` It records a rejection that stays effective: ${rejections
                 .map((r) => `${r.id ?? "(no id)"}${r.reviewedBy ? ` by ${r.reviewedBy}` : ""}${r.reviewedAt ? ` on ${r.reviewedAt}` : ""}`)
                 .join(", ")}.`
             : ""),
+        ),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
         // A rule the catalog does not mark attestable can never be cleared by a review, so promising that a
@@ -210,7 +212,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         level,
         RESULT.skipped,
         "excepted",
-        `${rule.id} is excepted by ${manualException.approvedBy} (approved ${manualException.approvedAt}): ${manualException.reason}`,
+        `${rule.id} is excepted by ${displaySafe(manualException.approvedBy)} (approved ${displaySafe(manualException.approvedAt)}): ${displaySafe(manualException.reason)}`,
       );
       result.evidence = ["project-policy.yml"];
       result.files = ["project-policy.yml"];
@@ -374,7 +376,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   if (hits.length > 0) {
     return fail(
       "contradicted-attestation",
-      `${rule.id} is attested as approved, but an automated check found: ${hits[0].message}`,
+      `${rule.id} is attested as approved, but an automated check found: ${displaySafe(hits[0].message)}`,
       "Fix the finding. An attestation records human evidence; it never overrides what a check observed.",
     );
   }
@@ -382,7 +384,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   if (attestation.status === "rejected") {
     return fail(
       "attested-rejected",
-      `${rule.id} was reviewed by ${attestation.reviewedBy} and found unmet.`,
+      `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} and found unmet.`,
       "Satisfy the rule, then re-attest. A recorded rejection is a failure, not silence.",
     );
   }
@@ -421,8 +423,8 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
       disposition: "not-evaluated",
       freshness: fresh.state,
       message:
-        `${rule.id} was reviewed by ${attestation.reviewedBy} on ${attestation.reviewedAt}, but that ` +
-        `review does not establish the current state: ${fresh.detail}.`,
+        `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}, but that ` +
+        `review does not establish the current state: ${displaySafe(fresh.detail)}.`,
       evidence: against?.paths ?? ["project-policy.yml"],
       files: against?.paths ?? ["project-policy.yml"],
       remediation:
@@ -444,7 +446,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
     // the assurance breakdown is the honest home for it — never `automated`.
     assurance: "full",
     disposition: "attested",
-    message: `Attested by ${attestation.reviewedBy} on ${attestation.reviewedAt}: ${attestation.evidence}`,
+    message: `Attested by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}: ${displaySafe(attestation.evidence)}`,
     evidence: against?.paths ?? [],
     files: against?.paths ?? [],
     remediation: rule.remediation,

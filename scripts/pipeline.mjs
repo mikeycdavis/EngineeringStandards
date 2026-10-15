@@ -32,6 +32,7 @@
  * Holds no module-level run state: every mutable value is local to a call.
  */
 
+import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -122,16 +123,16 @@ export const RESTORE = {
 
 function runStage(stage, cwd, verbose) {
   const started = new Date();
-  process.stdout.write(`\n=== ${stage.id} :: ${stage.command}${stage.gating ? "" : "  [advisory]"}\n`);
+  humanOut(`\n=== ${stage.id} :: ${stage.command}${stage.gating ? "" : "  [advisory]"}\n`);
   // `--verbose` adds the rationale, not the output. Stage output is always inherited: a CI log that
   // hides what a check said until someone remembers a flag is a log nobody reads when it matters.
-  if (verbose) process.stdout.write(`    ${stage.why}\n`);
+  if (verbose) humanOut(`    ${stage.why}\n`);
   const result = spawnSync(stage.command, { cwd, shell: true, stdio: "inherit" });
   // A signal death carries no exit status. Treating it as 0 would report a killed stage as a passing
   // one, which is the false green the whole framework exists to refuse.
   const code = result.error ? EXIT_INVOCATION : (result.status ?? EXIT_INVOCATION);
   const outcome = code === 0 ? "passed" : stage.gating ? "failed" : "advisory-failed";
-  process.stdout.write(`--- ${stage.id}: ${outcome} (exit ${code})\n`);
+  humanOut(`--- ${stage.id}: ${outcome} (exit ${code})\n`);
   return {
     id: stage.id,
     command: stage.command,
@@ -231,13 +232,13 @@ export function runPipeline({ cwd, only = null, verbose = false } = {}) {
  */
 function preflight(cwd) {
   const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
-  if (r.error) return { ok: false, message: `git is not available: ${r.error.message}` };
-  if (r.status !== 0) return { ok: false, message: `git could not read this repository:\n${(r.stderr ?? "").trim()}` };
+  if (r.error) return { ok: false, message: `git is not available: ${displaySafe(r.error.message)}` };
+  if (r.status !== 0) return { ok: false, message: `git could not read this repository:\n${displaySafe((r.stderr ?? "").trim())}` };
   return { ok: true, commit: r.stdout.trim() };
 }
 
 function usage() {
-  process.stderr.write(
+  humanErr(
     "usage: node scripts/pipeline.mjs <list|run> [--json] [--verbose] [--report=PATH] [stage ...]\n",
   );
 }
@@ -254,7 +255,7 @@ function main(argv) {
       process.stdout.write(`${JSON.stringify({ stages: STAGES, restore: RESTORE }, null, 2)}\n`);
     } else {
       for (const s of STAGES) {
-        process.stdout.write(`${s.gating ? "gate    " : "advisory"}  ${s.id.padEnd(10)} ${s.command}\n`);
+        humanOut(`${s.gating ? "gate    " : "advisory"}  ${s.id.padEnd(10)} ${s.command}\n`);
       }
     }
     return 0;
@@ -267,7 +268,7 @@ function main(argv) {
 
   const ready = preflight(root);
   if (!ready.ok) {
-    process.stderr.write(
+    humanErr(
       `pipeline: ${ready.message}\n` +
         "The audit resolves repository membership and ignore rules through git, so a run without it\n" +
         "covers a different surface than CI does. Refusing to report a result for it.\n",
@@ -285,7 +286,7 @@ function main(argv) {
       verbose: flags.includes("--verbose") || process.env.LOCAL_CI_VERBOSE === "1",
     });
   } catch (err) {
-    process.stderr.write(`pipeline: ${err.message}\n`);
+    humanErr(`pipeline: ${displaySafe(err.message)}\n`);
     return EXIT_INVOCATION;
   }
 
@@ -298,21 +299,21 @@ function main(argv) {
   // shells formatting the same record would be two renderings that drift, and the container is the
   // only party that actually knows what it ran.
   const field = (k) => `${k}`.padEnd(17);
-  process.stdout.write("\n");
-  process.stdout.write(`${field("repository")}: ${report.repository ?? "(no origin remote)"}\n`);
-  process.stdout.write(`${field("branch")}: ${report.branch}\n`);
-  process.stdout.write(`${field("verified commit")}: ${report.commit}\n`);
-  process.stdout.write(`${field("scope")}: ${report.scope}\n`);
-  process.stdout.write(
+  humanOut("\n");
+  humanOut(`${field("repository")}: ${displaySafe(report.repository ?? "(no origin remote)")}\n`);
+  humanOut(`${field("branch")}: ${displaySafe(report.branch)}\n`);
+  humanOut(`${field("verified commit")}: ${displaySafe(report.commit)}\n`);
+  humanOut(`${field("scope")}: ${report.scope}\n`);
+  humanOut(
     `${field("environment")}: ${report.environment.containerized ? "Docker" : "host"} ` +
-      `${report.environment.image ?? ""} Node ${report.environment.node}\n`,
+      `${displaySafe(report.environment.image ?? "")} Node ${report.environment.node}\n`,
   );
-  process.stdout.write(`${field("stages")}:\n`);
+  humanOut(`${field("stages")}:\n`);
   for (const c of report.checks) {
-    process.stdout.write(`  ${c.outcome.padEnd(16)} ${c.id}${c.gating ? "" : "  [advisory]"}\n`);
+    humanOut(`  ${c.outcome.padEnd(16)} ${displaySafe(c.id)}${c.gating ? "" : "  [advisory]"}\n`);
   }
-  process.stdout.write(`${field("result")}: ${report.result.toUpperCase()}\n`);
-  process.stdout.write(`${field("completed")}: ${report.completedAt}\n`);
+  humanOut(`${field("result")}: ${report.result.toUpperCase()}\n`);
+  humanOut(`${field("completed")}: ${report.completedAt}\n`);
   return report.result === "passed" ? 0 : EXIT_FAILED;
 }
 
