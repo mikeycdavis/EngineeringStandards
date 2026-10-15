@@ -139,3 +139,33 @@ applies, and a rule the catalog does not mark attestable is never cleared by a r
 owner-reviewable choice. Reviewer identity is
 asserted by the policy text, not authenticated. A genesis event may omit its digest (the first-pass workflow above);
 that is bootstrap behaviour and not authenticated history.
+
+## Amendment (ST-47, #150): a rejection on a not-applicable rule is a finding, not a verdict
+
+A rule declared `not-applicable` is skipped before its review history is read, so a rejection recorded on it
+used to vanish without a trace. The owner chose **finding only**: the declaration stands, so the rule's status
+and disposition (`skipped` / `not-applicable`) and the aggregate verdict are unchanged, and a
+`policy-compliance` finding is emitted that names the rule, says that a rejection is recorded on a
+not-applicable rule, and gives the rejection's identity (id, reviewer and date, escaped so control characters
+are visible, never raw). The finding carries no rule, so it cannot fail, pass or withdraw one. It is emitted for
+a well-formed and a malformed history alike, and not at all for a not-applicable rule that records no
+rejection. An applicable rule is unchanged: its recorded rejection still fails it. The rejection is not
+evaluated while the declaration stands; reconciling the two is the owner's decision.
+
+Any rejection ever recorded on the rule is found, including an older one followed by an approval: the lookup
+reads the base's raw histories first (also when the append-only comparison could not run but the base was
+readable, for example because another rule's base record is not a mapping) and the retained head history when
+neither the base nor the effective record holds one. When a rewrite is reported as violated, the
+base-restored rejection is the one named, never the untrusted replacement.
+
+The finding's remediation depends on where the rejection sits, in three cases. Established at the trusted base: it is
+append-only history, so deleting it is reported as `review-history-append-only` when the comparison runs, the base
+rejection remains recorded and the finding still names it, without entering the verdict (when the comparison cannot run, for example because an unrelated
+base record is malformed, the result is NOT_EVALUATED and the base rejection is still named, never applied to the
+verdict); the remediation advises removing the not-applicable declaration and recording a later review whose
+`supersedes` names the chain's current (latest) review, because every successor must reference its immediate
+predecessor, or leaving both in place. Not at the base: it is advised to be removed. Base unknown (no
+readable base, such as outside a Git work tree): nothing can be enforced, so no deletion is advised and no
+`review-history-append-only` report is promised; the remediation says that removal cannot be verified without a base,
+that history is append-only once committed, and that the base should be supplied and the run repeated. There is still no
+removal path for an established rejection on a rule that stays not-applicable; that is the owner's decision.
