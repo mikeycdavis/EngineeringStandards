@@ -9,7 +9,7 @@ any, is a new item.
 ## 1. What this proposes
 
 `ai.provider-neutral` is catalogued `code-analysis`, `level: required`, `assurance: none`
-(`rules/ai.json`). No analyzer evaluates it, so it is reported not-evaluated. The planned detector item
+(`rules/ai.json`). No analyzer evaluates it, so it is reported not-evaluated while it applies (an unbound `detected-ai-interfaces` observation of provider SDK imports exists today, with no rule binding). The planned detector item
 (#124) reports coverage and blind spots and never PASSes it. This document defines what a human reviewer
 **can** establish and record about the rule today, and what that record may and may not be used for.
 
@@ -70,8 +70,7 @@ statement is limited to what is statically visible as source text in the paths r
 - Whether the abstraction would keep capabilities stable under a model change.
 - Completeness: a clean statement means the reviewer observed no further usage in what was read.
 
-Test and CI presence are not evidence of provider neutrality, and the detector's output (#124, not
-built) contributes observations only, never a pass.
+Test and CI presence are not evidence of provider neutrality, and the detector's output (#124, not built, and distinct from the existing unbound `detected-ai-interfaces` observation) contributes observations only, never a pass.
 
 Standard 1 R4 words provider neutrality as SHOULD while the catalog level is `required`
 (`rules/ai.json`); that mismatch is an owner policy question this document does not resolve.
