@@ -164,11 +164,11 @@ opened file is not a regular file, or its identity differs from the classificati
 error says the entry is a link or directory and `unreadable` otherwise) and the result is `INDETERMINATE` (`not-regular-file` where the opened object is not a regular file,
 `source-changed` where it is a regular file of another identity). A replacement link whose target is a different file is rejected before any byte is read, and so is a
 link installed at the name that points back to the **same** file (the entry by path is then a link, so
-the `lstat` rejects it). A link installed after that `lstat` and before the read is **not observed
-until G3's post-read `lstat`**, which makes the result `INDETERMINATE` (`source-changed`); a byte may
-have been read through it, and no byte read in that case is used. Where the platform provides no-follow, non-blocking and
+the `lstat` rejects it). A change at the name after that `lstat` does not affect the already-open file: the bytes are read
+from the original open file, the change is **not observed until G3's post-read `lstat`**, which makes
+the result `INDETERMINATE` (`source-changed`), and those bytes are discarded. Where the platform provides no-follow, non-blocking and
 no-controlling-terminal open flags (`O_NOFOLLOW`, `O_NONBLOCK`, `O_NOCTTY`) the open uses all of them;
-on Windows, where Node provides none of these flags, the post-open `fstat` and identity comparison is
+on Windows, where Node provides none of these flags, the post-open `fstat`, the identity comparison and the pre-read `lstat` by path are
 the whole mechanism and any entry that `lstat` does not report as a regular file is
 `not-regular-file` (G1). **A platform that is not Windows and lacks `O_NONBLOCK` fails closed
 (G10): the entry is not opened.** A FIFO or device that replaced the entry after classification may be
