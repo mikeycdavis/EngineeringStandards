@@ -10,7 +10,7 @@ any, is a new item.
 
 `ai.provider-neutral` is catalogued `code-analysis`, `level: required`, `assurance: none`
 (`rules/ai.json`). No analyzer evaluates it, so it is reported not-evaluated. The planned detector item
-(#124) is partial and negative-only and never PASSes it. This document defines what a human reviewer
+(#124) reports coverage and blind spots and never PASSes it. This document defines what a human reviewer
 **can** establish and record about the rule today, and what that record may and may not be used for.
 
 It establishes nothing about the rule. A record under this contract is non-establishing evidence.
@@ -26,7 +26,7 @@ today's mechanisms is in section 7 and makes no claim.
 | The record states what the reviewer examined and found | Section 4 (the review statement) | today |
 | The record states what it does not cover | Section 5 | today |
 | The record is not an attestation and does not establish the rule | Section 6 | today |
-| A rejection recorded as an attestation fails while it is the terminal event | Section 6 | today, only for an attestable rule |
+| A rejection recorded as an attestation fails while it is the terminal event | Section 6 (prose only) | not applicable while the rule is not attestable; no claim |
 | Identity, role, base revision, tree-wide freshness, digest, live state | Section 7 | future work, no claim |
 
 ## 3. Record form
@@ -113,13 +113,13 @@ contract above is not mistaken for it:
   subject (#96, PR #116 chains successors but authenticates nothing);
 - freshness bound to the enumerated tracked tree, a mandatory digest, and a maximum age;
 - a derived exclusion policy with a named owner, and a boundary declaration for the adapter list
-  (Standard 51 R2; #148 / PR #147);
-- the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
+  (Standard 51 R2 defines the vocabulary (#112, delivered by PR #146), and #148 / PR #147 implement a declaration; no second vocabulary is implied);
+- acceptance by the attestation schema and policy template of an attestation for a `code-analysis` rule, and the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
   and ADR 0010 acceptance;
 - versioning classification (Standard 21 R2 does not classify attestation eligibility) and `VERSION`,
   which are the owner's.
 
-None of this is made, and none of it is required for the record in sections 3 to 5.
+None of this is made, and none of it is required for the record in sections 3 to 5. Of #95 and #96, the future work needs answered: for #95, how a stale approval is re-reviewed and renewed with authenticated identity; for #96, who may clear a rejection and on what authority.
 
 ## 8. Owner decision
 
