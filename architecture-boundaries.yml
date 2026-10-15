@@ -229,6 +229,7 @@ edges:
     via:
       - evaluate
       - envelope
+      - strayRejectionsFor
     evidence:
       - scripts/standards.mjs:22
   - from: "validator-cli"
@@ -267,6 +268,7 @@ edges:
     to: "reviews"
     via:
       - currentReview
+      - recordedRejections
     evidence:
       - scripts/standards.mjs:36
   - from: "validator-cli"
