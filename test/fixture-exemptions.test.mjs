@@ -601,3 +601,33 @@ test("remediation matches the cause: a truncated pin is not told to raise the ag
   assert.match(ne[0].message, /per-file read cap/);
   assert.doesNotMatch(ne[0].message, /rerun with a larger/);
 });
+
+test("a waived fixture of an optional (silenced) rule is silent in human output, as in JSON", async () => {
+  const UNF = "quality.unfinished-work";
+  const root = await repo({ "test/fixtures/bad/work.js": UNFINISHED }, [pin("test/fixtures/bad/work.js", UNFINISHED, UNF)]);
+  const file = path.join(root, "project-policy.yml");
+  const { readFile } = await import("node:fs/promises");
+  await writeFile(file, (await readFile(file, "utf8")) + ["rules:", "  quality.unfinished-work:", "    level: optional", ""].join(String.fromCharCode(10)));
+  const human = cliText("validate", root);
+  assert.doesNotMatch(human.out, /departs from quality.unfinished-work/, human.out);
+  const json = cli("validate", root);
+  assert.equal(findingsOf(json, "fixture-exempted").length, 0);
+});
+
+test("a null fixtureExemptions section is reported as the reason no pin applied", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT });
+  const text = ['standardVersion: "2.0.0"', 'project: "fixture exemption specimen"', "fixtureExemptions:", ""].join(String.fromCharCode(10));
+  await writeFile(path.join(root, "project-policy.yml"), text);
+  const res = cli("audit", root);
+  assert.equal(findingsOf(res, "fixture-exemption-schema-invalid").length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
+});
+
+test("duplicates are rejected before filtering: an expired twin does not leave its pair looking unique", async () => {
+  const live = pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE);
+  const dead = { ...pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE), reviewWhen: undefined, expires: "2020-01-01" };
+  delete dead.reviewWhen;
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [live, dead]);
+  const res = cli("validate", root);
+  assert.equal(resultOf(res, CERT_RULE).disposition, "evaluated", "neither duplicate may waive");
+  assert.equal(findingsOf(res, "fixture-exemption-duplicate").length, 2);
+});

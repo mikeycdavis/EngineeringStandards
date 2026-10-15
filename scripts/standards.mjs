@@ -208,9 +208,12 @@ async function loadProjectPolicy(repoRoot) {
         schemaErrors: errors,
         // Present in ANY shape (a mapping, a string, an array): a malformed section is exactly the case the
         // report below exists for.
+        // An empty array is the only "no entries" spelling; `fixtureExemptions:` with no value (null)
+        // is a present, malformed section.
         hadFixtureExemptions:
-          document?.fixtureExemptions !== undefined &&
-          document?.fixtureExemptions !== null &&
+          document !== null &&
+          typeof document === "object" &&
+          Object.hasOwn(document, "fixtureExemptions") &&
           !(Array.isArray(document.fixtureExemptions) && document.fixtureExemptions.length === 0),
         error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
@@ -4447,6 +4450,8 @@ export async function main(args) {
         verdict.policyFindings ?? [],
         findings.filter((f) => {
           if (f.category !== "Fixture exemptions") return false;
+          // Optional-rule silence (Standard 18 R3) applies to the human report as it does to JSON.
+          if (f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)) return false;
           if (f.severity === "warning") return true;
           // A waived departure is listed under "Excepted:" when its rule is wholly excepted. Where the
           // rule also has a live, unwaived violation it is "failed", and this line is the only place
