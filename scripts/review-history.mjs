@@ -467,14 +467,17 @@ export async function reviewHistoryPreflight({ repositoryPath, policyPath = "pro
   });
 
   if (result.status === "not-evaluated") {
+    // A readable base that records attestations was found and the comparison could not run: the
+    // status stays not-evaluated (the warning is emitted) even when the head deleted the section. The
+    // base histories ride on `baseRecordedAttestations`, which effectiveAttestations never reads, so
+    // they cannot enter the verdict; with an empty head there is nothing else for it to keep.
+    if (headCount === 0 && Object.keys(result.baseRecordedAttestations ?? {}).length > 0) {
+      return { ...result, effective: false };
+    }
     if (headCount === 0) {
       return {
         status: "not-applicable",
         effective: true,
-        // Finding channel only: effectiveAttestations never reads this, so the verdict is exactly what it
-        // is without it. It lets the ST-47 lookup name a rejection the base recorded.
-        baseRecordedAttestations: result.baseRecordedAttestations,
-        baseRejectionRules: result.baseRejectionRules,
         reason:
           `the policy records no attestation and no base could be determined (${result.reason}), ` +
           "so the removal of earlier attestations cannot be detected",

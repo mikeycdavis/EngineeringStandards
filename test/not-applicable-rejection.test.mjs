@@ -433,6 +433,9 @@ test("CLI: a head that deletes the whole attestations section names a base rejec
     git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
     await writeFile(path.join(dir, "project-policy.yml"), head);
     const { report } = validate(dir);
+    const history = report.findings.find((f) => f.id === "review-history-append-only");
+    assert.ok(history && /NOT_EVALUATED/.test(history.message), "the unverified-history warning was suppressed");
+    assert.notEqual(history.severity, "error");
     const stray = report.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
     assert.ok(stray, "the removed base rejection was not named");
     assert.match(stray.message, /"p1"/);
