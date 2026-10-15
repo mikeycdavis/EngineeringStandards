@@ -18,6 +18,7 @@
 import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { statSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseYaml, YamlError } from "./yaml.mjs";
@@ -77,7 +78,7 @@ function detectAliases(document) {
 }
 
 /** Compliance conditions that a well-formed policy can still fail. */
-function complianceFindings(document, today, catalog) {
+function complianceFindings(document, today, catalog, repoRoot = null) {
   const findings = [];
 
   // Standard 20 R4: a rule its standard declared non-exemptible admits no exception. Caught here so
@@ -110,7 +111,19 @@ function complianceFindings(document, today, catalog) {
 
   // Fixture exemptions (ST-19a, ADR 0020): the same validator the audit uses, so an entry that would
   // be ignored at run time is an error here and an adopter learns it from `standards policy`.
-  const fixtureCheck = checkEntries(document.fixtureExemptions, { catalog, today });
+  const fixtureCheck = checkEntries(document.fixtureExemptions, {
+    catalog,
+    today,
+    isDirectory: repoRoot
+      ? (rel) => {
+          try {
+            return statSync(path.join(repoRoot, rel)).isDirectory();
+          } catch {
+            return false;
+          }
+        }
+      : null,
+  });
   for (const problem of fixtureCheck.problems) {
     findings.push({
       id: `policy.${problem.id}`.replace("policy.fixture-exemption-", "fixture-exemption-"),
@@ -184,7 +197,7 @@ export async function checkPolicy(policyPath, schemaPath, today) {
       return null; // A missing catalog disables the rule-aware checks; it never fakes a pass.
     }
   })();
-  const findings = complianceFindings(document, today, catalog);
+  const findings = complianceFindings(document, today, catalog, path.dirname(path.resolve(policyPath)));
   return { status: findings.length > 0 ? "findings" : "ok", errors: [], findings, aliases, document };
 }
 

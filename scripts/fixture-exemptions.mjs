@@ -67,6 +67,45 @@ export function contentDigest(bytes) {
 }
 
 /**
+ * The same digest as `contentDigest`, computed incrementally from a readable stream of chunks so a
+ * large pinned file is never held whole in memory. A CR at the end of a chunk is held back until the
+ * next chunk shows whether it begins a CRLF pair.
+ */
+export async function contentDigestOfStream(chunks) {
+  const hash = createHash("sha256");
+  let heldCr = false;
+  for await (const chunk of chunks) {
+    let buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (buf.length === 0) continue;
+    if (heldCr) {
+      if (buf[0] !== 0x0a) hash.update(Buffer.from([0x0d]));
+      heldCr = false;
+    }
+    if (buf[buf.length - 1] === 0x0d) {
+      heldCr = true;
+      buf = buf.subarray(0, buf.length - 1);
+    }
+    hash.update(contentDigestBytes(buf));
+  }
+  if (heldCr) hash.update(Buffer.from([0x0d]));
+  return hash.digest("hex");
+}
+
+/** `bytes` with each CRLF pair read as LF (the byte transform behind `contentDigest`). */
+function contentDigestBytes(buf) {
+  const out = [];
+  let from = 0;
+  for (let i = 0; i < buf.length - 1; i += 1) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a) {
+      out.push(buf.subarray(from, i));
+      from = i + 1;
+    }
+  }
+  out.push(buf.subarray(from));
+  return out.length === 1 ? out[0] : Buffer.concat(out);
+}
+
+/**
  * Why `p` is not an exact repository-relative file path, or null when it is.
  * Canonical form: forward slashes, no leading `./` or `/`, no `.` or `..` or empty segment, no
  * trailing slash (a directory), no drive prefix, no wildcard or glob character.
@@ -96,7 +135,7 @@ export function pathProblem(p) {
  * `catalog` may be null (policy.mjs tolerates a missing catalog); rule-aware checks are then skipped
  * rather than faked.
  */
-export function checkEntries(entries, { catalog, today }) {
+export function checkEntries(entries, { catalog, today, isDirectory = null }) {
   const problems = [];
   const candidates = [];
   const list = Array.isArray(entries) ? entries : [];
@@ -109,6 +148,11 @@ export function checkEntries(entries, { catalog, today }) {
     const before = problems.length;
     const pp = pathProblem(entry.path);
     if (pp) problem("fixture-exemption-bad-path", `${pp}`);
+    // A directory written without a trailing slash is still a directory. `isDirectory` is injected by
+    // the caller that knows the repository root, so this module stays free of filesystem access.
+    else if (typeof isDirectory === "function" && isDirectory(entry.path)) {
+      problem("fixture-exemption-bad-path", "path names a directory; an exemption names one file exactly");
+    }
     if (typeof entry.sha256 !== "string" || !SHA256_RE.test(entry.sha256)) {
       problem("fixture-exemption-bad-digest", "sha256 must be 64 lower-case hexadecimal characters");
     }

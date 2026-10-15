@@ -20,7 +20,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { contentDigest, checkEntries, FIXTURE_EXEMPTIBLE_RULES, pathProblem } from "../scripts/fixture-exemptions.mjs";
+import { contentDigest, contentDigestOfStream, checkEntries, FIXTURE_EXEMPTIBLE_RULES, pathProblem } from "../scripts/fixture-exemptions.mjs";
 import { loadCatalog } from "../scripts/catalog.mjs";
 import { checkPolicy } from "../scripts/policy.mjs";
 
@@ -475,4 +475,34 @@ test("audit reports a fixtureExemptions entry that fails the policy schema, inst
   assert.match(f[0].message, /none of the fixture exemptions applies/);
   // And the bait is inspected as ordinary content.
   assert.ok(res.json.findings.some((x) => x.rule === CERT_RULE));
+});
+
+test("a pinned directory written without a trailing slash is a bad path, in audit and in policy", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad", CERT, CERT_RULE)]);
+  const res = cli("audit", root);
+  assert.equal(findingsOf(res, "fixture-exemption-bad-path").length, 1, JSON.stringify(res.json.findings.map((f) => f.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0);
+  const result = await checkPolicy(path.join(root, "project-policy.yml"), SCHEMA, "2026-10-12");
+  assert.ok(result.findings.some((f) => f.id === "fixture-exemption-bad-path"));
+});
+
+test("an unrelated schema error is reported as the reason valid pins did not apply", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const file = path.join(root, "project-policy.yml");
+  const { readFile } = await import("node:fs/promises");
+  await writeFile(file, (await readFile(file, "utf8")).replace('standardVersion: "2.0.0"', 'standardVersion: "not-a-version"'));
+  const res = cli("audit", root);
+  const f = res.json.findings.filter((x) => x.id === "fixture-exemption-schema-invalid");
+  assert.equal(f.length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
+  assert.match(f[0].message, /standardVersion/);
+});
+
+test("the streaming digest equals the whole-buffer digest for every chunking, including a CRLF split across chunks", async () => {
+  const bytes = Buffer.from("a\r\nb\rc\r\n\r\nd\r", "latin1");
+  const want = contentDigest(bytes);
+  for (let size = 1; size <= bytes.length + 1; size += 1) {
+    const chunks = [];
+    for (let i = 0; i < bytes.length; i += size) chunks.push(bytes.subarray(i, i + size));
+    assert.equal(await contentDigestOfStream(chunks), want, "chunk size " + size);
+  }
 });

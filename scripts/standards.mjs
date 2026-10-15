@@ -15,12 +15,12 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
+import { existsSync, realpathSync, readdirSync, statSync, createReadStream } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
 import { evaluate, envelope, strayRejectionsFor } from "./compliance.mjs";
-import { checkEntries, bindEntries, contentDigest } from "./fixture-exemptions.mjs";
+import { checkEntries, bindEntries, contentDigest, contentDigestOfStream } from "./fixture-exemptions.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
@@ -200,6 +200,7 @@ async function loadProjectPolicy(repoRoot) {
         // Kept whole so `audit`, which does not render a verdict, can still say that a
         // fixtureExemptions entry failed the schema and therefore waived nothing.
         schemaErrors: errors,
+        hadFixtureExemptions: Array.isArray(document?.fixtureExemptions) && document.fixtureExemptions.length > 0,
         error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
       };
@@ -3826,7 +3827,17 @@ export async function main(args) {
   const today = new Date().toISOString().slice(0, 10);
   const exemptionCheck = { problems: [], bound: [] };
   if (Array.isArray(policy.document?.fixtureExemptions)) {
-    const checked = checkEntries(policy.document.fixtureExemptions, { catalog, today });
+    const checked = checkEntries(policy.document.fixtureExemptions, {
+      catalog,
+      today,
+      isDirectory: (relPath) => {
+        try {
+          return statSync(path.join(root, relPath)).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+    });
     exemptionCheck.problems = checked.problems;
     // The digest of a text file comes only from the read that retained the text the detectors inspect:
     // a pinned text file the surface did not retain (read budget spent, or unreadable) has no digest,
@@ -3839,7 +3850,7 @@ export async function main(args) {
       const abs = files.find((f) => rel(f) === entry.path);
       if (abs === undefined || TEXT_EXT.has(path.extname(abs))) continue;
       try {
-        run.readDigests.set(entry.path, contentDigest(await readFile(abs)));
+        run.readDigests.set(entry.path, await contentDigestOfStream(createReadStream(abs)));
       } catch {
         /* unreadable: no digest, so the entry is `not-read` */
       }
@@ -3884,9 +3895,12 @@ export async function main(args) {
   // dead entry is a waiver nobody can tell is still protecting anything — or is protecting the wrong
   // file after a rename. Rule-less on purpose: these are facts about the policy and the run, and the
   // compliance consequence of a dead entry is already carried by the violation it no longer waives.
-  // A schema-invalid fixtureExemptions makes the whole policy unreadable, so no entry validated and
-  // none applied. `audit` renders no verdict, so without this the entry would look simply absent.
-  for (const e of (policy.schemaErrors ?? []).filter((x) => String(x.path ?? "").startsWith("fixtureExemptions"))) {
+  // ANY schema error makes the whole policy unreadable, so no pin validated or applied, whichever
+  // field is at fault. `audit` renders no verdict, so without this the pins would look simply absent.
+  if (policy.hadFixtureExemptions && (policy.schemaErrors ?? []).length > 0) {
+    const errs = policy.schemaErrors;
+    const own = errs.filter((x) => String(x.path ?? "").startsWith("fixtureExemptions"));
+    const shown = [...own, ...errs.filter((x) => !own.includes(x))].slice(0, 3);
     addFinding({
       id: "fixture-exemption-schema-invalid",
       category: "Fixture exemptions",
@@ -3894,8 +3908,9 @@ export async function main(args) {
       label: "OBSERVED",
       evidence: ["project-policy.yml"],
       message:
-        `${e.path} ${e.message}: project-policy.yml does not match the schema, so none of the fixture exemptions applies. ` +
-        "Every file is inspected as ordinary content.",
+        `project-policy.yml does not match the schema (${errs.length} error(s): ` +
+        shown.map((x) => `${x.path || "(document)"} ${x.message}`).join("; ") +
+        "), so none of the fixture exemptions applies. Every file is inspected as ordinary content.",
       standardRef: R.search,
     });
   }
