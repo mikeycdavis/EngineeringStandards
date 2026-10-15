@@ -46,6 +46,25 @@ export const MALFORMED_WITH_REJECTION_REMEDIATION =
   " A recorded rejection in this history stays in force, and once the history is well-formed only a later well-formed review clears it.";
 
 /**
+ * The rejections the not-applicable finding names for one rule, so the verdict engine and every
+ * caller that reports on them read exactly one lookup.
+ *
+ * Trusted history first. On a violated rewrite the base's raw history (every event, not only chains
+ * whose current event is a rejection: a base reject-then-approve chain is not effective but its
+ * rejection was recorded) is what is named, never the untrusted head replacement. Then the effective
+ * record (base-restored on a violation), and only when neither holds a rejection the RETAINED head
+ * history: without a trusted base the evaluated document keeps only chains whose CURRENT event is a
+ * rejection, so an older rejection followed by an approval would otherwise vanish from this lookup.
+ */
+export function strayRejectionsFor(ruleId, { attestations, recordedAttestations, baseRecordedAttestations }) {
+  const baseRaw = recordedRejections(baseRecordedAttestations?.[ruleId]);
+  if (baseRaw.length > 0) return baseRaw;
+  const effective = recordedRejections(attestations?.[ruleId]);
+  if (effective.length > 0) return effective;
+  return recordedRejections(recordedAttestations?.[ruleId]);
+}
+
+/**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
  * @param findings  evaluator findings, each optionally carrying `rule` (a canonical id)
@@ -54,7 +73,7 @@ export const MALFORMED_WITH_REJECTION_REMEDIATION =
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -112,6 +131,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
   const results = [];
   const silencedRules = new Set();
+  const policyFindings = [];
   for (const rule of catalog.rules.values()) {
     const level = levelOf(rule);
     const applies = applicability[rule.id];
@@ -119,6 +139,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // Not applicable: the rule's subject does not exist here. Visible, never a silent exclusion.
     if (applies?.status === "not-applicable") {
       results.push(base(rule, level, RESULT.skipped, "not-applicable", applies.reason));
+      // A rejection recorded against a rule declared not-applicable is not evaluated here and must
+      // not vanish: it is reported as a policy-compliance FINDING and nowhere else. The result above,
+      // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
+      // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
+      // alone, so a malformed history is still reported by identity (see recordedRejections).
+      const stray = strayRejectionsFor(rule.id, { attestations, recordedAttestations, baseRecordedAttestations });
+      if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }
 
@@ -339,7 +366,73 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     });
   }
 
-  return { ...summarise(results, policy), silencedRules };
+  return { ...summarise(results, policy), silencedRules, policyFindings };
+}
+
+/**
+ * A review identity is repository-controlled text: it is shown JSON-quoted (so quotes and backslashes
+ * are unambiguous) with every control character left by the JSON escape rendered as visible text by
+ * the shared display-safe module.
+ */
+const quotedSafe = (value) => displaySafe(JSON.stringify(String(value)));
+
+/**
+ * `establishedRejections` is the Set of rule ids whose rejection is recorded at the trusted base
+ * (ADR 0005, ST-17), or null when the base could not be read. A rejection there is append-only
+ * history: removing it is reported as review-history-append-only when the comparison runs, and the
+ * base rejection remains recorded and named by this finding (it is never evaluated, so it does not
+ * enter the verdict); deletion therefore cannot clear this finding. Unknown (null) is a third case, not a claim
+ * about the base: removal is neither advised nor said to be reported, because with no base there is
+ * nothing to enforce either; deletion is advised only when the rejection is known not to be at the base.
+ */
+function strayRejectionFinding(ruleId, rejections, establishedRejections = null) {
+  // Three cases: established at the base, not at the base, base unknown (null).
+  const baseKnown = establishedRejections instanceof Set;
+  const established = baseKnown && establishedRejections.has(ruleId);
+  const named = rejections
+    .map((r) =>
+      [
+        r.id === null ? "(no id)" : `id ${quotedSafe(r.id)}`,
+        r.reviewedBy === null ? null : `by ${quotedSafe(r.reviewedBy)}`,
+        r.reviewedAt === null ? null : `on ${quotedSafe(r.reviewedAt)}`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join("; ");
+  return {
+    id: "rejection-on-not-applicable-rule",
+    category: "policy-compliance",
+    severity: "warning",
+    label: "OBSERVED",
+    // Not `rule`: that field makes a finding evidence FOR a rule, and this one must never be able to
+    // fail, pass or withdraw one.
+    rule: null,
+    ruleId,
+    // Standard 20 R1: the requirement that separates "does not apply" from "applies, knowingly unmet".
+    standardRef: "standards/20-exceptions.md#r1--an-exception-waives-applicability-never-definition",
+    evidence: ["project-policy.yml"],
+    message:
+      `${ruleId} is declared not-applicable but a rejection is recorded on it (${named}). ` +
+      "The verdict is unchanged: the declaration stands and the rejection is not evaluated.",
+    remediation: established
+      ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base, and review history is " +
+        "append-only (ADR 0005, ST-17), so when the comparison runs, deleting or relabeling it is reported as " +
+        "review-history-append-only and the base rejection remains recorded and is still named by this finding (it is never evaluated, so it does not enter the verdict); when the comparison cannot run (for example an " +
+        "unrelated base record is malformed) that is reported as NOT_EVALUATED, and the base rejection is still named here. Remove the not-applicable declaration if the rule applies, then record a later " +
+        "review whose `supersedes` names the chain's current (latest) review, because every successor must reference its immediate " +
+        "predecessor (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +
+        "No removal path exists for a rejection recorded at the base on a rule that stays not-applicable; that is the owner's decision."
+      : baseKnown
+        ? "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record, which is " +
+          "permitted only because this rejection is not recorded at the trusted base and so is not yet append-only history."
+        : "Reconcile the two without rewriting history: no trusted base could be read here, so whether this rejection is already " +
+          "recorded there cannot be verified, and neither can the removal of it; review history is append-only once committed " +
+          "(ADR 0005, ST-17). Do not delete or relabel it on the strength of this run; supply the base (for example git fetch origin) " +
+          "and run again. Remove the not-applicable declaration if the rule applies, then record a later review whose `supersedes` " +
+          "names the chain's current (latest) review, because every successor must reference its immediate predecessor " +
+          "(ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict.",
+  };
 }
 
 /**
