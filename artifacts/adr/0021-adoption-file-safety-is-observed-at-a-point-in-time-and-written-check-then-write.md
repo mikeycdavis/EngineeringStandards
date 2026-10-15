@@ -237,11 +237,11 @@ rename, C1 for the destination chain **and an `lstat` of the temporary entry**, 
 regular file of the identity recorded when it was created, of the size of the bytes written and with
 the `mtime` and `ctime` recorded after the write, and reads it back **through the still-open descriptor it was written through** (never by reopening the
 path), bounded to the expected length plus one byte, and compares the bytes with those written; a
-difference (including a read that returns more than the expected length) is `entry-changed`, the rename is not made, and the temporary file is **left in place and named in the diagnostic**: the tool removes no entry by path after an observation, because a pathname removal is itself a check-then-act that could remove a replacement.
+difference (including a read that returns more than the expected length) is `entry-changed`, the rename is not made, and **no entry is removed**: the tool removes nothing by path after an observation, because a pathname removal is itself a check-then-act that could remove a replacement. The diagnostic says only that the temporary entry changed and that no cleanup was attempted, and does not present the pathname as a leftover file of the tool; where the rename itself fails with the identity still matching, the diagnostic names the pathname the tool created and states that nothing was removed.
 It then renames the temporary file onto the destination name. **No byte is ever written to the destination
 path**, so nothing is written through a link at the destination. The rename replaces whatever entry
 occupies the name at that instant, or fails (for example where the name is a directory), and a failure
-is an ordinary write failure: exit `2`, the temporary file left in place and named, earlier artifacts
+is an ordinary write failure: exit `2`, nothing removed, earlier artifacts
 remain. The interval between that observation and the rename is **not** covered, and a swap of the temporary
 entry inside it is not observed. This is why the temporary-file-and-
 rename write is kept (and why the hard-link exception of ADR 0016 stands): not because it binds the
