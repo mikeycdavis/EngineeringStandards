@@ -78,6 +78,13 @@ string literal, Vue/Svelte/Razor components and code languages the tool does not
 `locateAuditSurface(files, run, surface)` and `reportAuditSurface` are exported for the audit detectors (#125, #126),
 which must pass `{ surfaceLoss, unreadableFiles }` from `collectSurface`.
 
+**Output schema version, MINOR ([Standard 15](standards/15-ai-tool-contracts.md) R3, [Standard 31](standards/31-whatsnext-compatibility.md)
+R3):** the new `findings[].detail` member and the always-present finding are additive result fields, so the
+`audit --json` `schemaVersion` moves from `"1.0.0"` to `"1.1.0"` and the `validate --json` `schemaVersion` from `"1.0"` to
+`"1.1"` (that envelope keeps its two-component format; normalising it to three components is not done here). A consumer
+that switches on `schemaVersion` sees the change in one field before parsing `findings`. The framework `VERSION` and
+tags are not changed.
+
 Read `incomplete: true` on that finding as UNKNOWN, never as absence. It is set repository-wide whenever any file was
 unread, the walk fell short, or any code file holds an audit-named identifier the idioms do not classify
 (`detail.unclassified`); that last check runs only in files that have no observation.

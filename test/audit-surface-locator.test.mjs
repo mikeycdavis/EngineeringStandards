@@ -806,3 +806,23 @@ test("the declared test-path filter names the locator's own classification, not 
   assert.doesNotMatch(spot.description, /excluded by TEST_RE plus/);
   assert.match(f.detail.excluded.testPathPattern, /test_/);
 });
+
+// Standard 15 R3 / Standard 31 R3: an additive result field changes `schemaVersion`. The 1.0 line did
+// not carry `findings[].detail`; a report that carries it must declare a later minor.
+const atLeastOnePointOne = (version) => {
+  const [major, minor] = String(version).split(".").map(Number);
+  return major > 1 || (major === 1 && minor >= 1);
+};
+
+test("a report that carries findings[].detail declares a schemaVersion later than 1.0", () => {
+  for (const command of ["audit", "validate"]) {
+    const { json } = cli(command, fixture("compliant"));
+    assert.ok(json.findings.some((f) => f.detail !== undefined), command + ": expected a finding with detail");
+    assert.ok(
+      atLeastOnePointOne(json.schemaVersion),
+      command + ": detail is carried but schemaVersion is " + json.schemaVersion,
+    );
+  }
+  assert.equal(cli("audit", fixture("compliant")).json.schemaVersion, "1.1.0");
+  assert.equal(cli("validate", fixture("compliant")).json.schemaVersion, "1.1");
+});

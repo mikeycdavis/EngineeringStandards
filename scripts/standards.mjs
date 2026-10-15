@@ -61,7 +61,11 @@ import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./
  */
 const SELF = fileURLToPath(import.meta.url);
 
-const SCHEMA_VERSION = "1.0.0";
+// The audit --json envelope version. 1.1.0: `findings[].detail` and the always-present
+// `detected-audit-surface` finding are additive result fields, a MINOR change (Standard 15 R3, which
+// Standard 31 R3 requires `schemaVersion` to follow). The validate envelope is versioned in
+// compliance.mjs and moves in step.
+const SCHEMA_VERSION = "1.1.0";
 
 /**
  * The rules this evaluator actually examines.

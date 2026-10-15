@@ -294,7 +294,9 @@ requirement that produced it, so a reader can go from a finding to the rule with
 ```
 
 `findings[].detail` is an optional member carried only by findings that need structured parts (today, only
-`detected-audit-surface`); every other finding is serialised unchanged.
+`detected-audit-surface`); every other finding is serialised unchanged. Adding it and the always-present
+`detected-audit-surface` finding is an additive change to the result, a MINOR bump under Standard 15 R3: the audit
+envelope's `schemaVersion` is `"1.1.0"` (the validate envelope's is `"1.1"`).
 
 Every finding carries one of the Standard 44 evidence labels (`OBSERVED`, `INFERRED`,
 `CONFIRMED_BY_OWNER`, `UNKNOWN`) so that a consumer can distinguish a fact from a heuristic — the
