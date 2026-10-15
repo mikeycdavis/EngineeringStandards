@@ -1071,6 +1071,19 @@ function evidenceTarget(repoRoot, abs) {
   }
   if (st.isSymbolicLink()) return "a symbolic link";
   if (!st.isFile()) return "not a regular file (a directory or special file)";
+  // Every directory component below the repository root must itself be a real directory: a link
+  // that stays inside the repository still lets an evidence path be retargeted to another file.
+  const rootAbs = path.resolve(repoRoot);
+  const segments = path.relative(rootAbs, abs).split(path.sep).filter(Boolean);
+  let cur = rootAbs;
+  for (const seg of segments.slice(0, -1)) {
+    cur = path.join(cur, seg);
+    try {
+      if (lstatSync(cur).isSymbolicLink()) return "reached through a symbolic link in its directory path";
+    } catch {
+      return "missing";
+    }
+  }
   try {
     const rel = path.relative(realpathSync(repoRoot), realpathSync(abs));
     if (outsideRepo(rel)) return "reached through a link that leaves the repository";

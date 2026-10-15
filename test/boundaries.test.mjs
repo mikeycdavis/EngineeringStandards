@@ -1500,3 +1500,21 @@ test("named regression: evidence line counting uses every ECMAScript line termin
     }
   }
 });
+
+test("named regression: evidence through a symlinked ancestor that stays inside the repository is not accepted", (t0) => {
+  const t = tiny({ ...FILES, "docs/note.md": "line\n" }, baseDeclaration());
+  try {
+    const link = path.join(t.dir, "alias");
+    if (!linkOrSkip(path.join(t.dir, "docs"), link, "dir") && !linkOrSkip(path.join(t.dir, "docs"), link, "junction")) {
+      return t0.skip("symlinks not permitted here");
+    }
+    const d = baseDeclaration();
+    d.members[0].evidence = ["alias/note.md:1"];
+    const v = checkBoundaries(t.dir, d);
+    assert.deepEqual(kinds(v), ["evidence-not-regular-file"], JSON.stringify(v));
+    d.members[0].evidence = ["docs/note.md:1"];
+    assert.deepEqual(kinds(checkBoundaries(t.dir, d)), []);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
