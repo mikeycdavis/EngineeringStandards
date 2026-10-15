@@ -86,17 +86,17 @@ ADR 0010 (Proposed, not Accepted) states:
 
 This contract relies only on the first sentence and on nothing the second would add: a record that
 reports findings is negative or non-establishing evidence, and a record that reports none is not a
-pass. It is not a policy attestation. Today, an attestation entry for a rule the catalog does not mark
-attestable is reported `invalid-attestation` (`scripts/compliance.mjs`, `judgeAttestation`), a failure
-about the policy and not about the requirement, which is the situation ADR 0010 describes; so the record
-is kept outside the attestation mechanism and changes no result.
-
-For a rule the catalog does mark attestable, from `scripts/compliance.mjs` in evaluation order: a
-detector finding yields `contradicted-attestation` and is never overridden (ADR 0005, binding rule 1: "An
-attestation cannot override an automated failure."); a `rejected` attestation yields `attested-rejected`
-(failed) and is evaluated before expiry and freshness, and that holds only while the rejection is the
-terminal event of the review history; a stale or expired approval returns the rule to `not-evaluated`.
-That is not the situation for this rule while the opt-in is declined.
+pass. It is not a policy attestation, and nothing in sections 3 to 5 depends on validator internals.
+For orientation only, as of `scripts/compliance.mjs`: an attestation recorded for a rule the catalog
+does not mark attestable is never accepted as establishing it (it is reported `invalid-attestation`
+when judged, and the review-history comparison can disregard approvals altogether when it is not
+effective); a rule declared not-applicable is not judged, so an approval has no effect and a recorded
+rejection yields only a policy finding. For a rule the catalog does mark attestable, a detector
+finding is never overridden (ADR 0005, binding rule 1: "An attestation cannot override an automated
+failure.") and a recorded rejection fails the rule while it is the terminal event of the review
+history; an approval that is expired or not fresh stops establishing the rule, which is then
+evaluated normally. None of that makes this record an attestation: it is kept outside the attestation
+mechanism and changes no result.
 
 ADR 0011 supplies the append-only event rule for recorded reviews ("No operation that records a new
 review may alter or delete any previously recorded review event.").
@@ -107,14 +107,14 @@ This section makes **no claim** and is not a condition of this contract. It list
 would have to build before a human review could establish `ai.provider-neutral`, so that the narrow
 contract above is not mistaken for it:
 
-- authenticated reviewer identity, a reviewer-role record, and reviewer/author separation derived from
+- authenticated reviewer identity, a verified reviewer-role record (`reviewerRole` exists today as an asserted field), and reviewer/author separation derived from
   a computed base revision (#95, #133);
 - clearing a recorded rejection only by an authenticated successor independent of the rejected event's
   subject (#96, PR #116 chains successors but authenticates nothing);
-- freshness bound to the enumerated tracked tree, a mandatory digest, and a maximum age;
+- freshness bound to the enumerated tracked tree, a digest mandatory on genesis events too (successor events already carry one), and a mandatory expiry or maximum age (`expires` exists and is optional); `tree` is recorded today but not used for freshness;
 - a derived exclusion policy with a named owner, and a boundary declaration for the adapter list
-  (Standard 51 R2 defines the vocabulary (#112, delivered by PR #146), and #148 / PR #147 implement a declaration; no second vocabulary is implied);
-- acceptance by the attestation schema and policy template of an attestation for a `code-analysis` rule, and the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
+  (Standard 51 R2 defines the vocabulary (#112, delivered by PR #146), and #148 / PR #147 propose a declaration; no second vocabulary is implied);
+- the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3, and the invariant in `test/compliance.test.mjs` that only manual-review rules are attestable; the policy schema already accepts an attestation under any canonical rule id, and the evaluator's catalog eligibility check is the gate), with any policy-template documentation, a decision on catalog `assurance`,
   and ADR 0010 acceptance;
 - versioning classification (Standard 21 R2 does not classify attestation eligibility) and `VERSION`,
   which are the owner's.
