@@ -367,7 +367,7 @@ because absence was not established.
 
 #### Symbolic links and file safety
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G2).** The paragraph "No race between classification and read" (no-follow open as the only mechanism, "There is no identity-comparison fallback") and the Windows example "opening the reparse point itself" are withdrawn; the rule that a link is never followed and is `INDETERMINATE` stands. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G2).** The paragraph "No race between classification and read" (no-follow open as the only mechanism, "There is no identity-comparison fallback") and the Windows example "opening the reparse point itself" are withdrawn; the rule that a link is never followed and is `INDETERMINATE` stands. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 
 One rule covers every source entry: **a symbolic link is never followed, and is `INDETERMINATE`
@@ -396,6 +396,8 @@ is not opened, resolved or inspected.
   resolver confirms that the entry still names the identity it classified, and a changed entry is
   `INDETERMINATE` (`source-changed`), so a source file that was renamed away or replaced during the read does not
   decide eligibility.
+
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G2, G10).** The first bullet's "race-safe method ... same handle" and the Windows "opening the reparse point itself" are replaced by the observation of G2; the requirement that no platform read a link, pipe or device as a regular freeze-signal file stands. These withdrawals take effect when ADR 0021 is accepted; the text is not edited.
 
 **Platform requirement (normative, owner decision of 2026-10-12T18:59:50Z).**
 
@@ -433,7 +435,7 @@ spellings that fold together are two entries, and a name cannot repeat within on
 difference is `INDETERMINATE` (`listing-changed`). Every matching entry of the first enumeration was
 read, so equal multisets mean no unread twin exists at the second enumeration.
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G3, G4).** "Through the same held handle" is withdrawn (the re-enumeration is by path), the final pass gains a per-source identity comparison, and the "Remaining limit" paragraph is replaced by ADR 0021's "What a result asserts". The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G3, G4).** "Through the same held handle" is withdrawn (the re-enumeration is by path), the final pass gains a per-source identity comparison, and the "Remaining limit" paragraph is replaced by ADR 0021's "What a result asserts". These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **Status.** The contract above (same-handle stamps, re-enumeration) is a **clarification within the
 approved P3/P6 binding**, not a new owner decision. The **residual limit** below is a **documented
@@ -532,7 +534,7 @@ as the templates under `templates/` and `VERSION` (read by `renderTemplate()` an
 `frameworkVersion()`), belong to the tool's own installation, cannot be bound to the target, and are
 **outside** this binding; they are read as `init` reads them today.
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G5, G7).** The handle binding and the sentence that identity-checking then writing by path is never a substitute are withdrawn; Node cannot address a write through a held directory handle. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G5, G7).** The handle binding and the sentence that identity-checking then writing by path is never a substitute are withdrawn; Node cannot address a write through a held directory handle. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **P1. One held directory, bound before resolution.** The invocation acquires one held handle to the
 target directory (the directory a symlink target resolves to, resolved once by the operating system;
@@ -544,7 +546,7 @@ reuse the resolver's handle (a separate process after an earlier `eligibility`),
 again and requires its identity to equal the one the resolver examined; a mismatch is the condition
 `target-changed`. Checking identity and then writing by path is never a substitute for binding.
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G6, G7).** Component-wise handle binding and the retained-handle wording are withdrawn; the refusal of a linked intermediate directory before the first write stands. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G6, G7).** Component-wise handle binding and the retained-handle wording are withdrawn; the refusal of a linked intermediate directory before the first write stands. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **P2. Every path component is bound.** Every component of every read and write path **within the
 target directory** in `init` is bound to the held directory in the same way as the root: **no component is followed through a
@@ -558,7 +560,7 @@ original handle could write into the renamed-away directory); it is refused with
 retained handle is never written through, and the renamed-away directory is left untouched. This is
 a clarification within property P2, not a new property.
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G6, G7, G8, G9).** The promise that creation or overwrite "cannot be redirected through a link" is withdrawn; the pre-write refusal and the per-call create-if-absent behaviour stand. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G6, G7, G8, G9).** The promise that creation or overwrite "cannot be redirected through a link" is withdrawn; the pre-write refusal and the per-call create-if-absent behaviour stand. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **P3. The leaf is bound.** The final entry of every path within the target is also bound: no link is followed, a
 special file (FIFO, device, any non-regular file) is **never opened with an open that blocks or has
@@ -590,7 +592,7 @@ file safety is `entry-changed`, used only for the post-write class in P6.
 | symlink or junction, to anywhere, with or without `--force-overwrite` | refused (`not-regular-file`); never followed | refused (`not-regular-file`); never followed |
 | FIFO, device, other special file | refused (`not-regular-file`); never opened with a blocking or effectful open | refused (`not-regular-file`) |
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G7, G8, G9).** The entry-bound atomic rename that verifies the destination entry is withdrawn. `entry-changed`, earlier artifacts remain, no later write and exit `2` stand; the trigger is an identity or presence comparison made immediately before the write. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G7, G8, G9).** The entry-bound atomic rename that verifies the destination entry is withdrawn. `entry-changed`, earlier artifacts remain, no later write and exit `2` stand; the trigger is an identity or presence comparison made immediately before the write. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **P6. The single post-write failure class, stated exactly.** An entry that **no longer matches the
 classification made before the first write when it is written** is refused at write time. This
@@ -629,13 +631,15 @@ rollback or transactional placement, and says so. This is the only way `init` ex
 first write for a reason in this section; it is not a state, it is an ordinary write failure of the
 kind `init` already has, and it does not weaken P5 for any condition in the table.
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G10).** Windows remains required and failure remains closed; what must be available is the observation, not a binding. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G10).** Windows remains required and failure remains closed; what must be available is the observation, not a binding. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **P7. Windows is required, and failure is closed.** Every property above applies on every supported
 platform. **Windows is required in 3.0.0** (see the platform requirement). Where the platform or
 runtime cannot provide the binding for an entry in a given run, `init` does not write: it refuses
 with exit `2`, naming `target-changed` where an identity mismatch was observed and `unreadable`
 otherwise. This record does not prescribe the call and does not claim that a mechanism exists.
+
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G5, G7).** "once the directory is held and verified there is no mid-apply target-changed" is restated: a changed root observed at a later write is entry-changed (G7); target-changed is a pre-first-write condition (G5). These withdrawals take effect when ADR 0021 is accepted; the text is not edited.
 
 **Contract for refusals: every `INDETERMINATE` condition, `target-changed` included, is a
 pre-write refusal** (P5): zero writes and an unchanged tree. The **only** exception is the single
@@ -654,7 +658,7 @@ intermediate artifact directory is itself a symlink or junction, or whose file a
 special file or directory, now **refuses** where it previously wrote through the link or reported
 it as a conflict.
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (Mechanism).** The descriptor-relative mechanisms below are not available from Node and are replaced by ADR 0021's "Mechanism" section. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (Mechanism).** The descriptor-relative mechanisms below are not available from Node and are replaced by ADR 0021's "Mechanism" section. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **Implementation guidance (non-normative; does not prescribe the call and claims no mechanism
 exists).** Mechanisms that could satisfy the properties, none asserted available on any platform:
@@ -797,7 +801,7 @@ for every existing fixture is unchanged.
 
 ## Documented exception: overwrite does not share the inode
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G9).** The exception itself is unchanged. The words "race-safe", "entry-bound" and "Why not in place" are replaced by ADR 0021 G9: the temporary-file-and-rename write is kept because no byte is written to the destination path, not because it binds the write to the entry. The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G9).** The exception itself is unchanged. The words "race-safe", "entry-bound" and "Why not in place" are replaced by ADR 0021 G9: the temporary-file-and-rename write is kept because no byte is written to the destination path, not because it binds the write to the entry. These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 
 **Normative.** Owner decision of 2026-10-14 (13:34Z, "Accept, document"; see the third amendment
@@ -845,7 +849,7 @@ release.
 
 ## Required tests
 
-> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (Test disposition).** The bullets that assert handle binding, entry-bound replacement or retained-handle behaviour, and their mutation checks, are superseded or replaced as listed in ADR 0021's "Test disposition" and "Windows release gate". The text below is the record as amended on 2026-10-14 and is not edited.
+> **Superseded in part by [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (Test disposition).** The bullets that assert handle binding, entry-bound replacement or retained-handle behaviour, and their mutation checks, are superseded or replaced as listed in ADR 0021's "Test disposition" and "Windows release gate". These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 
 Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C).
@@ -859,7 +863,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   | Condition | `eligibility` | `init` |
   | --- | --- | --- |
   | `unreadable`, `no-listed-phrase`, `stat-failed`, `source-changed`, `listing-changed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
-  | `target-changed` | **does not apply**: one invocation holds one handle and there is no second identity to compare | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
+  | `target-changed` | **does not apply** (superseded: it applies to `eligibility` as well, ADR 0021 G5) | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
   | `entry-changed` (P6) | does not apply (it never writes artifacts) | post-write class; not an `INDETERMINATE` condition; tested separately |
 
   There is no INDETERMINATE condition that is a post-write refusal. The single post-write class is
