@@ -336,6 +336,7 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
       ref,
       baseCommit,
       baseTree,
+      baseRejectionRules: baseRejectionRules(repository, baseCommit, relative),
       headIsBase: baseCommit === head,
       appendedEvents: result.appendedEvents,
       histories: result.histories,
@@ -343,23 +344,72 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
   } catch (error) {
     if (error instanceof ReviewHistoryVerificationError) {
       if (error.details?.violation) {
-        // The attestations recorded at the trusted base, so negative evidence recorded there stays
-        // effective even when the proposed policy removed or relabeled it.
-        let baseAttestations = {};
-        try {
-          const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
-          const parsed = baseSource ? parseYaml(baseSource) : null;
-          if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
-            baseAttestations = parsed.attestations;
-          }
-        } catch {
-          baseAttestations = {};
-        }
-        return { status: "violated", reason: error.message, ref, baseCommit, baseTree, baseAttestations };
+        const baseAttestations = readBaseAttestations(repository, baseCommit, relative) ?? {};
+        return {
+          status: "violated",
+          reason: error.message,
+          ref,
+          baseCommit,
+          baseTree,
+          baseAttestations,
+          baseRejectionRules: rejectionRulesOf(baseAttestations),
+        };
       }
-      return unverified(error.message, { ref, baseCommit });
+      // The comparison could not run (for example another rule's base record is not a mapping), but
+      // the base was readable: its recorded histories are still the trusted record of rejections.
+      const readable = readBaseAttestations(repository, baseCommit, relative);
+      return unverified(error.message, {
+        ref,
+        baseCommit,
+        // Not `baseAttestations`: effectiveAttestations reads that and would restore a base rejection
+        // into the verdict. This channel feeds only the ST-47 finding lookup.
+        baseRecordedAttestations: readable ?? {},
+        baseRejectionRules: readable === null ? null : rejectionRulesOf(readable),
+      });
     }
     throw error;
+  }
+}
+
+/**
+ * The attestations mapping recorded in the policy at the base commit: {} when the base policy has none,
+ * null when the base policy could not be read or parsed (unknown, never "none").
+ */
+function readBaseAttestations(repository, baseCommit, relative) {
+  try {
+    const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+    if (baseSource === null) return null;
+    const parsed = parseYaml(baseSource);
+    if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
+      return parsed.attestations;
+    }
+    return {};
+  } catch {
+    return null;
+  }
+}
+
+/** Rule ids whose recorded history holds a rejection anywhere (the ST-47 finding reads it the same way). */
+function rejectionRulesOf(attestations) {
+  if (!attestations || typeof attestations !== "object" || Array.isArray(attestations)) return [];
+  return Object.keys(attestations)
+    .filter((ruleId) => recordedRejections(attestations[ruleId]).length > 0)
+    .sort();
+}
+
+/**
+ * The rules that record a rejection in the policy AT the trusted base. A rejection there is
+ * established, append-only history; one that is only in the head can still be withdrawn, because
+ * history is compared with the base. Returns null when the base policy cannot be read, which callers
+ * must treat as unknown, never as "none".
+ */
+function baseRejectionRules(repository, baseCommit, relative) {
+  try {
+    const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+    if (baseSource === null) return [];
+    return rejectionRulesOf(parseYaml(baseSource)?.attestations);
+  } catch {
+    return null;
   }
 }
 
@@ -424,6 +474,13 @@ export async function reviewHistoryPreflight({ repositoryPath, policyPath = "pro
   });
 
   if (result.status === "not-evaluated") {
+    // A readable base that records attestations was found and the comparison could not run: the
+    // status stays not-evaluated (the warning is emitted) even when the head deleted the section. The
+    // base histories ride on `baseRecordedAttestations`, which effectiveAttestations never reads, so
+    // they cannot enter the verdict; with an empty head there is nothing else for it to keep.
+    if (headCount === 0 && Object.keys(result.baseRecordedAttestations ?? {}).length > 0) {
+      return { ...result, effective: false };
+    }
     if (headCount === 0) {
       return {
         status: "not-applicable",
