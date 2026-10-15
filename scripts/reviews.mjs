@@ -25,7 +25,7 @@ export function reviewsOf(record) {
 
 /**
  * Every value that could be a review event in a record, for negative-evidence purposes. A well-formed
- * `reviews` value is scanned for event-shaped entries at any depth (bounded) rather than read through
+ * `reviews` value is scanned for event-shaped entries at any depth (unbounded) rather than read through
  * `reviewsOf`: a mapping that is itself an event or holds events, or an entry wrapped inside a list item,
  * would otherwise read as "no events" and a recorded rejection would vanish. Over-seeing is the safe
  * direction here: this feeds only negative evidence.
@@ -33,17 +33,24 @@ export function reviewsOf(record) {
 function eventCandidates(record) {
   if (!isReviewRecord(record)) return [];
   if (!Object.hasOwn(record, "reviews")) return [record]; // legacy single record
+  // The whole parsed tree, with no depth limit: a cap would let a rejection below it vanish, which is
+  // exactly the loss this reader exists to prevent. Iterative, so depth cannot overflow the stack, and
+  // each object is visited once, so a cyclic structure (a YAML alias, or a hand-built object) terminates.
   const found = [];
-  const walk = (value, depth) => {
-    if (depth > 6 || value === null || typeof value !== "object") return;
+  const seen = new Set();
+  const stack = [record.reviews];
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (value === null || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
     if (Array.isArray(value)) {
-      for (const item of value) walk(item, depth + 1);
-      return;
+      for (let i = value.length - 1; i >= 0; i -= 1) stack.push(value[i]);
+      continue;
     }
     found.push(value);
-    for (const item of Object.values(value)) walk(item, depth + 1);
-  };
-  walk(record.reviews, 0);
+    const children = Object.values(value);
+    for (let i = children.length - 1; i >= 0; i -= 1) stack.push(children[i]);
+  }
   return found;
 }
 

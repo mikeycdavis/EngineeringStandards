@@ -15,6 +15,8 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+ST-44 follow-up: a rejection recorded anywhere in a trusted `reviews` value stays in force at any nesting depth (the scan had a depth cap of 6, so a deeper rejection was dropped and the rule read as not evaluated). The scan is unbounded, iterative and cycle-safe; the policy parser is iterative so a deeply nested policy parses instead of overflowing the stack; git reads of the policy blob no longer fail at 16 MB. No rule, verdict semantics, VERSION or tag changes.
+
 Standard 51 R2 now defines *architectural boundary* (one explicitly declared by the repository's architecture manifest or
 standards configuration between named packages, layers, plugins, processes or trust domains) and *boundary bypass* (a
 dependency, execution path or data-access path that crosses a declared boundary without an interface or mechanism that
