@@ -81,7 +81,7 @@ which must pass `{ surfaceLoss, unreadableFiles }` from `collectSurface`.
 **Output schema version, MINOR ([Standard 15](standards/15-ai-tool-contracts.md) R3, [Standard 31](standards/31-whatsnext-compatibility.md)
 R3):** the new `findings[].detail` member and the always-present finding are additive result fields, so the
 `audit --json` `schemaVersion` moves from `"1.0.0"` to `"1.1.0"` and the `validate --json` `schemaVersion` from `"1.0"` to
-`"1.1"` (that envelope keeps its two-component format; normalising it to three components is not done here). A consumer
+`"1.1.0"` (that envelope's two-component `"1.0"` becomes three components, as Standard 21 R1 requires). A consumer
 that switches on `schemaVersion` sees the change in one field before parsing `findings`. The framework `VERSION` and
 tags are not changed.
 

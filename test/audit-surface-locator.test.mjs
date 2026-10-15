@@ -824,7 +824,7 @@ test("a report that carries findings[].detail declares a schemaVersion later tha
     );
   }
   assert.equal(cli("audit", fixture("compliant")).json.schemaVersion, "1.1.0");
-  assert.equal(cli("validate", fixture("compliant")).json.schemaVersion, "1.1");
+  assert.equal(cli("validate", fixture("compliant")).json.schemaVersion, "1.1.0");
 });
 
 test("one call site is one observation however many recorder idioms match it", async () => {
@@ -848,5 +848,40 @@ test("a PostgreSQL dollar-quoted string is a literal: DDL inside it is a mention
   await withRepo({ "db/migrate.sql": sql }, async (dir) => {
     const f = surfaceOf(cli("audit", dir).json);
     assert.deepEqual(sites(f), ["db/migrate.sql:3 table audit_real"]);
+  });
+});
+
+test("a dollar-quote tag that is itself audit-shaped is blanked with its body", async () => {
+  await withRepo({ "db/a.sql": "SELECT $audit$plain text$audit$;\n" }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), []);
+    assert.deepEqual(f.detail.unclassified, []);
+    assert.equal(f.detail.incomplete, false);
+  });
+});
+
+test("a regex literal after a keyword is a pattern, not code", async () => {
+  await withRepo({ "src/a.js": "function f(s) { return /class AuditEvent/.test(s); }\nclass AuditEvent {}\n" }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:2 type AuditEvent"]);
+  });
+});
+
+test("a MySQL # comment with no space after the marker is a comment; a T-SQL temporary table is not", async () => {
+  const sql = "SELECT 1; #comment CREATE TABLE audit_hidden (id int);\nCREATE TABLE #audit_tmp (id int);\n";
+  await withRepo({ "db/a.sql": sql }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["db/a.sql:2 table #audit_tmp"]);
+  });
+});
+
+test("an apostrophe in JSX text does not swallow the declarations that follow it", async () => {
+  await withRepo({ "src/a.jsx": "const a = <p>don't</p>;\nclass AuditEvent {}\n" }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.jsx:2 type AuditEvent"]);
+  });
+});
+
+test("a Python triple-quoted string holding quotes is a literal and ends at its own triple", async () => {
+  const py = 'DOC = """He said "x" here\nclass AuditMention:\n    pass\n"""\nclass AuditEvent:\n    pass\n';
+  await withRepo({ "src/a.py": py }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.py:5 type AuditEvent"]);
   });
 });

@@ -461,6 +461,7 @@ const isCode = (f) => CODE_EXT.has(path.extname(f));
  *  in Python, `--` is decrement in JavaScript, `#` starts a private field in JavaScript. */
 const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
 const HASH = [".py", ".rb", ".sh", ".ps1"];
+const STRING_ENDS_AT_EOL = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py"]);
 const COMMENT_SYNTAX = new Map([
   ...C_LIKE.map((e) => [e, { line: "//", block: true }]),
   ...HASH.map((e) => [e, { line: "#", block: false }]),
@@ -501,6 +502,12 @@ function splitSource(text, ext, options = {}) {
     for (let j = code.length - 1; j >= 0; j -= 1) if (!/\s/.test(code[j])) return code[j];
     return "";
   };
+  // `return /re/.test(x)`: a regex literal also follows these keywords, which end in a letter and so are not
+  // seen by lastCode(). A property access (`obj.return / 2`) is not a keyword.
+  const followsRegexKeyword = () => {
+    const m = /(?:^|[^\w$.])(return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await)\s*$/.exec(code.slice(-24));
+    return m !== null;
+  };
   const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
 
   let mode = "code";
@@ -508,6 +515,7 @@ function splitSource(text, ext, options = {}) {
   while (i < text.length) {
     const c = text[i];
     const rest2 = text.substr(i, 2);
+    const rest3 = text.substr(i, 3);
 
     if (mode === "code") {
       if (exprStack.length) {
@@ -547,13 +555,22 @@ function splitSource(text, ext, options = {}) {
           const end = text.indexOf(open[0], i + open[0].length);
           if (end !== -1) {
             code += text.slice(i, end + open[0].length);
-            for (let k = 0; k < open[0].length; k += 1) keep(text[i + k]);
-            for (let k = i + open[0].length; k < end; k += 1) drop(text[k]);
-            for (let k = 0; k < open[0].length; k += 1) keep(text[end + k]);
+            // Delimiters are blanked with the body: a tag may itself be audit-shaped (`$audit$...$audit$`).
+            for (let k = i; k < end + open[0].length; k += 1) drop(text[k]);
             i = end + open[0].length;
             continue;
           }
         }
+      }
+      // Python triple-quoted string: the body may hold quotes and newlines; it ends at the same triple.
+      if (ext === ".py" && (rest3 === '"""' || rest3 === "'''")) {
+        const end = text.indexOf(rest3, i + 3);
+        const stop = end === -1 ? text.length : end + 3;
+        code += text.slice(i, stop);
+        keep(rest3[0]);
+        for (let k = i + 1; k < stop; k += 1) drop(text[k]);
+        i = stop;
+        continue;
       }
       if (c === "'" || c === '"' || c === "`") {
         mode = c;
@@ -567,7 +584,7 @@ function splitSource(text, ext, options = {}) {
       // inside the unfinished-work pattern table is a description of a stub, not a stub, and the
       // detector could not tell the difference. Contents stay in `code`, because sourceOf() exists
       // for import matching and a specifier is never a regex.
-      if (syntax.block && c === "/" && REGEX_MAY_START_AFTER.has(lastCode())) {
+      if (syntax.block && c === "/" && (REGEX_MAY_START_AFTER.has(lastCode()) || followsRegexKeyword())) {
         const close = regexLiteralEnd(text, i);
         if (close !== -1) {
           code += text.slice(i, close + 1);
@@ -624,6 +641,15 @@ function splitSource(text, ext, options = {}) {
       drop("$");
       drop("{");
       i += 2;
+      continue;
+    }
+    // A single- or double-quoted string in a JavaScript-family file or Python cannot span a line: the line end
+    // closes it. Without this an apostrophe in JSX text (`don't`) opened a "string" that swallowed the file.
+    if ((c === "\n" || c === "\r") && (mode === "'" || mode === '"') && STRING_ENDS_AT_EOL.has(ext)) {
+      mode = "code";
+      code += c;
+      keep(c);
+      i++;
       continue;
     }
     // Inside a string literal: preserved in the code half, escapes skipped.
@@ -3663,6 +3689,19 @@ export function locateAuditSurface(files, run, surface, options = {}) {
           const lineStart = Math.max(structure.lastIndexOf("\n", at - 1), structure.lastIndexOf("\r", at - 1)) + 1;
           const before = structure.slice(lineStart, at).replace(/\[[^\]\r\n]*\]/g, (m) => " ".repeat(m.length));
           if (/^[ \t]*#/.test(before) || /(?:^|[^#<>@\w])#(?=\s|$)/.test(before)) continue;
+          // `#comment` with no space after the marker: a `#` that starts a word and is not where a temporary
+          // table name goes (`FROM #t`, `INTO #t`, `JOIN #t`, `TABLE #t`) is a MySQL comment as well.
+          const bare = /(?:^|[\s;,(])#[A-Za-z_]/g;
+          let hash;
+          let comment = false;
+          while ((hash = bare.exec(before)) !== null) {
+            const prefix = before.slice(0, hash.index);
+            if (!/\b(?:TABLE|INTO|FROM|JOIN|UPDATE|EXISTS|ON|REFERENCES|TRUNCATE|DELETE|INSERT|ALTER|DROP|EXEC|EXECUTE)\s*$/i.test(prefix)) {
+              comment = true;
+              break;
+            }
+          }
+          if (comment) continue;
         }
         let kind = idiom.kind;
         if (kind === "recorder-call") {

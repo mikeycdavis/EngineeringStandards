@@ -549,10 +549,10 @@ function summarise(results, policy) {
 /** The Standard 25 envelope. `schemaVersion` versions this format, independent of the others. */
 export function envelope({ verdict, project, standardVersion, auditedAt, repo, frameworkCoverage }) {
   return {
-    // 1.1: `findings[].detail` and the always-present `detected-audit-surface` finding are additive
-    // result fields, a MINOR change (Standard 15 R3, Standard 31 R3). Keeps this envelope's
-    // two-component format; the audit envelope carries the same minor as "1.1.0".
-    schemaVersion: "1.1",
+    // 1.1.0: `findings[].detail` and the always-present `detected-audit-surface` finding are additive
+    // result fields, a MINOR change (Standard 15 R3, Standard 31 R3). Three components, as the audit
+    // envelope and Standard 21 R1 require; it was "1.0" before.
+    schemaVersion: "1.1.0",
     standardVersion: standardVersion ?? null,
     project: project ?? repo ?? null,
     status: verdict.status,
