@@ -42,9 +42,11 @@ or directory that is not excluded by that policy is in S whether or not the revi
 exclusion policy and the ownership record (section 4) are artefacts inside the digest. An exclusion that
 covers a path containing first-party application code is a defect the reviewer must reject.
 
-**Precondition failure, not an exclusion.** If any module in S consumes provider-facing code that lives
-outside S (a shared internal package, a vendored fork, another repository that exposes provider types),
-the contract cannot speak for the system and the rule is not established by it. The claim is about the
+**Precondition failure, not an exclusion.** If any module in S *other than a listed adapter* consumes
+provider-facing code that lives outside S (a shared internal package, a vendored fork, another
+repository that exposes provider types), the contract cannot speak for the system and the rule is not
+established by it. A listed adapter importing an installed provider SDK is the expected case and is not
+a failure; the third clause is what checks that the SDK's types do not leak past the adapter. The claim is about the
 repository content named by D and nothing else: not run-time behaviour, deploy-time configuration, or
 other repositories.
 
@@ -62,7 +64,9 @@ alternative of a distinct non-establishing result as not made).
 
 ## 3. Artefact list
 
-The review MUST cite, and the attestation's `reviewedAgainst.paths` MUST name:
+The review MUST cite each artefact below that exists (the detector output only once the detector does). Every artefact that is a committed repository file MUST also
+be named in the attestation's `reviewedAgainst.paths`; the detector output (generated, not committed) is
+cited in the attestation's evidence or reference and is not a reviewed path.
 
 | Artefact | Why |
 | --- | --- |
@@ -70,7 +74,7 @@ The review MUST cite, and the attestation's `reviewedAgainst.paths` MUST name:
 | The adapters' exported interfaces (the types and functions business logic is allowed to see) | The third clause is reviewed against these: none exposes a provider-specific type, response shape, error type or option. |
 | The complete in-scope source set S (derived as in section 2) and its committed exclusion policy | The claim quantifies over "no other module", so freshness must cover every module. See section 5. |
 | An authoritative ownership record naming the architecture owner (for example the project manifest's owner section or a CODEOWNERS entry for the adapter paths) | Section 4: `reviewedBy` is validated against it. Inside the digest. |
-| The detector's observation output (provider-import evidence), once #124 exists | Every observed file is either in the adapter list or justified in the review evidence. A cross-check, not freshness. |
+| The detector's observation output (provider-import evidence), once #124 exists; cited in the attestation evidence, not a reviewed path | Every observed file is either in the adapter list or justified in the review evidence. A cross-check, not freshness. |
 | The dependency manifest (for example `package.json`, `requirements.txt`) | Shows which provider SDKs are declared; an SDK absent from the detector's list is visible here. |
 
 The adapter list is a *declaration*, and its vocabulary must be the one Standard 51 R2 already defines
@@ -85,7 +89,7 @@ the boundary-declaration work (#148 / PR #147) is unmerged. This proposal does n
 The project's named architecture owner, recorded as `reviewedBy` in the policy attestation, with the role
 in `reviewerRole` (a field added by #95's merged work, PR #115). "The change under review" means the
 change set between the previous attested digest and D (or, for a first attestation, the introduction of
-the adapter layer); its author is not the accountable reviewer.
+the adapter layer); its author is not the accountable reviewer. Enforcing that needs authoritative revisions and authenticated authors (section 9), because a content digest does not identify who wrote the change. The ownership record is read from the previous attested revision (or the default branch), not from the head under review, so the change author cannot edit who the owner is. If the accountable owner authored the change, a named delegate of that role reviews it (section 9); a renewal with an empty change set has no author conflict.
 
 `reviewedBy` and `reviewerRole` are assertions in the policy today, and nothing identifies who the
 architecture owner is. Establishing the role needs an authoritative ownership record among the reviewed
@@ -143,7 +147,7 @@ covers these, but only as far as the reviewer reads S:
 
 - Endpoints, model identifiers or prompt formats assembled at run time, or supplied by configuration,
   environment or data files outside S.
-- Dynamic loading, plugin systems, subprocess invocations and shelling out to provider CLIs.
+- Subprocess invocations and shelling out to provider CLIs. Provider code reached by dynamic loading or an external plugin from outside S is a precondition failure under section 2 when a non-adapter module in S relies on it.
 - Runtime provider selection driven by configuration or environment.
 - Whether the abstraction would actually keep capabilities stable under a model change; the third clause
   checks that no provider-specific shape crosses the interface, not that the interface is well chosen.
@@ -162,20 +166,24 @@ question for the owner; this contract does not resolve it.
 | Change | Where | Status |
 | --- | --- | --- |
 | Set `attestable: true` on `ai.provider-neutral` | `rules/ai.json`. The field already exists and is validated by `scripts/catalog.mjs`; absent it defaults to `validationType === "manual-review"`. ADR 0005 binding rule 3 already permits an explicit catalog opt-in | NOT MADE |
-| Decide whether catalog `assurance` stays `none` | `rules/ai.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`), which disagrees with a static `none` | NOT MADE, decision needed |
+| Decide whether catalog `assurance` stays `none` | `rules/ai.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`); the static catalog value is a separate claim (Standard 27 R3) | NOT MADE, decision needed |
 | Authenticate reviewer identity and authorise the reviewer role before adoption | Depends on #95 and #133 (authenticated successor events) plus an authoritative role record. Today `reviewedBy` and `reviewerRole` are self-asserted strings, so a change author could name themselves the accountable owner and obtain an approval reported with full assurance | NOT MADE; without it this contract MUST NOT be adopted |
 | A successor may clear a rejection only if authenticated and independent of the rejected event's subject | #96 / PR #116 (merged) chains successors but does not authenticate them; tied to #133. See section 10 | NOT MADE; without it this contract MUST NOT be adopted |
-| Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`: a root path is already tree-bound, but exclusion-aware enumeration (tracked tree less the exclusion policy) is not supported | NOT MADE; without it this contract MUST NOT be adopted |
-| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
+| Enforce reviewer-author separation | Make authoritative base and head revisions (`reviewedAgainst.revision` and tree: mandatory only on successor events today per `scripts/reviews.mjs`, absent on a genesis event, and recorded rather than verified) mandatory, derive the authors of the commits between them from the repository, authenticate those authors and the reviewer (#95, #133), and reject an approval whose reviewer identity appears among the authors. A content digest does not identify commits or authors, so identity authentication alone cannot prevent an owner approving their own change | NOT MADE; without it this contract MUST NOT be adopted |
+| Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`: a directory path is already tree-bound, but the repository root cannot be named (it contains `project-policy.yml`, which records the digest), and exclusion-aware enumeration (tracked tree less the exclusion policy) is not supported | NOT MADE; without it this contract MUST NOT be adopted |
+| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional on a genesis event (successor events must carry them, `scripts/reviews.mjs`) and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
 | Define the exclusion policy's format, owner and change authority | New schema or design document; the policy is inside the digest, but who may edit it and in what form is unspecified | NOT MADE |
+| ADR 0010 accepted, with the framework defining human review as the establishing mechanism for this rule | ADR 0010 is Proposed. ADR 0005 binding rule 3's explicit catalog opt-in is necessary but not sufficient on its own | NOT MADE; without it this contract MUST NOT be adopted |
+| Read the ownership record from the previous attested revision (or the default branch), not from the head under review, with a stated change authority for it | Validator and attestation schema. Otherwise the change author can edit who the owner is in the same change | NOT MADE; without it this contract MUST NOT be adopted |
+| Define a delegate path for the accountable role when the owner authored the change, and the rule for an empty change set | Policy and validator | NOT MADE |
 | Validate `reviewedBy` against the ownership record, and require the record among the reviewed paths | Validator and attestation schema | NOT MADE |
 | Require reviewer role, accountable owner and a maximum age for this rule | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
-| Declare the adapter list in a boundary declaration | Per Standard 51 R2; location unresolved (#148 / PR #147) | NOT MADE |
+| Declare the adapter list in a boundary declaration | Per Standard 51 R2, which accepts only the project manifest's Architectural rules section (`PROJECT.md`) or standards configuration; `project-policy.yml` has no boundary field today, so the operable surface now is the manifest section and a machine-readable declaration is #148 / PR #147 | NOT MADE; without it the adapter list is not auditable and this contract MUST NOT be adopted |
 | Alternative if full assurance is declined: a distinct result that records the human review without establishing the rule | Result vocabulary and compliance scoring | NOT MADE, owner choice |
 | Describe the contract in the rule's `$assuranceNote` and in Standard 1's Implementation section | `rules/ai.json`, `standards/01-human-and-ai-operability.md` | NOT MADE |
 | Versioning impact | Standard 21 R2 sets levels by the effect on a currently compliant project and does not classify attestation eligibility. Classification and `VERSION` are the owner's | NOT MADE, not classified |
 
-The owner has stated that eligibility must not be widened merely to reach COMPLIANT. The opt-in above is
+Issue #127 records the owner's statement that eligibility must not be widened merely to reach COMPLIANT. The opt-in above is
 presented only as the positive-evidence clause of ADR 0010, for separate approval.
 
 ## 10. Negative case: rejected, stale, and contradicted
