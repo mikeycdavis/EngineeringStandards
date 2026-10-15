@@ -85,6 +85,8 @@ R3):** the new `findings[].detail` member and the always-present finding are add
 that switches on `schemaVersion` sees the change in one field before parsing `findings`. The framework `VERSION` and
 tags are not changed.
 
+A recorder call is one observation per call site (the object-call and named-call idioms that match the same call are merged, reporting the receiver chain), and a PostgreSQL dollar-quoted string (`$$...$$`, `$tag$...$tag$`) is blanked as a literal in `.sql` files, so DDL inside one is a mention. A dollar-quoted function body that holds real DDL is therefore not located (the declared `construct:string-literal-ddl` blind spot).
+
 Read `incomplete: true` on that finding as UNKNOWN, never as absence. It is set repository-wide whenever any file was
 unread, the walk fell short, or any code file holds an audit-named identifier the idioms do not classify
 (`detail.unclassified`); that last check runs only in files that have no observation.

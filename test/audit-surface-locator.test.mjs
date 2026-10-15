@@ -826,3 +826,27 @@ test("a report that carries findings[].detail declares a schemaVersion later tha
   assert.equal(cli("audit", fixture("compliant")).json.schemaVersion, "1.1.0");
   assert.equal(cli("validate", fixture("compliant")).json.schemaVersion, "1.1");
 });
+
+test("one call site is one observation however many recorder idioms match it", async () => {
+  await withRepo({ "src/orders.js": "auditLogger.recordAuditEvent(entry);\nrecordAuditEvent(other);\n" }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.equal(f.detail.observedCount, 2, JSON.stringify(sites(f)));
+    assert.deepEqual(sites(f), [
+      "src/orders.js:1 recorder-call auditLogger.recordAuditEvent",
+      "src/orders.js:2 recorder-call recordAuditEvent",
+    ]);
+  });
+});
+
+test("a PostgreSQL dollar-quoted string is a literal: DDL inside it is a mention, not an observation", async () => {
+  const sql = [
+    "SELECT $$CREATE TABLE audit_fake(id int)$$;",
+    "SELECT $tag$CREATE TABLE audit_fake_two(id int)$tag$;",
+    "CREATE TABLE audit_real(id int);",
+    "",
+  ].join("\n");
+  await withRepo({ "db/migrate.sql": sql }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), ["db/migrate.sql:3 table audit_real"]);
+  });
+});

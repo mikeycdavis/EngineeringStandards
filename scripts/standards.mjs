@@ -538,6 +538,23 @@ function splitSource(text, ext, options = {}) {
         i += 2;
         continue;
       }
+      // PostgreSQL dollar-quoted string (`$$...$$`, `$tag$...$tag$`): a literal, so its body is blanked like
+      // any other string. Only when the opening delimiter is not part of an identifier and the same delimiter
+      // closes it; an unterminated one is left as code (the conservative direction: nothing is hidden by a guess).
+      if (c === "$" && ext === ".sql" && !/[\w$]/.test(text[i - 1] ?? "")) {
+        const open = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(text.slice(i, i + 80));
+        if (open) {
+          const end = text.indexOf(open[0], i + open[0].length);
+          if (end !== -1) {
+            code += text.slice(i, end + open[0].length);
+            for (let k = 0; k < open[0].length; k += 1) keep(text[i + k]);
+            for (let k = i + open[0].length; k < end; k += 1) drop(text[k]);
+            for (let k = 0; k < open[0].length; k += 1) keep(text[end + k]);
+            i = end + open[0].length;
+            continue;
+          }
+        }
+      }
       if (c === "'" || c === '"' || c === "`") {
         mode = c;
         code += c;
@@ -3658,6 +3675,15 @@ export function locateAuditSurface(files, run, surface, options = {}) {
         fileHit = true;
         // Keyed by OFFSET, not by line: two occurrences of one identifier on a line (minified or generated
         // code) are two constructs. Only the same occurrence matched by two idioms is merged.
+        if (idiom.kind === "recorder-call") {
+          // One call site is one construct however many idioms match it: `auditLogger.recordAuditEvent(x)`
+          // matches the object-call and the named-call idiom at different starts but the same `(`. Keyed by
+          // that `(`; the longest identifier (the whole receiver chain) is the one reported.
+          const site = `call\u0000${m.index + m[0].length - 1}\u0000${o.kind}`;
+          const prior = fileObserved.get(site);
+          if (!prior || prior.o.identifier.length < o.identifier.length) fileObserved.set(site, { at, o });
+          continue;
+        }
         fileObserved.set(`${at}\u0000${o.kind}\u0000${o.identifier}`, { at, o });
       }
     }
