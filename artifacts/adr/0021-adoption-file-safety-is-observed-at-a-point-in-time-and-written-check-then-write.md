@@ -63,7 +63,7 @@ conflict with the zero-dependency Node implementation). The route that satisfies
 ## What is superseded
 
 The following are **superseded by this record, and nothing else in ADR 0016 is**. Where ADR 0016's
-text and this record differ on a row below, this record governs. **General reading rule:** where
+text and this record differ on a row below, this record governs **from its acceptance**. **General reading rule:** where
 "bound", "held", "race-safe", "atomic" or "cannot" appears in ADR 0016 in connection with a path
 entry, directory component, file handle or write, read it as the observation named by the
 guarantee here that replaces it (G1-G10); no word of ADR 0016 promises more than that.
@@ -168,7 +168,7 @@ the whole mechanism and any entry that `lstat` does not report as a regular file
 `not-regular-file` (G1). **A platform that is not Windows and lacks `O_NONBLOCK` fails closed
 (G10): the entry is not opened.** A FIFO or device that replaced the entry after classification may be
 opened once, read-only, with those flags, and is closed without a read; one that is a FIFO or device
-**at classification** is never opened (G1).
+**at classification** is never opened (G1). **On Windows a replacement installed after classification is opened by a plain open before the post-open comparison rejects it; that open may have the effects of opening whatever the replacement is, and this record does not claim to prevent it.**
 
 **G3 — Stability during the read.** The `fstat` of the open file taken after the read must equal the one
 taken before it in size, `mtime` and `ctime` (where the platform provides them) and identity;
@@ -237,7 +237,7 @@ when it appears before the re-observation and by G8 when it appears between the 
 creation call.
 
 **G9 — Placement of an overwrite.** An overwrite under `--force-overwrite` writes the new content to a
-temporary file created in the artifact's parent directory by G8, then performs, immediately before the
+temporary file created in the artifact's parent directory by G8, under a name that is unique per run, then performs, immediately before the
 rename, C1 for the destination chain **and an `lstat` of the temporary entry**, which must report a
 regular file of the identity recorded when it was created, of the size of the bytes written and with
 the `mtime` and `ctime` recorded after the write, and reads it back **through the still-open descriptor it was written through** (never by reopening the
@@ -305,12 +305,15 @@ describes only itself; the review history is that experiment.
 and every claim has one test. Nothing in the specification depends on a primitive Node lacks, so
 Windows is supported on the same terms as POSIX.
 
-**Makes harder / accepted knowingly.**
+**Makes harder / stated knowingly (not claimed, and not an accepted limitation).**
 
 - A concurrent writer that acts between a re-observation and the write it guards can cause a write
   through a replaced component or onto a replaced entry. The tool does not prevent this and does not
   claim to. Callers who need exclusion must provide it outside this tool.
 - `IN_SCOPE` and a successful `init` describe observations, not a state that still holds.
+- A failed overwrite can leave a temporary file in the target. It is not removed by path (a pathname
+  removal is itself a check-then-act) and the diagnostic does not name it; its name is unique per run, so
+  it does not block a later run.
 - `init` overwrite keeps the hard-link behaviour of ADR 0016's documented exception.
 
 **Commits the project to.** Writing no sentence, in any normative text, help output, diagnostic, comment or test name, that says a path component, entry or file
@@ -337,7 +340,7 @@ re-observation and the create or rename call**; these seams are test surface, no
 | G6 | the ADR 0016 P5 table, one case per cell, plus a linked `.github` and a linked `artifacts`, with and without `--force-overwrite`: exit `2`, nothing written, link target unchanged; and a repository whose ADR directory is a populated `docs/adr/` (and, separately, `doc/adr/`) with `artifacts/adr/` absent: `init` preserves it and creates no `artifacts/adr/` | pre-write classification skipped; the alternative-location case treated as absent (a second `artifacts/adr/` created) |
 | G7 | injected at the seam, one test per raced-in kind (link, junction, FIFO, device, directory, newly created regular file, deletion, regular-to-regular replacement, directory component replaced by another real directory, directory component replaced by a link): that write is not made, exit `2`, `entry-changed`, earlier artifacts remain, no later write, no rollback; **and a clean greenfield run** in which `init` creates `artifacts/` and writes under it twice succeeds, while a swap of the just-created directory for a link before the second write is `entry-changed`, and a link or junction swapped in between the creation call and the baseline `lstat` is `entry-changed` (a same-type directory swap there is a documented non-claim); **and the target path retargeted after the first write** is `entry-changed`, never `target-changed`, earlier artifacts remaining | C1 removed |
 | G8 | injected and real filesystem, seam **after** the re-observation: an occupying link, junction, real directory or regular file appears at an absent component's name and at an absent file artifact's name: the call fails, `entry-changed`, nothing written through it; plus a source-level assertion that no recursive directory creation is called for artifact components | non-recursive creation replaced by `mkdir -p`; create-if-absent replaced by a plain open; `EEXIST` treated as success for a directory that appeared after classification |
-| G9 | injected: the temporary file is created in the parent directory by the create-if-absent open, no `open`/`write` is addressed to the destination path, and the destination is changed only by the rename; a destination that is a directory makes the write fail with exit `2`; the temporary entry replaced by a link or another file after its creation and before the pre-rename observation is `entry-changed`, the rename is not made, and no entry is removed; the temporary file appended to or truncated in place (same identity, different size), and overwritten in place with different bytes of the **same length**, in that interval is `entry-changed`, as is a change of only its `mtime`, or only its `ctime`, with identity, size and bytes unchanged; a failure injected at each step before the rename (the temporary creation, the temporary write, the post-write `lstat`, the read-back) exits `2` with a diagnostic naming that step and its error and nothing removed; the hard-link exception test of ADR 0016 AC4 | writing in place to the destination path; the temporary-entry size comparison removed; the read-back byte comparison removed; the temporary-entry `mtime` comparison and the `ctime` comparison each removed independently (each with its own timestamp-only case: identity, size and bytes unchanged, one stamp changed, where the platform provides it); the read-back reopened by path, or unbounded; the temporary file grown **during** the read-back (a synchronized mutation in the read) is `entry-changed` |
+| G9 | injected: the temporary file is created in the parent directory by the create-if-absent open, no `open`/`write` is addressed to the destination path, and the destination is changed only by the rename; a destination that is a directory makes the write fail with exit `2`; the temporary entry replaced by a link or another file after its creation and before the pre-rename observation is `entry-changed`, the rename is not made, and no entry is removed; the temporary file appended to or truncated in place (same identity, different size), and overwritten in place with different bytes of the **same length**, in that interval is `entry-changed`, as is a change of only its `mtime`, or only its `ctime`, with identity, size and bytes unchanged; a failure injected at each step before the rename (the temporary creation, the temporary write, the post-write `lstat`, the read-back) exits `2` with a diagnostic naming that step and its error and nothing removed; a leftover temporary file from an earlier failed run does not make a later overwrite fail (names are unique per run); the hard-link exception test of ADR 0016 AC4 | writing in place to the destination path; the temporary-entry size comparison removed; the read-back byte comparison removed; the temporary-entry `mtime` comparison and the `ctime` comparison each removed independently (each with its own timestamp-only case: identity, size and bytes unchanged, one stamp changed, where the platform provides it); the read-back reopened by path, or unbounded; the temporary file grown **during** the read-back (a synchronized mutation in the read) is `entry-changed` |
 | G10 | injected: identity unavailable (absent or all zero), an `lstat` error other than absence, `O_NONBLOCK` unavailable off Windows, and a failing call each fail closed; plus the Windows release gate below | identity-unavailable branch removed |
 
 ### Windows release gate (replaces the two ADR 0016 gates)
@@ -350,12 +353,18 @@ unchanged, and an ordinary run that preserves a real directory artifact (G6); (3
 that the platform can create (symbolic link, junction, directory, newly created regular file,
 deletion, regular-to-regular replacement (the replacement created first and renamed over the name, so a new identity is allocated before the old is freed; identity reuse is a documented non-claim), directory component replaced by another real directory or
 by a link; the FIFO and device kinds are tested injected only) at the seam between classification and re-observation; (4) G8 at the seam after the
-re-observation, for a component and a leaf. A runner that cannot create the objects must be
+re-observation, for a component and a leaf; (5) G2 with a regular source replaced, between
+classification and open, by a link and by another regular file (no byte of the replacement's content
+is used); (6) G9 placement: a rename onto an existing regular file, onto a link and onto a directory
+(which fails), the temporary-entry observations, and the hard-link exception test of ADR 0016 AC4. A runner that cannot create the objects must be
 provisioned; the gate does not pass by skipping. **The gate contains no test that asserts that a
 change after the last observation is prevented**, because the contract does not claim it. This record
 does not claim that such a runner or seam exists.
 
 ### Test disposition for ADR 0016 "Required tests"
+
+A kept ADR 0016 bullet named below supplies cases of the **one** row of the guarantee it is assigned
+to; it is not a second row for that guarantee.
 
 | ADR 0016 bullet | Disposition |
 | --- | --- |

@@ -863,7 +863,7 @@ Exit-code and human-output tests only; **there are no JSON-schema tests** (Q5 C)
   | Condition | `eligibility` | `init` |
   | --- | --- | --- |
   | `unreadable`, `no-listed-phrase`, `stat-failed`, `source-changed`, `listing-changed`, `not-regular-file`, `over-read-cap`, `not-utf8`, `listing-incomplete` | applies: exit `2`, nothing written (it never writes) | applies: refuses, exit `2`, nothing written |
-  | `target-changed` | **does not apply** (superseded: it applies to `eligibility` as well, ADR 0021 G5) | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
+  | `target-changed` | **does not apply**: one invocation holds one handle and there is no second identity to compare | applies: refuses, exit `2`, nothing written, when a re-acquired handle's identity differs from the resolver's |
   | `entry-changed` (P6) | does not apply (it never writes artifacts) | post-write class; not an `INDETERMINATE` condition; tested separately |
 
   There is no INDETERMINATE condition that is a post-write refusal. The single post-write class is
