@@ -388,7 +388,9 @@ deletion, regular-to-regular replacement (the replacement created first and rena
 by a link; the FIFO and device kinds are tested injected only) at the seam between classification and re-observation; (4) G8 at the seam after the
 re-observation, for a component and a leaf, and at seam S7 for a newly created file artifact replaced by
 another regular file and by a link (regular-file and link cases, not only the temporary file of G9), and at seam S12 for a created
-file artifact replaced, grown in place and rewritten in place with same-length bytes; (5) G2 with a regular source replaced, between
+file artifact replaced, grown in place and rewritten in place with same-length bytes, and at seam S14 for a
+created file artifact and for the temporary file of G9, the pathname replaced by another regular file and by
+a link before the first descriptor write (no byte written through the descriptor); (5) G2 with a regular source replaced, between
 classification and open, by a link to another file, by a link back to the same file, and by another regular file (no byte of the replacement's content
 is used); (6) G9 placement: a rename onto an existing regular file, onto a link and onto a directory
 (which fails), the temporary-entry observations, and the hard-link exception test of ADR 0016 AC4. A runner that cannot create the objects must be
