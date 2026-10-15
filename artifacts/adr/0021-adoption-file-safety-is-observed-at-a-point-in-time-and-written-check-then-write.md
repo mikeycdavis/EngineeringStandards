@@ -76,14 +76,14 @@ guarantee here that replaces it (G1-G10); no word of ADR 0016 promises more than
 | P6 — "entry binding", "atomic rename ... that **verifies the destination entry's identity**", "the retained handle", and the statement that the overwrite "must therefore be **bound to the directory entry**" | an entry-bound atomic overwrite | **Superseded.** Replaced by G7, G8 and G9. `entry-changed` and "earlier artifacts remain, no later write, exit `2`" stand, with the trigger restated in G7. |
 | P7 — "every property above applies"; "Where the platform or runtime cannot provide the binding" | Windows required, fail closed | **Restated, not withdrawn.** Windows remains required and failure remains closed; the thing that must be available is the observation of G10, not a binding. |
 | "No race between classification and read" — the paragraph requiring a no-follow open and saying "There is no identity-comparison fallback", and the "Platform requirement" example "opening the reparse point itself on Windows" | a no-follow open with classification from the same handle on every platform | **Superseded.** Replaced by G2. Where the platform provides a no-follow, non-blocking open flag it is used as a defence; the guarantee does not depend on it, because it is not available on Windows from Node. |
-| "Read-time consistency and its limit", the words "through the same held handle", and the "Remaining limit" paragraph | re-enumeration through the held handle; a limit stated for acknowledgement | **Superseded.** The same-file stamp comparison and the multiset comparison **stand**, performed by path, and the final pass is extended (G4). The limit is not an acknowledged limitation: it is the definition of what the result asserts (see "What a result asserts"). |
+| "Read-time consistency and its limit", the words "through the same held handle", and the "Remaining limit" paragraph and the "Status" paragraph's "a clarification within the approved P3/P6 binding" and "documented known limit ... for the owner's acknowledgement" | re-enumeration through the held handle; a limit stated for acknowledgement | **Superseded.** The same-file stamp comparison and the multiset comparison **stand**, performed by path, and the final pass is extended (G4). The limit is not an acknowledged limitation: it is the definition of what the result asserts (see "What a result asserts"). |
 | "Contract for refusals", the sentence "once the directory is held and verified there is no mid-apply `target-changed`" | no mid-apply `target-changed` | **Restated.** Still true, for a different reason: see G5 and G7 (a changed root observed at a later write is `entry-changed`). |
-| "Platform requirement (normative ...)", first bullet: "by a race-safe method ... with classification and read taken from that same handle", and the Windows bullet's "opening the reparse point itself" | race-safe no-follow open, same-handle classification | **Superseded** by G2 and G10. The requirement that every supported platform not read a link, pipe or device as a regular freeze-signal file **stands**; the method is the observation of G2. |
+| "Platform requirement (normative ...)", first bullet: "by a race-safe method ... with classification and read taken from that same handle", and the first bullet's "opening the reparse point itself on Windows" example; the third bullet's "the entry changes under the read ... `unreadable`" (G3 names it `source-changed`) | race-safe no-follow open, same-handle classification | **Superseded** by G2 and G10. The requirement that every supported platform not read a link, pipe or device as a regular freeze-signal file **stands**; the method is the observation of G2. |
 | D1 INDETERMINATE table, row `target-changed` ("during `init`, the target's directory identity differs from the one the resolver examined") | applies to `init` only | **Restated** by G5: it applies to `eligibility` and `init`, and the comparison is of `stat` observations. |
-| "Contract for refusals", the sentence "once the directory is held and verified there is no mid-apply `target-changed`" | see above | **Restated** (row above for that sentence; a changed root at a later write is `entry-changed`, G7). |
+| AC2 table, `init` cell for `target-changed` ("when a re-acquired handle's identity differs") | handle re-acquisition | **Read as** "when the `stat` identity differs" (G5). |
 | P4 and P5 text citing "bound component-wise (P2)", "created, bound (P2, P3)" and "under P3" | the cited properties | **Read as** G6-G9. The P5 table stands; its FIFO/device cells' "never opened with a blocking or effectful open" stands for an entry that is a FIFO or device **at classification**; for one raced in after classification G2 states exactly what is done (opened once, read-only, never read). |
 | "Implementation guidance (non-normative)" | mechanisms assuming `openat`, handle-relative creation and rename | **Superseded.** Replaced by "Mechanism" below. |
-| "Documented exception: overwrite does not share the inode", the words "race-safe" and "entry-bound" and the section "Why not in place" | the justification for the temporary-file-and-rename write | **The exception itself stands unchanged** (owner decision of 2026-10-14T13:34Z: a hard link keeps the old content; permission bits are preserved). Only the justification wording is superseded; see G9. |
+| "Documented exception: overwrite does not share the inode", the words "race-safe" and "entry-bound", the clause "a temporary file created exclusively in the held directory, placed by an atomic rename that verifies the destination entry" (read as: created by a create-if-absent open in the artifact's parent directory and placed by a rename after a re-observation, G9), and the section "Why not in place" | the justification for the temporary-file-and-rename write | **The exception itself stands unchanged** (owner decision of 2026-10-14T13:34Z: a hard link keeps the old content; permission bits are preserved). Only the justification wording is superseded; see G9. |
 | "Required tests": every bullet listed in "Test disposition" below as superseded or replaced | tests asserting handle binding, and mutation checks that replace handle-relative calls with path-based ones | **Superseded** as listed. |
 | The first amendment's list items 1, 5 and 8 and its "Replaced detail" paragraph, and the "Reading of Standard 11 R5" paragraph | the properties as approved on 2026-10-14 | **Left as the historical record.** They are not edited. Their effect is limited by this table. |
 
@@ -125,7 +125,9 @@ the operation that follows it is **not observed and is not claimed to be prevent
   after a create-if-absent call (G8) succeeds, `init` takes `lstat` of the new entry, requires the
   expected type, and records its identity as that component's baseline; a mismatch at that `lstat` is
   `entry-changed`. A component `init` created is therefore not a difference at a later write; one
-  swapped after creation is.
+  swapped after that `lstat` is. A swap between the creation call and that `lstat` is observed only
+  if it changes the type (or the `lstat` reports absence, `entry-changed`, or fails, `unreadable`), and
+  is otherwise not observed.
 
 ### What a result asserts
 
@@ -133,7 +135,7 @@ An `IN_SCOPE` result asserts exactly this: each observation below was made by pa
 as the operating system resolved it **at that call**; the target `stat` at the end equalled the one at
 the start; every entry whose name folds to a source name was classified as a regular file, read within
 the cap from an open file whose identity matched its classification, and at the final pass showed the
-identity, size and stamps it showed at classification; and no listed signal fired and none was
+identity, size and stamps it showed at classification; and no listed signal fired that was not overridden and none was
 indeterminate. Observations are **not bound to one directory**: a target path that is retargeted and
 restored between two observations is not observed, and what an intervening observation saw is not
 claimed to be the directory the end observations saw. It asserts **nothing about any later time, and
@@ -161,15 +163,20 @@ error says the entry is a link or directory and `unreadable` otherwise) and the 
 `source-changed` where it is a regular file of another identity). The outside content of a replacement
 link is therefore never read or used. Where the platform provides no-follow, non-blocking and
 no-controlling-terminal open flags (`O_NOFOLLOW`, `O_NONBLOCK`, `O_NOCTTY`) the open uses all of them;
-on Windows, which has no FIFO or device entry in a directory and no such flags in Node, the same
-comparison is the whole mechanism. **A platform that is not Windows and lacks `O_NONBLOCK` fails closed
+on Windows, where Node provides none of these flags, the post-open `fstat` and identity comparison is
+the whole mechanism and any entry that `lstat` does not report as a regular file is
+`not-regular-file` (G1). **A platform that is not Windows and lacks `O_NONBLOCK` fails closed
 (G10): the entry is not opened.** A FIFO or device that replaced the entry after classification may be
 opened once, read-only, with those flags, and is closed without a read; one that is a FIFO or device
 **at classification** is never opened (G1).
 
 **G3 — Stability during the read.** The `fstat` of the open file taken after the read must equal the one
 taken before it in size, `mtime` and `ctime` (where the platform provides them) and identity;
-otherwise `INDETERMINATE` (`source-changed`). (Unchanged from ADR 0016.)
+otherwise `INDETERMINATE` (`source-changed`). After the read, `lstat` of the entry by path must still
+report the classified type and identity, otherwise `INDETERMINATE` (`source-changed`; an `lstat`
+reporting the entry missing is `source-changed`, any other error `stat-failed`). This post-read check
+runs before the final pass of G4 and takes precedence over it for the same entry. (Unchanged from
+ADR 0016.)
 
 **G4 — The final pass.** After every source has been read, the resolver makes one final pass over the
 target directory by path: (a) re-enumerates the directory and requires the multiset of exact matching
@@ -200,8 +207,9 @@ are refused with exit `2`, nothing written and the tree unchanged, using the nam
 (`not-regular-file`, `unreadable`, `target-changed`). The table in ADR 0016 P5 stands.
 
 **G7 — Re-observation before each write; `entry-changed`.** Immediately before **each** write operation
-`init` takes C1 for that write's path. If any component's type, identity or presence differs from C0
-(for a component recorded absent and not created by `init`: if it is now present), that write is **not made**, `init` exits `2`
+`init` takes C1 for that write's path. If any component's type, identity or presence differs from its
+baseline (Terms: C0, updated by `init`'s own creations; a component recorded absent that is now
+present), that write is **not made**, `init` exits `2`
 naming `entry-changed`, artifacts already written remain, no later write is made and nothing is rolled
 back. `entry-changed` is raised **only** where this comparison observed a difference or where G8's
 create-if-absent call reported that an entry already exists. A change of the target directory's own
@@ -213,7 +221,9 @@ the first write.
 creation, one level at a time, and an absent file artifact (and a temporary file) is created with a
 create-if-absent open. Each of those single calls fails if **any** entry, a link or junction included,
 already occupies the name; the call never follows it. A failure for that reason is `entry-changed`, and
-nothing is written through the occupying entry. This is a property of each call on the one name it
+nothing is written through the occupying entry. A real directory that is present at classification
+is preserved (ADR 0016 P4); one that **appeared after** classification at a name recorded absent is
+`entry-changed`, so `EEXIST` from a creation call is never treated as success for a recorded-absent name. This is a property of each call on the one name it
 addresses; it says nothing about the components above it or about what happens to the new entry
 afterwards. A recursive directory creation (`mkdir -p`) is **not** used for artifact components,
 because it succeeds on an existing link to a directory. This is what answers review finding
@@ -222,12 +232,16 @@ when it appears before the re-observation and by G8 when it appears between the 
 creation call.
 
 **G9 — Placement of an overwrite.** An overwrite under `--force-overwrite` writes the new content to a
-temporary file created in the artifact's parent directory by G8, performs C1 for the destination, and
-then renames the temporary file onto the destination name. **No byte is ever written to the destination
+temporary file created in the artifact's parent directory by G8, then performs, immediately before the
+rename, C1 for the destination chain **and an `lstat` of the temporary entry**, which must report a
+regular file of the identity recorded when it was created and of the size of the bytes written; a
+difference is `entry-changed`, the rename is not made, and the temporary file is removed best-effort.
+It then renames the temporary file onto the destination name. **No byte is ever written to the destination
 path**, so nothing is written through a link at the destination. The rename replaces whatever entry
 occupies the name at that instant, or fails (for example where the name is a directory), and a failure
 is an ordinary write failure: exit `2`, the temporary file removed best-effort, earlier artifacts
-remain. The interval between C1 and the rename is **not** covered. This is why the temporary-file-and-
+remain. The interval between that observation and the rename is **not** covered, and a swap of the temporary
+entry inside it is not observed. This is why the temporary-file-and-
 rename write is kept (and why the hard-link exception of ADR 0016 stands): not because it binds the
 write to the entry, which it does not, but because it never writes through the destination path.
 
@@ -244,7 +258,7 @@ This record does not claim that any platform's implementation exists.
 
 | Finding | Why the scenario no longer contradicts the contract | What is observed instead |
 | --- | --- | --- |
-| **4273671894** — same-name atomic replacement of a source between its post-read check and the final re-enumeration | ADR 0016 promised, by binding, that the file read is the file at the name. This record promises only observations. A replacement before the final pass is now observed (G4b). One after it is later than every observation the result is defined over. | the identity, size, `mtime` and `ctime` of each source entry at the final pass, compared with classification; and the multiset of names |
+| **4273671894** — same-name atomic replacement of a source between its post-read check (G3) and the final re-enumeration | ADR 0016 promised, by binding, that the file read is the file at the name. This record promises only observations. A replacement before the final pass is now observed (G4b). One after it is later than every observation the result is defined over. | the identity, size, `mtime` and `ctime` of each source entry at the final pass, compared with classification; and the multiset of names |
 | **4273671903** — an absent component created as a link or junction before `init` creates it | ADR 0016 promised the component was "bound" and that a creation "cannot be redirected through a link". This record promises that a component present before the re-observation is refused, and that the creation call itself does not succeed on an occupied name. A component replaced by a link **after** it was created and before a later write is observed by that write's re-observation, or is not observed. | C1 for every write; EEXIST from the non-recursive creation call |
 
 Neither finding is recorded as an accepted limitation. The one thing the contract states it does not
@@ -292,7 +306,7 @@ Windows is supported on the same terms as POSIX.
 - `IN_SCOPE` and a successful `init` describe observations, not a state that still holds.
 - `init` overwrite keeps the hard-link behaviour of ADR 0016's documented exception.
 
-**Commits the project to.** Writing no sentence anywhere that says a path component, entry or file
+**Commits the project to.** Writing no sentence, in any normative text, help output, diagnostic, comment or test name, that says a path component, entry or file
 "cannot" change during these commands; testing every raced-in kind at the seam between classification
 and re-observation (G7) and the create-if-absent behaviour (G8) on real Windows before 3.0.0; and not
 reintroducing handle-relative wording without a primitive that provides it.
@@ -309,15 +323,15 @@ re-observation and the create or rename call**; these seams are test surface, no
 | Guarantee | Test row | Mutation check (the test must fail) |
 | --- | --- | --- |
 | G1 | injected: a directory, every link kind, a FIFO and a device at `README.md` or `FROZEN.md` each give `not-regular-file`; the open interface fails the test if called for content | content-read of a non-regular entry allowed |
-| G2 | injected: entry classified regular and replaced before the open by a link to an outside file carrying a listed phrase, by a FIFO, and by another regular file: no byte read; `not-regular-file` / `source-changed`; with the no-follow flags reported unavailable the result is the same | the post-open identity comparison removed |
+| G2 | injected: entry classified regular and replaced before the open by a link to an outside file carrying a listed phrase, by a FIFO, and by another regular file: no byte read; `not-regular-file` / `source-changed`; with `O_NOFOLLOW` reported unavailable the result is the same, and with `O_NONBLOCK` reported unavailable on a non-Windows platform the entry is not opened and the result is `unreadable` | the post-open identity comparison removed (run with the no-follow flag reported unavailable so `ELOOP` cannot mask it) |
 | G3 | injected: same inode (including via a hard link) written during the read so size, `mtime` or `ctime` differ: `source-changed`; unchanged source not flagged | the after-read `fstat` comparison removed |
-| G4 | injected: (a) a differently spelled twin added after the first enumeration, and a twin removed: `listing-changed`; (b) a source replaced by another regular file **after its post-read check and before the final pass**, keeping its name and the multiset: `source-changed`; unchanged directory not flagged | (a) multiset replaced by a case-folded set; (b) the final per-entry identity comparison removed |
-| G5 | injected: target `stat` identity differs between the first and last resolver observation, and between the resolver's last observation and `init`'s pre-first-write observation: `target-changed`, exit `2`, zero writes; applies to `eligibility` and `init`; a retarget that is restored before the final `stat`, and the mixed-directory case (listing from A, source opens from B, restored to A), are **not** flagged and the test asserts the documented non-claim, not a verdict | the comparison removed |
+| G4 | injected: (a) a differently spelled twin added after the first enumeration, and a twin removed: `listing-changed`; (b) a source replaced by another regular file **after the post-read check of G3 and before the final pass**, keeping its name and the multiset: `source-changed`; unchanged directory not flagged | (a) multiset replaced by a case-folded set; (b) the final per-entry identity comparison removed |
+| G5 | injected: target `stat` identity differs between the first and last resolver observation, and between the resolver's last observation and `init`'s pre-first-write observation: `target-changed`, exit `2`, zero writes; applies to `eligibility` and `init`; a retarget that is restored before the final `stat`, and the mixed-directory case (listing from A, classification and open from B, restored to A before the final `stat`), are **not required to be flagged**; the test pins the documented non-claim and requires no verdict | the comparison removed |
 | G6 | the ADR 0016 P5 table, one case per cell, plus a linked `.github` and a linked `artifacts`, with and without `--force-overwrite`: exit `2`, nothing written, link target unchanged | pre-write classification skipped |
-| G7 | injected at the seam, one test per raced-in kind (link, junction, FIFO, device, directory, newly created regular file, deletion, regular-to-regular replacement, directory component replaced by another real directory, directory component replaced by a link): that write is not made, exit `2`, `entry-changed`, earlier artifacts remain, no later write, no rollback; **and a clean greenfield run** in which `init` creates `artifacts/` and writes under it twice succeeds, while a swap of the just-created directory for a link before the second write is `entry-changed` | C1 removed |
-| G8 | injected and real filesystem, seam **after** the re-observation: an occupying link, junction or regular file appears at an absent component's name and at an absent file artifact's name: the call fails, `entry-changed`, nothing written through it; plus a source-level assertion that no recursive directory creation is called for artifact components | non-recursive creation replaced by `mkdir -p`; create-if-absent replaced by a plain open |
-| G9 | injected: the temporary file is created in the parent directory by the create-if-absent open, no `open`/`write` is addressed to the destination path, and the destination is changed only by the rename; a destination that is a directory makes the write fail with exit `2`; the hard-link exception test of ADR 0016 AC4 | writing in place to the destination path |
-| G10 | injected: identity unavailable (absent or all zero), an `lstat` error other than absence, and a failing call each fail closed; plus the Windows release gate below | identity-unavailable branch removed |
+| G7 | injected at the seam, one test per raced-in kind (link, junction, FIFO, device, directory, newly created regular file, deletion, regular-to-regular replacement, directory component replaced by another real directory, directory component replaced by a link): that write is not made, exit `2`, `entry-changed`, earlier artifacts remain, no later write, no rollback; **and a clean greenfield run** in which `init` creates `artifacts/` and writes under it twice succeeds, while a swap of the just-created directory for a link before the second write is `entry-changed`, and a link or junction swapped in between the creation call and the baseline `lstat` is `entry-changed` (a same-type directory swap there is a documented non-claim); **and the target path retargeted after the first write** is `entry-changed`, never `target-changed`, earlier artifacts remaining | C1 removed |
+| G8 | injected and real filesystem, seam **after** the re-observation: an occupying link, junction, real directory or regular file appears at an absent component's name and at an absent file artifact's name: the call fails, `entry-changed`, nothing written through it; plus a source-level assertion that no recursive directory creation is called for artifact components | non-recursive creation replaced by `mkdir -p`; create-if-absent replaced by a plain open; `EEXIST` treated as success for a directory that appeared after classification |
+| G9 | injected: the temporary file is created in the parent directory by the create-if-absent open, no `open`/`write` is addressed to the destination path, and the destination is changed only by the rename; a destination that is a directory makes the write fail with exit `2`; the temporary entry replaced by a link or another file after its creation and before the pre-rename observation is `entry-changed` and the rename is not made; the hard-link exception test of ADR 0016 AC4 | writing in place to the destination path |
+| G10 | injected: identity unavailable (absent or all zero), an `lstat` error other than absence, `O_NONBLOCK` unavailable off Windows, and a failing call each fail closed; plus the Windows release gate below | identity-unavailable branch removed |
 
 ### Windows release gate (replaces the two ADR 0016 gates)
 
@@ -327,7 +341,7 @@ is not read as a regular file (G1, G2); (2) a pre-existing linked intermediate d
 pre-existing leaf link, with and without `--force-overwrite`, each exit `2`, nothing written, target
 unchanged, and an ordinary run that preserves a real directory artifact (G6); (3) every raced-in kind of G7
 that the platform can create (symbolic link, junction, directory, newly created regular file,
-deletion, regular-to-regular replacement, directory component replaced by another real directory or
+deletion, regular-to-regular replacement (the replacement created first and renamed over the name, so a new identity is allocated before the old is freed; identity reuse is a documented non-claim), directory component replaced by another real directory or
 by a link; the FIFO and device kinds are tested injected only) at the seam between classification and re-observation; (4) G8 at the seam after the
 re-observation, for a component and a leaf. A runner that cannot create the objects must be
 provisioned; the gate does not pass by skipping. **The gate contains no test that asserts that a
@@ -339,7 +353,8 @@ does not claim that such a runner or seam exists.
 | ADR 0016 bullet | Disposition |
 | --- | --- |
 | AC1, AC2 (table), AC3, AC4, `init` output, Overrides, Both spellings, Permission/link/mode, Read cap, Partial listing, Text rules, `--json` and no walk-up, Invocation errors, Read-only/process-free/network-free, No catalog rule | **Kept.** AC2's `target-changed` row is changed: it applies to `eligibility` as well (G5). |
-| Source identity after the read, injected | **Kept**; its mutation check is retained (G2). |
+| Source identity after the read, injected | **Kept**; owned by G3 (post-read `lstat`); its mutation check is retained. |
+| Replacement race | **Replaced** by G2; the "safe-open capability unavailable" assertion is restated in the G2 row (`O_NONBLOCK` unavailable off Windows is `unreadable`), and the "same-handle read" mutation is withdrawn. |
 | Read-time consistency, injected | **Kept** with (d) twins; extended by G4b. Its mutation check "remove the re-enumeration" is retained. |
 | File safety on every supported platform, Windows included | **Kept** as G1/G2 and release-gate item (1); the injected open interface "fails if it receives a blocking or link-following request" is restated: it fails if called for content on a non-regular entry, and the pre-open guarantee is G1. |
 | Real-filesystem Windows `init` gate | **Replaced** by release-gate items (2) and (3). |

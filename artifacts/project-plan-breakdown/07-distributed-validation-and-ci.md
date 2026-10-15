@@ -259,7 +259,8 @@ someone to lie to make the build go green.
   Proposed, owner decision of 2026-10-15T17:17Z, option C), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
   and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
   to an external registry.
-- **Ready scope (owner-approved content only), as implementation slices** (each its own pull
+- **Ready scope (owner-approved content; the file-safety guarantees of ADR 0021 take effect on its
+  acceptance), as implementation slices** (each its own pull
   request; none is implemented by the ADR):
   1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
