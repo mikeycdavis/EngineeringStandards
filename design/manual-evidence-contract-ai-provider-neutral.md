@@ -18,10 +18,18 @@ aggregate-verdict semantics.
 
 ## 2. The claim
 
-> At digest D, over the complete source set S in scope, provider-specific SDK, HTTP-endpoint and
-> model-identifier usage is confined to the listed adapter modules [paths]; no other module in S
-> references a provider; and no module outside the adapters consumes a provider-specific type,
-> response shape, error type or option name that an adapter exposes.
+> At digest D, over the complete source set S (defined below), provider-specific SDK, HTTP-endpoint,
+> model-identifier and prompt-format usage is confined to the listed adapter modules [paths]; no other
+> module in S references a provider; and no module outside the adapters consumes a provider-specific
+> type, response shape, error type or option name that an adapter exposes.
+
+**Definition of S.** S is derived, not chosen by the reviewer: every file the repository tracks
+(`git ls-files` at D), less the paths matched by a committed exclusion policy that lists each excluded
+class (generated output, vendored third-party code, fixtures, documentation) with its reason. The
+exclusion policy is itself a reviewed artefact inside the digest, and an exclusion that covers a path
+that contains first-party application code is a defect the reviewer must reject. A package or directory
+that is not excluded by that policy is in S whether or not the reviewer opened it. A system whose
+provider-coupled code lives in another repository is outside what this contract can speak for.
 
 The third clause exists because confinement of *names* is not what the catalog requires. The rule's
 description is that "model providers sit behind an abstraction so capabilities remain stable when the
@@ -45,7 +53,8 @@ The review MUST cite, and the attestation's `reviewedAgainst.paths` MUST name:
 | --- | --- |
 | The adapter path list (the modules permitted to name a provider) | It is the subject of the claim. It must be a committed file, so it is inside the digest. |
 | The adapters' exported interfaces (the types and functions business logic is allowed to see) | The third clause of the claim is reviewed against these: the reviewer checks that none exposes a provider-specific type, response shape, error type or option. |
-| The complete in-scope source set S (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over "no other module", so freshness must cover every module, not only the adapters. See section 5. |
+| The complete in-scope source set S (derived as defined in section 2) and its committed exclusion policy | The claim quantifies over "no other module", so freshness must cover every module, not only the adapters. See section 5. |
+| An authoritative ownership record naming the architecture owner (for example the project manifest's owner section or a CODEOWNERS entry for the adapter paths) | Section 4: `reviewedBy` must be validated against it. |
 | The detector's observation output (provider-import evidence), once #124 exists | Every observed file is either in the adapter list or justified in the review evidence. |
 | The dependency manifest (for example `package.json`, `requirements.txt`) | Shows which provider SDKs are installed at all; an SDK absent from the detector's list is visible here. |
 
@@ -61,6 +70,12 @@ declaration and MUST NOT invent a second one. Where the declaration should physi
 The project's named architecture owner, recorded as `reviewedBy` in the policy attestation, with the role
 in `reviewerRole` (a field added by #95's merged work, PR #115). The commit author of the change under
 review is not the accountable reviewer.
+
+`reviewedBy` and `reviewerRole` are assertions in the policy today, and nothing identifies who the
+architecture owner is. Establishing the role therefore needs an authoritative ownership record among the
+reviewed artefacts (section 3) and a validator check that `reviewedBy` appears in it; authenticated
+successor events (#95, waiting on #133) prove identity, not role. Both are listed in section 9 as not
+made.
 
 ## 5. Invalidation rule
 
@@ -130,6 +145,7 @@ question for the owner; this contract does not resolve it.
 | Decide whether catalog `assurance` stays `none` | `rules/ai.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`), which disagrees with a static `none` | NOT MADE, decision needed |
 | Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`. Today the digest covers only the listed `paths`, so a file added outside them changes nothing. A tree identity or an enumerated set (for example one produced by the audit-surface locator, #119) whose membership changes when any in-scope file is added would be needed | NOT MADE; without it this contract MUST NOT be adopted |
 | Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
+| Validate `reviewedBy` against the ownership record, and require it among the reviewed paths | Validator and attestation schema | NOT MADE |
 | Require reviewer role, accountable owner and a maximum age for this rule | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
 | Declare the adapter list in a boundary declaration | Per Standard 51 R2; location unresolved | NOT MADE |
 | Describe the contract in the rule's `$assuranceNote` and in Standard 1 R4's implementation note | `rules/ai.json`, `standards/01-human-and-ai-operability.md` | NOT MADE |
