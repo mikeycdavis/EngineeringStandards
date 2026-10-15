@@ -3903,16 +3903,20 @@ export async function main(args) {
     ...Object.keys(headAttestations),
   ]);
   const reviewHistoryEffective = effectiveAttestations(headAttestations, reviewHistoryBase);
-  const keptRejections = Object.keys(reviewHistoryEffective).length;
-  // Base rejections that ride only on the finding-only channel (never in the verdict) are neither
-  // "kept" nor "disregarded non-rejections": they are counted apart and named by policy findings.
-  const findingOnlyRejections = Object.keys(reviewHistoryBase.baseRecordedAttestations ?? {}).filter(
-    (ruleId) =>
-      // Only a rule declared not-applicable has a finding that names its rejection.
-      policy.document?.applicability?.[ruleId]?.status === "not-applicable" &&
-      !(ruleId in reviewHistoryEffective) &&
-      recordedRejections(reviewHistoryBase.baseRecordedAttestations[ruleId]).length > 0,
-  ).length;
+  // A rejection recorded on a rule declared not-applicable is not evaluated: its finding names it and
+  // it never enters the verdict, whether its record survives in the effective document (the head
+  // retained it) or only rides the base channel. It is therefore neither "kept" (effective) nor a
+  // "disregarded non-rejection": it is counted apart.
+  const baseChannel = reviewHistoryBase.baseRecordedAttestations ?? {};
+  const findingOnlyRules = new Set(
+    [...new Set([...Object.keys(reviewHistoryEffective), ...Object.keys(baseChannel)])].filter(
+      (ruleId) =>
+        policy.document?.applicability?.[ruleId]?.status === "not-applicable" &&
+        (recordedRejections(reviewHistoryEffective[ruleId]).length > 0 || recordedRejections(baseChannel[ruleId]).length > 0),
+    ),
+  );
+  const findingOnlyRejections = findingOnlyRules.size;
+  const keptRejections = Object.keys(reviewHistoryEffective).filter((ruleId) => !findingOnlyRules.has(ruleId)).length;
   const disregardedAttestations = recordedAttestationRules.size - keptRejections - findingOnlyRejections;
   if (reviewHistoryBase.status !== "not-applicable") {
     const base = reviewHistoryBase;
@@ -3920,7 +3924,7 @@ export async function main(args) {
       `${disregardedAttestations} attestation(s) that were not ` +
       `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.` +
       (findingOnlyRejections > 0
-        ? ` ${findingOnlyRejections} recorded base rejection(s) are named by policy findings only and do not enter the verdict.`
+        ? ` ${findingOnlyRejections} recorded rejection(s) on not-applicable rule(s) are named by policy findings only and do not enter the verdict.`
         : "");
     addFinding({
       id: "review-history-append-only",

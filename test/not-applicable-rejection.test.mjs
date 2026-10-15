@@ -441,7 +441,7 @@ test("CLI: a head that deletes the whole attestations section names a base rejec
     assert.match(stray.message, /"p1"/);
     assert.match(stray.remediation, /when the comparison cannot run/);
     assert.match(history.message, /1 attestation[(]s[)] that were not recorded rejections/, "a base rejection was counted as a disregarded non-rejection: " + history.message);
-    assert.match(history.message, /1 recorded base rejection[(]s[)] are named by policy findings only/);
+    assert.match(history.message, /1 recorded rejection[(]s[)] on not-applicable rule[(]s[)] are named by policy findings only/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -501,6 +501,32 @@ test("CLI: an APPLICABLE rule's verdict is unaffected by a base rejection when t
   assert.ok(JSON.parse(withRej.compliance).results?.length > 0, "fixture produced no results to compare");
   assert.equal(withRej.exit, without.exit);
   assert.equal(withRej.compliance, without.compliance, "a base rejection changed the verdict of an applicable rule");
+});
+
+test("CLI: a head-retained rejection on a not-applicable rule is counted as finding-only, not as staying effective (unverified comparison)", async () => {
+  const nl = String.fromCharCode(10);
+  // The unrelated null record sorts first and makes the comparison unverifiable; the head keeps p1.
+  const base = policyYaml({ withRejection: true }).replace("attestations:" + nl, "attestations:" + nl + "  testing.no-fabricated-results: null" + nl);
+  const head = policyYaml({ withRejection: true }) + "  testing.no-fabricated-results:" + nl +
+    ["    reviews:", '      - id: "q1"', "        status: rejected", '        reviewedBy: "synthetic-reviewer"', '        reviewedAt: "2026-10-01"', '        evidence: "synthetic"'].join(nl) + nl;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-retained-"));
+  try {
+    git(dir, "init", "-q", "-b", "main");
+    await writeFile(path.join(dir, "project-policy.yml"), base);
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "base");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    await writeFile(path.join(dir, "project-policy.yml"), head);
+    const { report } = validate(dir);
+    const history = report.findings.find((f) => f.id === "review-history-append-only");
+    assert.ok(history, "no history warning");
+    assert.match(history.message, /1 recorded rejection[(]s[)] stay effective/, history.message);
+    assert.match(history.message, /1 recorded rejection[(]s[)] on not-applicable rule[(]s[)] are named by policy findings only/, history.message);
+    assert.ok(report.findings.find((f) => f.id === "rejection-on-not-applicable-rule"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("CLI: a rejection added only after the merge base may be removed", async () => {
