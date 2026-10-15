@@ -230,8 +230,11 @@ table's "absent: created" cell means absent and not so satisfied).
 baseline (Terms: C0, updated by `init`'s own creations; a component recorded absent that is now
 present), that write is **not made**, `init` exits `2`
 naming `entry-changed`, artifacts already written remain, no later write is made and nothing is rolled
-back. `entry-changed` is raised **only** where this comparison observed a difference or where G8's
-create-if-absent call reported that an entry already exists. A change of the target directory's own
+back. `entry-changed` is raised **only** where one of these observations saw a difference: this
+comparison; G8's create-if-absent call reporting that an entry already exists; the descriptor-`fstat`
+versus path-`lstat` baseline comparison of a created file (Terms, C1); G8's post-write size, identity
+and read-back validation of a created file; or G9's pre-rename validation of the temporary entry
+(identity, size, stamps, read-back). No other condition raises it. A change of the target directory's own
 identity observed at a write after the first is `entry-changed` as well (the root is the first
 component of the chain); the pre-write `target-changed` of G5 remains the only condition for it before
 the first write.
