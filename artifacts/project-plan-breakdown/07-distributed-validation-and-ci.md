@@ -252,8 +252,11 @@ someone to lie to make the build go green.
   - An eligible repository's behaviour is unchanged, and the greenfield, scaffold, and
     reconstruction-required fixtures still classify as they do today. A guard that reaches
     `OUT_OF_SCOPE` too readily would block adoption entirely, which is worse than the defect.
-- **Verification:** `npm test` with the three new fixtures; the before/after tree comparison is part
-  of the assertion, not a manual check.
+- **Verification:** the test families of [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md)
+  "Required tests" and [ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md)
+  "Required tests" (the resolver and vocabulary, the capped read, `init` refusal and file safety, and the
+  Windows release gate), each with its mutation checks; the before/after tree comparison and the
+  instrumented read-only harness are part of the assertion, not a manual check.
 - **Dependencies:** `standards init` and the adoption guide above — both are downstream of the guard
   and the guide's step order is part of what changes.
 - **ADR:** [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md),
@@ -262,8 +265,8 @@ someone to lie to make the build go green.
   Proposed, owner decision of 2026-10-15T17:17Z, option C, pending acceptance), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
   and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
   to an external registry.
-- **Ready scope (owner-approved content; slices that depend on ADR 0021's file-safety guarantees
-  are blocked until the owner accepts ADR 0021), as implementation slices** (each its own pull
+- **Scope as implementation slices (owner-approved content; slices 1-3 are BLOCKED until the owner
+  accepts ADR 0021, and none is schedulable before then)** (each its own pull
   request; none is implemented by the ADR):
   1. BLOCKED until ADR 0021 is accepted (an owner act; then READY; source inspection and the read-time checks are governed by ADR 0021 G1-G4, because ADR 0016's no-follow, handle-bound mechanism cannot be provided from Node): the resolver and the read-only `eligibility` subcommand, with fixtures and
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped

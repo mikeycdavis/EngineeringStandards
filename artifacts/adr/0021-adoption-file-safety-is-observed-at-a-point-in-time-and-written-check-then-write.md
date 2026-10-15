@@ -5,8 +5,8 @@
   that promise handle-bound behaviour Node cannot provide are withdrawn by a successor ADR. It takes
   effect when the owner accepts it. Until then ADR 0016's wording stands as written and this record
   states what replaces it. **On acceptance** ADR 0016's status becomes "Accepted; superseded in part by
-  0021" (a partial supersession is outside R5's five names and is stated in words). Numbers 0017-0020
-  are allocated to other branches of this repository (0019 is reserved); 0021 is the next number not
+  0021" (a partial supersession is outside R5's five names and is stated in words). Numbers 0017, 0018
+  and 0020 are used on other branches of this repository; 0021 is the next number above every number
   used on any branch at the time of writing, and numbers are never reused (R4).
 - **Date:** 2026-10-15
 - **Deciders:** Project owner (decision above)
@@ -173,7 +173,9 @@ the whole mechanism and any entry that `lstat` does not report as a regular file
 `not-regular-file` (G1). **A platform that is not Windows and lacks `O_NONBLOCK` fails closed
 (G10): the entry is not opened.** A FIFO or device that replaced the entry after classification may be
 opened once, read-only, with those flags, and is closed without a read; one that is a FIFO or device
-**at classification** is never opened (G1). **On Windows a replacement installed after classification is opened by a plain open before the post-open comparison rejects it; that open may have the effects of opening whatever the replacement is, and this record does not claim to prevent it.**
+**at classification** is never opened (G1). **On POSIX as well, a device node raced in after
+classification may have effects when opened even read-only and non-blocking; the flags reduce but do
+not remove that, and this record does not claim to prevent it.** **On Windows a replacement installed after classification is opened by a plain open before the post-open comparison rejects it; that open may have the effects of opening whatever the replacement is, and this record does not claim to prevent it.**
 
 **G3 — Stability during the read.** The `fstat` of the open file taken after the read must equal the one
 taken before it in size, `mtime` and `ctime` (where the platform provides them) and identity;
@@ -330,8 +332,13 @@ reintroducing handle-relative wording without a primitive that provides it.
 
 Supersedes the ADR 0016 bullets named in "Test disposition". All tests are exit-code and
 human-output tests (no JSON-schema tests). Seams: the implementation exposes an injectable file-system
-interface and a test seam **between classification and re-observation** and one **between
-re-observation and the create or rename call**; these seams are test surface, not behaviour.
+interface and test seams at each of these points, which are test surface, not behaviour: (S1) between
+classification and the open of a source (G2); (S2) during the read of a source (G3); (S3) between the
+post-read check and the final pass (G4b, G4c); (S4) between the target `stat` observations (G5);
+(S5) between classification and re-observation (G7); (S6) between re-observation and the create or
+rename call (G8); (S7) between a creation call and the baseline `lstat` (G7); (S8) after the first write
+(G7, retarget); (S9) between temporary-file creation and the pre-rename observation, and (S10) during
+the read-back (G9). A row uses exactly the seams named for it.
 
 ### One test row per guarantee
 
@@ -387,7 +394,7 @@ to; it is not a second row for that guarantee.
 
 ## Appendix: what review taught (non-normative)
 
-The review of PR #105 ran from 2026-10-11 to 2026-10-15 and produced roughly 55 findings. The
+The review of PR #105 ran from 2026-10-11 to 2026-10-15 and produced inline review threads numbering 88 at head `ccbdb18`. The
 vocabulary, JSON-contract, case-collision and whitespace findings converged and were repaired in ADR
 0016. From 2026-10-12T18:44Z the findings became time-of-check/time-of-use findings on writes and on
 the resolver's read of a changing directory; each repair added a pass or a binding and exposed the
