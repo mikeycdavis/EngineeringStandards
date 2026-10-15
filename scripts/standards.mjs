@@ -3837,6 +3837,8 @@ export async function main(args) {
   const policy = await loadProjectPolicy(root);
   const today = new Date().toISOString().slice(0, 10);
   const exemptionCheck = { problems: [], bound: [] };
+  // Pinned non-text files whose one-off digest read failed: unreadable, not budget-limited.
+  const digestReadFailed = new Set();
   if (Array.isArray(policy.document?.fixtureExemptions)) {
     const checked = checkEntries(policy.document.fixtureExemptions, {
       catalog,
@@ -3864,6 +3866,7 @@ export async function main(args) {
         run.readDigests.set(entry.path, await contentDigestOfStream(createReadStream(abs)));
       } catch {
         /* unreadable: no digest, so the entry is `not-read` */
+        digestReadFailed.add(abs);
       }
     }
     exemptionCheck.bound = await bindEntries(checked.valid, { scanned: new Set(files.map((f) => rel(f))), digests: run.readDigests });
@@ -3964,7 +3967,7 @@ export async function main(args) {
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
             `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
-            (abs !== undefined && unreadableFiles.includes(abs)
+            (abs !== undefined && (unreadableFiles.includes(abs) || digestReadFailed.has(abs))
               ? "The file could not be read; fix its permissions or presence and rerun. Keep the entry."
               : abs !== undefined && run.truncated.has(abs)
                 ? `The file is larger than the per-file read cap (${MAX_READ_BYTES} bytes), which --max-total-read-bytes does not raise, so a pin over it cannot be established; shrink or split the fixture. Keep the entry.`
