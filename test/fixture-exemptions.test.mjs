@@ -631,3 +631,21 @@ test("duplicates are rejected before filtering: an expired twin does not leave i
   assert.equal(resultOf(res, CERT_RULE).disposition, "evaluated", "neither duplicate may waive");
   assert.equal(findingsOf(res, "fixture-exemption-duplicate").length, 2);
 });
+
+test("a flow-empty fixtureExemptions mapping that does not parse is reported by audit", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT });
+  const text = ['standardVersion: "2.0.0"', 'project: "fixture exemption specimen"', "fixtureExemptions: {}", ""].join(String.fromCharCode(10));
+  await writeFile(path.join(root, "project-policy.yml"), text);
+  const res = cli("audit", root);
+  assert.equal(findingsOf(res, "fixture-exemption-schema-invalid").length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
+});
+
+test("every file this change owns is text: no NUL byte, valid UTF-8 (a NUL made Git treat a module as binary)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const root = path.join(HERE, "..");
+  for (const rel of ["scripts/fixture-exemptions.mjs", "scripts/standards.mjs", "scripts/policy.mjs", "scripts/compliance.mjs", "test/fixture-exemptions.test.mjs", "schemas/project-policy.schema.json", "project-policy.yml", "CHANGELOG.md"]) {
+    const bytes = await readFile(path.join(root, rel));
+    assert.equal(bytes.includes(0), false, rel + " contains a NUL byte");
+    assert.doesNotThrow(() => new TextDecoder("utf-8", { fatal: true }).decode(bytes), rel);
+  }
+});

@@ -196,9 +196,11 @@ async function loadProjectPolicy(repoRoot) {
     return { document: null, error: null, reason: "no project-policy.yml — nothing declares what applies here" };
   }
   const schemaPath = path.join(path.dirname(SELF), "..", "schemas/project-policy.schema.json");
+  let rawText = "";
   try {
     const schema = JSON.parse(await readFile(schemaPath, "utf8"));
-    const document = parseYaml(await readFile(file, "utf8"));
+    rawText = await readFile(file, "utf8");
+    const document = parseYaml(rawText);
     const errors = validate(document, schema);
     if (errors.length > 0) {
       return {
@@ -221,7 +223,14 @@ async function loadProjectPolicy(repoRoot) {
     }
     return { document, error: null };
   } catch (error) {
-    return { document: null, error: `project-policy.yml could not be read: ${error.message}` };
+    return {
+      document: null,
+      error: `project-policy.yml could not be read: ${error.message}`,
+      // The file did not parse (a flow mapping such as `{}`, say), so no schema error exists to show;
+      // what matters to `audit` is that a fixtureExemptions key was written and could not apply.
+      unparsedFixtureExemptions: /^fixtureExemptionss*:/m.test(rawText),
+      parseError: error.message,
+    };
   }
 }
 
@@ -3914,6 +3923,19 @@ export async function main(args) {
   // compliance consequence of a dead entry is already carried by the violation it no longer waives.
   // ANY schema error makes the whole policy unreadable, so no pin validated or applied, whichever
   // field is at fault. `audit` renders no verdict, so without this the pins would look simply absent.
+  if (policy.unparsedFixtureExemptions) {
+    addFinding({
+      id: "fixture-exemption-schema-invalid",
+      category: "Fixture exemptions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: ["project-policy.yml"],
+      message:
+        `project-policy.yml could not be read (${policy.parseError}), so none of the fixture exemptions applies. ` +
+        "Every file is inspected as ordinary content.",
+      standardRef: R.search,
+    });
+  }
   if (policy.hadFixtureExemptions && (policy.schemaErrors ?? []).length > 0) {
     const errs = policy.schemaErrors;
     const own = errs.filter((x) => String(x.path ?? "").startsWith("fixtureExemptions"));
