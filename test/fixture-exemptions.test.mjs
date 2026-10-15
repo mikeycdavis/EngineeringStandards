@@ -669,3 +669,16 @@ test("policy.mjs rejects a fixture exemption on a rule declared not-applicable",
   const result = await checkPolicy(file, SCHEMA, "2026-10-12");
   assert.ok(result.findings.some((f) => f.id === "policy.conflicting-classification" && /fixture exemption/.test(f.message)), JSON.stringify(result));
 });
+
+test("standards policy checks entries, not freshness: a dead pin passes it and audit reports it stale, and ADR 0020 says so", async () => {
+  const root = await repo({ "src/ok.js": CLEAN }, [pin("test/fixtures/gone.js", CERT, CERT_RULE)]);
+  const result = await checkPolicy(path.join(root, "project-policy.yml"), SCHEMA, "2026-10-12");
+  assert.equal(result.status, "ok", "policy does not bind entries to the repository");
+  assert.equal(findingsOf(cli("validate", root), "fixture-exemption-stale").length, 1);
+  const { readFile, readdir } = await import("node:fs/promises");
+  const dir = path.join(HERE, "..", "artifacts", "adr");
+  const name = (await readdir(dir)).find((f) => f.startsWith("0020"));
+  const adr = (await readFile(path.join(dir, name), "utf8")).replace(/[\r\n \t]+/g, " ");
+  assert.doesNotMatch(adr, /learns of a dead entry before an audit/);
+  assert.match(adr, /can therefore still carry a dead entry/);
+});

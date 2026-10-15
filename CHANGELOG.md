@@ -43,7 +43,8 @@ violating fixture is waived by an entry in the new optional `fixtureExemptions` 
 path, changed byte or rule is inspected as ordinary content, and an entry that stops matching is reported
 stale. A rule whose only violations are waived reports `excepted`, never `passed`; a waiver is applied to
 a violation a detector observed, so it cannot turn an unread file into a result. Entries that do not
-validate waive nothing and are reported by `audit`, `validate` and `standards policy`.
+validate waive nothing and are reported by `audit`, `validate` and `standards policy`. `standards policy` checks shape and
+semantics only; a dead entry (path gone, digest changed, rule no longer fires) is reported by `audit` and `validate`.
 `security.no-secrets-in-artifacts` is non-exemptible and stays so, so its fixture bait is built at run
 time instead of committed. The human `Failing:` list no longer repeats rules already shown under
 `Excepted:`. **Consequence for adopters:** a consumer's deliberately violating fixtures now produce live

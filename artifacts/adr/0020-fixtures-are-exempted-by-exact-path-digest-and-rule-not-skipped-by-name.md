@@ -90,7 +90,11 @@ An entry that does not validate waives nothing and is reported; the file is insp
 | Two entries for one (path, rule) | `fixture-exemption-duplicate`, **both** rejected — nothing says which digest was reviewed |
 | Path not in the scanned surface, unreadable, digest changed, or rule no longer fires | `fixture-exemption-stale` |
 
-`standards policy` runs the same validator, so an adopter learns of a dead entry before an audit does.
+`standards policy` runs the same validator, so an entry that is malformed, expired, duplicated or names an
+un-exemptible rule is reported before an audit. It does NOT bind entries to the repository: whether a path still
+exists, whether its digest still matches and whether the rule still fires there are `fixture-exemption-stale`
+findings that only `audit` and `validate` can produce, because they need the scanned surface and the detectors.
+A policy that passes `standards policy` can therefore still carry a dead entry.
 
 ### Which rules are exemptible
 
