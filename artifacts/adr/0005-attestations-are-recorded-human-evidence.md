@@ -140,7 +140,8 @@ rejection. An applicable rule is unchanged: its recorded rejection still fails i
 evaluated while the declaration stands; reconciling the two is the owner's decision.
 
 Any rejection ever recorded on the rule is found, including an older one followed by an approval: the lookup
-reads the retained history, not only the chains an unavailable base leaves effective.
+reads the retained history when the effective record holds none. When a rewrite is reported as violated, the
+base-restored rejection is the one named, never the untrusted replacement.
 
 The finding's remediation depends on where the rejection sits, in three cases. Established at the trusted base: it is
 append-only history, so deleting it is reported as `review-history-append-only`, the base rejection stays effective and

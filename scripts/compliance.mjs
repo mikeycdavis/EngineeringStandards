@@ -107,13 +107,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
       // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
       // alone, so a malformed history is still reported by identity (see recordedRejections).
-      // Looked up in the RETAINED history first (`recordedAttestations`, the unfiltered policy):
-      // when no trusted base exists the evaluated document keeps only chains whose CURRENT event is
-      // a rejection, so an older rejection followed by an approval would otherwise vanish from this
-      // lookup. Falls back to the evaluated record, which may hold a base-kept rejection the head
-      // no longer records.
-      const retained = recordedRejections(recordedAttestations?.[rule.id]);
-      const stray = retained.length > 0 ? retained : recordedRejections(attestations[rule.id]);
+      // The EFFECTIVE record first: on a violated rewrite it is the base-restored history, and the
+      // untrusted head text must not be named in its place. Only when the effective record holds no
+      // rejection is the RETAINED (unfiltered) history read: without a trusted base the evaluated
+      // document keeps only chains whose CURRENT event is a rejection, so an older rejection followed
+      // by an approval would otherwise vanish from this lookup.
+      const effective = recordedRejections(attestations[rule.id]);
+      const stray = effective.length > 0 ? effective : recordedRejections(recordedAttestations?.[rule.id]);
       if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }

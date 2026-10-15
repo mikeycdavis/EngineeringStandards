@@ -320,6 +320,23 @@ test("CLI: a rejection committed at the merge base gets the append-only advice, 
   }
 });
 
+test("CLI: an established rejection edited into a different one names the base record, not the replacement", async () => {
+  const dir = await repoWith({ committedRejection: true, headRejection: true });
+  try {
+    const file = path.join(dir, "project-policy.yml");
+    const edited = (await readFile(file, "utf8")).replace('id: "p1"', 'id: "p9"');
+    assert.ok(edited.includes('"p9"'));
+    await writeFile(file, edited);
+    const stray = validate(dir).report.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
+    assert.ok(stray);
+    assert.match(stray.message, /"p1"/);
+    assert.ok(!/p9/.test(stray.message), stray.message);
+    assert.match(stray.remediation, /without rewriting history/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI: a rejection added only after the merge base may be removed", async () => {
   const added = await repoWith({ committedRejection: false, headRejection: true });
   try {
