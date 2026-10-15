@@ -298,6 +298,12 @@ requirement that produced it, so a reader can go from a finding to the rule with
 `detected-audit-surface` finding is an additive change to the result, a MINOR bump under Standard 15 R3: the audit
 envelope's `schemaVersion` is `"1.1.0"`, and so is the validate envelope's.
 
+**Direction of error for `detected-audit-surface`.** The observation is `INFERRED`, bound to no rule, and cannot
+establish a pass. Where the source is ambiguous it is resolved toward over-reporting, never toward hiding a real
+construct. For example, a `#` that is a MySQL comment in one dialect and an identifier character in T-SQL or Oracle
+(`SELECT a#note ...`) is read as part of the identifier, so a MySQL comment attached to an identifier is still listed
+as a construct. No per-dialect detection exists because the locator has no input that names the dialect.
+
 Every finding carries one of the Standard 44 evidence labels (`OBSERVED`, `INFERRED`,
 `CONFIRMED_BY_OWNER`, `UNKNOWN`) so that a consumer can distinguish a fact from a heuristic — the
 `potential-*` categories are inherently `INFERRED`, and reporting them as though they were observed
