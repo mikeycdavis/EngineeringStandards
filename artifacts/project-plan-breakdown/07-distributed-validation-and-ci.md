@@ -254,7 +254,9 @@ someone to lie to make the build go green.
 - **Dependencies:** `standards init` and the adoption guide above — both are downstream of the guard
   and the guide's step order is part of what changes.
 - **ADR:** [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md),
-  status Accepted (owner, 2026-10-12), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
+  status Accepted (owner, 2026-10-12; superseded in part by
+  [ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md),
+  Proposed, owner decision of 2026-10-15T17:17Z, option C), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
   and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
   to an external registry.
 - **Ready scope (owner-approved content only), as implementation slices** (each its own pull
@@ -262,13 +264,15 @@ someone to lie to make the build go green.
   1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
      read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`),
-     and the read-time consistency checks (same-handle stamps, multiset re-enumeration), a clarification
-     within the approved binding whose residual concurrency limit is documented and not approved;
+     and the read-time consistency checks (same-open-file stamps, multiset re-enumeration, and a final
+     per-source identity comparison), which are point-in-time observations (ADR 0021 G2-G4);
   2. READY: `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
-     writes nothing before its first write), with the held-directory binding, the component and leaf
-     binding, and `entry-changed`, as re-approved by the owner on 2026-10-14 (ADR 0016, "Decision
-     history"), **including the existing-artifact overwrite path** (`--force-overwrite`), which uses the
-     entry-bound temporary-file-and-rename write and is the one documented exception: a hard link to
+     writes nothing before its first write), with the pre-write classification of every path component,
+     a re-observation immediately before each write (check-then-write, no handle-relative write, no
+     claim of exclusion), create-if-absent creation, and `entry-changed` (ADR 0021 G5-G9, superseding
+     the handle binding of ADR 0016 P1-P3, P6, P7), **including the existing-artifact overwrite path**
+     (`--force-overwrite`), which uses the temporary-file-and-rename write and is the one documented
+     exception: a hard link to
      the old file keeps the old content, permission bits are preserved, other inode metadata is not
      (owner decision of 2026-10-14, 13:34Z; ADR 0016, "Documented exception: overwrite does not share
      the inode"). AC4's one-entry exception and its test are in scope;
@@ -276,7 +280,8 @@ someone to lie to make the build go green.
      and its SVG, `CHANGELOG.md`), with a no-catalog-rule test.
 - **Release classification and gates:** the owner classified the complete change MAJOR, targeted to
   3.0.0. A Windows-safe `eligibility` and the mandatory, non-skippable real-filesystem Windows safety
-  tests (including the synchronized replacement-race cases) are required for the 3.0.0 release gate.
+  tests (the raced-in kinds at the classification-to-re-observation seam and the create-if-absent
+  behaviour, ADR 0021 "Windows release gate") are required for the 3.0.0 release gate.
   No `VERSION` change, tag or release is authorised by the ADR or by this item.
 - **Size limits (approved 2026-10-14, relayed at 01:34Z):** a 400,000 raw-byte capped read (at most
   cap-plus-one bytes; at most 400,000 read in full and examined; 400,001 or more `over-read-cap`,
