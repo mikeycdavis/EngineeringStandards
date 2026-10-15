@@ -232,7 +232,8 @@ present), that write is **not made**, `init` exits `2`
 naming `entry-changed`, artifacts already written remain, no later write is made and nothing is rolled
 back. `entry-changed` is raised **only** where one of these observations saw a difference: this
 comparison; G8's create-if-absent call reporting that an entry already exists; the descriptor-`fstat`
-versus path-`lstat` baseline comparison of a created file (Terms, C1); G8's post-write size, identity
+versus path-`lstat` baseline comparison of a created file, and the baseline `lstat` of a created directory
+(a link, junction, wrong type or absence installed between the `mkdir` and that `lstat`) (Terms, C1); G8's post-write size, identity
 and read-back validation of a created file; or G9's pre-rename validation of the temporary entry
 (identity, size, stamps, read-back). No other condition raises it. A change of the target directory's own
 identity observed at a write after the first is `entry-changed` as well (the root is the first
