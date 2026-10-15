@@ -649,3 +649,13 @@ test("every file this change owns is text: no NUL byte, valid UTF-8 (a NUL made 
     assert.doesNotThrow(() => new TextDecoder("utf-8", { fatal: true }).decode(bytes), rel);
   }
 });
+
+test("a spaced or quoted fixtureExemptions key that does not parse is still reported", async () => {
+  for (const key of ["fixtureExemptions : {}", '"fixtureExemptions": {}']) {
+    const root = await repo({ "test/fixtures/bad/bypass.js": CERT });
+    const text = ['standardVersion: "2.0.0"', 'project: "fixture exemption specimen"', key, ""].join(String.fromCharCode(10));
+    await writeFile(path.join(root, "project-policy.yml"), text);
+    const res = cli("audit", root);
+    assert.equal(findingsOf(res, "fixture-exemption-schema-invalid").length, 1, key);
+  }
+});

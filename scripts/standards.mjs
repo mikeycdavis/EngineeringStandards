@@ -228,7 +228,7 @@ async function loadProjectPolicy(repoRoot) {
       error: `project-policy.yml could not be read: ${error.message}`,
       // The file did not parse (a flow mapping such as `{}`, say), so no schema error exists to show;
       // what matters to `audit` is that a fixtureExemptions key was written and could not apply.
-      unparsedFixtureExemptions: /^fixtureExemptionss*:/m.test(rawText),
+      unparsedFixtureExemptions: /^["']?fixtureExemptions["']?[ \t]*:/m.test(rawText),
       parseError: error.message,
     };
   }
