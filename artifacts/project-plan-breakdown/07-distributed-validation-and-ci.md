@@ -262,7 +262,7 @@ someone to lie to make the build go green.
 - **Ready scope (owner-approved content; slices that depend on ADR 0021's file-safety guarantees
   are blocked until the owner accepts ADR 0021), as implementation slices** (each its own pull
   request; none is implemented by the ADR):
-  1. READY, with its read-time consistency and final-pass checks blocked until ADR 0021 is accepted: the resolver and the read-only `eligibility` subcommand, with fixtures and
+  1. BLOCKED until ADR 0021 is accepted (an owner act; then READY; source inspection and the read-time checks are governed by ADR 0021 G1-G4, because ADR 0016's no-follow, handle-bound mechanism cannot be provided from Node): the resolver and the read-only `eligibility` subcommand, with fixtures and
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
      read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`),
      and the read-time consistency checks (same-open-file stamps, multiset re-enumeration, and a final
