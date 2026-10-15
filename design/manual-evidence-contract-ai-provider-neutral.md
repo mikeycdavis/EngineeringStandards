@@ -18,11 +18,24 @@ aggregate-verdict semantics.
 
 ## 2. The claim
 
-> At digest D, provider-specific SDK, HTTP-endpoint and model-identifier usage is confined to the listed
-> adapter modules [paths]; no other module references a provider.
+> At digest D, over the complete source set S in scope, provider-specific SDK, HTTP-endpoint and
+> model-identifier usage is confined to the listed adapter modules [paths]; no other module in S
+> references a provider; and no module outside the adapters consumes a provider-specific type,
+> response shape, error type or option name that an adapter exposes.
 
-The claim is about the repository content named by D and nothing else. It is not a claim about runtime
-behaviour, configuration supplied at deploy time, or other repositories.
+The third clause exists because confinement of *names* is not what the catalog requires. The rule's
+description is that "model providers sit behind an abstraction so capabilities remain stable when the
+model changes" (`rules/ai.json`). An adapter that returns a provider's response object satisfies a
+name-confinement claim while leaving business logic coupled to that provider. The claim is about the
+repository content named by D and nothing else: not runtime behaviour, deploy-time configuration, or
+other repositories.
+
+**Scope of what this can establish.** Even with the third clause, the contract establishes the claim,
+which is a review of structure at one digest. Whether the abstraction would in fact keep capabilities
+stable if the model changed is a prediction no review at one digest proves. Whether an approved claim
+should be allowed to establish the whole rule, with the full assurance an attestation reports, is the
+owner's question under ADR 0010 and is not answered here; the narrower reading is that the contract
+supports partial evidence only and the rule stays not-evaluated.
 
 ## 3. Artefact list
 
@@ -31,6 +44,8 @@ The review MUST cite, and the attestation's `reviewedAgainst.paths` MUST name:
 | Artefact | Why |
 | --- | --- |
 | The adapter path list (the modules permitted to name a provider) | It is the subject of the claim. It must be a committed file, so it is inside the digest. |
+| The adapters' exported interfaces (the types and functions business logic is allowed to see) | The third clause of the claim is reviewed against these: the reviewer checks that none exposes a provider-specific type, response shape, error type or option. |
+| The complete in-scope source set S (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over "no other module", so freshness must cover every module, not only the adapters. See section 5. |
 | The detector's observation output (provider-import evidence), once #124 exists | Every observed file is either in the adapter list or justified in the review evidence. |
 | The dependency manifest (for example `package.json`, `requirements.txt`) | Shows which provider SDKs are installed at all; an SDK absent from the detector's list is visible here. |
 
@@ -49,18 +64,22 @@ review is not the accountable reviewer.
 
 ## 5. Invalidation rule
 
-Digest-bound `reviewedAgainst` over the adapter paths and the dependency manifest, using the
-`git-blob-set-sha256-v1` mechanism of ADR 0011. A change to any listed file makes the approval stale:
+Digest-bound `reviewedAgainst` over the adapter paths, the dependency manifest **and the complete
+in-scope source set S**, using the `git-blob-set-sha256-v1` mechanism of ADR 0011. A change to any file in
+S, or the addition of a file to S, makes the approval stale:
 
 > **Freshness is a separate axis from what the human decided.** (ADR 0011)
 
 A stale approval is `not-evaluated` / `skipped` and establishes nothing.
 
-A known weakness, stated rather than hidden: staleness is bound to *listed* paths. A new module that
-imports a provider and is not in the adapter list does not change any listed file, so it does not make
-the attestation stale by itself. The contract's mitigation is the detector cross-check in section 3
-(every observed file is listed or justified), which only works once #124 exists and only for the
-providers its list recognises.
+**This is a requirement the current mechanism does not meet.** The digest covers only the paths listed in
+`reviewedAgainst.paths`. A new module that adds a raw provider endpoint or a model identifier, in a file
+that is not listed, changes nothing the digest covers, so the approval would stay fresh while the claim
+"no other module references a provider" became false. The detector cannot close that gap: it is not
+built, and its blind spots include exactly raw endpoints and model identifiers. Binding freshness to S
+therefore needs a tree identity or an enumerated source set (section 9). Until that exists this
+contract MUST NOT be adopted; listing only the adapters and the manifest is not a sufficient
+approximation.
 
 ## 6. Expiry
 
@@ -84,11 +103,12 @@ because the blind spots below are exactly what it cannot see.
 - SDKs outside the detector's recognised list.
 - Dynamic loading, plugin systems, subprocess invocations and shelling out to provider CLIs.
 - Runtime provider selection driven by configuration or environment.
-- Whether the adapter itself is a sound abstraction (a leaky adapter satisfies the claim as worded).
+- Whether the abstraction would actually keep capabilities stable under a model change; the third clause
+  checks that no provider-specific shape crosses the interface, not that the interface is well chosen.
 - Behaviour of any other repository or service the project calls.
 
-A reviewer who has examined these still produces a claim limited to the listed artefacts. The claim text
-says "confined to the listed adapter modules", not "provider neutral".
+A reviewer who has examined these still produces a claim limited to the artefacts and set S. The claim
+text says "confined to the listed adapter modules", not "provider neutral".
 
 Also noted: Standard 1 R4 words provider neutrality as SHOULD, while the catalog level is `required`
 (`rules/ai.json`). Establishing a `required` rule from SHOULD wording is a standard-versus-catalog policy
@@ -100,6 +120,8 @@ question for the owner; this contract does not resolve it.
 | --- | --- | --- |
 | Set `attestable: true` on `ai.provider-neutral` | `rules/ai.json`. The field already exists and is validated by `scripts/catalog.mjs`; absent it defaults to `validationType === "manual-review"` | NOT MADE |
 | Decide whether catalog `assurance` stays `none` | `rules/ai.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`), which disagrees with a static `none` | NOT MADE, decision needed |
+| Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`. Today the digest covers only the listed `paths`, so a file added outside them changes nothing. A tree identity or an enumerated set (for example one produced by the audit-surface locator, #119) whose membership changes when any in-scope file is added would be needed | NOT MADE; without it this contract MUST NOT be adopted |
+| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
 | Require reviewer role, accountable owner and a maximum age for this rule | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
 | Declare the adapter list in a boundary declaration | Per Standard 51 R2; location unresolved | NOT MADE |
 | Describe the contract in the rule's `$assuranceNote` and in Standard 1 R4's implementation note | `rules/ai.json`, `standards/01-human-and-ai-operability.md` | NOT MADE |
