@@ -224,6 +224,16 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   The global object is recognised as `globalThis`, `global`, `window` or `self`, bare, optional-chained or
   parenthesised, before `.process`; `module` likewise before `require`. A root reached through a symlinked
   ancestor is reported as `symlink-not-followed` for that ancestor.
+  **Roots and chains (closing the class, not listing spellings).** The scan is a token scan, not a parser.
+  Every identifier chain rooted at `globalThis`, `global`, `window`, `self`, `process`, `module` or
+  `require` is normalised once, for all roots: grouping parentheses, `.`, `?.`, `["x"]`, `?.["x"]` and a repeated
+  global (`window.self.process`) read the same way. A chain it cannot fully classify (a computed key, the object
+  used as a value, `typeof` aside for global objects) is `termination-indirect` or `require-call`, never OK. A static
+  `import` or `export ... from` is read to its end with no token cutoff; one that does not reach `from "x"` is
+  `ambiguous-token`. By construction fail-closed: the root set, the access forms above, a computed key, a value use
+  and an unterminated statement. Listed spelling (not by construction): which member names are treated as
+  terminating, loading or network-reaching, and which parenthesised forms count as grouping rather than a call. A
+  local variable named `self`, `window` or `global` is reported and must be acknowledged.
   **Bare imports of repository packages.** A full workspace resolver is out of scope, so the check fails
   closed: the package names resolved are the `name` of `package.json` at the repository root and in each
   directory above an observed file. A bare import equal to, or under, such a name is

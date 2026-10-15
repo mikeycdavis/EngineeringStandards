@@ -495,21 +495,93 @@ function analyse(toks) {
     return o >= 0 ? namesInBraces(o + 1, k - 2) : [];
   };
 
+  // Every global object and every name that reaches modules, termination or native code is a ROOT.
+  // An access chain rooted at one is normalised once, for all roots alike: grouping parentheses,
+  // `.`, `?.`, `["x"]`, `?.["x"]` and a repeated global (globalThis.window.self.process) are read
+  // the same way. A chain the scan cannot fully classify (a computed key, the object used as a
+  // value, a call on it) is reported, never OK. This is a token scan, not a parser.
   const GLOBAL_OBJECTS = new Set(["globalThis", "global", "window", "self"]);
-  // Is the "." before token k preceded by the global object: g.k, g?.k or (g).k ?
-  const followsGlobalObject = (k) => {
-    if (!isP(k - 1, ".")) return false;
-    const g = (j) => toks[j]?.t === "id" && GLOBAL_OBJECTS.has(toks[j].v);
-    if (g(k - 2)) return true;
-    if (isP(k - 2, "?") && g(k - 3)) return true;
-    return isP(k - 2, ")") && g(k - 3) && isP(k - 4, "(");
+  const ROOTS = new Set([...GLOBAL_OBJECTS, "process", "module", "require"]);
+  const NETWORK_GLOBALS = new Set(["fetch", "WebSocket", "EventSource", "XMLHttpRequest"]);
+  const GROUPING_KEYWORDS = new Set([
+    "return", "typeof", "void", "await", "yield", "delete", "new", "in", "of", "case", "throw", "else", "do", "instanceof",
+  ]);
+  const isSpread = (k) => isP(k - 1, ".") && isP(k - 2, ".") && isP(k - 3, ".");
+  // Is the "(" at p a call or a grouping paren? A call follows a value; a grouping follows an operator.
+  const isCallParen = (p) => {
+    const b = toks[p - 1];
+    if (!b) return false;
+    if (b.t === "id") return !GROUPING_KEYWORDS.has(b.v);
+    if (b.t === "p") return b.v === ")" || b.v === "]";
+    return b.t === "str" || b.t === "tmpl" || b.t === "num";
   };
-  // Is the "." before token k preceded by `module`: module.k, module?.k or (module).k ?
-  const followsModule = (k) => {
-    if (!isP(k - 1, ".")) return false;
-    if (isId(k - 2, "module")) return true;
-    if (isP(k - 2, "?") && isId(k - 3, "module")) return true;
-    return isP(k - 2, ")") && isId(k - 3, "module") && isP(k - 4, "(");
+  const groupingBefore = (k) => {
+    let n = 0;
+    for (let p = k - 1; isP(p, "(") && !isCallParen(p); p--) n++;
+    return n;
+  };
+  // One access at q: .x  ?.x  ["x"]  ?.["x"]  [expr]; closing grouping parens are consumed first.
+  const readAccess = (q, st) => {
+    while (st.opens > 0 && isP(q, ")")) { q++; st.opens--; }
+    if (isP(q, "?") && isP(q + 1, ".")) q += 2;
+    else if (isP(q, ".") && !isP(q + 1, ".")) q += 1;
+    else if (!isP(q, "[")) return { kind: "none", next: q };
+    if (isP(q, "[")) {
+      if (isStr(q + 1) && isP(q + 2, "]")) return { kind: "name", v: toks[q + 1].v, next: q + 3 };
+      const close = matching("[", q);
+      return { kind: "computed", next: close < 0 ? toks.length : close + 1 };
+    }
+    if (isId(q)) return { kind: "name", v: toks[q].v, next: q + 1 };
+    return { kind: "none", next: q };
+  };
+  // Classify the chain rooted at token k. Reports into terminates / mechanisms.
+  const resolveRoot = (k) => {
+    const tk = toks[k];
+    const opens = groupingBefore(k);
+    const start = k - opens;
+    const st = { opens };
+    let name = tk.v;
+    let q = k + 1;
+    for (let hops = 0; hops < 64; hops++) {
+      if (name === "require") { flag("require-call", tk.line); return; }
+      const a = readAccess(q, st);
+      if (GLOBAL_OBJECTS.has(name)) {
+        if (a.kind === "name" && ROOTS.has(a.v)) { name = a.v; q = a.next; continue; }
+        if (a.kind === "name") {
+          if (a.v === "eval" || a.v === "Function" || a.v === "Reflect" || a.v === "Proxy") flag("reflection", tk.line);
+          else if (NETWORK_GLOBALS.has(a.v)) flag("network", tk.line);
+          return;
+        }
+        // computed key, or the global object itself used as a value (typeof g is only a string)
+        if (a.kind === "none" && isId(start - 1, "typeof")) return;
+        flag("termination-indirect", tk.line);
+        return;
+      }
+      if (name === "process") {
+        if (a.kind === "name") {
+          if (TERMINATING.has(a.v)) terminates.push(tk.line);
+          else if (PROCESS_REACH.has(a.v)) flag(PROCESS_REACH.get(a.v), tk.line);
+          return;
+        }
+        if (a.kind === "none" && isP(start - 1, "=") && isP(start - 2, "}")) {
+          const bound = bracedBefore(start);
+          if (bound.some((b) => TERMINATING.has(b))) terminates.push(tk.line);
+          else if (bound.includes(COMPUTED_KEY)) flag("termination-indirect", tk.line);
+          return;
+        }
+        flag("termination-indirect", tk.line);
+        return;
+      }
+      // module
+      if (a.kind === "name") {
+        if (a.v === "require") flag("require-call", tk.line);
+        return;
+      }
+      // computed key, or the module object used as a value: it carries .require with it
+      flag("require-call", tk.line);
+      return;
+    }
+    flag("termination-indirect", tk.line); // a chain too long to follow is not guessed at
   };
 
   for (let k = 0; k < toks.length; k++) {
@@ -519,7 +591,13 @@ function analyse(toks) {
       continue;
     }
     if (tk.t !== "id" || skip.has(k)) continue;
-    const afterDot = isP(k - 1, ".") && !followsGlobalObject(k);
+    const afterDot = isP(k - 1, ".") && !isSpread(k);
+    if (ROOTS.has(tk.v)) {
+      // an object key ({ self: 1 }) or a property of some other object (x.window) is not a root
+      const key = isP(k + 1, ":") && (isP(k - 1, "{") || isP(k - 1, ","));
+      if (!afterDot && !key) resolveRoot(k);
+      continue;
+    }
 
     switch (tk.v) {
       case "import": {
@@ -545,9 +623,23 @@ function analyse(toks) {
           imports.push({ spec: toks[k + 1].v, kind: "static", names: ["side-effect"], line: tk.line, sideEffect: true });
           break;
         }
+        // Read to the end of the statement, bounded only by the end of the file: no token cutoff.
+        // A braced list is skipped as a whole. A statement that does not reach `from "x"` before a
+        // semicolon, another import or the end of the file is unrecognised and reported.
         let j = k + 1;
-        while (j < toks.length && j < k + 400 && !(isId(j, "from") && isStr(j + 1)) && !isP(j, ";")) j++;
-        if (!(isId(j, "from") && isStr(j + 1))) break;
+        let truncated = false;
+        while (j < toks.length && !(isId(j, "from") && isStr(j + 1)) && !isP(j, ";") && !isId(j, "import")) {
+          if (isP(j, "{")) {
+            const c = matching("{", j);
+            if (c < 0) { truncated = true; break; }
+            j = c;
+          }
+          j++;
+        }
+        if (truncated || !(isId(j, "from") && isStr(j + 1))) {
+          flag("ambiguous-token", tk.line);
+          break;
+        }
         const names = [];
         const bindings = [];
         let x = k + 1;
@@ -577,79 +669,24 @@ function analyse(toks) {
         let a = k + 1;
         if (isId(a, "type") && (isP(a + 1, "{") || isP(a + 1, "*"))) a++;
         if (isP(a, "*")) {
-          let j = a + 1;
-          while (j < toks.length && j < k + 10 && !(isId(j, "from") && isStr(j + 1))) j++;
+          // export * from "x"   export * as ns from "x"   export * as "str" from "x"
+          const j = isId(a + 1, "as") ? a + 3 : a + 1;
           if (isId(j, "from") && isStr(j + 1)) {
             imports.push({ spec: toks[j + 1].v, kind: "reexport", names: ["*"], line: tk.line, sideEffect: false });
+          } else {
+            flag("ambiguous-token", tk.line);
           }
         } else if (isP(a, "{")) {
           const close = matching("{", a);
-          if (close > 0 && isId(close + 1, "from") && isStr(close + 2)) {
+          if (close < 0) flag("ambiguous-token", tk.line);
+          else if (isId(close + 1, "from") && isStr(close + 2)) {
             imports.push({ spec: toks[close + 2].v, kind: "reexport", names: namesInBraces(a + 1, close), line: tk.line, sideEffect: false });
+          } else if (isId(close + 1, "from")) {
+            flag("ambiguous-token", tk.line);
           }
         }
         break;
       }
-      case "globalThis":
-      case "global":
-        if (!afterDot) {
-          // g[...], g?.[...] and (g)[...]
-          let b = k + 1;
-          if (isP(b, ")") && isP(k - 1, "(")) b++;
-          if (isP(b, "?") && isP(b + 1, ".")) b += 2;
-          if (isP(b, "[")) flag("termination-indirect", tk.line);
-        }
-        break;
-      case "process": {
-        if (afterDot) break;
-        if (isP(k - 1, "=") && isP(k - 2, "}")) {
-          const bound = bracedBefore(k);
-          if (bound.some((b) => TERMINATING.has(b))) terminates.push(tk.line);
-          else if (bound.includes(COMPUTED_KEY)) flag("termination-indirect", tk.line);
-          break;
-        }
-        let m = k + 1;
-        if (isP(m, "?") && isP(m + 1, ".")) m += 2;
-        else if (isP(m, ".")) m += 1;
-        if (m === k + 1 && !isP(m, "[")) {
-          // The process object used as a value: aliased, passed on or returned.
-          flag("termination-indirect", tk.line);
-          break;
-        }
-        if (isP(m, "[")) {
-          if (isStr(m + 1) && isP(m + 2, "]")) {
-            if (TERMINATING.has(toks[m + 1].v)) terminates.push(tk.line);
-            else if (PROCESS_REACH.has(toks[m + 1].v)) flag(PROCESS_REACH.get(toks[m + 1].v), tk.line);
-          } else {
-            flag("termination-indirect", tk.line);
-          }
-        } else if (isId(m) && TERMINATING.has(toks[m].v)) {
-          terminates.push(tk.line);
-        } else if (isId(m) && PROCESS_REACH.has(toks[m].v)) {
-          flag(PROCESS_REACH.get(toks[m].v), tk.line);
-        }
-        break;
-      }
-      case "require":
-        // Any reference, not only a call: require.call / .apply / .bind, an alias (const q = require),
-        // a destructured or passed value all reach the same loader the scan cannot follow.
-        // module.require and module?.require are the same function. An object key or a method of
-        // some other object is not.
-        if ((!afterDot || followsModule(k)) && !isP(k + 1, ":")) flag("require-call", tk.line);
-        break;
-      case "module":
-        // a bracketed access on module: the string "require", or a computed key
-        if (!afterDot) {
-          // module[...], module?.[...] and (module)[...]
-          let b = k + 1;
-          if (isP(b, ")") && isP(k - 1, "(")) b++;
-          const optional = isP(b, "?") && isP(b + 1, ".");
-          if (optional) b += 2;
-          if (isP(b, "[") && (!isStr(b + 1) || toks[b + 1].v === "require")) flag("require-call", tk.line);
-          // The module object used as a value (const m = module; f(module)) carries .require with it.
-          else if (!optional && !isP(b, ".") && !isP(b, "[") && !isP(b, ":")) flag("require-call", tk.line);
-        }
-        break;
       case "createRequire":
         flag("require-call", tk.line);
         break;

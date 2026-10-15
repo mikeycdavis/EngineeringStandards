@@ -982,3 +982,162 @@ test("a prefix naming a subpath of a repository package still shadows it", () =>
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Closing the class (review rounds 4 to 6): the scanner is a token scanner, not a parser. What it
+// cannot fully classify is reported, never OK. These tests are generated families, not a list of
+// spellings: global-object roots x access forms x call/assign, so a spelling nobody wrote down is
+// covered by the same rule.
+// ---------------------------------------------------------------------------------------------
+
+const notOk = (r) => r.terminates.length > 0 || Object.values(r.mechanisms).some((l) => l.length > 0);
+const GLOBAL_ROOTS = ["globalThis", "global", "window", "self"];
+
+// How a root reaches the member `name`: dot, optional dot, bracket, optional bracket, and each of
+// those with the root parenthesised or the whole access parenthesised.
+const reach = (root, name) => [
+  `${root}.${name}`,
+  `${root}?.${name}`,
+  `${root}["${name}"]`,
+  `${root}?.["${name}"]`,
+  `(${root}).${name}`,
+  `(${root})?.${name}`,
+  `(${root})["${name}"]`,
+  `(${root})?.["${name}"]`,
+  `(${root}.${name})`,
+  `(${root}?.["${name}"])`,
+  `${root}.globalThis.${name}`,
+  `${root}["self"]?.["${name}"]`,
+];
+
+const TERMINATION_FAMILY = [];
+for (const root of GLOBAL_ROOTS) {
+  for (const p of reach(root, "process")) {
+    TERMINATION_FAMILY.push(`${p}.exit(1);`, `${p}?.exit(1);`, `${p}["exit"](1);`, `${p}.exitCode = 1;`, `${p}["exitCode"] = 1;`);
+  }
+}
+for (const p of ["process.exit", "process?.exit", 'process["exit"]', 'process?.["exit"]', "(process).exit", "(process)?.exit", '(process)["exit"]', "(process.exit)"]) {
+  TERMINATION_FAMILY.push(`${p}(1);`);
+}
+for (const root of GLOBAL_ROOTS) {
+  TERMINATION_FAMILY.push(`${root}[k].exit(1);`, `${root}?.[k](1);`, `const g = ${root};`, `f(${root});`, `const { process: p } = ${root};`);
+}
+TERMINATION_FAMILY.push("const p = process;", "f(process);", "(0, process).exit(1);");
+
+test(`generated family: ${TERMINATION_FAMILY.length} termination spellings through a global root are never OK`, () => {
+  const bad = TERMINATION_FAMILY.filter((src) => !notOk(scanSource(src)));
+  assert.deepEqual(bad, []);
+});
+
+const REQUIRE_FAMILY = [];
+const ARGS = ['("./other.cjs")', '?.("./other.cjs")'];
+for (const root of ["module", ...GLOBAL_ROOTS]) {
+  const bases = root === "module" ? reach("module", "require").slice(0, 10) : reach(root, "require");
+  for (const b of bases) for (const a of ARGS) REQUIRE_FAMILY.push(`const r = ${b}${a};`);
+}
+for (const root of GLOBAL_ROOTS) {
+  REQUIRE_FAMILY.push(`${root}.module.require("./o.cjs");`, `${root}["module"]["require"]("./o.cjs");`, `${root}?.["module"]?.require("./o.cjs");`, `(${root}.module).require("./o.cjs");`);
+}
+REQUIRE_FAMILY.push(
+  '(0, module).require("./o.cjs");',
+  '(module || x).require("./o.cjs");',
+  "const m = module;",
+  "f(module);",
+  "const { require: q } = module;",
+  'module[`require`]("./o.cjs");',
+);
+
+test(`generated family: ${REQUIRE_FAMILY.length} require spellings through module or a global root are never OK`, () => {
+  const bad = REQUIRE_FAMILY.filter((src) => !scanSource(src).mechanisms["require-call"].length);
+  assert.deepEqual(bad, []);
+});
+
+const REFLECTION_NETWORK = [];
+for (const root of GLOBAL_ROOTS) {
+  for (const p of reach(root, "eval")) REFLECTION_NETWORK.push([`${p}("1");`, "reflection"]);
+  for (const p of reach(root, "Function")) REFLECTION_NETWORK.push([`${p}("return 1")();`, "reflection"]);
+  for (const p of reach(root, "fetch")) REFLECTION_NETWORK.push([`${p}("https://example.test");`, "network"]);
+}
+test(`generated family: ${REFLECTION_NETWORK.length} eval, Function and fetch spellings through a global root are reported`, () => {
+  const bad = REFLECTION_NETWORK.filter(([src, m]) => scanSource(src).mechanisms[m].length === 0).map(([s]) => s);
+  assert.deepEqual(bad, []);
+});
+
+test("global-object uses that cannot reach a terminating or loading member stay OK", () => {
+  for (const src of [
+    "const o = { self: 1, window: 2, global: 3 };",
+    "const x = this.self.foo; const y = foo.window;",
+    "const t = typeof window !== 'undefined';",
+    "process.stdout.write('x');",
+    "globalThis.setTimeout(f, 1);",
+    "const l = window.location.href;",
+    "const s = a ? b : c;",
+    "export const z = (globalThis.process ? 1 : 2);".replace("globalThis.process ? 1 : 2", "1"),
+  ]) {
+    assert.equal(notOk(scanSource(src)), false, src);
+  }
+});
+
+// Named regressions from the Reviewer and Codex rounds.
+for (const [src, mech] of [
+  ['window["process"].exit(1);', null],
+  ['self?.["process"].exitCode = 1;', null],
+  ['(module)?.require("./other.cjs");', "require-call"],
+  ['(module)?.["require"]("./other.cjs");', "require-call"],
+]) {
+  test(`named regression: ${src}`, () => {
+    const r = scanSource(src);
+    if (mech) assert.ok(r.mechanisms[mech].length > 0, src);
+    else assert.ok(r.terminates.length > 0, src);
+  });
+}
+
+// No token cutoff: a statement of any length is read to its end.
+const manyNames = (n) => Array.from({ length: n }, (_, i) => `name${i}`).join(", ");
+for (const n of [200, 2000]) {
+  test(`a named import of ${n} specifiers is recorded, not cut off`, () => {
+    const r = scanSource(`import { ${manyNames(n)} } from "./far.mjs";\n`);
+    assert.deepEqual(specs(r), ["./far.mjs"]);
+    assert.equal(r.imports[0].names.length, n);
+  });
+  test(`a default plus ${n} named import is recorded`, () => {
+    const r = scanSource(`import def, { ${manyNames(n)} } from "./far.mjs";\n`);
+    assert.deepEqual(specs(r), ["./far.mjs"]);
+  });
+  test(`a re-export of ${n} names is recorded`, () => {
+    const r = scanSource(`export { ${manyNames(n)} } from "./far.mjs";\n`);
+    assert.deepEqual(specs(r), ["./far.mjs"]);
+  });
+}
+test("export * as namespace from is a re-export", () => {
+  assert.deepEqual(specs(scanSource('export * as ns from "./a.mjs";')), ["./a.mjs"]);
+});
+for (const src of [
+  "import { a, b",
+  "import { a, b } fro \"./x.mjs\";",
+  "import a b",
+  "export * as from",
+  "export { a, b",
+  "export * from",
+]) {
+  test(`an unparseable import or export-from is reported, never OK: ${JSON.stringify(src)}`, () => {
+    const r = scanSource(src);
+    assert.ok(r.mechanisms["ambiguous-token"].length > 0 || r.mechanisms["dynamic-import-computed"].length > 0, src);
+  });
+}
+
+test("a far-away import crossing a boundary is a violation through checkBoundaries", () => {
+  const t = tiny(
+    {
+      ...FILES,
+      "src/core.mjs": `import { ${manyNames(300)} } from "./app.mjs";\nexport function run() {}\n`,
+    },
+    baseDeclaration(),
+  );
+  try {
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.ok(v.length > 0, JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
