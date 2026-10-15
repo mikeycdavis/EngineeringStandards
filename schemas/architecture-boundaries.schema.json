@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EngineeringStandards/schemas/architecture-boundaries.schema.json",
+  "title": "Architecture Boundaries",
+  "description": "A repository's explicit architectural boundary declaration (Standard 51 R2, ADR 0018), kept in its own file so that it can be a reviewed path of an attestation without being the file that records the attestation. Absent file means nothing is declared and no verdict, score or exit code changes. Shape is validated here; overlap, unknown members and cyclic edges are checked by scripts/boundaries.mjs; ownership of every in-scope file and the import directions are checked against the tree by `node scripts/boundaries-check.mjs`.",
+  "type": "object",
+  "required": [
+    "observation",
+    "members",
+    "edges",
+    "external"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "observation": {
+      "$ref": "#/$defs/boundaryObservation"
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/boundaryMember"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/boundaryEdge"
+      }
+    },
+    "external": {
+      "$ref": "#/$defs/boundaryExternal"
+    }
+  },
+  "$defs": {
+    "boundaryPath": {
+      "description": "A repository-relative path using forward slashes: a file, or a directory ending in `/`. No `.` or `..` segment, no leading `/`, no backslash, no drive letter, no glob.",
+      "type": "string",
+      "pattern": "^(?:(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/)*(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/?$"
+    },
+    "boundaryEvidence": {
+      "description": "`path:line` citing a line that states, defines or exhibits the boundary or edge. For an edge in an observed file the checker verifies that the line is an import, by that member, of a file owned by the target member.",
+      "type": "string",
+      "pattern": "^(?:(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/)*(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+:[1-9][0-9]*$"
+    },
+    "boundaryObservation": {
+      "description": "The observation limits of the check, stated by the declaration itself. A claim about this repository's boundaries holds only within these limits.",
+      "type": "object",
+      "required": [
+        "method",
+        "roots",
+        "extensions",
+        "cannotObserve"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "description": "How edges are observed. Only static import graphs are defined.",
+          "type": "string",
+          "enum": [
+            "static-import-graph"
+          ]
+        },
+        "roots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/boundaryPath"
+          }
+        },
+        "extensions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[.][a-z0-9]+$"
+          }
+        },
+        "cannotObserve": {
+          "description": "Mechanisms the method cannot see. Unobserved dynamic import, reflection, generated code, subprocesses, network and data-access paths are excluded from any claim unless a detector named here covers them.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/boundaryUnobserved"
+          }
+        }
+      }
+    },
+    "boundaryUnobserved": {
+      "type": "object",
+      "required": [
+        "mechanism",
+        "reason",
+        "knownSites"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mechanism": {
+          "description": "A mechanism from the closed vocabulary. Every one of them must be listed, once (checked structurally).",
+          "type": "string",
+          "enum": [
+            "dynamic-import-computed",
+            "require-call",
+            "import-meta-resolve",
+            "url-module-path",
+            "termination-indirect",
+            "subprocess",
+            "reflection",
+            "network",
+            "ambiguous-token",
+            "generated-code",
+            "data-access",
+            "shell-and-workflow-scripts",
+            "outside-roots"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knownSites": {
+          "description": "Required, an explicit empty list allowed. For a mechanism the scanner detects, the files in which it is acknowledged: the check fails on a use in any other file and on a listed file where none is observed. For a declarative mechanism it is documentation the scanner cannot verify.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/boundaryPath"
+          }
+        }
+      }
+    },
+    "boundaryMember": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "paths",
+        "evidence",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "package",
+            "layer",
+            "plugin",
+            "process",
+            "trust-domain"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/boundaryPath"
+          }
+        },
+        "processExit": {
+          "description": "`permitted` lets files of this member call process.exit or set process.exitCode. Absent means they may not. A string rather than a boolean because the policy parser reads scalars as strings and refuses to guess types.",
+          "type": "string",
+          "enum": [
+            "permitted"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/boundaryEvidence"
+          }
+        }
+      }
+    },
+    "boundaryEdge": {
+      "description": "A permitted direction: files of `from` may import from files of `to`, and only the named exports in `via`. Imports within one member are always permitted. Anything else crossing members is a boundary bypass.",
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "via",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "via": {
+          "description": "The permitted interface: export names, or [\"*\"] to permit any, stated explicitly rather than by omission.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/boundaryEvidence"
+          }
+        }
+      }
+    },
+    "boundaryExternal": {
+      "description": "Specifiers that leave the repository. A bare specifier whose prefix is not listed is an undeclared external dependency.",
+      "type": "object",
+      "required": [
+        "allowPrefixes",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "allowPrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/boundaryEvidence"
+          }
+        }
+      }
+    }
+  }
+}

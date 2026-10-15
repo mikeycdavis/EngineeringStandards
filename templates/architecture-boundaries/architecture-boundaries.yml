@@ -1,0 +1,87 @@
+# architecture-boundaries.yml -- an optional, explicit declaration of architectural boundaries
+# (Standard 51 R2, ADR 0018). Place it at the repository root, beside project-policy.yml; it is
+# discovered by that name. Its absence changes nothing. Its presence is validated by
+# `standards policy` and `standards validate` (shape and internal consistency) and checked against
+# the tree by `node <standards-repo>/scripts/boundaries-check.mjs --dir=.`.
+#
+# Schema: schemas/architecture-boundaries.schema.json. Replace every placeholder below: a member
+# must own real paths, and every file under `observation.roots` must be owned by exactly one member.
+# Do not copy this repository's own declaration; it describes this repository's scripts/.
+observation:
+  method: "static-import-graph"
+  roots:
+    - src
+  extensions:
+    - ".js"
+  # Every mechanism below must be listed, once. knownSites is required (an empty list is allowed):
+  # for a detected mechanism it names the files where its use is acknowledged.
+  cannotObserve:
+    - mechanism: "dynamic-import-computed"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "require-call"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "import-meta-resolve"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "url-module-path"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "termination-indirect"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "subprocess"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "reflection"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "network"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "ambiguous-token"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "generated-code"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "data-access"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "shell-and-workflow-scripts"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+    - mechanism: "outside-roots"
+      reason: "Replace: why this repository cannot observe it, or what is acknowledged."
+      knownSites: []
+
+members:
+  - id: "core"
+    kind: "layer"
+    description: "Replace: what this layer is and owns."
+    paths:
+      - src/core/
+    evidence:
+      - PROJECT.md:1
+  - id: "app"
+    kind: "layer"
+    description: "Replace: what this layer is and owns."
+    paths:
+      - src/app/
+    evidence:
+      - PROJECT.md:1
+
+edges:
+  - from: "app"
+    to: "core"
+    via:
+      - "*"
+    evidence:
+      - PROJECT.md:1
+
+external:
+  allowPrefixes:
+    - "node:"
+  evidence:
+    - PROJECT.md:1
