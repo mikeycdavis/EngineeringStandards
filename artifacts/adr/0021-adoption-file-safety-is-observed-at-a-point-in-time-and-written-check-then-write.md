@@ -266,7 +266,8 @@ process, and any change after this observation, is not observed and is not claim
 order, and each step is a named failure step of the diagnostic:
 
 1. **Create** the temporary file in the artifact's parent directory by G8 (read-write descriptor, created with the restrictive mode `0600` so
-   the content is never readable by other users before step 4, a name unique per run); record its identity with `fstat` of the descriptor and require the path `lstat` to
+   the content is not readable by other users before step 4 **on POSIX; on Windows Node sets no ACL, so
+   no confidentiality of the temporary content is claimed there**, a name unique per run); record its identity with `fstat` of the descriptor and require the path `lstat` to
    report it (the baseline, Terms C1).
 2. **Write** the content through the descriptor.
 3. **Observe the destination:** C1 for the destination chain. The permission bits to apply are those
