@@ -21,11 +21,33 @@ aggregate-verdict semantics.
 ## 2. The claim
 
 > At digest D, over the complete source set S in scope: (a) every mutation path of persistent state
-> routes through audit sink S, so none bypasses it; (b) every call to S supplies actorType, actorId and a
+> routes through audit sink S, so none bypasses it, including paths that execute through a queue, an
+> external API or a library; (b) every call to S supplies actorType, actorId and a
 > correlation or request identifier; (c) each entry point derives its actor type from the real
 > initiator, so that agent-initiated changes use an agent actor type and human or system changes do not;
-> and (d) `actorId` and the correlation or request identifier are derived from the authenticated
-> principal and the request context, not from constants, defaults or values copied from the caller.
+> and (d) `actorId` and the correlation or request identifier are derived from the trusted identity and
+> execution context of the initiator type (table below), not from constants, defaults or values copied
+> from the caller.
+
+**Trusted sources by initiator type** (the review checks each entry point against its row):
+
+| Actor type | `actorId` derived from | Correlation or request id derived from |
+| --- | --- | --- |
+| `USER`, `ADMIN` | the authenticated session principal | the request id assigned at the edge |
+| `API_CLIENT` | the authenticated client credential identity | the request id assigned at the edge |
+| `SCHEDULED_JOB` | the scheduler's job identity | the execution or run id of that job |
+| `SYSTEM` | the identity of the internal component that initiates the change | that component's operation or execution id |
+| `AI_AGENT` | the agent's registered identity | the agent session or run id, and the initiating principal where one exists |
+| `INTEGRATION` | the integration credential identity | the delivery or message id |
+
+An entry point whose initiator type has no row source (for example a job with no recorded job identity)
+fails clause (d); it is not satisfied by a constant.
+
+**Externally executed mutations.** A mutation carried out through a queue, an external API or a
+library is not outside clause (a). Each such path is inventoried with the component that performs the
+resulting mutation and with evidence that the component records an event through S (or an equivalent
+component with the same fields) carrying the originating actor context. A path for which no such
+component can be named is a failure of clause (a), not an exclusion.
 
 Clause (a) is what lets a claim about calls to S speak for the catalog requirement, which is that *every
 mutation* records actor context (`rules/audit.json`). Without (a) the claim covers only calls that
@@ -106,11 +128,11 @@ cannot see.
 
 ## 8. What the contract cannot establish
 
-- Mutations outside S: other libraries, queues, external APIs, other repositories. Within S, bypasses are the subject of clause (a) and rest on the reviewer's reading of the mutation-path inventory.
+- Mutations that execute entirely outside S, in components the inventory cannot name, in other repositories or services. Within S, including paths through queues, external APIs and libraries, bypasses are the subject of clause (a) and rest on the reviewer's reading of the mutation-path inventory.
 - Truthfulness of the supplied values: a call can supply `actorId` and `correlationId` that are wrong,
   constant or copied.
-- That the initiator signal read in clause (c), or the principal and request context read in clause
-  (d), is correct for every run-time request: a reviewer reads code, not traffic, so a constant that
+- That the initiator signal read in clause (c), or the trusted identity and execution context read in
+  clause (d), is correct for every run-time request: a reviewer reads code, not traffic, so a constant that
   arrives from outside the code, or a mislabelled agent action at run time, is outside what the review
   proves. This is the residual the owner is asked to accept or reject in section 2.
 
