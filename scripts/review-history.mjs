@@ -458,10 +458,12 @@ export function effectiveAttestations(headAttestations, preflight) {
   const base = preflight.baseAttestations && typeof preflight.baseAttestations === "object" ? preflight.baseAttestations : {};
   const kept = {};
   for (const ruleId of new Set([...Object.keys(base), ...Object.keys(head)])) {
-    if (base[ruleId] !== undefined && holdsRejection(ruleId, base[ruleId])) {
-      kept[ruleId] = base[ruleId];
-    } else if (head[ruleId] !== undefined && holdsRejection(ruleId, head[ruleId])) {
-      kept[ruleId] = head[ruleId];
+    // Own properties only, and assigned as own data properties: a `__proto__` rule key is an ordinary entry.
+    const keep = (value) => Object.defineProperty(kept, ruleId, { value, enumerable: true, writable: true, configurable: true });
+    if (Object.hasOwn(base, ruleId) && holdsRejection(ruleId, base[ruleId])) {
+      keep(base[ruleId]);
+    } else if (Object.hasOwn(head, ruleId) && holdsRejection(ruleId, head[ruleId])) {
+      keep(head[ruleId]);
     }
   }
   return kept;

@@ -196,3 +196,23 @@ test("the git read bound never exceeds this runtime's maximum string length", as
   assert.ok(GIT_MAX_BUFFER <= constants.MAX_STRING_LENGTH - 256 * 1024, GIT_MAX_BUFFER + " leaves no headroom under " + constants.MAX_STRING_LENGTH);
   assert.ok(GIT_MAX_BUFFER >= 64 * 1024 * 1024, "the bound stays far above any real policy");
 });
+
+test("end to end: an attestation keyed by an Object.prototype member name does not crash validate", async () => {
+  for (const key of ["constructor", "toString", "__proto__"]) {
+    const NL = String.fromCharCode(10);
+    const head =
+      'standardVersion: "2.0.0"' + NL + 'project: "synthetic"' + NL + "attestations:" + NL + "  " + key + ":" + NL +
+      approved.split(NL).join(NL);
+    const base = 'standardVersion: "2.0.0"' + NL + 'project: "synthetic"' + NL;
+    const { r, report } = await endToEnd(base, head);
+    assert.ok(report, key + ": validate must produce a JSON report; stderr: " + String(r.stderr).slice(0, 300));
+    assert.doesNotMatch(String(r.stderr), /TypeError/, key);
+  }
+});
+
+test("effectiveAttestations keeps a rejection recorded under a __proto__ rule key as an own entry", async () => {
+  const { effectiveAttestations } = await import("../scripts/review-history.mjs");
+  const base = parseYaml("__proto__:\n  reviews:\n    - id: \"r1\"\n      status: rejected\n");
+  const kept = effectiveAttestations({}, { effective: false, baseAttestations: base });
+  assert.deepEqual(Object.keys(kept), ["__proto__"]);
+});

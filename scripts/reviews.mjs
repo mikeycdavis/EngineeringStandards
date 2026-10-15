@@ -316,7 +316,11 @@ function anchorProblem(ruleId, why) {
  */
 export function resolveRecordedReviewHistory(ruleId, record) {
   assertRuleId("resolveRecordedReviewHistory", ruleId);
-  const anchor = LEGACY_REVIEW_PREFIX_MANIFEST.histories[ruleId];
+  // Own keys only: a rule id such as `constructor` or `toString` would otherwise resolve to an inherited
+  // Object.prototype member and `anchor.events` would be undefined.
+  const anchor = Object.hasOwn(LEGACY_REVIEW_PREFIX_MANIFEST.histories, ruleId)
+    ? LEGACY_REVIEW_PREFIX_MANIFEST.histories[ruleId]
+    : undefined;
   if (!anchor || record === undefined) return resolveReviewHistory(ruleId, record);
 
   const strict = resolveReviewHistory(ruleId, record);
