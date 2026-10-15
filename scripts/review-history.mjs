@@ -354,7 +354,9 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
       return unverified(error.message, {
         ref,
         baseCommit,
-        baseAttestations: readable ?? {},
+        // Not `baseAttestations`: effectiveAttestations reads that and would restore a base rejection
+        // into the verdict. This channel feeds only the ST-47 finding lookup.
+        baseRecordedAttestations: readable ?? {},
         baseRejectionRules: readable === null ? null : rejectionRulesOf(readable),
       });
     }
@@ -465,16 +467,14 @@ export async function reviewHistoryPreflight({ repositoryPath, policyPath = "pro
   });
 
   if (result.status === "not-evaluated") {
-    // A readable base that records attestations is never "nothing to protect", whatever the head
-    // holds: deleting the whole section must not turn an unverified comparison into not-applicable.
-    const baseRecords =
-      result.baseAttestations && typeof result.baseAttestations === "object"
-        ? Object.keys(result.baseAttestations).length
-        : 0;
-    if (headCount === 0 && baseRecords === 0) {
+    if (headCount === 0) {
       return {
         status: "not-applicable",
         effective: true,
+        // Finding channel only: effectiveAttestations never reads this, so the verdict is exactly what it
+        // is without it. It lets the ST-47 lookup name a rejection the base recorded.
+        baseRecordedAttestations: result.baseRecordedAttestations,
+        baseRejectionRules: result.baseRejectionRules,
         reason:
           `the policy records no attestation and no base could be determined (${result.reason}), ` +
           "so the removal of earlier attestations cannot be detected",

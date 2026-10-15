@@ -4089,7 +4089,7 @@ export async function main(args) {
     // The unfiltered recorded histories, for the not-applicable rejection lookup only.
     recordedAttestations: headAttestations,
     // The base's raw histories, present when the preflight found a violated rewrite.
-    baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? null,
+    baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null,
     findings,
     evaluated: evaluatedThisRun,
     today: new Date().toISOString().slice(0, 10),
