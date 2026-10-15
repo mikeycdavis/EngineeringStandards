@@ -3949,9 +3949,11 @@ export async function main(args) {
         // A file with no recognised text extension is never searched as text (a `.env` is judged by
         // the repository index), so "no text available" says nothing about it: its digest was taken
         // over the whole file and a rule that does not fire there is genuinely stale.
-        (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule) &&
-          TEXT_EXT.has(path.extname(abs)) &&
-          (!run.textOf(abs).available || run.truncated.has(abs)));
+        // An index-only rule is as established as the index read behind it: when the detector could
+        // not read the index (no repository) it withdrew the rule, and a pin is not "stale" over that.
+        (INDEX_ONLY_FIXTURE_RULES.has(entry.rule)
+          ? envCheck.evaluated === false
+          : TEXT_EXT.has(path.extname(abs)) && (!run.textOf(abs).available || run.truncated.has(abs)));
       if (incomplete) {
         addFinding({
           id: "fixture-exemption-not-established",

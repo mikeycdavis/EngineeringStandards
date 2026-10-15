@@ -51,19 +51,28 @@ function isRealDate(value) {
 }
 const WILDCARD_RE = /[*?]/;
 
-/** SHA-256 hex of `bytes` with CRLF read as LF. See the module comment. */
-export function contentDigest(bytes) {
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-  const out = [];
+/**
+ * Feed `buf` to `hash` with each CRLF pair read as LF, segment by segment. Nothing is concatenated
+ * or copied: the audit digests every recognised text file, so this must not allocate a second
+ * full-size buffer for a large CRLF-heavy file.
+ */
+function updateNormalized(hash, buf) {
   let from = 0;
   for (let i = 0; i < buf.length - 1; i += 1) {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a) {
-      out.push(buf.subarray(from, i));
+      hash.update(buf.subarray(from, i));
       from = i + 1;
     }
   }
-  out.push(buf.subarray(from));
-  return createHash("sha256").update(out.length === 1 ? out[0] : Buffer.concat(out)).digest("hex");
+  hash.update(buf.subarray(from));
+}
+
+/** SHA-256 hex of `bytes` with CRLF read as LF. See the module comment. */
+export function contentDigest(bytes) {
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const hash = createHash("sha256");
+  updateNormalized(hash, buf);
+  return hash.digest("hex");
 }
 
 /**
@@ -85,24 +94,10 @@ export async function contentDigestOfStream(chunks) {
       heldCr = true;
       buf = buf.subarray(0, buf.length - 1);
     }
-    hash.update(contentDigestBytes(buf));
+    updateNormalized(hash, buf);
   }
   if (heldCr) hash.update(Buffer.from([0x0d]));
   return hash.digest("hex");
-}
-
-/** `bytes` with each CRLF pair read as LF (the byte transform behind `contentDigest`). */
-function contentDigestBytes(buf) {
-  const out = [];
-  let from = 0;
-  for (let i = 0; i < buf.length - 1; i += 1) {
-    if (buf[i] === 0x0d && buf[i + 1] === 0x0a) {
-      out.push(buf.subarray(from, i));
-      from = i + 1;
-    }
-  }
-  out.push(buf.subarray(from));
-  return out.length === 1 ? out[0] : Buffer.concat(out);
 }
 
 /**

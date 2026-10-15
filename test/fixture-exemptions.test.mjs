@@ -557,3 +557,18 @@ test("a truncated .env.json pin is judged by the index, so a dead one is stale r
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((x) => x.id)));
   assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
 });
+
+test("an env pin is 'not established', never stale, when the repository index cannot be read", async () => {
+  const root = await scratch();
+  await mkdir(path.join(root, "test/fixtures/bad"), { recursive: true });
+  await writeFile(path.join(root, "test/fixtures/bad/.env"), ENV);
+  await writeFile(path.join(root, "project-policy.yml"), policyText([pin("test/fixtures/bad/.env", ENV, "scm.no-committed-env-files")]));
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json?.findings?.map((x) => x.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 1);
+});
+
+test("contentDigest of a large CRLF-heavy text matches the reference without a per-line concatenation", () => {
+  const text = "line of text\r\n".repeat(200_000);
+  assert.equal(contentDigest(Buffer.from(text)), contentDigest(Buffer.from(text.replaceAll("\r\n", "\n"))));
+});
