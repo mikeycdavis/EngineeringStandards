@@ -1548,3 +1548,46 @@ test("named regression: a directory member path that is a file, and a file path 
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// Round 13
+test("named regression: WebSocket, EventSource and XMLHttpRequest as properties, keys or declarations are not the globals", () => {
+  for (const src of ["client.WebSocket(1);", "const t = transport.EventSource;", "const o = { XMLHttpRequest: 1 };", "typeof WebSocket;", "class WebSocket {}", "const EventSource = 1;"]) {
+    assert.equal(scanSource(src).mechanisms.network.length, 0, src);
+  }
+  for (const src of ['new WebSocket("wss://x.test");', "const E = EventSource;", "x instanceof XMLHttpRequest;", "class A extends EventSource {}"]) {
+    assert.ok(scanSource(src).mechanisms.network.length > 0, src);
+  }
+});
+test("named regression: a missing, misspelled or fileless observation root is reported, never OK", () => {
+  const d = baseDeclaration();
+  d.observation.roots = ["srcc"];
+  const t = tiny(FILES, d);
+  try {
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.ok(kinds(v).includes("unusable-observation-root"), JSON.stringify(v));
+    d.observation.roots = ["NOTES.md"];
+    assert.ok(kinds(checkBoundaries(t.dir, t.declaration)).includes("unusable-observation-root"));
+    d.observation.roots = ["src"];
+    assert.ok(!kinds(checkBoundaries(t.dir, t.declaration)).includes("unusable-observation-root"));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+test("named regression: a special file is not a regular member path (FIFO)", (t0) => {
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    const r = spawnSync("mkfifo", [path.join(t.dir, "src", "pipe.mjs")]);
+    if (r.status !== 0) return t0.skip("mkfifo not available here");
+    const d = baseDeclaration();
+    d.members[0].paths = ["src/pipe.mjs"];
+    assert.ok(kinds(checkBoundaries(t.dir, d)).includes("dead-member-path"));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+test("named regression: a braced default import bound as process is the process object, not an unknown alias", () => {
+  for (const src of ['import { default as process } from "node:process"; console.log(process.argv);', 'import { "default" as process } from "node:process";']) {
+    assert.equal(notOk(scanSource(src)), false, src);
+  }
+  assert.ok(scanSource('import { default as p } from "node:process";').mechanisms["termination-indirect"].length > 0);
+});

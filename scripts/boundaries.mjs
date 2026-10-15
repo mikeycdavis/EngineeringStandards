@@ -241,9 +241,18 @@ export function inScopeFiles(repoRoot, observation) {
       walk(path.posix.join(rel, name));
     }
   };
-  for (const r of observation.roots) walk(r.replace(/\/$/, "") || ".", true);
+  const unusable = [];
+  for (const r of observation.roots) {
+    const before = out.length;
+    const linksBefore = links.length;
+    walk(r.replace(/\/$/, "") || ".", true);
+    // A root that yields no observed file (absent, misspelled, a special file, or a tree with no
+    // file of an observed extension) would let the check report OK over nothing.
+    if (out.length === before && links.length === linksBefore) unusable.push(r);
+  }
   const result = [...new Set(out)].sort();
   result.links = [...new Set(links)].sort();
+  result.unusableRoots = unusable;
   return result;
 }
 
@@ -812,6 +821,10 @@ function analyse(rawToks) {
             const close = matching("{", x);
             const stop = close < 0 ? j : close;
             names.push(...namesInBraces(x + 1, stop));
+            for (let y = x + 1; y < stop; y++) {
+              const isDefault = (isId(y, "default") || (isStr(y) && toks[y].v === "default")) && isId(y + 1, "as") && isId(y + 2);
+              if (isDefault) bindings.push({ kind: "default", local: toks[y + 2].v });
+            }
             x = stop;
           } else if (isId(x) && !isId(x, "as")) {
             names.push("default");
@@ -890,7 +903,11 @@ function analyse(rawToks) {
       case "WebSocket":
       case "EventSource":
       case "XMLHttpRequest":
-        flag("network", tk.line);
+        // the global, not a property (`client.WebSocket`), an object key or a local declaration
+        if (!afterDot && !isP(k + 1, ":") && !isId(k - 1, "typeof") && !isId(k - 1, "function") &&
+            !isId(k - 1, "const") && !isId(k - 1, "let") && !isId(k - 1, "var") && !isId(k - 1, "class")) {
+          flag("network", tk.line);
+        }
         break;
       case "URL": {
         if (isId(k - 1, "new") && isP(k + 1, "(")) {
@@ -1107,7 +1124,7 @@ function parseEvidence(e) {
  * construct the scanner could not classify is acknowledged by the declaration.
  *
  * Violation kinds: unowned-file, dead-member-path, undeclared-edge, undeclared-interface,
- * undeclared-external, unresolved-import, process-termination, unobserved-mechanism,
+ * undeclared-external, unresolved-import, unusable-observation-root, process-termination, unobserved-mechanism,
  * known-site-missing, symlink-not-followed, evidence-missing, evidence-out-of-range, evidence-mismatch,
  * evidence-outside-observation, evidence-not-regular-file, repository-package-import,
  * external-prefix-shadows-member.
@@ -1137,6 +1154,15 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
     }
   }
 
+  for (const r of scan.files.unusableRoots ?? []) {
+    violations.push({
+      kind: "unusable-observation-root",
+      file: r,
+      line: 1,
+      message: `observation root '${r}' yields no observed file (absent, misspelled, or no file with an observed extension); the check would otherwise report OK over nothing`,
+    });
+  }
+
   for (const link of scan.links ?? []) {
     violations.push({
       kind: "symlink-not-followed",
@@ -1152,7 +1178,7 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
       // A directory path must be a directory and a file path must not be one; only then is it read.
       let st = null;
       try { st = statSync(abs); } catch { /* absent */ }
-      const wrongType = st !== null && (isDirectoryPath(p) ? !st.isDirectory() : st.isDirectory());
+      const wrongType = st !== null && (isDirectoryPath(p) ? !st.isDirectory() : !st.isFile());
       const empty = st !== null && !wrongType && isDirectoryPath(p) && readdirSync(abs).length === 0;
       if (st === null || wrongType || empty) {
         violations.push({ kind: "dead-member-path", file: p, line: 1, message: `member '${m.id}' owns '${p}', which matches no file` });
