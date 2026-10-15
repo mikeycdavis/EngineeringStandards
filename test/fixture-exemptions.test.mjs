@@ -771,3 +771,12 @@ test("a fixture-only rule keeps its active project-level exception visible besid
   assert.equal(r.exception.projectException.reason, "legacy client being replaced");
   assert.match(cliText("validate", root).out, /legacy client being replaced/);
 });
+
+test("ADR 0020 does not file an unreadable pin under stale", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const dir = path.join(HERE, "..", "artifacts", "adr");
+  const name = (await readdir(dir)).find((f) => f.startsWith("0020"));
+  const adr = await readFile(path.join(dir, name), "utf8");
+  assert.doesNotMatch(adr, /scanned surface, unreadable, digest changed/);
+  assert.match(adr, /File unreadable, or not read in full/);
+});

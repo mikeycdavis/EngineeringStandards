@@ -88,7 +88,8 @@ An entry that does not validate waives nothing and is reported; the file is insp
 | Rule not exemptible per file, unknown rule, or non-exemptible rule (Standard 20 R4) | `fixture-exemption-rule-not-exemptible`, `-unknown-rule`, `-non-exemptible` |
 | Expired | `fixture-exemption-expired` |
 | Two entries for one (path, rule) | `fixture-exemption-duplicate`, **both** rejected — nothing says which digest was reviewed |
-| Path not in the scanned surface, unreadable, digest changed, or rule no longer fires | `fixture-exemption-stale` |
+| Path not in the scanned surface, digest changed, or rule no longer fires | `fixture-exemption-stale` |
+| File unreadable, or not read in full (read budget spent, per-file cap, no repository index) | `fixture-exemption-not-established` — keep the entry and fix access or rerun; never stale, never a waiver |
 | Path exists but the 20,000-file cap kept the walk from reaching it, and nothing deliberate (ignore rule, excluded or vendor directory, symlink) explains its absence | `fixture-exemption-not-established` — keep the entry; it is never a waiver |
 
 `standards policy` runs the same validator, so an entry that is malformed, expired, duplicated or names an
