@@ -725,7 +725,7 @@ function checkInvocation({ subcommand, maxTotalReadBytes }) {
     return subcommand ? EXIT_OK : EXIT_INVOCATION;
   }
   if (!COMMANDS.has(subcommand)) {
-    humanErr(`standards: unknown subcommand '${subcommand}'\n\n`);
+    humanErr(`standards: unknown subcommand '${displaySafe(subcommand)}'\n\n`);
     usage();
     return EXIT_INVOCATION;
   }
@@ -736,7 +736,7 @@ function checkInvocation({ subcommand, maxTotalReadBytes }) {
     const bytes = Number(maxTotalReadBytes);
     if (!Number.isFinite(bytes) || bytes <= 0) {
       humanErr(
-        `standards: --max-total-read-bytes must be a positive number of bytes, got '${maxTotalReadBytes}'.\n`,
+        `standards: --max-total-read-bytes must be a positive number of bytes, got '${displaySafe(maxTotalReadBytes)}'.\n`,
       );
       return EXIT_INVOCATION;
     }
@@ -776,7 +776,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   try {
     report = await planInit(target, { mode: modeFlag, overwrite });
   } catch (error) {
-    humanErr(`standards init: ${error.message}\n`);
+    humanErr(`standards init: ${displaySafe(error.message)}\n`);
     return EXIT_INVOCATION;
   }
 
@@ -3806,7 +3806,7 @@ export async function main(args) {
 
   if (declaredVersion && declaredVersion !== FRAMEWORK_VERSION) {
     const message =
-      `project-policy.yml declares standardVersion ${declaredVersion}, but the framework executing ` +
+      `project-policy.yml declares standardVersion ${displaySafe(declaredVersion)}, but the framework executing ` +
       `this run is ${FRAMEWORK_VERSION}. No verdict was produced: a compliance status reported under ` +
       `a version that did not evaluate it would misstate its own provenance.`;
     if (cli.json) {
@@ -3827,7 +3827,7 @@ export async function main(args) {
       humanErr(
         `VERSION_MISMATCH\n  ${message}\n\n` +
           `  Resolving a historical rule set is not implemented (Standard 21 R5), so this run cannot\n` +
-          `  evaluate ${declaredVersion}. Either execute the framework at ${declaredVersion}, or update\n` +
+          `  evaluate ${displaySafe(declaredVersion)}. Either execute the framework at ${displaySafe(declaredVersion)}, or update\n` +
           `  project-policy.yml to ${FRAMEWORK_VERSION} deliberately and review the failures the newer\n` +
           `  rule set reports. Upgrading the governing version is an engineering event, not a default.\n`,
       );

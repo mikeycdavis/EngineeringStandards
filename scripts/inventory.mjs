@@ -225,10 +225,10 @@ out.push(
 );
 
 if (inventory.expectedCount !== inventory.standards.length) {
-  out.push("", `! inventory declares expectedCount ${inventory.expectedCount} but lists ${inventory.standards.length} standards`);
+  out.push("", `! inventory declares expectedCount ${displaySafe(inventory.expectedCount)} but lists ${inventory.standards.length} standards`);
 }
 if (inventory.expectedCount !== sumOfSources) {
-  out.push("", `! expectedCount ${inventory.expectedCount} is not the sum of its sources (${sumOfSources})`);
+  out.push("", `! expectedCount ${displaySafe(inventory.expectedCount)} is not the sum of its sources (${sumOfSources})`);
 }
 if (problems > 0) {
   out.push(

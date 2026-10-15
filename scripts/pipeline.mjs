@@ -232,8 +232,8 @@ export function runPipeline({ cwd, only = null, verbose = false } = {}) {
  */
 function preflight(cwd) {
   const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
-  if (r.error) return { ok: false, message: `git is not available: ${r.error.message}` };
-  if (r.status !== 0) return { ok: false, message: `git could not read this repository:\n${(r.stderr ?? "").trim()}` };
+  if (r.error) return { ok: false, message: `git is not available: ${displaySafe(r.error.message)}` };
+  if (r.status !== 0) return { ok: false, message: `git could not read this repository:\n${displaySafe((r.stderr ?? "").trim())}` };
   return { ok: true, commit: r.stdout.trim() };
 }
 
