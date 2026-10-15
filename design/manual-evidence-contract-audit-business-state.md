@@ -20,9 +20,19 @@ aggregate-verdict semantics.
 
 ## 2. The claim
 
-> At digest D the mutation entry points listed in the committed inventory are the only writers of
-> persistent business state, each emits an audit event through sink S, and the stores excluded as derived
-> or transient are listed with their reconstruction rationale.
+> At digest D, over the complete source set S in scope: the mutation entry points listed in the
+> committed inventory are the only writers of persistent business state; each emits an audit event
+> through sink S; each emitted event carries the minimum payload that records *what changed* (below);
+> and the stores excluded as derived or transient are listed with their reconstruction rationale.
+
+**Minimum payload.** The catalog's remediation is to "record business mutations through an audit path
+that captures what changed" (`rules/audit.json`). An event that carries only an identifier does not do
+that. The project must define, and the inventory must cite, the fields an event needs to reconstruct the
+change (Standard 3 R2 requires a project to "decide and record which fields are mandatory for it", and
+lists `entityType`, `entityId`, `action`, `before`, `after` and `reason` among candidates). The
+per-entry-point test asserts that the emitted event contains those fields with the values the mutation
+changed, not merely that S was called. Whether the recorded content is *sufficient* to reconstruct state
+is still a reviewer judgement against the stated minimum.
 
 The exclusion language follows the catalog description: derived, transient or serialized metadata may be
 excluded "where it can be safely reconstructed and has no compliance, security, or business-history
@@ -34,13 +44,16 @@ value" (`rules/audit.json`).
 | --- | --- |
 | The committed inventory: path, symbol, store, emitted event, or exclusion rationale | The subject of the claim; committed, so inside the digest. |
 | The sink source | Shows what "emits an audit event" means. |
-| One test per listed entry point proving emission | An artefact the reviewer reads; not by itself evidence (section 8). |
+| One test per listed entry point asserting the minimum payload (changed fields and their values), not just that S was called | An artefact the reviewer reads; not by itself evidence of completeness (section 8). |
+| The project's recorded minimum event payload (Standard 3 R2) | Defines what "captures what changed" means for the sufficiency clause. |
+| The complete in-scope source set S (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over *the only* writers, so freshness must cover every file. See section 5. |
 | The detector's mutation-site observations (#126, not built) | Cross-check input. |
 
-Mechanical cross-check: every detector-observed mutation site is either inventoried or excluded with a
-reason, so a new site makes the attestation stale automatically. This works only once #126 and the
-audit-surface locator (#119; PR #135 is open) exist, and only for the mutation shapes the detector
-recognises. It shares the sink and inventory design of the sibling contract for
+Detector cross-check, once it exists: every detector-observed mutation site should be either inventoried
+or excluded with a reason, and an uninventoried one is a finding. That is a detector result (a
+contradiction, section 10), **not freshness**. It depends on #126 and the audit-surface locator (#119;
+PR #135 is open), which are not on develop, and covers only the mutation shapes the detector recognises,
+so it must not be relied on to keep the attestation current. It shares the sink and inventory design of the sibling contract for
 `audit.actor-attribution` (#128).
 
 ## 4. Accountable role
@@ -50,13 +63,25 @@ the author of the change under review.
 
 ## 5. Invalidation rule
 
-Digest-bound `reviewedAgainst` over the inventory, the sink and every inventoried file, using
-`git-blob-set-sha256-v1` (ADR 0011). Stale on any change to those paths:
+Digest-bound `reviewedAgainst` over the inventory, the sink **and the complete in-scope source set S**,
+using `git-blob-set-sha256-v1` (ADR 0011). Stale on any change to a file in S or the addition of a file
+to S:
 
 > **Freshness is a separate axis from what the human decided.** (ADR 0011)
 
-A stale approval is `not-evaluated` / `skipped` and establishes nothing. A mutation site added outside the
-inventory changes no listed file; only the detector cross-check can catch it.
+A stale approval is `not-evaluated` / `skipped` and establishes nothing.
+
+**This is a requirement the current mechanism does not meet.** The digest covers only the paths listed
+in `reviewedAgainst.paths`. A writer added in a new or uninventoried file changes nothing the digest
+covers, so the approval would stay fresh while "the listed entry points are the only writers" became
+false. The detector does not close that gap: it is not built, recognises only some mutation shapes, and
+a clean run is not completeness evidence. Freshness must be bound to a tree identity or an enumerated
+source set whose membership changes when any potential writer is added (section 9). Until it is, this
+contract MUST NOT be adopted.
+
+**A recorded digest is also required.** Today `reviewedAgainst` and its digest are optional, and
+freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`). An approval with no
+digest would never go stale, so section 9 lists mandatory paths, digest and algorithm for this rule.
 
 ## 6. Expiry
 
@@ -74,9 +99,9 @@ stands and is never overridden (section 10). A clean run is not evidence that ev
 
 - Mutations through unlisted libraries, files, queues and external APIs.
 - Writers in other repositories or services that touch the same stores.
-- Whether the audit event is sufficient to reconstruct the change (before and after content).
+- That the minimum payload the project defined is itself sufficient to reconstruct every kind of change; the contract checks events against the stated minimum.
 - That an excluded store really is derived or transient; the rationale is a reviewer judgement.
-- That the inventory is complete beyond what the detector can observe.
+- That the inventory is complete beyond what the reviewer reads in S and the detector can observe.
 
 Standard 24 R2's worked example of an elevation to avoid is the summary line "PASS: all business
 mutations are audited" (`standards/24-validator-rules.md`, R2); the claim text above is written to avoid
@@ -93,6 +118,8 @@ definition of review as the establishing mechanism.
 | --- | --- | --- |
 | Set `attestable: true` on `audit.business-state` | `rules/audit.json`. The field already exists and is validated by `scripts/catalog.mjs`; absent it defaults to `validationType === "manual-review"` | NOT MADE |
 | Whether `assurance` moves from `none` | `rules/audit.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`); the static catalog value is a separate claim (Standard 27 R3) | NOT MADE, decision needed |
+| Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`. Today the digest covers only the listed `paths`, so a file added outside them changes nothing. A tree identity or an enumerated set (for example one produced by the audit-surface locator, #119) whose membership changes when any in-scope file is added would be needed | NOT MADE; without it this contract MUST NOT be adopted |
+| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
 | Require reviewer role, accountable owner, maximum age and inventory in the attestation | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
 | Define the committed mutation inventory format | New schema or design document | NOT MADE |
 | Update the `$assuranceNote` and Standard 3's implementation note | `rules/audit.json`, `standards/03-auditing.md` | NOT MADE |
