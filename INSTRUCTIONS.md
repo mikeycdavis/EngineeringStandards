@@ -228,6 +228,21 @@ ref, shallow history without it) the result is `NOT_EVALUATED` and every approva
 that run (run `git fetch origin`); a rewritten history withdraws them too. Only approvals are disregarded:
 a recorded **rejection stays effective**, because negative evidence is never removed for want of a
 comparison. Deleting or emptying the attestations section is itself a rewrite when a base exists.
+For an attestable rule that applies, a rejection recorded in a history that is malformed, rewritten or not comparable
+with a trusted base stays in force: the rule fails with the rejection named, and only a later well-formed
+review in a repaired history (and, once authenticated review exists, an authenticated one) clears it. A
+malformed history that records no rejection establishes nothing: it is never read as an approval. Repair is possible only while the malformed events are in an unmerged
+change: once a malformed history is on the trusted default branch the append-only check rejects both editing
+and appending of malformed events inside a well-formed list of reviews, and there is no recovery path yet for
+them (a known limitation that needs an owner decision). A `reviews` container that is
+not a list (a mapping or a scalar) may hide recorded events, so it is unverifiable and cannot be replaced either.
+A legacy single-record attestation (no `reviews` key) is itself the one existing event, so a malformed one
+cannot be replaced either. The only exception is a `reviews` key that is null or an empty list: it holds no events,
+so replacing it with a well-formed list that begins with a genesis event is accepted (it records no rejection to retain). This holds
+only for a rule that applies: a rule declared `not-applicable` is not evaluated, so a rejection recorded for
+it is not consulted. Remove the declaration or the attestation rather than relying on either. A rule the
+catalog does not mark attestable is never cleared by a review: an attestation recorded for it is an invalid
+attestation, and the rule is made compliant through its automated check.
 
 The distinction that matters most: **not-applicable is a claim about your project, not about the
 rule.** *We have no background jobs* stops being true the day you add one — which is what
