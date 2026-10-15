@@ -256,6 +256,10 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   separator or a backslash is `unresolved-import`, and an absolute path outside the repository stays external.
   `node:`, bare, `data:` and `http(s):` specifiers are external. Binding names in import and export clauses
   (`export { process } from`, `import * as Object from`) are not references to the global of that name.
+  **String escapes.** A string literal is decoded to the value the engine computes (hex, unicode and code-point
+  escapes, single-character escapes, line continuations) before it is used as a specifier or member name, so an
+  import written with unicode escapes for the two dots of ../ is read as ../x.mjs. A malformed escape or a legacy
+  octal escape is `ambiguous-token`.
   **Bare imports of repository packages.** A full workspace resolver is out of scope, so the check fails
   closed: the package names resolved are the `name` of `package.json` at the repository root and in each
   directory above an observed file. A bare import equal to, or under, such a name is

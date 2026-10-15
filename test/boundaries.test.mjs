@@ -1404,3 +1404,31 @@ test(`generated family: destructuring each enumerated member from its namespace 
   }
   assert.deepEqual(bad, []);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Round 8: string escapes are decoded to the value the engine computes
+// ---------------------------------------------------------------------------------------------
+test("named regression: an escaped module specifier is read as its value", () => {
+  assert.deepEqual(specs(scanSource('import "./\\u002e\\u002e/core/core.mjs";')), ["./../core/core.mjs"]);
+  assert.deepEqual(specs(scanSource('import { a } from "\\x2e/core.mjs";')), ["./core.mjs"]);
+  assert.deepEqual(specs(scanSource('import "./\\u{2e}\\u{2e}/x.mjs";')), ["./../x.mjs"]);
+  assert.deepEqual(specs(scanSource('import("./a\\/b.mjs");')), ["./a/b.mjs"]);
+  assert.deepEqual(specs(scanSource("export * from './a\\\nb.mjs';")), ["./ab.mjs"]);
+});
+test("escaped member names are the dotted member", () => {
+  assert.ok(scanSource('Object["get\\x50rototypeOf"](x);').mechanisms.reflection.length > 0);
+  assert.ok(scanSource('process["\\u0065xit"](1);').terminates.length > 0);
+});
+test("a malformed or legacy octal escape is reported, never silently misread", () => {
+  for (const src of ['import "./\\xZZ.mjs";', 'import "./\\u12.mjs";', 'import "./\\101.mjs";']) {
+    assert.ok(scanSource(src).mechanisms["ambiguous-token"].length > 0, src);
+  }
+});
+test("a crossing hidden behind an escaped specifier is a violation through checkBoundaries", () => {
+  const t = tiny({ ...FILES, "src/app.mjs": 'import { other } from "./\\u0063ore.mjs";\n' }, baseDeclaration());
+  try {
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["undeclared-interface"]);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});

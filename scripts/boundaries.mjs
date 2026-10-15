@@ -315,8 +315,35 @@ export function tokenize(src, ambiguous = "regex") {
         i++;
         while (i < n && src[i] !== c) {
           if (src[i] === "\\") {
-            if (src[i + 1] === "\n") line++;
-            v += src[i + 1] ?? "";
+            // Decode the escape to the character it denotes, as the engine does, so a specifier or
+            // member name written with escapes is read as its value. A malformed escape is reported.
+            const e = src[i + 1] ?? "";
+            if (e === "\n") { line++; i += 2; continue; }
+            if (e === "\r") { i += src[i + 2] === "\n" ? 3 : 2; line++; continue; }
+            if (e === "\u2028" || e === "\u2029") { i += 2; continue; }
+            if (e === "x") {
+              const h = src.slice(i + 2, i + 4);
+              if (/^[0-9a-fA-F]{2}$/.test(h)) { v += String.fromCharCode(parseInt(h, 16)); i += 4; continue; }
+              toks.unclassifiedLines.push(line);
+              i += 2;
+              continue;
+            }
+            if (e === "u") {
+              let m = /^\{([0-9a-fA-F]{1,6})\}/.exec(src.slice(i + 2, i + 11));
+              let len = m ? m[0].length : 0;
+              if (!m) { m = /^([0-9a-fA-F]{4})/.exec(src.slice(i + 2, i + 6)); len = m ? 4 : 0; }
+              const cp = m ? parseInt(m[1], 16) : NaN;
+              if (m && cp <= 0x10ffff) { v += String.fromCodePoint(cp); i += 2 + len; continue; }
+              toks.unclassifiedLines.push(line);
+              i += 2;
+              continue;
+            }
+            if (/[0-9]/.test(e) && !(e === "0" && !/[0-9]/.test(src[i + 2] ?? ""))) {
+              toks.unclassifiedLines.push(line); // a legacy octal or 8/9 escape is not decoded
+              i += 2;
+              continue;
+            }
+            v += ({ n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v", 0: "\0" })[e] ?? e;
             i += 2;
             continue;
           }
