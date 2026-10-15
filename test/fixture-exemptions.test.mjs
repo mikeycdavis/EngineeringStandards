@@ -572,3 +572,32 @@ test("contentDigest of a large CRLF-heavy text matches the reference without a p
   const text = "line of text\r\n".repeat(200_000);
   assert.equal(contentDigest(Buffer.from(text)), contentDigest(Buffer.from(text.replaceAll("\r\n", "\n"))));
 });
+
+test("a fixture waiver is still listed when a project-level exception excepts the same rule", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT, "src/live.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const file = path.join(root, "project-policy.yml");
+  const { readFile } = await import("node:fs/promises");
+  const base = await readFile(file, "utf8");
+  const extra = [
+    "exceptions:",
+    "  - rule: security.no-cert-bypass",
+    '    reason: "legacy client being replaced"',
+    '    approvedBy: "project-owner"',
+    '    approvedAt: "2026-01-01"',
+    '    expires: "2099-01-01"',
+    "",
+  ].join(String.fromCharCode(10));
+  await writeFile(file, base + extra);
+  const res = cliText("validate", root);
+  assert.match(res.out, /departs from security\.no-cert-bypass and is waived/, res.out);
+});
+
+test("remediation matches the cause: a truncated pin is not told to raise the aggregate budget", async () => {
+  const big = `// ${"x".repeat(80)}${NL}`.repeat(14000) + CERT;
+  const root = await repo({ "test/fixtures/bad/big.js": big }, [pin("test/fixtures/bad/big.js", big, CERT_RULE)]);
+  const res = cli("validate", root);
+  const ne = findingsOf(res, "fixture-exemption-not-established");
+  assert.equal(ne.length, 1);
+  assert.match(ne[0].message, /per-file read cap/);
+  assert.doesNotMatch(ne[0].message, /rerun with a larger/);
+});

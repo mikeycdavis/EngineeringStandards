@@ -3963,8 +3963,14 @@ export async function main(args) {
           evidence: [entry.path],
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
-            `checked against a complete read, because this run did not read the whole file (not retained: read budget spent, unreadable or not a recognised text file; or read cap reached), so whether ` +
-            `${entry.rule} still fires there is unknown. Keep the entry; rerun with a larger budget.`,
+            `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
+            (abs !== undefined && unreadableFiles.includes(abs)
+              ? "The file could not be read; fix its permissions or presence and rerun. Keep the entry."
+              : abs !== undefined && run.truncated.has(abs)
+                ? `The file is larger than the per-file read cap (${MAX_READ_BYTES} bytes), which --max-total-read-bytes does not raise, so a pin over it cannot be established; shrink or split the fixture. Keep the entry.`
+                : INDEX_ONLY_FIXTURE_RULES.has(entry.rule) && envCheck.evaluated === false
+                  ? "The repository index could not be read; run the audit inside the Git repository. Keep the entry."
+                  : "The aggregate read budget was spent before the file was retained; rerun with a larger --max-total-read-bytes. Keep the entry."),
           standardRef: R.search,
         });
         continue;
@@ -4442,7 +4448,15 @@ export async function main(args) {
           // A waived departure is listed under "Excepted:" when its rule is wholly excepted. Where the
           // rule also has a live, unwaived violation it is "failed", and this line is the only place
           // a human reader sees that a fixture was waived beside it.
-          return f.id === "fixture-exempted" && report.results.find((r) => r.ruleId === f.rule)?.disposition !== "excepted";
+          if (f.id !== "fixture-exempted") return false;
+          const result = report.results.find((r) => r.ruleId === f.rule);
+          // Hidden only where the result's own "Excepted:" block already lists this exact file. A
+          // project-level exception on the same rule does not list the fixture, so the waiver stays.
+          const listed =
+            result?.disposition === "excepted" &&
+            result.exception?.kind === "fixture-exemption" &&
+            result.exception.fixtures?.some((x) => f.evidence.includes(x.path));
+          return !listed;
         }),
       ) + "\n",
     );
