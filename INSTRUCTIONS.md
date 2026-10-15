@@ -252,13 +252,15 @@ A review history that records a **rejection** on a rule you declared not-applica
 verdict: the declaration stands, and the rule stays `skipped` / `not-applicable`. `validate` reports it as a
 `policy-compliance` finding (in the JSON `findings` and under *Policy findings* in the human report), naming
 the rule and the rejection's id, reviewer and date with control characters escaped. Either remove the
-declaration, because the rule applies (and then supersede the rejection with a later review), or, only when the
+declaration, because the rule applies (and then record a later review whose `supersedes` names the chain's
+current, latest review: every successor must reference its immediate predecessor), or, only when the
 rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record. A
 rejection already at the merge base is append-only history: deleting it is a `review-history-append-only`
 violation, the base rejection stays effective and the finding remains. With no readable base (for example
 outside a Git work tree) removal cannot be verified, so no deletion is advised and none is promised to be
 reported: history is append-only once committed, so supply the base (`git fetch origin`) and run again. An older
-rejection followed by an approval is still found. A not-applicable rule with no
+rejection followed by an approval is still found, and so is a rejection recorded at a readable base when the
+append-only comparison itself could not run. A not-applicable rule with no
 rejection emits nothing.
 
 **Some rules are non-exemptible.** `security.no-secrets-in-artifacts` and `ai.destructive-approval`

@@ -215,7 +215,8 @@ test("remediation: a rejection recorded at the trusted base is never advised to 
     assert.match(text, /without rewriting history/);
     assert.ok(!/not recorded at the trusted base/.test(text));
     assert.match(text, /ADR 0005/);
-    assert.match(text, /supersedes the rejection/);
+    assert.match(text, /immediate predecessor/);
+    assert.ok(!/supersedes the rejection/.test(text));
   }
 });
 
@@ -236,7 +237,8 @@ test("remediation: with the base unknown, neither deletion nor a base-enforced r
     assert.match(text, /no trusted base could be read/);
     assert.match(text, /cannot be verified/);
     assert.match(text, /append-only once committed/);
-    assert.match(text, /supersedes\s+the rejection/);
+    assert.match(text, /immediate predecessor/);
+    assert.ok(!/supersedes\s+the rejection/.test(text));
   }
 });
 
@@ -384,6 +386,36 @@ test("CLI: a base chain of rejection then approval whose rejection the head remo
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+});
+
+test("CLI: an unverified comparison with a readable base still names a removed base rejection", async () => {
+  const nl = String.fromCharCode(10);
+  const withRejection = policyYaml({ withRejection: true });
+  // Another rule's base record is null, so the append-only comparison cannot run (unverified).
+  // It sorts first in the mapping, so the comparison stops there before it reaches the removal.
+  const base = withRejection.replace("attestations:" + nl, "attestations:" + nl + "  testing.no-fabricated-results: null" + nl);
+  const head = policyYaml({ withRejection: false }) + "attestations:" + nl + "  testing.no-fabricated-results:" + nl +
+    ["    reviews:", '      - id: "q1"', "        status: rejected", '        reviewedBy: "synthetic-reviewer"', '        reviewedAt: "2026-10-01"', '        evidence: "synthetic"'].join(nl) + nl;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-unverified-"));
+  try {
+    git(dir, "init", "-q", "-b", "main");
+    await writeFile(path.join(dir, "project-policy.yml"), base);
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "base");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    await writeFile(path.join(dir, "project-policy.yml"), head);
+    const { report } = validate(dir);
+    const history = report.findings.find((f) => f.id === "review-history-append-only");
+    assert.ok(history && history.severity !== "error", "fixture did not produce an unverified comparison: " + JSON.stringify(history));
+    const stray = report.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
+    assert.ok(stray, "a removed base rejection was not named when the comparison was unverified");
+    assert.match(stray.message, /"p1"/);
+    assert.match(stray.remediation, /without rewriting history/);
+    assert.ok(!/remove the stray review record/.test(stray.remediation));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

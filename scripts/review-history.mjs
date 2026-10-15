@@ -333,18 +333,7 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
   } catch (error) {
     if (error instanceof ReviewHistoryVerificationError) {
       if (error.details?.violation) {
-        // The attestations recorded at the trusted base, so negative evidence recorded there stays
-        // effective even when the proposed policy removed or relabeled it.
-        let baseAttestations = {};
-        try {
-          const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
-          const parsed = baseSource ? parseYaml(baseSource) : null;
-          if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
-            baseAttestations = parsed.attestations;
-          }
-        } catch {
-          baseAttestations = {};
-        }
+        const baseAttestations = readBaseAttestations(repository, baseCommit, relative) ?? {};
         return {
           status: "violated",
           reason: error.message,
@@ -355,9 +344,35 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
           baseRejectionRules: rejectionRulesOf(baseAttestations),
         };
       }
-      return unverified(error.message, { ref, baseCommit });
+      // The comparison could not run (for example another rule's base record is not a mapping), but
+      // the base was readable: its recorded histories are still the trusted record of rejections.
+      const readable = readBaseAttestations(repository, baseCommit, relative);
+      return unverified(error.message, {
+        ref,
+        baseCommit,
+        baseAttestations: readable ?? {},
+        baseRejectionRules: readable === null ? null : rejectionRulesOf(readable),
+      });
     }
     throw error;
+  }
+}
+
+/**
+ * The attestations mapping recorded in the policy at the base commit: {} when the base policy has none,
+ * null when the base policy could not be read or parsed (unknown, never "none").
+ */
+function readBaseAttestations(repository, baseCommit, relative) {
+  try {
+    const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+    if (baseSource === null) return null;
+    const parsed = parseYaml(baseSource);
+    if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
+      return parsed.attestations;
+    }
+    return {};
+  } catch {
+    return null;
   }
 }
 

@@ -153,13 +153,16 @@ rejection. An applicable rule is unchanged: its recorded rejection still fails i
 evaluated while the declaration stands; reconciling the two is the owner's decision.
 
 Any rejection ever recorded on the rule is found, including an older one followed by an approval: the lookup
-reads the retained history when the effective record holds none. When a rewrite is reported as violated, the
+reads the base's raw histories first (also when the append-only comparison could not run but the base was
+readable, for example because another rule's base record is not a mapping) and the retained head history when
+neither the base nor the effective record holds one. When a rewrite is reported as violated, the
 base-restored rejection is the one named, never the untrusted replacement.
 
 The finding's remediation depends on where the rejection sits, in three cases. Established at the trusted base: it is
 append-only history, so deleting it is reported as `review-history-append-only`, the base rejection stays effective and
-the finding remains; the remediation advises removing the not-applicable declaration and recording a later review that
-supersedes the rejection, or leaving both in place. Not at the base: it is advised to be removed. Base unknown (no
+the finding remains; the remediation advises removing the not-applicable declaration and recording a later review whose
+`supersedes` names the chain's current (latest) review, because every successor must reference its immediate
+predecessor, or leaving both in place. Not at the base: it is advised to be removed. Base unknown (no
 readable base, such as outside a Git work tree): nothing can be enforced, so no deletion is advised and no
 `review-history-append-only` report is promised; the remediation says that removal cannot be verified without a base,
 that history is append-only once committed, and that the base should be supplied and the run repeated. There is still no

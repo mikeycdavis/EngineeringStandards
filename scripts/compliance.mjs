@@ -413,7 +413,8 @@ function strayRejectionFinding(ruleId, rejections, establishedRejections = null)
       ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base, and review history is " +
         "append-only (ADR 0005, ST-17), so deleting or relabeling it is reported as review-history-append-only " +
         "and the base rejection stays effective. Remove the not-applicable declaration if the rule applies, then record a later " +
-        "review that supersedes the rejection (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +
+        "review whose `supersedes` names the chain's current (latest) review, because every successor must reference its immediate " +
+        "predecessor (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +
         "No removal path exists for a rejection recorded at the base on a rule that stays not-applicable; that is the owner's decision."
       : baseKnown
         ? "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record, which is " +
@@ -421,8 +422,9 @@ function strayRejectionFinding(ruleId, rejections, establishedRejections = null)
         : "Reconcile the two without rewriting history: no trusted base could be read here, so whether this rejection is already " +
           "recorded there cannot be verified, and neither can the removal of it; review history is append-only once committed " +
           "(ADR 0005, ST-17). Do not delete or relabel it on the strength of this run; supply the base (for example git fetch origin) " +
-          "and run again. Remove the not-applicable declaration if the rule applies, then record a later review that supersedes " +
-          "the rejection (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict.",
+          "and run again. Remove the not-applicable declaration if the rule applies, then record a later review whose `supersedes` " +
+          "names the chain's current (latest) review, because every successor must reference its immediate predecessor " +
+          "(ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict.",
   };
 }
 
