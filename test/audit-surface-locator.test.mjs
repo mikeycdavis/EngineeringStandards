@@ -958,3 +958,56 @@ test("a signature-only recorder declaration is a definition; a call statement is
     assert.ok(found.includes("src/R.java:6 recorder-call recordAuditEvent"), found.join("|"));
   });
 });
+
+test("a quoted table name with an escaped delimiter is read whole", async () => {
+  const BT = String.fromCharCode(96);
+  const NL = String.fromCharCode(10);
+  const sql = 'CREATE TABLE "order""audit" (id int);' + NL + "CREATE TABLE " + BT + "a" + BT + BT + "audit" + BT + " (id int);" + NL;
+  await withRepo({ "db/a.sql": sql }, async (dir) => {
+    const found = sites(surfaceOf(cli("audit", dir).json));
+    assert.equal(found.length, 2, found.join("|"));
+    assert.ok(found.every((s) => /audit/.test(s)), found.join("|"));
+  });
+});
+
+test("a regex literal as the statement after a control-flow header is a pattern", async () => {
+  await withRepo({ "src/a.js": "if (ok) /class AuditEvent/.test(text);\nwhile (x(1)) /enum AuditState/.test(y);\nclass AuditEvent {}\n" }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:3 type AuditEvent"]);
+  });
+});
+
+test("a TypeScript member signature with a trailing type is a definition; a ternary arm is a call", async () => {
+  const ts = [
+    "interface Recorder {",
+    "  recordAuditEvent(event: Event): void;",
+    "  public recordAuditEvent2(event: Event): Promise<void>;",
+    "}",
+    "const r = cond ? recordAuditEvent(a) : other;",
+    "recordAuditEvent(b);",
+    "",
+  ].join("\n");
+  await withRepo({ "src/r.ts": ts }, async (dir) => {
+    const found = sites(surfaceOf(cli("audit", dir).json));
+    assert.ok(found.includes("src/r.ts:2 recorder-definition recordAuditEvent"), found.join("|"));
+    assert.ok(found.includes("src/r.ts:5 recorder-call recordAuditEvent"), found.join("|"));
+    assert.ok(found.includes("src/r.ts:6 recorder-call recordAuditEvent"), found.join("|"));
+  });
+});
+
+test("a call at the start of a line inside a multi-line ternary is a call, not a declaration", async () => {
+  const NL = String.fromCharCode(10);
+  const ts = ["const r = cond", "  ?", "  recordAuditEvent(a)", "  : other;", ""].join(NL);
+  await withRepo({ "src/r.ts": ts }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/r.ts:3 recorder-call recordAuditEvent"]);
+  });
+});
+
+test("a long run of whitespace before many divisions does not make the tokenizer quadratic", async () => {
+  const pad = " ".repeat(100000);
+  const js = ("var x=a" + pad + "/b;" + String.fromCharCode(10)).repeat(3);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const started = Date.now();
+    surfaceOf(cli("audit", dir).json);
+    assert.ok(Date.now() - started < 8000, "tokenizing padded divisions took " + (Date.now() - started) + " ms");
+  });
+});

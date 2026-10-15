@@ -511,7 +511,22 @@ function splitSource(text, ext, options = {}) {
   // seen by lastCode(). A property access (`obj.return / 2`) is not a keyword.
   const followsRegexKeyword = () => {
     const m = /(?:^|[^\w$.])(return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await)\s*$/.exec(code.slice(-24));
-    return m !== null;
+    if (m !== null) return true;
+    // `if (ok) /re/.test(x);` : the slash after a control-flow header's `)` starts a statement, so a regex.
+    // Index-based and bounded: trimming the whole accumulated string per `/` was quadratic on padded input.
+    let end = code.length;
+    const stop = Math.max(0, end - 2000);
+    while (end > stop && /\s/.test(code[end - 1])) end -= 1;
+    if (end <= stop || code[end - 1] !== ")") return false;
+    let depth = 0;
+    for (let k = end - 1; k >= stop; k -= 1) {
+      if (code[k] === ")") depth += 1;
+      else if (code[k] === "(") {
+        depth -= 1;
+        if (depth === 0) return /(?:^|[^\w$.])(?:if|while|for|with)\s*$/.test(code.slice(Math.max(0, k - 12), k));
+      }
+    }
+    return false;
   };
   const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
 
@@ -3721,14 +3736,23 @@ function isSignatureOnly(text, nameAt, open) {
   const lineStart = Math.max(text.lastIndexOf("\n", nameAt - 1), text.lastIndexOf("\r", nameAt - 1)) + 1;
   const prefix = text.slice(lineStart, nameAt);
   const typed = /([A-Za-z_$][\w$]*)(?:<[^<>;()]*>)?(?:\[\s*\])*\??\s+$/.exec(prefix);
-  if (!typed || NOT_A_TYPE_WORD.has(typed[1])) return false;
+  // TypeScript member syntax puts the type after the parameters: `recordAuditEvent(event: Event): void;`, so
+  // the name may be preceded by nothing but modifiers.
+  const memberOnly = /^\s*(?:(?:public|private|protected|abstract|readonly|static|declare|export|async)\s+)*$/.test(prefix);
+  if ((!typed || NOT_A_TYPE_WORD.has(typed[1])) && !memberOnly) return false;
   let depth = 0;
   const limit = Math.min(text.length, open + 4000);
   for (let i = open; i < limit; i += 1) {
     if (text[i] === "(") depth += 1;
     else if (text[i] === ")") {
       depth -= 1;
-      if (depth === 0) return /^\s*;/.test(text.slice(i + 1, i + 40));
+      if (depth === 0) {
+        const after = text.slice(i + 1, i + 240);
+        if (typed && !NOT_A_TYPE_WORD.has(typed[1]) && /^\s*;/.test(after)) return true;
+        // Same line only: the `)` is followed on its own line by `: Type;`. A call at the start of a line inside
+        // a multi-line ternary is followed by `: other;` on the NEXT line and is a call.
+        return memberOnly && /^[ \t]*\??[ \t]*:[ \t]*[^;{}\r\n]+;/.test(after);
+      }
     }
   }
   return false;
@@ -3849,7 +3873,8 @@ export function locateAuditSurface(files, run, surface, options = {}) {
         let at;
         let end = m.index + m[0].length;
         if (idiom.rawName) {
-          const name = /((?:\[[^\]\r\n]*\]|"[^"\r\n]*"|`[^`\r\n]*`|[A-Za-z_#@][\w$#@]*)(?:\s*\.\s*(?:\[[^\]\r\n]*\]|"[^"\r\n]*"|`[^`\r\n]*`|[A-Za-z_#@][\w$#@]*))*)/y;
+          // A quoted part may hold its own delimiter doubled (`"order""audit"`, `` `a``b` ``, `[a]]b]`).
+          const name = /((?:\[(?:[^\]\r\n]|\]\])*\]|"(?:[^"\r\n]|"")*"|`(?:[^`\r\n]|``)*`|[A-Za-z_#@][\w$#@]*)(?:\s*\.\s*(?:\[(?:[^\]\r\n]|\]\])*\]|"(?:[^"\r\n]|"")*"|`(?:[^`\r\n]|``)*`|[A-Za-z_#@][\w$#@]*))*)/y;
           name.lastIndex = end;
           const hit = name.exec(raw.text);
           if (!hit) continue;
