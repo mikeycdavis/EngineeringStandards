@@ -24,6 +24,12 @@ import { checkEntries, bindEntries, contentDigest, contentDigestOfStream } from 
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
+
+/**
+ * Exemptible rules whose detector judges a file by the repository index and its name, never by its
+ * content: a truncated or unavailable text read does not make "found no violation" unestablished.
+ */
+const INDEX_ONLY_FIXTURE_RULES = new Set(["scm.no-committed-env-files"]);
 import { validate } from "./jsonschema.mjs";
 import {
   classifyFreshness,
@@ -3943,7 +3949,9 @@ export async function main(args) {
         // A file with no recognised text extension is never searched as text (a `.env` is judged by
         // the repository index), so "no text available" says nothing about it: its digest was taken
         // over the whole file and a rule that does not fire there is genuinely stale.
-        (TEXT_EXT.has(path.extname(abs)) && (!run.textOf(abs).available || run.truncated.has(abs)));
+        (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule) &&
+          TEXT_EXT.has(path.extname(abs)) &&
+          (!run.textOf(abs).available || run.truncated.has(abs)));
       if (incomplete) {
         addFinding({
           id: "fixture-exemption-not-established",
@@ -4426,7 +4434,14 @@ export async function main(args) {
         report,
         policy,
         verdict.policyFindings ?? [],
-        findings.filter((f) => f.category === "Fixture exemptions" && f.severity === "warning"),
+        findings.filter((f) => {
+          if (f.category !== "Fixture exemptions") return false;
+          if (f.severity === "warning") return true;
+          // A waived departure is listed under "Excepted:" when its rule is wholly excepted. Where the
+          // rule also has a live, unwaived violation it is "failed", and this line is the only place
+          // a human reader sees that a fixture was waived beside it.
+          return f.id === "fixture-exempted" && report.results.find((r) => r.ruleId === f.rule)?.disposition !== "excepted";
+        }),
       ) + "\n",
     );
     // Report the current digest for any attestation that lacks one, so it can be recorded rather

@@ -534,3 +534,26 @@ test("a valid pin on a .env that is no longer tracked is reported stale, not 'no
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((x) => x.id)));
   assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
 });
+
+test("human validate lists a waived fixture that sits beside a live violation of the same rule", async () => {
+  const root = await repo(
+    { "test/fixtures/bad/bypass.js": CERT, "src/live.js": CERT },
+    [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)],
+  );
+  const res = cliText("validate", root);
+  assert.match(res.out, /Fixture exemptions[\s\S]*test\/fixtures\/bad\/bypass\.js departs from security\.no-cert-bypass and is waived/);
+});
+
+test("a truncated .env.json pin is judged by the index, so a dead one is stale rather than not established", async () => {
+  const big = `{"k":"${"x".repeat(1_100_000)}"}`;
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env.json": big }, [pin("test/fixtures/bad/.env.json", big, "scm.no-committed-env-files")]);
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  git("rm", "-q", "--cached", "test/fixtures/bad/.env.json");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "untrack");
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((x) => x.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
+});
