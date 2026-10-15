@@ -31,8 +31,10 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
 export const MALFORMED_HISTORY_REMEDIATION =
   "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, " +
   "chronological order) while the malformed events are still only in your unmerged change. If they are already on " +
-  "the trusted default branch, neither editing nor appending can repair them (the append-only check rejects both) " +
-  "and no recovery path exists yet: that needs an owner decision.";
+  "the trusted default branch, neither editing nor appending can repair malformed events inside a well-formed list " +
+  "of reviews (the append-only check rejects both) and no recovery path exists yet for them: that needs an owner " +
+  "decision. The one exception is a reviews container that is empty or not a list: the check reads it as holding " +
+  "no events, so replacing it with a well-formed list is accepted.";
 export const MALFORMED_NOT_ATTESTABLE_REMEDIATION =
   "This rule is not attestable, so no review can clear a recorded rejection or satisfy it. Remove the attestation "
   + "and make the rule compliant through its automated check.";

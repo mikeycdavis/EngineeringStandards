@@ -232,3 +232,56 @@ test("wrong or ambiguous base, wrong tree, missing path or object, and parse fai
     await rm(fixture.dir, { recursive: true, force: true });
   }
 });
+
+// ST-44: which malformed shapes in an already-trusted history have a recovery path. The wording in
+// compliance.mjs, INSTRUCTIONS.md and ADR 0005 is pinned to this behaviour in repository.test.mjs.
+async function fixtureWithBase(baseSource) {
+  const fixture = await repositoryFixture();
+  await writeFile(path.join(fixture.dir, POLICY_PATH), baseSource);
+  git(fixture.dir, "add", POLICY_PATH);
+  git(fixture.dir, "commit", "-q", "-m", "malformed trusted base");
+  return {
+    dir: fixture.dir,
+    baseCommit: git(fixture.dir, "rev-parse", "HEAD"),
+    baseTree: git(fixture.dir, "rev-parse", "HEAD^{tree}"),
+  };
+}
+
+const policyHead = ['standardVersion: "2.0.0"', "attestations:", "  testing.synthetic:"].join("\n");
+const genesisSource = policySource([event({ id: "g1" })]);
+
+test("trusted history whose reviews container is empty or not a list can be replaced by a well-formed list", async () => {
+  const shapes = {
+    "empty list": `${policyHead}\n    reviews: []\n`,
+    "null container": `${policyHead}\n    reviews:\n`,
+    "scalar container": `${policyHead}\n    reviews: "oops"\n`,
+    "mapping container": `${policyHead}\n    reviews:\n      a: 1\n`,
+  };
+  for (const [name, base] of Object.entries(shapes)) {
+    const fixture = await fixtureWithBase(base);
+    try {
+      const result = await verify(fixture, genesisSource);
+      assert.equal(result.appendedEvents, 1, name);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("trusted history with malformed events inside a well-formed list has no recovery path", async () => {
+  const missingPredecessor = policySource([event(), successor("r2", "no-such-event")]);
+  const incompleteEvent = `${policyHead}\n    reviews:\n      - id: "r1"\n        status: "rejected"\n`;
+  for (const [name, base] of Object.entries({ missingPredecessor, incompleteEvent })) {
+    const fixture = await fixtureWithBase(base);
+    try {
+      await assert.rejects(verify(fixture, genesisSource), ReviewHistoryVerificationError, `${name}: replace`);
+      await assert.rejects(verify(fixture, base), ReviewHistoryVerificationError, `${name}: leave as is`);
+      const appended = base.includes("no-such-event")
+        ? policySource([event(), successor("r2", "no-such-event"), successor("r3", "r2", "2026-10-04")])
+        : `${base}      - id: "r2"\n`;
+      await assert.rejects(verify(fixture, appended), ReviewHistoryVerificationError, `${name}: append`);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});

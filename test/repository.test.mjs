@@ -47,7 +47,7 @@ import {
   isLegacyShape,
 } from "../scripts/reviews.mjs";
 import { checkPolicy } from "../scripts/policy.mjs";
-import { evaluate } from "../scripts/compliance.mjs";
+import { evaluate, MALFORMED_HISTORY_REMEDIATION } from "../scripts/compliance.mjs";
 import { parseYaml } from "../scripts/yaml.mjs";
 
 const git = (cwd, ...args) => {
@@ -539,7 +539,7 @@ test("the malformed-history remediation states that a recorded rejection stays i
   for (const text of [withRejection]) {
     assert.match(text, /still only in your unmerged change/);
     assert.match(text, /already on the trusted default branch/);
-    assert.match(text, /neither editing nor appending can repair them/);
+    assert.match(text, /neither editing nor appending can repair malformed events inside a well-formed list/);
     assert.match(text, /no recovery path exists yet/);
     assert.match(text, /owner decision/);
   }
@@ -1916,4 +1916,15 @@ test("ST-44: for a rule the catalog does not mark attestable, the remediation sa
     assert.match(text, /automated check/);
     assert.doesNotMatch(text, /later well-formed review clears it/);
   }
+});
+
+test("ST-44: the recovery wording names the shapes that can be recovered and the ones that cannot", () => {
+  for (const file of ["INSTRUCTIONS.md", "artifacts/adr/0005-attestations-are-recorded-human-evidence.md"]) {
+    const text = readFileSync(path.join(REPO_ROOT, file), "utf8").replace(/\s+/g, " ");
+    assert.match(text, /inside a well-formed list of reviews/, `${file} must scope the unrecoverable shape`);
+    assert.match(text, /empty or not a list/, `${file} must name the recoverable shape`);
+    assert.match(text, /begins with a genesis event/, `${file} must say what the replacement is`);
+  }
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /malformed events inside a well-formed list/);
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /empty or not a list/);
 });
