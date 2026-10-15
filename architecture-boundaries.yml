@@ -39,8 +39,10 @@ observation:
         - scripts/review-history.mjs
         - scripts/test.mjs
     - mechanism: "reflection"
-      reason: "Any mention of eval or Function (including (0, eval), const e = eval and const F = Function), any .constructor access, a constructor or __proto__ index, getPrototypeOf, setPrototypeOf, __proto__, Reflect, Proxy, node:vm, process.binding, process._linkedBinding and process.dlopen are reported unless listed in knownSites. A property name assembled at run time is not examined."
-      knownSites: []
+      reason: "Any mention of eval or Function (including (0, eval), const e = eval and const F = Function), any .constructor access, a constructor or __proto__ index, getPrototypeOf, setPrototypeOf, __proto__, Reflect, Proxy, node:vm, process.binding, process._linkedBinding and process.dlopen are reported unless listed in knownSites. A property name assembled at run time is not examined. Object.defineProperty is reported as well: scripts/review-history.mjs and scripts/yaml.mjs use it only to assign own data properties, so that a __proto__ key stays an ordinary entry."
+      knownSites:
+        - scripts/review-history.mjs
+        - scripts/yaml.mjs
     - mechanism: "network"
       reason: "Imports of http, https, http2, net, tls, dgram or dns, and direct use of fetch, WebSocket, EventSource and XMLHttpRequest, are reported unless listed in knownSites. Aliases of those globals, and traffic that leaves through another program (scripts/ci-triage.mjs runs the gh CLI), are not visible."
       knownSites: []
@@ -190,13 +192,13 @@ edges:
       - reviewsOf
       - recordedRejections
     evidence:
-      - scripts/review-history.mjs:15
+      - scripts/review-history.mjs:16
   - from: "review-history"
     to: "parsers"
     via:
       - parseYaml
     evidence:
-      - scripts/review-history.mjs:14
+      - scripts/review-history.mjs:15
   - from: "validator-cli"
     to: "review-history"
     via:
