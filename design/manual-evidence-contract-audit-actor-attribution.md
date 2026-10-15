@@ -85,16 +85,15 @@ ADR 0010 (Proposed, not Accepted) states:
 
 This contract relies only on the first sentence: a record that reports findings is negative or
 non-establishing evidence, and a record that reports none is not a pass. It is not a policy attestation.
-Today an attestation entry for a rule the catalog does not mark attestable is reported
+Today an attestation entry for an applicable rule the catalog does not mark attestable is reported
 `invalid-attestation` (`scripts/compliance.mjs`, `judgeAttestation`), a failure about the policy and not
-about the requirement; so the record is kept outside the attestation mechanism and changes no result.
+about the requirement; so the record is kept outside the attestation mechanism and changes no result. If the rule is declared not-applicable, `evaluate()` returns on the applicability branch before attestations are read: an approval emits nothing and a rejection yields only a policy finding, leaving the result `not-applicable`.
 
-For a rule the catalog does mark attestable, from `scripts/compliance.mjs` in evaluation order: a
+For an applicable rule the catalog does mark attestable, from `scripts/compliance.mjs` in evaluation order: a
 detector finding yields `contradicted-attestation` and is never overridden (ADR 0005, binding rule 1:
 "An attestation cannot override an automated failure."); a `rejected` attestation yields
 `attested-rejected` (failed) and is evaluated before expiry and freshness, and that holds only while the
-rejection is the terminal event of the review history; a stale or expired approval returns the rule to
-`not-evaluated`. That is not the situation for this rule while the opt-in is declined.
+rejection is the terminal event of the review history; a stale approval returns the rule to `not-evaluated` with its freshness reason, and an expired approval simply stops establishing it: the rule is then evaluated normally, so it is `not-evaluated` unless another mechanism (for example a detector that examines it) establishes it. That is not the situation for this rule while the opt-in is declined.
 
 ADR 0011 supplies the append-only event rule for recorded reviews ("No operation that records a new
 review may alter or delete any previously recorded review event.").
@@ -112,7 +111,7 @@ would have to build before a human review could establish `audit.actor-attributi
 - a write-authority inventory and a live-authority snapshot from a pipeline the change author does not
   control, an agent/credential registry reconciled to independent entry-point declarations, and
   committed formats for the inventories and exclusion policy;
-- acceptance by the attestation schema and policy template of an attestation for a `code-analysis` rule, and the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
+- the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3; the policy schema already accepts an attestation under any canonical rule id, and the evaluator's catalog eligibility check is the gate), with any policy-template documentation, a decision on catalog `assurance`,
   ADR 0010 acceptance, and an update to Standard 3's Implementation section;
 - versioning classification (Standard 21 R2 does not classify attestation eligibility) and `VERSION`,
   which are the owner's.
