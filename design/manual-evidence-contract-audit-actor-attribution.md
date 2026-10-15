@@ -25,7 +25,7 @@ It establishes nothing about the rule. A record under this contract is non-estab
 | The record states what was examined and found | Section 4 | today |
 | The record states what it does not cover | Section 5 | today |
 | The record is not an attestation and does not establish the rule | Section 6 | today |
-| A rejection recorded as an attestation fails while it is the terminal event | Section 6 | today, only for an attestable rule |
+| A rejection recorded as an attestation fails while it is the terminal event | Section 6 (prose only) | not applicable while the rule is not attestable; no claim |
 | Identity, role, base revision, tree-wide freshness, digest, live state, registries | Section 7 | future work, no claim |
 
 ## 3. Record form
@@ -112,12 +112,12 @@ would have to build before a human review could establish `audit.actor-attributi
 - a write-authority inventory and a live-authority snapshot from a pipeline the change author does not
   control, an agent/credential registry reconciled to independent entry-point declarations, and
   committed formats for the inventories and exclusion policy;
-- the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
+- acceptance by the attestation schema and policy template of an attestation for a `code-analysis` rule, and the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
   ADR 0010 acceptance, and an update to Standard 3's Implementation section;
 - versioning classification (Standard 21 R2 does not classify attestation eligibility) and `VERSION`,
   which are the owner's.
 
-None of this is made, and none of it is required for the record in sections 3 to 5.
+None of this is made, and none of it is required for the record in sections 3 to 5. Of #95 and #96, the future work needs answered: for #95, how a stale approval is re-reviewed and renewed with authenticated identity; for #96, who may clear a rejection and on what authority.
 
 ## 8. Owner decision
 
