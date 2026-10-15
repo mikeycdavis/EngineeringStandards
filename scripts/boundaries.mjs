@@ -646,6 +646,16 @@ function analyse(rawToks) {
         }
         // computed key, or the global object itself used as a value (typeof g is only a string)
         if (a.kind === "none" && isId(start - 1, "typeof")) return;
+        if (a.kind === "none" && isP(start - 1, "=") && isP(start - 2, "}")) {
+          // `const { eval: e, fetch } = globalThis`: each bound name is the member it names
+          for (const b of bracedBefore(start)) {
+            if (b === "eval" || b === "Function" || b === "Reflect" || b === "Proxy" || b === "Object" || b === "constructor" || b === "__proto__") flag("reflection", tk.line);
+            else if (NETWORK_GLOBALS.has(b)) flag("network", tk.line);
+            else if (b === "require" || b === "module") flag("require-call", tk.line);
+            else if (b === "process" || b === COMPUTED_KEY) flag("termination-indirect", tk.line);
+          }
+          return;
+        }
         flag("termination-indirect", tk.line);
         return;
       }
@@ -658,8 +668,13 @@ function analyse(rawToks) {
         }
         if (a.kind === "none" && isP(start - 1, "=") && isP(start - 2, "}")) {
           const bound = bracedBefore(start);
-          if (bound.some((b) => TERMINATING.has(b))) terminates.push(tk.line);
-          else if (bound.includes(COMPUTED_KEY)) flag("termination-indirect", tk.line);
+          // Every bound name is judged like the dotted member: terminating, loader or reflection
+          // members are the mechanism they reach; an unlisted or computed one is not guessed at.
+          for (const b of bound) {
+            if (TERMINATING.has(b)) terminates.push(tk.line);
+            else if (PROCESS_REACH.has(b)) flag(PROCESS_REACH.get(b), tk.line);
+            else if (!PROCESS_BENIGN.has(b)) flag("termination-indirect", tk.line);
+          }
           return;
         }
         flag("termination-indirect", tk.line);
@@ -844,7 +859,8 @@ function analyse(rawToks) {
     if (SUBPROCESS_MODULES.has(b)) flag("subprocess", imp.line);
     if (NETWORK_MODULES.has(b)) flag("network", imp.line);
     if (b === "process") {
-      if (imp.names.some((nm) => TERMINATING.has(nm))) terminates.push(imp.line);
+      // A re-export clause names a binding; it is not a call. Imports and dynamic destructures are.
+      if (imp.kind !== "reexport" && imp.names.some((nm) => TERMINATING.has(nm))) terminates.push(imp.line);
       const bindings = imp.bindings ?? [];
       for (const bind of bindings) {
         if (bind.local !== "process") flag("termination-indirect", imp.line);

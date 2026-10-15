@@ -20,6 +20,7 @@
 import path from "node:path";
 import process from "node:process";
 import { loadDeclaration, scanRepository, checkBoundaries, DECLARATION_FILE } from "./boundaries.mjs";
+import { displaySafe, humanOut } from "./display-safe.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -34,15 +35,15 @@ function finish(report, exit) {
   if (json) {
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   } else {
-    process.stdout.write(`Boundaries: ${report.status}\n`);
-    if (report.reason) process.stdout.write(`  ${report.reason}\n`);
-    for (const p of report.problems ?? []) process.stdout.write(`  declaration: ${p}\n`);
-    for (const v of report.violations ?? []) process.stdout.write(`  ${v.kind}: ${v.message}\n`);
+    humanOut(`Boundaries: ${displaySafe(report.status)}\n`);
+    if (report.reason) humanOut(`  ${displaySafe(report.reason)}\n`);
+    for (const p of report.problems ?? []) humanOut(`  declaration: ${displaySafe(p)}\n`);
+    for (const v of report.violations ?? []) humanOut(`  ${displaySafe(v.kind)}: ${displaySafe(v.message)}\n`);
     if (report.observed) {
-      process.stdout.write(
-        `  observed ${report.observed.files} file(s), ${report.observed.members} member(s), ${report.observed.edges} declared edge(s)\n`,
+      humanOut(
+        `  observed ${displaySafe(report.observed.files)} file(s), ${displaySafe(report.observed.members)} member(s), ${displaySafe(report.observed.edges)} declared edge(s)\n`,
       );
-      process.stdout.write("  cannot observe: " + report.cannotObserve.map((u) => u.mechanism).join(", ") + "\n");
+      humanOut(`  cannot observe: ${displaySafe(report.cannotObserve.map((u) => u.mechanism).join(", "))}\n`);
     }
   }
   process.exit(exit);

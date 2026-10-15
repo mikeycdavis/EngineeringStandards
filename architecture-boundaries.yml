@@ -158,6 +158,14 @@ members:
       - artifacts/adr/0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md:87
       - scripts/policy.mjs:186
 
+  - id: "display-safe"
+    kind: "layer"
+    description: "The one chokepoint that makes untrusted text safe to write to a terminal. Holds no catalog, policy or evidence knowledge."
+    paths:
+      - scripts/display-safe.mjs
+    evidence:
+      - scripts/display-safe.mjs:17
+
 edges:
   - from: "evaluator"
     to: "catalog"
@@ -173,7 +181,7 @@ edges:
       - recordedRejections
       - reviewsOf
     evidence:
-      - scripts/compliance.mjs:19
+      - scripts/compliance.mjs:20
   - from: "review-history"
     to: "reviews"
     via:
@@ -277,11 +285,11 @@ edges:
       - sectionText
       - sectionRe
     evidence:
-      - scripts/attestations.mjs:25
-      - scripts/ci-triage.mjs:79
-      - scripts/fidelity.mjs:39
-      - scripts/inventory.mjs:43
-      - scripts/policy.mjs:22
+      - scripts/attestations.mjs:26
+      - scripts/ci-triage.mjs:80
+      - scripts/fidelity.mjs:40
+      - scripts/inventory.mjs:44
+      - scripts/policy.mjs:23
       - scripts/policy.mjs:23
   - from: "tool-clis"
     to: "repository-provenance"
@@ -292,7 +300,7 @@ edges:
       - LEGACY_ALGORITHM
       - FRESHNESS
     evidence:
-      - scripts/attestations.mjs:26
+      - scripts/attestations.mjs:27
   - from: "tool-clis"
     to: "reviews"
     via:
@@ -301,21 +309,21 @@ edges:
       - reviewProblems
       - isLegacyShape
     evidence:
-      - scripts/attestations.mjs:33
+      - scripts/attestations.mjs:34
   - from: "tool-clis"
     to: "catalog"
     via:
       - loadCatalog
     evidence:
-      - scripts/policy.mjs:43
-      - scripts/policy.mjs:176
+      - scripts/policy.mjs:44
+      - scripts/policy.mjs:44
   - from: "tool-clis"
     to: "review-history"
     via:
       - IDENTITY_NOTE
       - reviewHistoryPreflight
     evidence:
-      - scripts/attestations.mjs:34
+      - scripts/attestations.mjs:35
   - from: "tool-clis"
     to: "boundary-check"
     via:
@@ -324,9 +332,40 @@ edges:
       - checkBoundaries
       - DECLARATION_FILE
     evidence:
-      - scripts/policy.mjs:24
+      - scripts/policy.mjs:25
       - scripts/boundaries-check.mjs:22
 
+  - from: "tool-clis"
+    to: "display-safe"
+    via:
+      - displaySafe
+      - displaySafeText
+      - humanErr
+      - humanLog
+      - humanOut
+    evidence:
+      - scripts/attestations.mjs:22
+  - from: "evaluator"
+    to: "display-safe"
+    via:
+      - displaySafe
+    evidence:
+      - scripts/compliance.mjs:19
+  - from: "adoption"
+    to: "display-safe"
+    via:
+      - displaySafe
+    evidence:
+      - scripts/init.mjs:25
+  - from: "validator-cli"
+    to: "display-safe"
+    via:
+      - displaySafe
+      - displaySafeText
+      - humanErr
+      - humanOut
+    evidence:
+      - scripts/ownership.mjs:58
 external:
   allowPrefixes:
     - "node:"

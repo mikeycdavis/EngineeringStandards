@@ -1362,3 +1362,45 @@ test("an absolute specifier outside the repository stays external and obeys the 
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Round 7: destructuring from process and the global objects; re-export clauses are not calls
+// ---------------------------------------------------------------------------------------------
+
+test("named regression: destructuring a loader member from process is a require-call", () => {
+  const r = scanSource('const { mainModule } = process; mainModule.require("./core.mjs");');
+  assert.ok(r.mechanisms["require-call"].length > 0);
+  for (const src of ['process.mainModule.require("./c.mjs");', 'require.main.require("./c.mjs");', 'module.parent.require("./c.mjs");']) {
+    assert.ok(scanSource(src).mechanisms["require-call"].length > 0, src);
+  }
+});
+test("named regression: re-exporting a terminating name is a binding, not a termination", () => {
+  for (const src of ['export { exit } from "node:process";', 'export { exit as quit, kill } from "process";']) {
+    assert.deepEqual(scanSource(src).terminates, [], src);
+  }
+  assert.ok(scanSource('export { default } from "node:process";').mechanisms["termination-indirect"].length > 0);
+  assert.ok(scanSource('export * as p from "node:process";').mechanisms["termination-indirect"].length > 0);
+  assert.ok(scanSource('import { exit } from "node:process"; exit(1);').terminates.length > 0);
+  assert.ok(scanSource('const { exit } = await import("node:process"); exit(1);').terminates.length > 0);
+});
+test(`generated family: destructuring each enumerated member from its namespace is the same mechanism as the dotted access`, () => {
+  const bad = [];
+  const members = {
+    process: [...SCAN_LISTS.terminating, ...SCAN_LISTS.processReach, "someFutureMember", ...SCAN_LISTS.process],
+    globalThis: ["eval", "Function", "Reflect", "Proxy", "fetch", "WebSocket", "EventSource", "XMLHttpRequest", "require", "module", "process"],
+  };
+  for (const [ns, list] of Object.entries(members)) {
+    for (const ns2 of ns === "globalThis" ? ["globalThis", "global", "window", "self"] : [ns]) {
+      for (const m of list) {
+        const d = scanSource(`const { ${m} } = ${ns2};`);
+        const dot = scanSource(`${ns2}.${m};`);
+        const fire = (r) => [r.terminates.length > 0, ...Object.entries(r.mechanisms).filter(([k]) => k !== "ambiguous-token").map(([, v]) => v.length > 0)];
+        const df = fire(d);
+        const tf = fire(dot);
+        // anything the dotted form reports, the destructuring reports too
+        if (tf.some((x, i) => x && !df[i]) && !df.some(Boolean)) bad.push(`const { ${m} } = ${ns2}`);
+      }
+    }
+  }
+  assert.deepEqual(bad, []);
+});
