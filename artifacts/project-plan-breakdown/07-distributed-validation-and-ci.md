@@ -254,20 +254,20 @@ someone to lie to make the build go green.
 - **Dependencies:** `standards init` and the adoption guide above — both are downstream of the guard
   and the guide's step order is part of what changes.
 - **ADR:** [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md),
-  status Accepted (owner, 2026-10-12; superseded in part by
-  [ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md),
-  Proposed, owner decision of 2026-10-15T17:17Z, option C), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
+  status Accepted (owner, 2026-10-12) and governing until its successor is accepted
+  ([ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md),
+  Proposed, owner decision of 2026-10-15T17:17Z, option C, pending acceptance), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
   and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
   to an external registry.
-- **Ready scope (owner-approved content; the file-safety guarantees of ADR 0021 take effect on its
-  acceptance), as implementation slices** (each its own pull
+- **Ready scope (owner-approved content; slices that depend on ADR 0021's file-safety guarantees
+  are blocked until the owner accepts ADR 0021), as implementation slices** (each its own pull
   request; none is implemented by the ADR):
-  1. READY: the resolver and the read-only `eligibility` subcommand, with fixtures and
+  1. READY, with its read-time consistency and final-pass checks blocked until ADR 0021 is accepted: the resolver and the read-only `eligibility` subcommand, with fixtures and
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
      read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`),
      and the read-time consistency checks (same-open-file stamps, multiset re-enumeration, and a final
      per-source identity comparison), which are point-in-time observations (ADR 0021 G2-G4);
-  2. READY: `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
+  2. BLOCKED until ADR 0021 is accepted (an owner act; then READY): `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
      writes nothing before its first write), with the pre-write classification of every path component,
      a re-observation immediately before each write (check-then-write, no handle-relative write, no
      claim of exclusion), create-if-absent creation, and `entry-changed` (ADR 0021 G5-G9, superseding
