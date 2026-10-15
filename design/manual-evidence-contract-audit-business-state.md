@@ -35,12 +35,7 @@ The audit sink is called K below, and the in-scope source set Z.
 **Boundary of Z.** Z is limited to the attested repository: ADR 0011's freshness and `reviewedAgainst`
 are defined over one Git root, so this contract cannot digest a second repository. Within that
 repository, Z is not whatever directory the reviewer chose, and it is not derived from the inventory it
-is meant to check. Z is every tracked in-repository artefact that is capable of writing a persistent store named by an
-**independent component-and-store declaration**: deployable components, but also migration utilities,
-administrative and maintenance scripts, and generated persistence code. An artefact is excluded (by a
-committed exclusion policy, each entry with its reason) only after it is established that it cannot
-perform such writes; generated output, vendored third-party code, fixtures and documentation qualify
-only on that basis, never categorically. Capability is determined by reading: an artefact is capable of writing a declared store if it holds that store's connection, credentials or schema, or calls an artefact that does.
+is meant to check. Z is every tracked file of the attested repository less a committed exclusion policy; which files can write a declared store is a reading task within Z, not a filter on Z (an artefact is capable if it holds that store's connection, credentials or schema, or calls an artefact that does). Migration utilities, administrative and maintenance scripts and generated persistence code are inside Z. The exclusion policy excludes a class only after it is established, per entry with its reason, that the class cannot perform such writes; generated output, vendored third-party code, fixtures and documentation qualify only on that basis, never categorically.
 
 *Independent* means: a committed artefact that exists for another purpose and is maintained separately
 from the mutation inventory, and is not generated from it, for example deployment manifests,
@@ -58,8 +53,7 @@ another repository, an external API with write access) are a precondition failur
 writers" would be unreviewed, and the rule is not established by this contract. Mutations through
 libraries and queue consumers that are part of Z are inside it and inventoried like any other writer.
 
-**Durable retention and atomicity.** K must durably record each accepted event in a store that is
-queryable for reconstruction. A mutation must not commit without its audit record: either recording and
+**Durable retention and atomicity.** K must durably record each accepted event in a store that is queryable for reconstruction, for a retention horizon stated in a committed retention-policy artefact that names its derivation from the project's retention or compliance record (the floor). K's configured retention must be at least that horizon, and a deployed-retention snapshot, machine-captured with a captured-at timestamp, is reconciled to it. A sink that deletes events after seconds satisfies a no-retention test and not this requirement. A mutation must not commit without its audit record: either recording and
 mutation succeed or fail together, or the event is written transactionally to a durable outbox that
 guarantees the original event is eventually recorded. "The failure is recorded and surfaced" is not
 enough, because the state change would then stand with no reconstructable audit record. A sink that is
@@ -72,8 +66,7 @@ that captures what changed" (`rules/audit.json`). An event that carries only an 
 that. The project must define the fields an event needs to reconstruct the change for each **mutation
 category** in the inventory (Standard 3 R2 requires a project to "decide and record which fields are
 mandatory for it", and lists `entityType`, `entityId`, `action`, `before`, `after` and `reason` among
-candidates). The reviewer approves that minimum for each category as sufficient, recorded in the review
-evidence; an underspecified minimum (for example only `entityId` and a generic `updated` action for a
+candidates). The reviewer approves that minimum for each category, recorded in the review evidence, and it must meet an objective floor: every persisted field the entry point changes is recoverable from the event as before and after, or as a changed-field set with its value (Standard 3 R5 markers excepted), and the per-entry-point test diffs stored state against the event for each mutated column; an underspecified minimum (for example only `entityId` and a generic `updated` action for a
 mutation that changes several fields) is rejected, and if the reviewer cannot approve it the contract
 does not establish the rule. For credentials, tokens and personal data, Standard 3 R5 requires the
 event to record that the value changed without reproducing it: the payload definition names those
@@ -95,7 +88,7 @@ is not relied on here.
 | The independent component-and-store declaration (deployment manifests, infrastructure-as-code or data-ownership declaration) | Defines the universe Z and the reconciliation target. Inside the digest. |
 | The complete in-scope source set Z (as defined in section 2) and its exclusion policy | The claim quantifies over *the only* writers, so freshness must cover every file. See section 5. |
 | K's source and persistence configuration (store, retention, outbox behaviour) | Shows what "durably retains" means. Inside the digest. |
-| A retention test for K showing an accepted event is retrievable, and a test per entry point showing mutation and recording succeed or fail together (or reach the outbox) | Reviewer-read aids for durable retention and per-entry-point atomicity; not by themselves evidence (section 8). Committed files, so inside the digest. |
+| A retention test for K showing an accepted event is retrievable, including across the retention policy boundary (an event at the horizon is still retrievable; expiry and deletion follow the approved policy), and a test per entry point showing mutation and recording succeed or fail together (or reach the outbox) | Reviewer-read aids for durable retention and per-entry-point atomicity; not by themselves evidence (section 8). Committed files, so inside the digest. |
 | The project's recorded minimum event payload per mutation category (Standard 3 R2), including its redaction rules (R5) | Defines what "captures what changed" means. Inside the digest. |
 | A test per listed entry point asserting the minimum payload (changed fields and their values, or the marker for sensitive fields), not just that K was called | Shows the emitted event carries what the minimum requires. |
 | An authoritative ownership record naming the owner of the system's data or domain | Section 4. Inside the digest. |
@@ -114,7 +107,7 @@ inventory design of the sibling contract for `audit.actor-attribution` (#128).
 
 The owner of the system's data or domain, recorded as `reviewedBy` with the role in `reviewerRole`.
 "The change under review" means the change set between the previous attested digest and D (or, for a
-first attestation, the introduction of K and the inventory); its author is not the accountable reviewer. Enforcing that needs authoritative revisions and authenticated authors (section 9), because a content digest does not identify who wrote the change. The ownership record is read from the previous attested revision (or the default branch), not from the head under review, so the change author cannot edit who the owner is. If the accountable owner authored the change, a named delegate of that role reviews it (section 9); a renewal with an empty change set has no author conflict.
+first attestation, the introduction of K and the inventory); its author is not the accountable reviewer. Enforcing that needs authoritative revisions and authenticated authors (section 9), because a content digest does not identify who wrote the change. The ownership record is read at the computed base revision (section 9), where it must already exist, or from an owner-controlled path with its own named change authority; it is never read from the head under review, so the change author cannot edit who the owner is. If the accountable owner authored the change, a named delegate of that role reviews it (section 9); a renewal with an empty change set has no author conflict.
 
 `reviewedBy` and `reviewerRole` are self-asserted strings in the policy today, and no machine-checkable
 record says who owns the data or domain. Establishing the role needs an authoritative ownership record
@@ -133,9 +126,8 @@ declaration, K's source and persistence configuration, the minimum payload defin
 A stale approval is `not-evaluated` / `skipped` and establishes nothing.
 
 **This is a requirement the current mechanism does not meet in full.** Naming a directory in
-`reviewedAgainst.paths` is already tree-bound (`scripts/repository.mjs` resolves `HEAD:<path>`), so a root
-path would change when a file is added beneath it. What is missing is an exclusion-aware enumeration:
-Z is the set of tracked artefacts capable of writing the declared stores (section 2) less an exclusion policy, which the mechanism has no
+`reviewedAgainst.paths` is already tree-bound (`scripts/repository.mjs` resolves `HEAD:<path>`), so a named directory would change when a file is added beneath it (the repository root itself cannot be named, because it contains `project-policy.yml`, which records the digest). What is missing is an exclusion-aware enumeration:
+Z is the tracked tree less an exclusion policy, which the mechanism has no
 notion of. A writer added in a new or uninventoried file that the listed paths do not cover would
 otherwise leave the approval fresh while "the listed entry points are the only writers" became false;
 the detector does not close that gap (it is not built, recognises only some mutation shapes, and a
@@ -189,8 +181,8 @@ definition of review as the establishing mechanism.
 | Whether `assurance` moves from `none` | `rules/audit.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`); the static catalog value is a separate claim (Standard 27 R3) | NOT MADE, decision needed |
 | Authenticate reviewer identity and authorise the reviewer role before adoption | Depends on #95 and #133 (authenticated successor events) plus an authoritative role record. Today `reviewedBy` and `reviewerRole` are self-asserted strings, so a change author could name themselves the accountable owner and obtain an approval reported with full assurance | NOT MADE; without it this contract MUST NOT be adopted |
 | A successor may clear a rejection only if authenticated and independent of the rejected event's subject | #96 / PR #116 (merged) chains successors but does not authenticate them; tied to #133. See section 10 | NOT MADE; without it this contract MUST NOT be adopted |
-| Enforce reviewer-author separation | Make authoritative base and head revisions (`reviewedAgainst.revision` and tree: mandatory only on successor events today per `scripts/reviews.mjs`, absent on a genesis event, and recorded rather than verified) mandatory, derive the authors of the commits between them from the repository, authenticate those authors and the reviewer (#95, #133), and reject an approval whose reviewer identity appears among the authors. A content digest does not identify commits or authors, so identity authentication alone cannot prevent an owner approving their own change | NOT MADE; without it this contract MUST NOT be adopted |
-| Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`: a root path is already tree-bound, but exclusion-aware enumeration (the set of tracked artefacts capable of writing the declared stores, less the exclusion policy) is not supported | NOT MADE; without it this contract MUST NOT be adopted |
+| Enforce reviewer-author separation | Add a distinct, mandatory base-revision field to `reviewedAgainst` (today `revision` and `tree` identify one reviewed commit and its tree, not two endpoints; they are mandatory only on successor events per `scripts/reviews.mjs`, and recorded rather than verified). The validator computes the base itself and compares the recorded value with it: for a genesis attestation it is the parent of the earliest first-parent commit that touches any reviewed path; for a renewal it is the previous event's revision, verified to be an ancestor of head whose tree and digest match that event. A reviewer-recorded value is never trusted on its own. Revision, tree and the base revision are mandatory on every event under this rule, genesis included. Derive the authors of the commits between base and head from the repository, authenticate those authors and the reviewer (#95, #133), and reject an approval whose reviewer identity appears among the authors. A content digest does not identify commits or authors, so identity authentication alone cannot prevent an owner approving their own change | NOT MADE; without it this contract MUST NOT be adopted |
+| Bind freshness to the complete source set in scope, as the enumerated list of every tracked path (excluded classes included, so a file added under an excluded directory also invalidates the approval; exclusions narrow what the reviewer reads, not what invalidates) |  Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`: a root path is already tree-bound, but exclusion-aware enumeration (tracked tree less the exclusion policy) is not supported | NOT MADE; without it this contract MUST NOT be adopted |
 | Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional on a genesis event (successor events must carry them, `scripts/reviews.mjs`) and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
 | ADR 0010 accepted, with the framework defining human review as the establishing mechanism for this rule | ADR 0010 is Proposed. ADR 0005 binding rule 3's explicit catalog opt-in is necessary but not sufficient on its own | NOT MADE; without it this contract MUST NOT be adopted |
 | Read the ownership record from the previous attested revision (or the default branch), not from the head under review, with a stated change authority for it | Validator and attestation schema. Otherwise the change author can edit who the owner is in the same change | NOT MADE; without it this contract MUST NOT be adopted |
@@ -198,6 +190,7 @@ definition of review as the establishing mechanism.
 | Validate `reviewedBy` against the ownership record, and require the record among the reviewed paths | Validator and attestation schema | NOT MADE |
 | Require reviewer role, accountable owner, maximum age and inventory in the attestation | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
 | Define the committed mutation inventory format, including the mutation-category column, and the format, owner and change authority of the independent declaration, exclusion policy and minimum payload definition | New schema or design document | NOT MADE |
+| Add a committed retention-policy artefact (horizon, derivation from the project's retention or compliance record), require K's configured retention to be at least that horizon, and capture a deployed-retention snapshot with a `capturedAt` timestamp not older than the maximum age | Attestation evidence and validator; no such field exists today | NOT MADE; without it this contract MUST NOT be adopted |
 | Update the `$assuranceNote` and Standard 3's Implementation section | `rules/audit.json`, `standards/03-auditing.md` | NOT MADE |
 | Versioning impact | Standard 21 R2 sets levels by the effect on a currently compliant project and does not classify attestation eligibility. Classification and `VERSION` are the owner's | NOT MADE, not classified |
 
