@@ -3877,8 +3877,10 @@ export async function main(args) {
         .filter(([, decl]) => decl?.status === "not-applicable")
         .map(([id]) => id),
     );
+    // Verdict-only: `audit` is policy-independent evidence (ADR 0004, ADR 0020) and applies no
+    // applicability, so it keeps classifying the pinned departure on its own terms.
     checked.valid = checked.valid.filter((entry) => {
-      if (!notApplicable.has(entry.rule)) return true;
+      if (!validating || !notApplicable.has(entry.rule)) return true;
       exemptionCheck.problems.push({
         index: entry.index,
         id: "fixture-exemption-rule-not-applicable",

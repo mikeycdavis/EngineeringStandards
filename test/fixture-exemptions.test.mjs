@@ -791,3 +791,14 @@ test("a pin on a rule declared not-applicable is not bound by validate and the c
   assert.equal(findingsOf(res, "fixture-exempted").length, 0, "no waiver may be applied to a not-applicable rule");
   assert.equal(findingsOf(res, "fixture-exemption-rule-not-applicable").length, 1, JSON.stringify(res.json.findings.map((f) => f.id)));
 });
+
+test("audit stays independent of applicability: a pin on a not-applicable rule is still bound by audit", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const file = path.join(root, "project-policy.yml");
+  const { readFile } = await import("node:fs/promises");
+  const extra = ["applicability:", "  security.no-cert-bypass:", "    status: not-applicable", '    reason: "no TLS clients"', '    revisitWhen: "a client is added"', ""].join(String.fromCharCode(10));
+  await writeFile(file, (await readFile(file, "utf8")) + extra);
+  const res = cli("audit", root);
+  assert.equal(findingsOf(res, "fixture-exemption-rule-not-applicable").length, 0);
+  assert.equal(findingsOf(res, "fixture-exempted").length, 1);
+});
