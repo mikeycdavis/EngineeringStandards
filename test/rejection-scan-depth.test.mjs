@@ -192,6 +192,7 @@ test("end to end: a trusted base beyond the string limit is a structured not-eva
 test("the git read bound never exceeds this runtime's maximum string length", async () => {
   const { constants } = await import("node:buffer");
   const { GIT_MAX_BUFFER } = await import("../scripts/review-history.mjs");
-  assert.ok(GIT_MAX_BUFFER <= constants.MAX_STRING_LENGTH, GIT_MAX_BUFFER + " > " + constants.MAX_STRING_LENGTH);
+  // One pipe chunk (64 KiB) can arrive past the bound before ENOBUFS is reported: keep at least 256 KiB of headroom.
+  assert.ok(GIT_MAX_BUFFER <= constants.MAX_STRING_LENGTH - 256 * 1024, GIT_MAX_BUFFER + " leaves no headroom under " + constants.MAX_STRING_LENGTH);
   assert.ok(GIT_MAX_BUFFER >= 64 * 1024 * 1024, "the bound stays far above any real policy");
 });

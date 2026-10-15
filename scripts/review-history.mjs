@@ -20,7 +20,10 @@ import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recorded
 // It stays well under V8's maximum string length (about 512 MiB): at or above that, decoding the output
 // throws ERR_STRING_TOO_LONG out of spawnSync instead of returning an error the caller can classify.
 // The bound is also clamped to this runtime's actual maximum string length (2^28 - 16 on 32-bit V8 builds).
-export const GIT_MAX_BUFFER = Math.min(256 * 1024 * 1024, bufferConstants.MAX_STRING_LENGTH);
+// `spawnSync` can read one pipe chunk past `maxBuffer` before it reports ENOBUFS, and the output is then
+// decoded, so the bound keeps headroom below the limit rather than sitting on it.
+const STRING_HEADROOM = 1024 * 1024;
+export const GIT_MAX_BUFFER = Math.min(256 * 1024 * 1024, bufferConstants.MAX_STRING_LENGTH - STRING_HEADROOM);
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
