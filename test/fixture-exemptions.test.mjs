@@ -721,3 +721,40 @@ test("the global file cap does not hide a pin under a custom-named vendor tree",
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((f) => f.id)));
   assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
 });
+
+test("cap-hidden pins in one directory list each directory once, not once per pin", { timeout: 300000 }, async () => {
+  const root = await scratch();
+  await mkdir(path.join(root, "a"), { recursive: true });
+  for (let i = 0; i < 20050; i += 1) await writeFile(path.join(root, "a", "f" + i + ".txt"), "x");
+  await mkdir(path.join(root, "zzz"), { recursive: true });
+  const pins = [];
+  for (let i = 0; i < 6; i += 1) {
+    await writeFile(path.join(root, "zzz", "late" + i + ".js"), CERT);
+    pins.push(pin("zzz/late" + i + ".js", CERT, CERT_RULE));
+  }
+  await writeFile(path.join(root, "project-policy.yml"), policyText(pins));
+  const counter = path.join(root, "..", "count-" + path.basename(root) + ".cjs");
+  const log = counter + ".log";
+  await writeFile(
+    counter,
+    [
+      'const fs = require("node:fs");',
+      "const real = fs.readdirSync;",
+      "fs.readdirSync = function (p, ...rest) {",
+      '  if (String(p).split(String.fromCharCode(92)).join("/").endsWith("/zzz")) fs.appendFileSync(' + JSON.stringify(log) + ', "x");',
+      "  return real.call(this, p, ...rest);",
+      "};",
+      "",
+    ].join(String.fromCharCode(10)),
+  );
+  const r = spawnSync(process.execPath, ["--require", counter, CLI, "validate", "--dir=" + root, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(r.error, undefined);
+  if (!r.stdout) throw new Error("no output: " + r.stderr.slice(0, 600));
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.findings.filter((f) => f.id === "fixture-exemption-not-established").length, 6);
+  const { readFile } = await import("node:fs/promises");
+  const reads = (await readFile(log, "utf8")).length;
+  assert.ok(reads >= 1 && reads <= 1, "directory zzz was listed " + reads + " times");
+  await rm(counter, { force: true });
+  await rm(log, { force: true });
+});

@@ -3968,6 +3968,21 @@ export async function main(args) {
   // The cap is global, so it explains an unscanned pin only when nothing else does: a path the
   // repository ignores, a directory the walk excluded by name or vendor marker, or a symlink was left
   // out on purpose, and "keep the entry" would be the wrong thing to say about it.
+  // One directory listing per directory per audit: with many cap-hidden pins in one large directory
+  // an unmemoised check lists that directory once per pin per ancestor.
+  const markerCache = new Map();
+  const hasVendorMarker = (dir) => {
+    if (!markerCache.has(dir)) {
+      let found;
+      try {
+        found = readdirSync(path.join(root, dir), { withFileTypes: true }).some((e) => e.isFile() && VENDOR_MARKERS.has(e.name));
+      } catch {
+        found = true; // cannot be listed: not a path this run can call hidden by the cap
+      }
+      markerCache.set(dir, found);
+    }
+    return markerCache.get(dir);
+  };
   const deliberatelyExcluded = (relPath) => {
     if (ignored.ok && ignored.files.includes(relPath)) return true;
     const parts = relPath.split("/");
@@ -3977,11 +3992,7 @@ export async function main(args) {
       if (ignored.ok && ignored.directories.includes(dir)) return true;
       if (surfaceLoss.excluded.some((e) => e.path === dir)) return true;
       // A vendor marker is read from inside the directory, which a capped walk may never have listed.
-      try {
-        if (readdirSync(path.join(root, dir), { withFileTypes: true }).some((e) => e.isFile() && VENDOR_MARKERS.has(e.name))) return true;
-      } catch {
-        return true;
-      }
+      if (hasVendorMarker(dir)) return true;
     }
     try {
       let cur = root;
