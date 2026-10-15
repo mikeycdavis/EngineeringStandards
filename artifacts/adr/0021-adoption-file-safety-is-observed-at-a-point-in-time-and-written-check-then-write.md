@@ -156,12 +156,17 @@ kind or a junction, or any other entry that `lstat` does not report as a regular
 opened for content. (Unchanged from ADR 0016; restated because G2 depends on it.)
 
 **G2 — Content is read only from the entry that was classified.** A source file classified as regular is
-opened read-only, once, and `fstat` is taken on the open file **before any byte is read**. If the
+opened read-only, once, and `fstat` is taken on the open file and `lstat` is taken again on the entry
+by path, both **before any byte is read**. The entry must still be reported as a regular file (not a
+link) with the classified identity, and the open file must have the same identity. If the
 opened file is not a regular file, or its identity differs from the classification, nothing is read
 (an open that itself fails, such as `ELOOP`, `EISDIR` or `EACCES`, is `not-regular-file` where the
 error says the entry is a link or directory and `unreadable` otherwise) and the result is `INDETERMINATE` (`not-regular-file` where the opened object is not a regular file,
-`source-changed` where it is a regular file of another identity). The outside content of a replacement
-link is therefore never read or used. Where the platform provides no-follow, non-blocking and
+`source-changed` where it is a regular file of another identity). A replacement link whose target is a different file is rejected before any byte is read, and so is a
+link installed at the name that points back to the **same** file (the entry by path is then a link, so
+the `lstat` rejects it). A link installed after that `lstat` and before the read is **not observed
+until G3's post-read `lstat`**, which makes the result `INDETERMINATE` (`source-changed`); a byte may
+have been read through it, and no byte read in that case is used. Where the platform provides no-follow, non-blocking and
 no-controlling-terminal open flags (`O_NOFOLLOW`, `O_NONBLOCK`, `O_NOCTTY`) the open uses all of them;
 on Windows, where Node provides none of these flags, the post-open `fstat` and identity comparison is
 the whole mechanism and any entry that `lstat` does not report as a regular file is
@@ -333,7 +338,7 @@ re-observation and the create or rename call**; these seams are test surface, no
 | Guarantee | Test row | Mutation check (the test must fail) |
 | --- | --- | --- |
 | G1 | injected: a directory, every link kind, a FIFO and a device at `README.md` or `FROZEN.md` each give `not-regular-file`; the open interface fails the test if called for content | content-read of a non-regular entry allowed |
-| G2 | injected: entry classified regular and replaced before the open by a link to an outside file carrying a listed phrase, by a FIFO, and by another regular file: no byte read; `not-regular-file` / `source-changed`; with `O_NOFOLLOW` reported unavailable the result is the same, and with `O_NONBLOCK` reported unavailable on a non-Windows platform the entry is not opened and the result is `unreadable` | the post-open identity comparison removed (run with the no-follow flag reported unavailable so `ELOOP` cannot mask it) |
+| G2 | injected: entry classified regular and replaced before the open by a link to an outside file carrying a listed phrase, by a FIFO, by another regular file, and by a link at the same name pointing back to the **same** file (the file renamed away): no byte read in each case (the same-file link case is refused by the `lstat` before the read); `not-regular-file` / `source-changed`; with `O_NOFOLLOW` reported unavailable the result is the same, and with `O_NONBLOCK` reported unavailable on a non-Windows platform the entry is not opened and the result is `unreadable` | the post-open identity comparison removed (run with the no-follow flag reported unavailable so `ELOOP` cannot mask it); the pre-read `lstat` removed (the same-file link case must then fail) |
 | G3 | injected: same inode (including via a hard link) written during the read, with separate cases for a size change, a **same-size** rewrite that changes `mtime` only, and one that changes `ctime` only (where the platform provides them), each `source-changed`; a same-size rewrite restored before the after-read `fstat` is not observed (documented non-claim, no verdict required); unchanged source not flagged; and the post-read `lstat` of the entry: replaced, removed, and an error other than absence | the after-read `fstat` comparison removed; the size, `mtime` and `ctime` comparisons each removed **independently**, each making its own case fail; the post-read `lstat` removed |
 | G4 | injected: (a) a differently spelled twin added after the first enumeration, and a twin removed: `listing-changed`; (b) a source replaced by another regular file **after the post-read check of G3 and before the final pass**, keeping its name and the multiset: `source-changed`; (c) a source written **in place through the same inode** after the post-read check and before the final pass, so identity is unchanged and size, `mtime` or `ctime` differ: `source-changed`, with separate cases for a size-only change, a **same-size** rewrite that changes `mtime` only and one that changes `ctime` only (where the platform provides them); unchanged directory not flagged | (a) multiset replaced by a case-folded set; (b) the final per-entry identity comparison removed; (c) the final size comparison, the `mtime` comparison and the `ctime` comparison each removed **independently**, each making its own case fail |
 | G5 | injected: target `stat` identity differs between the first and last resolver observation, and between the resolver's last observation and `init`'s pre-first-write observation: `target-changed`, exit `2`, zero writes; applies to `eligibility` and `init`; a retarget that is restored before the final `stat`, and the mixed-directory case (listing from A, classification and open from B, restored to A before the final `stat`), are **not required to be flagged**; the test pins the documented non-claim and requires no verdict | the comparison removed |
@@ -354,7 +359,7 @@ that the platform can create (symbolic link, junction, directory, newly created 
 deletion, regular-to-regular replacement (the replacement created first and renamed over the name, so a new identity is allocated before the old is freed; identity reuse is a documented non-claim), directory component replaced by another real directory or
 by a link; the FIFO and device kinds are tested injected only) at the seam between classification and re-observation; (4) G8 at the seam after the
 re-observation, for a component and a leaf; (5) G2 with a regular source replaced, between
-classification and open, by a link and by another regular file (no byte of the replacement's content
+classification and open, by a link to another file, by a link back to the same file, and by another regular file (no byte of the replacement's content
 is used); (6) G9 placement: a rename onto an existing regular file, onto a link and onto a directory
 (which fails), the temporary-entry observations, and the hard-link exception test of ADR 0016 AC4. A runner that cannot create the objects must be
 provisioned; the gate does not pass by skipping. **The gate contains no test that asserts that a
