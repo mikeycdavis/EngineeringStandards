@@ -1454,3 +1454,49 @@ test("a non-terminator ends neither a comment nor a line", () => {
   const r = scanSource('// a\u3000b\fimport "./x.mjs";\nimport "./y.mjs";');
   assert.deepEqual(specs(r), ["./y.mjs"]);
 });
+
+// Round 10: named imports of process members, chained dynamic imports, fetch forms, evidence lines
+test("named regression: named imports of loader and reflection members of process are the mechanism", () => {
+  for (const [src, mech] of [
+    ['import { getBuiltinModule } from "node:process"; getBuiltinModule("fs");', "require-call"],
+    ['import { binding } from "node:process";', "reflection"],
+    ['import { dlopen } from "process";', "reflection"],
+    ['import { mainModule as m } from "node:process";', "require-call"],
+    ['const { _linkedBinding } = await import("node:process");', "reflection"],
+    ['import { someFutureMember } from "node:process";', "termination-indirect"],
+  ]) {
+    assert.ok(scanSource(src).mechanisms[mech].length > 0, src);
+  }
+  assert.equal(notOk(scanSource('import { argv, env } from "node:process";')), false);
+});
+test("named regression: a chained dynamic import is used as a whole, not narrowed to the destructured names", () => {
+  const chained = scanSource('const { allowed } = await import("./core.mjs").then((m) => ({ allowed: m.secret }));');
+  assert.deepEqual(chained.imports[0].names, ["*"]);
+  for (const tail of [".default", "[0]", "?.x", "(1)"]) {
+    assert.deepEqual(scanSource(`const { a } = await import("./c.mjs")${tail};`).imports[0].names, ["*"], tail);
+  }
+  assert.deepEqual(scanSource('const { a, b } = await import("./c.mjs");').imports[0].names, ["a", "b"]);
+  assert.deepEqual(scanSource('const { a } = await import("./c.mjs")\nconst z = 1;').imports[0].names, ["a"]);
+});
+test("named regression: optional, parenthesised and .call fetch are network", () => {
+  for (const src of ['fetch?.("https://example.test");', '(fetch)("https://example.test");', 'fetch.call(null, "https://example.test");', "const f = fetch;", "run(fetch);"]) {
+    assert.ok(scanSource(src).mechanisms.network.length > 0, src);
+  }
+  for (const src of ["x.fetch(1);", "const o = { fetch: 1 };", "typeof fetch === 'function';", "function fetch() {}", "const fetch = 1;"]) {
+    assert.equal(scanSource(src).mechanisms.network.length, 0, src);
+  }
+});
+test("named regression: evidence line counting uses every ECMAScript line terminator", () => {
+  for (const lt of [String.fromCharCode(13), String.fromCharCode(0x2028), String.fromCharCode(0x2029)]) {
+    const d = baseDeclaration();
+    d.members[0].evidence = ["NOTES.md:2"];
+    const t = tiny({ ...FILES, "NOTES.md": `boundary${lt}notes` }, d);
+    try {
+      assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), [], JSON.stringify(lt));
+      d.members[0].evidence = ["NOTES.md:4"];
+      assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["evidence-out-of-range"]);
+    } finally {
+      rmSync(t.dir, { recursive: true, force: true });
+    }
+  }
+});

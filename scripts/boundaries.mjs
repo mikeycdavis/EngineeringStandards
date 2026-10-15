@@ -272,6 +272,9 @@ const isAsciiIdPart = (c) => /[A-Za-z0-9_$]/.test(c);
 // template ends or counts at every one of them, never at LF alone.
 const isLineTerminator = (ch) => ch === "\n" || ch === "\r" || ch === String.fromCharCode(0x2028) || ch === String.fromCharCode(0x2029);
 
+// The same definition, as a splitter, for counting the lines of an evidence file.
+const LINE_TERMINATORS = new RegExp(`\r\n|[\n\r${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]`);
+
 export function tokenize(src, ambiguous = "regex") {
   // Lines the terminator at index k adds; the LF of a CRLF pair carries the count.
   const breaks = (k) => (isLineTerminator(src[k]) && !(src[k] === "\r" && src[k + 1] === "\n") ? 1 : 0);
@@ -752,7 +755,12 @@ function analyse(rawToks) {
         if (isP(k + 1, "(")) {
           if (isStr(k + 2) && (isP(k + 3, ")") || isP(k + 3, ","))) {
             let names = ["*"];
-            if (isId(k - 1, "await") && isP(k - 2, "=") && isP(k - 3, "}")) names = bracedBefore(k - 1);
+            // The names are narrowed only when the import expression is the whole awaited
+            // initializer; `.then(...)`, a call, an index or any operator after it makes the
+            // destructured names those of some other value, so the module is used as a whole.
+            const after = matching("(", k + 1) + 1;
+            const whole = after > 0 && (after >= toks.length || isP(after, ";") || isP(after, "}") || isP(after, ")") || isP(after, ",") || (toks[after].t === "id" && !isId(after, "as") && !isId(after, "instanceof") && !isId(after, "in") && !isId(after, "of")));
+            if (whole && isId(k - 1, "await") && isP(k - 2, "=") && isP(k - 3, "}")) names = bracedBefore(k - 1);
             imports.push({ spec: toks[k + 2].v, kind: "dynamic", names, line: tk.line, sideEffect: false });
           } else {
             flag("dynamic-import-computed", tk.line);
@@ -868,7 +876,13 @@ function analyse(rawToks) {
         flag("reflection", tk.line);
         break;
       case "fetch":
-        if (!afterDot && isP(k + 1, "(")) flag("network", tk.line);
+        // Any reference to the global is network reach: a call, `fetch?.()`, `(fetch)()`,
+        // `fetch.call`, an alias or a value. Not a property (`x.fetch`), an object key or method
+        // name, a declaration of a local, or `typeof fetch`.
+        if (!afterDot && !isP(k + 1, ":") && !isId(k - 1, "typeof") && !isId(k - 1, "function") &&
+            !isId(k - 1, "const") && !isId(k - 1, "let") && !isId(k - 1, "var") && !isId(k - 1, "class")) {
+          flag("network", tk.line);
+        }
         break;
       case "WebSocket":
       case "EventSource":
@@ -900,6 +914,14 @@ function analyse(rawToks) {
     if (b === "process") {
       // A re-export clause names a binding; it is not a call. Imports and dynamic destructures are.
       if (imp.kind !== "reexport" && imp.names.some((nm) => TERMINATING.has(nm))) terminates.push(imp.line);
+      // A named import of a loader or reflection member is the mechanism it reaches, as the dotted
+      // access is; a name that is neither benign nor a structural keyword is not guessed at.
+      for (const nm of imp.names) {
+        if (PROCESS_REACH.has(nm)) flag(PROCESS_REACH.get(nm), imp.line);
+        else if (!TERMINATING.has(nm) && !PROCESS_BENIGN.has(nm) && !["default", "*", "side-effect"].includes(nm)) {
+          flag("termination-indirect", imp.line);
+        }
+      }
       const bindings = imp.bindings ?? [];
       for (const bind of bindings) {
         if (bind.local !== "process") flag("termination-indirect", imp.line);
@@ -1233,7 +1255,7 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
         line,
         message: `${owner}: evidence '${e}' is ${target}; evidence must be a regular file inside the repository, not a directory or a link`,
       });
-    } else if (line > readFileSync(abs, "utf8").split(/\r?\n/).length) {
+    } else if (line > readFileSync(abs, "utf8").split(LINE_TERMINATORS).length) {
       violations.push({ kind: "evidence-out-of-range", file, line, message: `${owner}: evidence '${e}' is past the end of the file` });
     } else if (edge && !fileSet.has(file)) {
       violations.push({
