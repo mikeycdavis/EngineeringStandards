@@ -439,3 +439,40 @@ test("a pinned file the read budget skipped is never reopened to be hashed: a wr
   assert.equal(ne.length, 1);
   assert.doesNotMatch(ne[0].message, /changed|digest is|stale|remove/);
 });
+
+// ---- human output and audit reporting (Codex round 3) ----------------------------------------------
+
+function cliText(command, root, ...extra) {
+  const r = spawnSync(process.execPath, [CLI, command, `--dir=${root}`, ...extra], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(r.error, undefined);
+  return { code: r.status, out: r.stdout, stderr: r.stderr };
+}
+
+test("non-JSON validate prints a stale fixture entry, and the verdict is unchanged by it", async () => {
+  const root = await repo({ "test/fixtures/bad/clean.js": CLEAN }, [pin("test/fixtures/bad/clean.js", CLEAN, CERT_RULE, { sha256: "0".repeat(64) })]);
+  const res = cliText("validate", root);
+  assert.match(res.out, /Fixture exemptions/);
+  assert.match(res.out, /test\/fixtures\/bad\/clean\.js/);
+  assert.match(res.out, /stale/);
+  const json = cli("validate", root);
+  assert.equal(findingsOf(json, "fixture-exemption-stale").length, 1);
+});
+
+test("non-JSON validate prints a not-established entry", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const res = cliText("validate", root, "--max-total-read-bytes=1");
+  const at = res.out.indexOf("Fixture exemptions");
+  assert.ok(at >= 0, res.out);
+  assert.match(res.out.slice(at), /exemption for test\/fixtures\/bad\/bypass\.js \(owner project-owner\) is not established/);
+});
+
+test("audit reports a fixtureExemptions entry that fails the policy schema, instead of silently treating it as absent", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE, { sha256: "abc" })]);
+  const res = cli("audit", root);
+  const f = res.json.findings.filter((x) => x.id === "fixture-exemption-schema-invalid");
+  assert.equal(f.length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
+  assert.match(f[0].message, /fixtureExemptions\[0\]\.sha256/);
+  assert.match(f[0].message, /none of the fixture exemptions applies/);
+  // And the bait is inspected as ordinary content.
+  assert.ok(res.json.findings.some((x) => x.rule === CERT_RULE));
+});

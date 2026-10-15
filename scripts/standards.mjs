@@ -197,6 +197,9 @@ async function loadProjectPolicy(repoRoot) {
     if (errors.length > 0) {
       return {
         document: null,
+        // Kept whole so `audit`, which does not render a verdict, can still say that a
+        // fixtureExemptions entry failed the schema and therefore waived nothing.
+        schemaErrors: errors,
         error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
       };
@@ -208,7 +211,7 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy, policyFindings = []) {
+function renderVerdict(report, policy, policyFindings = [], exemptionFindings = []) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -312,6 +315,12 @@ function renderVerdict(report, policy, policyFindings = []) {
       out.push(`    ${f.message}`);
       out.push(`      -> ${f.remediation}`);
     }
+    out.push("");
+  }
+
+  if (exemptionFindings.length) {
+    out.push("  Fixture exemptions (the verdict above is unchanged by these):");
+    for (const f of exemptionFindings) out.push(`    ${displaySafe(f.message)}`);
     out.push("");
   }
 
@@ -3875,6 +3884,21 @@ export async function main(args) {
   // dead entry is a waiver nobody can tell is still protecting anything — or is protecting the wrong
   // file after a rename. Rule-less on purpose: these are facts about the policy and the run, and the
   // compliance consequence of a dead entry is already carried by the violation it no longer waives.
+  // A schema-invalid fixtureExemptions makes the whole policy unreadable, so no entry validated and
+  // none applied. `audit` renders no verdict, so without this the entry would look simply absent.
+  for (const e of (policy.schemaErrors ?? []).filter((x) => String(x.path ?? "").startsWith("fixtureExemptions"))) {
+    addFinding({
+      id: "fixture-exemption-schema-invalid",
+      category: "Fixture exemptions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: ["project-policy.yml"],
+      message:
+        `${e.path} ${e.message}: project-policy.yml does not match the schema, so none of the fixture exemptions applies. ` +
+        "Every file is inspected as ordinary content.",
+      standardRef: R.search,
+    });
+  }
   for (const problem of exemptionCheck.problems) {
     addFinding({
       id: problem.id,
@@ -4372,7 +4396,14 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emitText(renderVerdict(report, policy, verdict.policyFindings ?? []) + "\n");
+    emitText(
+      renderVerdict(
+        report,
+        policy,
+        verdict.policyFindings ?? [],
+        findings.filter((f) => f.category === "Fixture exemptions" && f.severity === "warning"),
+      ) + "\n",
+    );
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this
