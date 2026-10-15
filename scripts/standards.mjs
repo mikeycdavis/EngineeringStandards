@@ -3976,6 +3976,12 @@ export async function main(args) {
       if (SKIP_DIRS.has(parts[i - 1])) return true;
       if (ignored.ok && ignored.directories.includes(dir)) return true;
       if (surfaceLoss.excluded.some((e) => e.path === dir)) return true;
+      // A vendor marker is read from inside the directory, which a capped walk may never have listed.
+      try {
+        if (readdirSync(path.join(root, dir), { withFileTypes: true }).some((e) => e.isFile() && VENDOR_MARKERS.has(e.name))) return true;
+      } catch {
+        return true;
+      }
     }
     try {
       let cur = root;
