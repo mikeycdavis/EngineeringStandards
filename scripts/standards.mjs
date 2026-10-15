@@ -3970,7 +3970,9 @@ export async function main(args) {
     // A file this run did not read in full cannot show that its rule "found no violation": the read
     // budget was spent before it was retained, or a violation may lie past the truncation boundary.
     // That is "not established", never "stale", and it must not tell anyone to remove the entry.
-    if (entry.state === "matches" || entry.state === "not-read") {
+    // A path the file-count cap kept the walk from reaching was never enumerated: it may well exist.
+    const cappedAway = entry.state === "not-scanned" && surfaceLoss.capped && existsSync(path.join(root, entry.path));
+    if (entry.state === "matches" || entry.state === "not-read" || cappedAway) {
       const abs = files.find((f) => rel(f) === entry.path);
       const incomplete =
         entry.state === "not-read" ||
@@ -3993,7 +3995,9 @@ export async function main(args) {
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
             `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
-            (abs !== undefined && (unreadableFiles.includes(abs) || digestReadFailed.has(abs))
+            (cappedAway
+              ? `The audit stopped collecting files at the ${MAX_FILES}-file cap, so this path was never enumerated and may still exist. Keep the entry; narrow the audited tree.`
+              : abs !== undefined && (unreadableFiles.includes(abs) || digestReadFailed.has(abs))
               ? "The file could not be read; fix its permissions or presence and rerun. Keep the entry."
               : abs !== undefined && run.truncated.has(abs)
                 ? `The file is larger than the per-file read cap (${MAX_READ_BYTES} bytes), which --max-total-read-bytes does not raise, so a pin over it cannot be established; shrink or split the fixture. Keep the entry.`

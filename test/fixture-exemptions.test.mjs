@@ -682,3 +682,17 @@ test("standards policy checks entries, not freshness: a dead pin passes it and a
   assert.doesNotMatch(adr, /learns of a dead entry before an audit/);
   assert.match(adr, /can therefore still carry a dead entry/);
 });
+
+test("a pin beyond the file-count cap is 'not established', not stale", { timeout: 300000 }, async () => {
+  const root = await scratch();
+  await mkdir(path.join(root, "a"), { recursive: true });
+  for (let i = 0; i < 20050; i += 1) await writeFile(path.join(root, "a", "f" + i + ".txt"), "x");
+  await mkdir(path.join(root, "zzz"), { recursive: true });
+  await writeFile(path.join(root, "zzz/late.js"), CERT);
+  await writeFile(path.join(root, "project-policy.yml"), policyText([pin("zzz/late.js", CERT, CERT_RULE)]));
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json.findings.map((f) => f.id)));
+  const ne = findingsOf(res, "fixture-exemption-not-established");
+  assert.equal(ne.length, 1);
+  assert.match(ne[0].message, /file cap/);
+});
