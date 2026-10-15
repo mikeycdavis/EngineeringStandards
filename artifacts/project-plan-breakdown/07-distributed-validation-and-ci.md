@@ -287,7 +287,7 @@ someone to lie to make the build go green.
 - **Size limits (approved 2026-10-14, relayed at 01:34Z):** a 400,000 raw-byte capped read (at most
   cap-plus-one bytes; at most 400,000 read in full and examined; 400,001 or more `over-read-cap`,
   INDETERMINATE, not overridable) with the grow-after-classification test and mutation check. It is part
-  of the READY resolver slice; the former blocker is removed.
+  of the resolver slice, whose implementation is blocked pending ADR 0021; the size-limit decision itself is approved and its former blocker is removed.
 - **`--help` (decided 2026-10-14, relayed at 01:34Z):** `eligibility --help` in any position prints usage
   and exits 2, so exit 0 means only `IN_SCOPE`; top-level `standards --help` is unchanged.
 
