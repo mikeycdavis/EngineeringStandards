@@ -20,10 +20,29 @@ aggregate-verdict semantics.
 
 ## 2. The claim
 
-> At digest D, over the complete source set S in scope: the mutation entry points listed in the
+> At digest D, over the complete source set Z (defined below): the mutation entry points listed in the
 > committed inventory are the only writers of persistent business state; each emits an audit event
-> through sink S; each emitted event carries the minimum payload that records *what changed* (below);
-> and the stores excluded as derived or transient are listed with their reconstruction rationale.
+> through sink K; K durably retains each accepted event (below); each emitted event carries the minimum
+> payload that records *what changed* (below); and the stores excluded as derived or transient are
+> listed with their reconstruction rationale under the full exclusion predicate of Standard 3 R1.
+
+(The audit sink is called K here so that it is not confused with the source set Z.)
+
+**Boundary of Z.** Z is not whatever directory the reviewer chose. Z MUST be the whole of the system
+whose persistent state is under review: every source file of every repository and deployable component
+that can write the stores named in the inventory, declared in a committed file that names each
+repository root and component and the stores it may write. A project whose business state is written
+by components outside what that declaration can name (another service, another repository, an
+external API with write access) cannot use this contract: the claim "the only writers" would be false
+or unreviewed, and the rule is not established by it. If a writer is outside Z because it is out of
+the system's scope, the declaration states why, and that statement is itself reviewed.
+
+**Durable retention.** K must durably record each accepted event in a store that is queryable for
+reconstruction, and must define what happens when recording fails: the mutation fails, or the failure
+is itself recorded and surfaced. A sink that is a no-op, or that logs to an ephemeral stream with no
+retention, does not satisfy the claim even if every entry point calls it. The sink's source and its
+persistence configuration are reviewed, and a test per sink shows that an accepted event is retrievable
+and that a recording failure is handled as defined.
 
 **Minimum payload.** The catalog's remediation is to "record business mutations through an audit path
 that captures what changed" (`rules/audit.json`). An event that carries only an identifier does not do
@@ -31,12 +50,15 @@ that. The project must define, and the inventory must cite, the fields an event 
 change (Standard 3 R2 requires a project to "decide and record which fields are mandatory for it", and
 lists `entityType`, `entityId`, `action`, `before`, `after` and `reason` among candidates). The
 per-entry-point test asserts that the emitted event contains those fields with the values the mutation
-changed, not merely that S was called. Whether the recorded content is *sufficient* to reconstruct state
+changed, not merely that K was called. Whether the recorded content is *sufficient* to reconstruct state
 is still a reviewer judgement against the stated minimum.
 
-The exclusion language follows the catalog description: derived, transient or serialized metadata may be
-excluded "where it can be safely reconstructed and has no compliance, security, or business-history
-value" (`rules/audit.json`).
+The exclusion predicate is Standard 3 R1's, which is narrower than the catalog's wording and governs.
+Data is excludable only when it can be safely reconstructed *and* has none of: compliance, security,
+operational, historical or business-decision value (`standards/03-auditing.md`, R1: "The exclusion is
+narrow and conjunctive"). The catalog description (`rules/audit.json`) is shorter ("compliance,
+security, or business-history value"); that wording drift is a separate catalog matter and is not
+relied on here.
 
 ## 3. Artefact list
 
@@ -44,9 +66,9 @@ value" (`rules/audit.json`).
 | --- | --- |
 | The committed inventory: path, symbol, store, emitted event, or exclusion rationale | The subject of the claim; committed, so inside the digest. |
 | The sink source | Shows what "emits an audit event" means. |
-| One test per listed entry point asserting the minimum payload (changed fields and their values), not just that S was called | An artefact the reviewer reads; not by itself evidence of completeness (section 8). |
+| One test per listed entry point asserting the minimum payload (changed fields and their values), not just that K was called | An artefact the reviewer reads; not by itself evidence of completeness (section 8). |
 | The project's recorded minimum event payload (Standard 3 R2) | Defines what "captures what changed" means for the sufficiency clause. |
-| The complete in-scope source set S (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over *the only* writers, so freshness must cover every file. See section 5. |
+| The complete in-scope source set Z (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over *the only* writers, so freshness must cover every file. See section 5. |
 | The detector's mutation-site observations (#126, not built) | Cross-check input. |
 
 Detector cross-check, once it exists: every detector-observed mutation site should be either inventoried
@@ -63,9 +85,9 @@ the author of the change under review.
 
 ## 5. Invalidation rule
 
-Digest-bound `reviewedAgainst` over the inventory, the sink **and the complete in-scope source set S**,
-using `git-blob-set-sha256-v1` (ADR 0011). Stale on any change to a file in S or the addition of a file
-to S:
+Digest-bound `reviewedAgainst` over the inventory, the sink **and the complete in-scope source set Z**,
+using `git-blob-set-sha256-v1` (ADR 0011). Stale on any change to a file in Z or the addition of a file
+to Z:
 
 > **Freshness is a separate axis from what the human decided.** (ADR 0011)
 
@@ -85,10 +107,11 @@ digest would never go stale, so section 9 lists mandatory paths, digest and algo
 
 ## 6. Expiry
 
-At most 90 days from `reviewedAt` or the next release, whichever is sooner. The schema has an optional
-`expires` date and the validator treats a past `expires` as unreviewed (`scripts/compliance.mjs`), but
-nothing enforces a maximum age or a release bound, and `expires` may be omitted. Enforcement would be a
-reviewer convention or a new validator check; neither is chosen here.
+At most 90 days from `reviewedAt`. The schema has an optional `expires` date and the validator treats a
+past `expires` as unreviewed (`scripts/compliance.mjs`), but nothing enforces a maximum age, and
+`expires` may be omitted. Enforcement would be a reviewer convention or a new validator check; neither
+is chosen here. No release-bound invalidation is proposed: an approval is tied to its digest and its
+age.
 
 ## 7. What the detector's output contributes
 
@@ -97,11 +120,10 @@ stands and is never overridden (section 10). A clean run is not evidence that ev
 
 ## 8. What the contract cannot establish
 
-- Mutations through unlisted libraries, files, queues and external APIs.
-- Writers in other repositories or services that touch the same stores.
+- Mutations through libraries, queues and external APIs *within* Z are reviewed as part of the writer inventory; writers outside Z, in other repositories or services, are a precondition failure (see Boundary of Z), not something the contract establishes.
 - That the minimum payload the project defined is itself sufficient to reconstruct every kind of change; the contract checks events against the stated minimum.
 - That an excluded store really is derived or transient; the rationale is a reviewer judgement.
-- That the inventory is complete beyond what the reviewer reads in S and the detector can observe.
+- That the inventory is complete beyond what the reviewer reads in Z and the detector can observe.
 
 Standard 24 R2's worked example of an elevation to avoid is the summary line "PASS: all business
 mutations are audited" (`standards/24-validator-rules.md`, R2); the claim text above is written to avoid
