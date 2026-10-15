@@ -254,7 +254,7 @@ verdict: the declaration stands, and the rule stays `skipped` / `not-applicable`
 the rule and the rejection's id, reviewer and date with control characters escaped. Either remove the
 declaration, because the rule applies (and then record a later review whose `supersedes` names the chain's
 current, latest review: every successor must reference its immediate predecessor), or, only when the
-rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record. A
+rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record; or leave both in place, because the finding does not change the verdict. A
 rejection already at the merge base is append-only history: deleting it is a `review-history-append-only`
 violation when the comparison runs, the base rejection remains recorded and the finding still names it (it is not
 evaluated, so the verdict is unchanged); when the comparison

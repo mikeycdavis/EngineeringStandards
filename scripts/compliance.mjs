@@ -379,8 +379,9 @@ const quotedSafe = (value) => displaySafe(JSON.stringify(String(value)));
 /**
  * `establishedRejections` is the Set of rule ids whose rejection is recorded at the trusted base
  * (ADR 0005, ST-17), or null when the base could not be read. A rejection there is append-only
- * history: removing it is reported as review-history-append-only and the base rejection stays
- * effective, so deletion cannot clear this finding. Unknown (null) is a third case, not a claim
+ * history: removing it is reported as review-history-append-only when the comparison runs, and the
+ * base rejection remains recorded and named by this finding (it is never evaluated, so it does not
+ * enter the verdict); deletion therefore cannot clear this finding. Unknown (null) is a third case, not a claim
  * about the base: removal is neither advised nor said to be reported, because with no base there is
  * nothing to enforce either; deletion is advised only when the rejection is known not to be at the base.
  */
