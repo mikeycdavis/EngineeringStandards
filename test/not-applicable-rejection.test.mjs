@@ -419,6 +419,29 @@ test("CLI: an unverified comparison with a readable base still names a removed b
   }
 });
 
+test("CLI: a head that deletes the whole attestations section still names a base rejection when the comparison is unverified", async () => {
+  const nl = String.fromCharCode(10);
+  const base = policyYaml({ withRejection: true }).replace("attestations:" + nl, "attestations:" + nl + "  testing.no-fabricated-results: null" + nl);
+  const head = policyYaml({ withRejection: false });
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-emptyhead-"));
+  try {
+    git(dir, "init", "-q", "-b", "main");
+    await writeFile(path.join(dir, "project-policy.yml"), base);
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "base");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    await writeFile(path.join(dir, "project-policy.yml"), head);
+    const { report } = validate(dir);
+    assert.ok(report.findings.find((f) => f.id === "review-history-append-only"), "no history finding for a deleted section");
+    const stray = report.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
+    assert.ok(stray, "the removed base rejection was not named");
+    assert.match(stray.message, /"p1"/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI: a rejection added only after the merge base may be removed", async () => {
   const added = await repoWith({ committedRejection: false, headRejection: true });
   try {

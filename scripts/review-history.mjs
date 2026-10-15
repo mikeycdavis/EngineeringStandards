@@ -461,7 +461,13 @@ export async function reviewHistoryPreflight({ repositoryPath, policyPath = "pro
   });
 
   if (result.status === "not-evaluated") {
-    if (headCount === 0) {
+    // A readable base that records attestations is never "nothing to protect", whatever the head
+    // holds: deleting the whole section must not turn an unverified comparison into not-applicable.
+    const baseRecords =
+      result.baseAttestations && typeof result.baseAttestations === "object"
+        ? Object.keys(result.baseAttestations).length
+        : 0;
+    if (headCount === 0 && baseRecords === 0) {
       return {
         status: "not-applicable",
         effective: true,
