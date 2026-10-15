@@ -208,7 +208,10 @@ someone to lie to make the build go green.
 
 ### Establish adoption eligibility before any adoption write
 
-- **Status:** READY
+- **Status:** BLOCKED
+- **Blocked by:** the owner's acceptance of [ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md)
+  (Proposed, 2026-10-15). Every implementation slice below depends on it; the decision record itself
+  (ADR 0016, plus ADR 0021 pending) is the work in review.
 - **Tracked by:** GitHub issue [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
 - **Evidence:** open as of 2026-08-11. Reproduced against `StandardsOrchestrator`, whose `README.md`
   opens with `⛔ FROZEN` and whose `FROZEN.md` states "Do not adopt this repository into a governed
