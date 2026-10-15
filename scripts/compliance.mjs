@@ -35,8 +35,9 @@ export const MALFORMED_HISTORY_REMEDIATION =
   "the trusted default branch, neither editing nor appending can repair malformed events inside a well-formed list " +
   "of reviews (the append-only check rejects both) and no recovery path exists yet for them: that needs an owner " +
   "decision. A reviews container that is not a list (a mapping or a scalar) may hide recorded events, so it is " +
-  "unverifiable and cannot be replaced either. Only a reviews container that is absent, null or an empty list " +
-  "holds no events and may be replaced by a well-formed list.";
+  "unverifiable and cannot be replaced either. A legacy single-record attestation (no reviews key) is itself " +
+  "the one existing event, so a malformed one cannot be replaced either. Only a reviews key that is null or " +
+  "an empty list holds no events and may be replaced by a well-formed list.";
 export const MALFORMED_NOT_ATTESTABLE_REMEDIATION =
   "This rule is not attestable, so no review can clear a recorded rejection or satisfy it. Remove the attestation "
   + "and make the rule compliant through its automated check.";

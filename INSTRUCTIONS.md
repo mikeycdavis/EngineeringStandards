@@ -236,8 +236,9 @@ change: once a malformed history is on the trusted default branch the append-onl
 and appending of malformed events inside a well-formed list of reviews, and there is no recovery path yet for
 them (a known limitation that needs an owner decision). A `reviews` container that is
 not a list (a mapping or a scalar) may hide recorded events, so it is unverifiable and cannot be replaced either.
-The only exception is a `reviews` container that is null or an empty list: it holds no events, so replacing it
-with a well-formed list that begins with a genesis event is accepted (it records no rejection to retain). This holds
+A legacy single-record attestation (no `reviews` key) is itself the one existing event, so a malformed one
+cannot be replaced either. The only exception is a `reviews` key that is null or an empty list: it holds no events,
+so replacing it with a well-formed list that begins with a genesis event is accepted (it records no rejection to retain). This holds
 only for a rule that applies: a rule declared `not-applicable` is not evaluated, so a rejection recorded for
 it is not consulted. Remove the declaration or the attestation rather than relying on either. A rule the
 catalog does not mark attestable is never cleared by a review: an attestation recorded for it is an invalid

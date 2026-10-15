@@ -279,6 +279,11 @@ test("a non-list reviews container may hide events and cannot be replaced, so a 
     reviews:
       a: 1
 `,
+    "legacy single record without a reviews key": `${policyHead}
+    id: "r1"
+    status: "rejected"
+    reviewedBy: "synthetic-reviewer"
+`,
     "mapping holding a rejected event": `${policyHead}
     reviews:
       id: "r1"
