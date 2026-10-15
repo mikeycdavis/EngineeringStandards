@@ -4142,8 +4142,7 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emitText(renderVerdict(report, policy, verdict.policyFindings ?? []) + "
-");
+    emitText(renderVerdict(report, policy, verdict.policyFindings ?? []) + "\n");
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this

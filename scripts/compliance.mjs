@@ -342,31 +342,11 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 }
 
 /**
- * Policy-controlled text is repository-controlled, not trusted: a control character in a review
- * identity must reach CI logs and terminals as visible text, never as a raw escape or line break.
- * JSON string escaping covers C0, quotes and backslash; the rest are the C1, line-separator and
- * bidirectional controls it leaves alone. Local to this file: PR #141 adds a shared display-safe
- * module and will need to integrate this call.
+ * A review identity is repository-controlled text: it is shown JSON-quoted (so quotes and backslashes
+ * are unambiguous) with every control character left by the JSON escape rendered as visible text by
+ * the shared display-safe module.
  */
-function displaySafe(value) {
-  // Decided by code point, not by a regex literal: a regex that names U+2028 literally is itself a
-  // line terminator in source and would be a hazard to whoever next edits this file.
-  const unsafe = (cp) =>
-    (cp >= 0x7f && cp <= 0x9f) ||
-    cp === 0x61c ||
-    cp === 0x200e ||
-    cp === 0x200f ||
-    cp === 0x2028 ||
-    cp === 0x2029 ||
-    (cp >= 0x202a && cp <= 0x202e) ||
-    (cp >= 0x2066 && cp <= 0x2069);
-  let out = "";
-  for (const ch of JSON.stringify(String(value))) {
-    const cp = ch.codePointAt(0);
-    out += unsafe(cp) ? "\\u" + cp.toString(16).padStart(4, "0") : ch;
-  }
-  return out;
-}
+const quotedSafe = (value) => displaySafe(JSON.stringify(String(value)));
 
 /**
  * `establishedRejections` is the Set of rule ids whose rejection is recorded at the trusted base
@@ -383,9 +363,9 @@ function strayRejectionFinding(ruleId, rejections, establishedRejections = null)
   const named = rejections
     .map((r) =>
       [
-        r.id === null ? "(no id)" : `id ${displaySafe(r.id)}`,
-        r.reviewedBy === null ? null : `by ${displaySafe(r.reviewedBy)}`,
-        r.reviewedAt === null ? null : `on ${displaySafe(r.reviewedAt)}`,
+        r.id === null ? "(no id)" : `id ${quotedSafe(r.id)}`,
+        r.reviewedBy === null ? null : `by ${quotedSafe(r.reviewedBy)}`,
+        r.reviewedAt === null ? null : `on ${quotedSafe(r.reviewedAt)}`,
       ]
         .filter(Boolean)
         .join(" "),
