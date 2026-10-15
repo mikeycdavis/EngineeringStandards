@@ -248,6 +248,24 @@ The distinction that matters most: **not-applicable is a claim about your projec
 rule.** *We have no background jobs* stops being true the day you add one — which is what
 `revisitWhen` records.
 
+A review history that records a **rejection** on a rule you declared not-applicable does not change the
+verdict: the declaration stands, and the rule stays `skipped` / `not-applicable`. `validate` reports it as a
+`policy-compliance` finding (in the JSON `findings` and under *Policy findings* in the human report), naming
+the rule and the rejection's id, reviewer and date with control characters escaped. Either remove the
+declaration, because the rule applies (and then record a later review whose `supersedes` names the chain's
+current, latest review: every successor must reference its immediate predecessor), or, only when the
+rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record; or leave both in place, because the finding does not change the verdict. A
+rejection already at the merge base is append-only history: deleting it is a `review-history-append-only`
+violation when the comparison runs, the base rejection remains recorded and the finding still names it (it is not
+evaluated, so the verdict is unchanged); when the comparison
+cannot run (for example an unrelated base record is malformed) it is reported as NOT_EVALUATED and the base
+rejection is still named by this finding. With no readable base (for example
+outside a Git work tree) removal cannot be verified, so no deletion is advised and none is promised to be
+reported: history is append-only once committed, so supply the base (`git fetch origin`) and run again. An older
+rejection followed by an approval is still found, and so is a rejection recorded at a readable base when the
+append-only comparison itself could not run. A not-applicable rule with no
+rejection emits nothing.
+
 **Some rules are non-exemptible.** `security.no-secrets-in-artifacts` and `ai.destructive-approval`
 declare this in the catalog, and an exception against either is **rejected, not recorded** — you get
 `policy.non-exemptible-rule` from the policy checker and a `NON_COMPLIANT` verdict from the audit. If

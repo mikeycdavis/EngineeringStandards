@@ -19,7 +19,7 @@ import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
-import { evaluate, envelope } from "./compliance.mjs";
+import { evaluate, envelope, strayRejectionsFor } from "./compliance.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
@@ -33,7 +33,7 @@ import {
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
-import { currentReview } from "./reviews.mjs";
+import { currentReview, recordedRejections } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
 import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
 
@@ -207,7 +207,7 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy) {
+function renderVerdict(report, policy, policyFindings = []) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -291,6 +291,15 @@ function renderVerdict(report, policy) {
     out.push("  Attested (human review):");
     for (const r of attested) out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.attestation.reviewedBy)}, ${displaySafe(r.attestation.reviewedAt)}`);
     out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
+    out.push("");
+  }
+
+  if (policyFindings.length) {
+    out.push("  Policy findings (the verdict above is unchanged by these):");
+    for (const f of policyFindings) {
+      out.push(`    ${f.message}`);
+      out.push(`      -> ${f.remediation}`);
+    }
     out.push("");
   }
 
@@ -3890,16 +3899,41 @@ export async function main(args) {
   // can only be taken from the head.
   const recordedAttestationRules = new Set([
     ...Object.keys(reviewHistoryBase.baseAttestations ?? {}),
+    ...Object.keys(reviewHistoryBase.baseRecordedAttestations ?? {}),
     ...Object.keys(headAttestations),
   ]);
   const reviewHistoryEffective = effectiveAttestations(headAttestations, reviewHistoryBase);
-  const keptRejections = Object.keys(reviewHistoryEffective).length;
-  const disregardedAttestations = recordedAttestationRules.size - keptRejections;
+  // A rejection recorded on a rule declared not-applicable is not evaluated: its finding names it and
+  // it never enters the verdict, whether its record survives in the effective document (the head
+  // retained it) or only rides the base channel. It is therefore neither "kept" (effective) nor a
+  // "disregarded non-rejection": it is counted apart.
+  // Exactly the rules for which `evaluate` will emit the finding: catalog rules declared
+  // not-applicable whose lookup (the same function) finds a recorded rejection.
+  const strayLookupBase = reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null;
+  const findingOnlyRules = new Set(
+    [...catalog.rules.values()]
+      .filter(
+        (rule) =>
+          policy.document?.applicability?.[rule.id]?.status === "not-applicable" &&
+          strayRejectionsFor(rule.id, {
+            attestations: reviewHistoryEffective,
+            recordedAttestations: headAttestations,
+            baseRecordedAttestations: strayLookupBase,
+          }).length > 0,
+      )
+      .map((rule) => rule.id),
+  );
+  const findingOnlyRejections = findingOnlyRules.size;
+  const keptRejections = Object.keys(reviewHistoryEffective).filter((ruleId) => !findingOnlyRules.has(ruleId)).length;
+  const disregardedAttestations = recordedAttestationRules.size - keptRejections - findingOnlyRejections;
   if (reviewHistoryBase.status !== "not-applicable") {
     const base = reviewHistoryBase;
     const consequence =
       `${disregardedAttestations} attestation(s) that were not ` +
-      `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.`;
+      `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.` +
+      (findingOnlyRejections > 0
+        ? ` ${findingOnlyRejections} recorded rejection(s) on not-applicable rule(s) are named by policy findings only and do not enter the verdict.`
+        : "");
     addFinding({
       id: "review-history-append-only",
       category: "evidence-surface",
@@ -4077,11 +4111,24 @@ export async function main(args) {
   const verdict = evaluate({
     catalog,
     policy: evaluationDocument,
+    // The unfiltered recorded histories, for the not-applicable rejection lookup only.
+    recordedAttestations: headAttestations,
+    // The base's raw histories, present when the preflight found a violated rewrite.
+    baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null,
     findings,
     evaluated: evaluatedThisRun,
     today: new Date().toISOString().slice(0, 10),
     freshness,
+    // Rules whose rejection is already at the trusted base (append-only); null when unknown.
+    establishedRejections: Array.isArray(reviewHistoryBase.baseRejectionRules)
+      ? new Set(reviewHistoryBase.baseRejectionRules)
+      : null,
   });
+
+  // A rejection recorded on a rule declared not-applicable is surfaced as a finding that carries no
+  // rule, so it cannot change any result or the verdict (ST-47). It is added here, after evaluate,
+  // because only evaluate sees the not-applicable declaration and the record together.
+  for (const f of verdict.policyFindings ?? []) findings.push(f);
 
   // Framework maturity, read from this framework's own inventory rather than the target repository.
   // It travels beside the verdict and never inside it: a coverage improvement must never be able to
@@ -4120,7 +4167,7 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emitText(renderVerdict(report, policy) + "\n");
+    emitText(renderVerdict(report, policy, verdict.policyFindings ?? []) + "\n");
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this
