@@ -11,8 +11,19 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { constants as bufferConstants } from "node:buffer";
 import { parseYaml } from "./yaml.mjs";
 import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recordedRejections } from "./reviews.mjs";
+
+// Policy blobs are read whole through git. A bound here turns a large (or deeply nested) trusted base into
+// "could not be compared", which drops the base's recorded rejections; keep it far above any real policy.
+// It stays well under V8's maximum string length (about 512 MiB): at or above that, decoding the output
+// throws ERR_STRING_TOO_LONG out of spawnSync instead of returning an error the caller can classify.
+// The bound is also clamped to this runtime's actual maximum string length (2^28 - 16 on 32-bit V8 builds).
+// `spawnSync` can read one pipe chunk past `maxBuffer` before it reports ENOBUFS, and the output is then
+// decoded, so the bound keeps headroom below the limit rather than sitting on it.
+const STRING_HEADROOM = 1024 * 1024;
+export const GIT_MAX_BUFFER = Math.min(256 * 1024 * 1024, bufferConstants.MAX_STRING_LENGTH - STRING_HEADROOM);
 
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
@@ -37,7 +48,7 @@ function runGit(repositoryPath, args, { acceptedStatuses = [0] } = {}) {
   const result = spawnSync("git", ["-C", repositoryPath, ...args], {
     encoding: "utf8",
     windowsHide: true,
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: GIT_MAX_BUFFER,
   });
   if (result.error) fail(`git ${args[0]} could not run: ${result.error.message}`);
   if (!acceptedStatuses.includes(result.status)) {
@@ -91,7 +102,7 @@ async function gitDiffEvidence(priorSource, proposedSource, policyPath) {
     const result = spawnSync(
       "git",
       ["diff", "--no-index", "--text", "--no-ext-diff", "--", `base/${policyPath}`, `proposed/${policyPath}`],
-      { cwd: tempRoot, encoding: "utf8", windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+      { cwd: tempRoot, encoding: "utf8", windowsHide: true, maxBuffer: GIT_MAX_BUFFER },
     );
     if (result.error) fail(`git diff could not run: ${result.error.message}`);
     if (result.status !== 0 && result.status !== 1) {
@@ -168,6 +179,13 @@ export async function verifyReviewHistoryAppend({
       fail(`${ruleId}: base review history is not a mapping`);
     }
     if (!Object.hasOwn(proposedHistories, ruleId)) violation(`${ruleId}: prior review history was deleted`);
+    // A `reviews` container that is present, not null and not a list may hide events (a mapping that
+    // holds an event reads as zero events). Replacing it could erase a recorded rejection, so it is
+    // unverifiable and never recoverable by replacement. Only an absent or null container, or an empty
+    // list, is zero events.
+    if (Object.hasOwn(priorRecord, "reviews") && priorRecord.reviews !== null && !Array.isArray(priorRecord.reviews)) {
+      violation(`${ruleId}: base reviews is not a list and may hide recorded events; it cannot be replaced`);
+    }
     const priorReviews = reviewsOf(priorRecord);
     const proposedRecord = proposedHistories[ruleId];
     if (!proposedRecord || typeof proposedRecord !== "object" || Array.isArray(proposedRecord)) {
@@ -241,7 +259,7 @@ function tryGit(repositoryPath, args) {
   const result = spawnSync("git", ["-C", repositoryPath, ...args], {
     encoding: "utf8",
     windowsHide: true,
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: GIT_MAX_BUFFER,
   });
   if (result.error || result.status !== 0) return null;
   return result.stdout.trim();
@@ -318,6 +336,7 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
       ref,
       baseCommit,
       baseTree,
+      baseRejectionRules: baseRejectionRules(repository, baseCommit, relative),
       headIsBase: baseCommit === head,
       appendedEvents: result.appendedEvents,
       histories: result.histories,
@@ -325,23 +344,72 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
   } catch (error) {
     if (error instanceof ReviewHistoryVerificationError) {
       if (error.details?.violation) {
-        // The attestations recorded at the trusted base, so negative evidence recorded there stays
-        // effective even when the proposed policy removed or relabeled it.
-        let baseAttestations = {};
-        try {
-          const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
-          const parsed = baseSource ? parseYaml(baseSource) : null;
-          if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
-            baseAttestations = parsed.attestations;
-          }
-        } catch {
-          baseAttestations = {};
-        }
-        return { status: "violated", reason: error.message, ref, baseCommit, baseTree, baseAttestations };
+        const baseAttestations = readBaseAttestations(repository, baseCommit, relative) ?? {};
+        return {
+          status: "violated",
+          reason: error.message,
+          ref,
+          baseCommit,
+          baseTree,
+          baseAttestations,
+          baseRejectionRules: rejectionRulesOf(baseAttestations),
+        };
       }
-      return unverified(error.message, { ref, baseCommit });
+      // The comparison could not run (for example another rule's base record is not a mapping), but
+      // the base was readable: its recorded histories are still the trusted record of rejections.
+      const readable = readBaseAttestations(repository, baseCommit, relative);
+      return unverified(error.message, {
+        ref,
+        baseCommit,
+        // Not `baseAttestations`: effectiveAttestations reads that and would restore a base rejection
+        // into the verdict. This channel feeds only the ST-47 finding lookup.
+        baseRecordedAttestations: readable ?? {},
+        baseRejectionRules: readable === null ? null : rejectionRulesOf(readable),
+      });
     }
     throw error;
+  }
+}
+
+/**
+ * The attestations mapping recorded in the policy at the base commit: {} when the base policy has none,
+ * null when the base policy could not be read or parsed (unknown, never "none").
+ */
+function readBaseAttestations(repository, baseCommit, relative) {
+  try {
+    const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+    if (baseSource === null) return null;
+    const parsed = parseYaml(baseSource);
+    if (parsed?.attestations && typeof parsed.attestations === "object" && !Array.isArray(parsed.attestations)) {
+      return parsed.attestations;
+    }
+    return {};
+  } catch {
+    return null;
+  }
+}
+
+/** Rule ids whose recorded history holds a rejection anywhere (the ST-47 finding reads it the same way). */
+function rejectionRulesOf(attestations) {
+  if (!attestations || typeof attestations !== "object" || Array.isArray(attestations)) return [];
+  return Object.keys(attestations)
+    .filter((ruleId) => recordedRejections(attestations[ruleId]).length > 0)
+    .sort();
+}
+
+/**
+ * The rules that record a rejection in the policy AT the trusted base. A rejection there is
+ * established, append-only history; one that is only in the head can still be withdrawn, because
+ * history is compared with the base. Returns null when the base policy cannot be read, which callers
+ * must treat as unknown, never as "none".
+ */
+function baseRejectionRules(repository, baseCommit, relative) {
+  try {
+    const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+    if (baseSource === null) return [];
+    return rejectionRulesOf(parseYaml(baseSource)?.attestations);
+  } catch {
+    return null;
   }
 }
 
@@ -406,6 +474,13 @@ export async function reviewHistoryPreflight({ repositoryPath, policyPath = "pro
   });
 
   if (result.status === "not-evaluated") {
+    // A readable base that records attestations was found and the comparison could not run: the
+    // status stays not-evaluated (the warning is emitted) even when the head deleted the section. The
+    // base histories ride on `baseRecordedAttestations`, which effectiveAttestations never reads, so
+    // they cannot enter the verdict; with an empty head there is nothing else for it to keep.
+    if (headCount === 0 && Object.keys(result.baseRecordedAttestations ?? {}).length > 0) {
+      return { ...result, effective: false };
+    }
     if (headCount === 0) {
       return {
         status: "not-applicable",
@@ -440,10 +515,12 @@ export function effectiveAttestations(headAttestations, preflight) {
   const base = preflight.baseAttestations && typeof preflight.baseAttestations === "object" ? preflight.baseAttestations : {};
   const kept = {};
   for (const ruleId of new Set([...Object.keys(base), ...Object.keys(head)])) {
-    if (base[ruleId] !== undefined && holdsRejection(ruleId, base[ruleId])) {
-      kept[ruleId] = base[ruleId];
-    } else if (head[ruleId] !== undefined && holdsRejection(ruleId, head[ruleId])) {
-      kept[ruleId] = head[ruleId];
+    // Own properties only, and assigned as own data properties: a `__proto__` rule key is an ordinary entry.
+    const keep = (value) => Object.defineProperty(kept, ruleId, { value, enumerable: true, writable: true, configurable: true });
+    if (Object.hasOwn(base, ruleId) && holdsRejection(ruleId, base[ruleId])) {
+      keep(base[ruleId]);
+    } else if (Object.hasOwn(head, ruleId) && holdsRejection(ruleId, head[ruleId])) {
+      keep(head[ruleId]);
     }
   }
   return kept;
