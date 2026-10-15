@@ -21,7 +21,7 @@ aggregate-verdict semantics.
 
 The audit sink is called K below, and the in-scope source set S.
 
-> At digest D, over the complete source set S: (a) every mutation path of persistent state routes
+> At digest D, over the complete source set S: (a) every mutation path of persistent state, except paths excluded under the predicate below, routes
 > through audit sink K, so none bypasses it, including paths that execute through a queue consumer or a
 > library that is part of S; (b) every call to K supplies actorType, actorId and a correlation or request
 > identifier, and K persists them unaltered in the recorded event; (c) each entry point derives its actor
@@ -30,15 +30,16 @@ The audit sink is called K below, and the in-scope source set S.
 > runtime identity and execution context of the initiator type (table below), not from constants,
 > defaults, source literals or caller-asserted values.
 
-**Boundary of S.** S is every first-party source file of the system that can mutate persistent state,
-taken from the repository's tracked files less a committed exclusion policy (generated output, vendored
+**Boundary of S.** S is every tracked file of the repository less a committed exclusion policy; which files can mutate persistent state is a reading task within S, not a filter on S. The exclusion policy (generated output, vendored
 third-party code, fixtures, documentation, each with its reason). A mutation carried out by a component
-outside S, such as an external API with write access, another service or another repository, is a
-**precondition failure**: the claim "every mutation path routes through K" would be unreviewed, and the
-contract does not establish the rule. Queue consumers and libraries that are part of S are inside it and
+outside S, such as an external API with write access, another service, another repository or a database
+trigger, is a **precondition failure**: the claim "every mutation path routes through K" would be
+unreviewed, and the contract does not establish the rule. The reviewer must be able to *show* that no
+such writer exists: the write-authority inventory below is required, and approval is blocked when
+completeness of the writer universe cannot be established. Queue consumers and libraries that are part of S are inside it and
 are inventoried like any other path.
 
-**Exclusion from clause (a)** uses Standard 3 R1's conjunctive predicate, not the reviewer's discretion:
+**Exclusion from clause (a)** is the only exception to "every mutation path". Actor attribution has no exclusion predicate of its own, so Standard 3 R1's conjunctive predicate is borrowed, not the reviewer's discretion:
 a path is excluded only if it can be safely reconstructed *and* has none of compliance, security,
 operational, historical or business-decision value (`standards/03-auditing.md`, R1). The mutation
 inventory states, for each excluded path, that reconstruction and the absence of each kind of value.
@@ -53,7 +54,7 @@ inventory states, for each excluded path, that reconstruction and the absence of
 | `SYSTEM` | a runtime identity supplied by the platform (workload identity or service principal), not a literal in source | that component's operation or execution id |
 | `AI_AGENT` | the agent's registered identity from the agent/credential registry | the agent session or run id, plus the initiating principal where one exists |
 | `INTEGRATION` | the integration credential identity | the delivery or message id |
-| Propagated originator (any type, across a queue, external API or library boundary) | the originating identity carried in an authenticated or signed envelope, or over a trusted internal channel whose integrity the receiver verifies | the originating request or run id carried with it |
+| Propagated originator (any type, across a queue, external API or library boundary) | the originating identity carried in an authenticated or signed envelope, or over a trusted internal channel that is named in the agent/credential registry and whose integrity verification is visible in code in S | the originating request or run id carried with it |
 
 An entry point whose initiator type has no source in its row (for example a job with no recorded job
 identity) fails clause (d); a constant does not satisfy it. An unauthenticated value copied from a
@@ -79,7 +80,7 @@ attestation under it would overstate what was reviewed.
 
 ## 3. Artefact list
 
-The review MUST cite, and `reviewedAgainst.paths` MUST name:
+The review MUST cite each artefact below that exists. Every artefact that is a committed repository file MUST also be named in `reviewedAgainst.paths`; detector output is generated, not committed, and is cited in the attestation evidence or reference, not as a reviewed path:
 
 | Artefact | Why |
 | --- | --- |
@@ -87,6 +88,7 @@ The review MUST cite, and `reviewedAgainst.paths` MUST name:
 | K's implementation and the persisted event representation (storage schema or serialised form) | Clause (b), second half: attribution is not dropped, rewritten or lost between the call and the stored record. |
 | A committed call-site inventory: path, symbol, actor source expression | The subject of clauses (b) and (c); committed, so inside the digest. |
 | A mutation-path inventory: for each path, its route to K, or its exclusion under Standard 3 R1's predicate | The subject of clause (a). |
+| A reviewed write-authority inventory: every component, credential and trigger that can mutate the covered stores, taken from an independent **committed** source (deployment manifests, infrastructure-as-code, migrations that define grants and triggers, data-ownership declarations); live grants and triggers that are not in a tracked file are outside freshness and must be re-reviewed at each use, each marked as inside S or as a precondition failure | Proves S contains every state writer, instead of assuming it. Inside the digest where committed; a writer that cannot be shown to be inside S blocks approval. |
 | The agent/credential registry: the mapping from each entry point to its initiator class, and the credentials an agent can use, distinguishable from human ones | The subject of clause (c). It is also the source of the set of actor types the project uses, so the tests below are not derived from the inventory under review. |
 | The complete in-scope source set S (as defined in section 2) and its exclusion policy | The claim quantifies over every mutation path and call site, so freshness must cover every file. See section 5. |
 | A test for each actor type that appears in the registry, varying the identity and context defined by its row of the table, and reading the persisted event back | Shows actor type, actor id and correlation id follow their sources and survive K (clauses (b)-(d)); see section 8 for why a test is not by itself evidence of the claim. |
@@ -108,8 +110,7 @@ on attributing AI actions: "AI actions MUST be attributable to the same standard
 
 The person accountable for the audit sink K (its named owner), recorded as `reviewedBy` with the role in
 `reviewerRole`. "The change under review" means the change set between the previous attested digest and
-D (or, for a first attestation, the introduction of K and the inventories); its author is not the
-accountable reviewer.
+D (or, for a first attestation, the introduction of K and the inventories); its author is not the accountable reviewer. Enforcing that needs authoritative revisions and authenticated authors (section 9), because a content digest does not identify who wrote the change. The ownership record is read from the previous attested revision (or the default branch), not from the head under review, so the change author cannot edit who the owner is. If the accountable owner authored the change, a named delegate of that role reviews it (section 9); a renewal with an empty change set has no author conflict.
 
 `reviewedBy` and `reviewerRole` are self-asserted strings in the policy today, and no machine-checkable
 record says who owns K. Establishing the role needs an authoritative ownership record among the reviewed
@@ -118,8 +119,7 @@ events (#95, waiting on #133) prove identity, not role. Both are listed in secti
 
 ## 5. Invalidation rule
 
-Digest-bound `reviewedAgainst` over K, both inventories, the registry, the exclusion policy, the
-ownership record **and the complete in-scope source set S**, using `git-blob-set-sha256-v1` (ADR 0011).
+Digest-bound `reviewedAgainst` over every committed artefact in section 3 (K and its persisted-event representation, the call-site, mutation-path and write-authority inventories, the registry, the derivation code, the tests, the exclusion policy, the ownership record) **and the complete in-scope source set S**, using `git-blob-set-sha256-v1` (ADR 0011).
 Stale on any change to a file in S or the addition of a file to S:
 
 > **Freshness is a separate axis from what the human decided.** (ADR 0011)
@@ -157,10 +157,9 @@ evidence of attribution at call sites.
   from outside the code, or a mislabelled agent action at run time, is outside what the review proves.
   This is the residual the owner is asked to accept or reject in section 2.
 
-Test and CI presence are not evidence for this claim. The `$assuranceNote` records that a detector bound
+Test and CI presence are not evidence for this claim. The `$assuranceNote` of `audit.business-state` (the sibling rule, not this one) records that a detector bound
 to test and CI infrastructure was withdrawn because it elevated assurance (Standard 24 R2; issue #62,
-closed). That observation was later restored only as audit-only findings carrying no rule binding (#64,
-closed; PR #114, merged), and #64 and PR #114 remain separate from this proposal. A test per actor type
+closed). That observation was later restored by PR #83 as audit-only findings carrying no rule binding; #64 and PR #114 (a later correction) remain separate from this proposal. A test per actor type
 (section 3) is an artefact the reviewer reads, not a substitute for the inventories.
 
 Also noted: Standard 3 R2 and R3 word most of this as SHOULD while the catalog level is `required`
@@ -175,15 +174,19 @@ the owner.
 | Decide whether catalog `assurance` stays `none` | `rules/audit.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`) | NOT MADE, decision needed |
 | Authenticate reviewer identity and authorise the reviewer role before adoption | Depends on #95 and #133 (authenticated successor events) plus an authoritative role record. Today `reviewedBy` and `reviewerRole` are self-asserted strings, so a change author could name themselves the accountable owner and obtain an approval reported with full assurance | NOT MADE; without it this contract MUST NOT be adopted |
 | A successor may clear a rejection only if authenticated and independent of the rejected event's subject | #96 / PR #116 (merged) chains successors but does not authenticate them; tied to #133. See section 10 | NOT MADE; without it this contract MUST NOT be adopted |
+| Enforce reviewer-author separation | Make authoritative base and head revisions (`reviewedAgainst.revision` and tree: mandatory only on successor events today per `scripts/reviews.mjs`, absent on a genesis event, and recorded rather than verified) mandatory, derive the authors of the commits between them from the repository, authenticate those authors and the reviewer (#95, #133), and reject an approval whose reviewer identity appears among the authors. A content digest does not identify commits or authors, so identity authentication alone cannot prevent an owner approving their own change | NOT MADE; without it this contract MUST NOT be adopted |
 | Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`: a root path is already tree-bound, but exclusion-aware enumeration (tracked tree less the exclusion policy) is not supported | NOT MADE; without it this contract MUST NOT be adopted |
-| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
+| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional on a genesis event (successor events must carry them, `scripts/reviews.mjs`) and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
+| ADR 0010 accepted, with the framework defining human review as the establishing mechanism for this rule | ADR 0010 is Proposed. ADR 0005 binding rule 3's explicit catalog opt-in is necessary but not sufficient on its own | NOT MADE; without it this contract MUST NOT be adopted |
+| Read the ownership record from the previous attested revision (or the default branch), not from the head under review, with a stated change authority for it | Validator and attestation schema. Otherwise the change author can edit who the owner is in the same change | NOT MADE; without it this contract MUST NOT be adopted |
+| Define a delegate path for the accountable role when the owner authored the change, and the rule for an empty change set | Policy and validator | NOT MADE |
 | Validate `reviewedBy` against the ownership record, and require the record among the reviewed paths | Validator and attestation schema | NOT MADE |
 | Require reviewer role, accountable owner, maximum age and the inventories in the attestation | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
 | Define the formats of the call-site inventory, mutation-path inventory, agent/credential registry and exclusion policy, with owner and change authority | New schema or design document | NOT MADE |
 | Update the rule's `$assuranceNote` and Standard 3's Implementation section ("Conformance is established by review.") | `rules/audit.json`, `standards/03-auditing.md` | NOT MADE |
 | Versioning impact | Standard 21 R2 sets levels by the effect on a currently compliant project and does not classify attestation eligibility. Classification and `VERSION` are the owner's | NOT MADE, not classified |
 
-The owner has stated that eligibility must not be widened merely to reach COMPLIANT. The opt-in is
+Issue #127 records the owner's statement that eligibility must not be widened merely to reach COMPLIANT. The opt-in is
 presented only as ADR 0010's positive-evidence clause, for separate approval and by the same path as the
 provider-neutral contract (#127).
 
