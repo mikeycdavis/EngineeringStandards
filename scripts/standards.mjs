@@ -25,6 +25,17 @@ import { plan as planInit, apply as applyInit, render as renderInit } from "./in
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
 
+const isAbsentError = (error) => error?.code === "ENOENT" || error?.code === "ENOTDIR";
+/** Tri-state existence: false only when the filesystem says the path is absent; an access failure is "may exist". */
+const pathMayExist = (p) => {
+  try {
+    statSync(p);
+    return true;
+  } catch (error) {
+    return !isAbsentError(error);
+  }
+};
+
 /**
  * Exemptible rules whose detector judges a file by the repository index and its name, never by its
  * content: a truncated or unavailable text read does not make "found no violation" unestablished.
@@ -4006,8 +4017,10 @@ export async function main(args) {
       let found;
       try {
         found = readdirSync(path.join(root, dir), { withFileTypes: true }).some((e) => e.isFile() && VENDOR_MARKERS.has(e.name));
-      } catch {
-        found = true; // cannot be listed: not a path this run can call hidden by the cap
+      } catch (error) {
+        // Absent (ENOENT/ENOTDIR) is a settled answer; an access failure is not, and must not be read as
+        // "a marker is here" nor as "the path is gone".
+        found = isAbsentError(error);
       }
       markerCache.set(dir, found);
     }
@@ -4030,8 +4043,8 @@ export async function main(args) {
         cur = path.join(cur, part);
         if (lstatSync(cur).isSymbolicLink()) return true;
       }
-    } catch {
-      return true; // cannot be examined: not a path this run can call hidden by the cap
+    } catch (error) {
+      return isAbsentError(error); // an access failure leaves the path possibly cap-hidden
     }
     return false;
   };
@@ -4051,7 +4064,7 @@ export async function main(args) {
     const cappedAway =
       entry.state === "not-scanned" &&
       surfaceLoss.capped &&
-      existsSync(path.join(root, entry.path)) &&
+      pathMayExist(path.join(root, entry.path)) &&
       !deliberatelyExcluded(entry.path);
     // A directory the walk could not list hides everything beneath it: the file may well exist.
     const underUnreadableDir =
