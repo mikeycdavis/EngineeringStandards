@@ -476,6 +476,26 @@ test("CLI: an APPLICABLE rule's verdict is unaffected by a base rejection when t
       await rm(dir, { recursive: true, force: true });
     }
   };
+  const messageOf = async (base) => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "st47-applicable-msg-"));
+    try {
+      git(dir, "init", "-q", "-b", "main");
+      await writeFile(path.join(dir, "project-policy.yml"), base);
+      git(dir, "add", ".");
+      git(dir, "commit", "-q", "-m", "base");
+      git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+      git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+      await writeFile(path.join(dir, "project-policy.yml"), head);
+      const { report } = validate(dir);
+      assert.equal(report.findings.find((f) => f.id === "rejection-on-not-applicable-rule"), undefined);
+      return report.findings.find((f) => f.id === "review-history-append-only")?.message ?? "";
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+  const msg = await messageOf(rejectionBase);
+  assert.ok(!/named by policy findings only/.test(msg), "claimed a finding that is never emitted: " + msg);
+  assert.match(msg, /2 attestation[(]s[)] that were not recorded rejections/);
   const without = await run(noRejectionBase);
   const withRej = await run(rejectionBase);
   assert.ok(JSON.parse(withRej.compliance).results?.length > 0, "fixture produced no results to compare");

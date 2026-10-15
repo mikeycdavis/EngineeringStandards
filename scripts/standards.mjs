@@ -3908,6 +3908,8 @@ export async function main(args) {
   // "kept" nor "disregarded non-rejections": they are counted apart and named by policy findings.
   const findingOnlyRejections = Object.keys(reviewHistoryBase.baseRecordedAttestations ?? {}).filter(
     (ruleId) =>
+      // Only a rule declared not-applicable has a finding that names its rejection.
+      policy.document?.applicability?.[ruleId]?.status === "not-applicable" &&
       !(ruleId in reviewHistoryEffective) &&
       recordedRejections(reviewHistoryBase.baseRecordedAttestations[ruleId]).length > 0,
   ).length;
