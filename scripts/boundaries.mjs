@@ -23,7 +23,7 @@
  * built-in objects other than the ones named here.
  */
 
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -597,6 +597,9 @@ function analyse(rawToks) {
     }
     return out;
   };
+  // A computed key or a rest element reaches names the scan cannot list: for an import that is the
+  // whole namespace, so only an edge that permits `*` accepts it.
+  const wildcardUnknown = (names) => names.map((nm) => (nm === COMPUTED_KEY ? "*" : nm));
   const bracedBefore = (k) => {
     // `const { a, b } = <k>` : the names between the braces that end at k - 2.
     let o = k - 3;
@@ -761,7 +764,7 @@ function analyse(rawToks) {
             const after = matching("(", k + 1) + 1;
             const whole = after > 0 && (after >= toks.length || isP(after, ";") || isP(after, "}") || isP(after, ")") || isP(after, ",") || (toks[after].t === "id" && !isId(after, "as") && !isId(after, "instanceof") && !isId(after, "in") && !isId(after, "of")));
             if (whole && isId(k - 1, "await") && isP(k - 2, "=") && isP(k - 3, "}")) names = bracedBefore(k - 1);
-            imports.push({ spec: toks[k + 2].v, kind: "dynamic", names, line: tk.line, sideEffect: false });
+            imports.push({ spec: toks[k + 2].v, kind: "dynamic", names: wildcardUnknown(names), line: tk.line, sideEffect: false });
           } else {
             flag("dynamic-import-computed", tk.line);
           }
@@ -817,7 +820,7 @@ function analyse(rawToks) {
           x++;
         }
         for (let s = k; s <= j; s++) skip.add(s);
-        imports.push({ spec: toks[j + 1].v, kind: "static", names: names.length ? names : ["*"], line: tk.line, sideEffect: false, bindings });
+        imports.push({ spec: toks[j + 1].v, kind: "static", names: names.length ? wildcardUnknown(names) : ["*"], line: tk.line, sideEffect: false, bindings });
         break;
       }
       case "export": {
@@ -840,7 +843,7 @@ function analyse(rawToks) {
           if (close < 0) flag("ambiguous-token", tk.line);
           else if (isId(close + 1, "from") && isStr(close + 2)) {
             for (let s2 = k; s2 <= close + 2; s2++) skip.add(s2);
-            imports.push({ spec: toks[close + 2].v, kind: "reexport", names: namesInBraces(a + 1, close), line: tk.line, sideEffect: false });
+            imports.push({ spec: toks[close + 2].v, kind: "reexport", names: wildcardUnknown(namesInBraces(a + 1, close)), line: tk.line, sideEffect: false });
           } else if (isId(close + 1, "from")) {
             flag("ambiguous-token", tk.line);
           }
@@ -1146,8 +1149,12 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
   for (const m of members) {
     for (const p of m.paths) {
       const abs = path.join(repoRoot, p);
-      const empty = existsSync(abs) && isDirectoryPath(p) && readdirSync(abs).length === 0;
-      if (!existsSync(abs) || empty) {
+      // A directory path must be a directory and a file path must not be one; only then is it read.
+      let st = null;
+      try { st = statSync(abs); } catch { /* absent */ }
+      const wrongType = st !== null && (isDirectoryPath(p) ? !st.isDirectory() : st.isDirectory());
+      const empty = st !== null && !wrongType && isDirectoryPath(p) && readdirSync(abs).length === 0;
+      if (st === null || wrongType || empty) {
         violations.push({ kind: "dead-member-path", file: p, line: 1, message: `member '${m.id}' owns '${p}', which matches no file` });
       }
     }

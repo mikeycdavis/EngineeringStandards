@@ -1518,3 +1518,33 @@ test("named regression: evidence through a symlinked ancestor that stays inside 
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// Round 12
+test("named regression: a computed key or rest in an awaited dynamic import destructure is the whole namespace", () => {
+  for (const src of ['const { allowed, ...rest } = await import("./core.mjs");', 'const { [k]: v } = await import("./core.mjs");']) {
+    assert.ok(scanSource(src).imports[0].names.includes("*"), src);
+    assert.ok(!scanSource(src).imports[0].names.includes("<computed-key>"), src);
+  }
+  const t = tiny({ ...FILES, "src/app.mjs": 'const { run, ...rest } = await import("./core.mjs");\n' }, baseDeclaration());
+  try {
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["undeclared-interface"]);
+    t.declaration.edges[0].via = ["run", "<computed-key>"];
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["undeclared-interface"]);
+    t.declaration.edges[0].via = ["*"];
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), []);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+test("named regression: a directory member path that is a file, and a file path that is a directory, are dead-member-path, not a crash", () => {
+  const d = baseDeclaration();
+  d.members[0].paths = ["NOTES.md/"];
+  const t = tiny({ ...FILES, "src/dir/x.mjs": "export {};\n" }, d);
+  try {
+    assert.ok(kinds(checkBoundaries(t.dir, t.declaration)).includes("dead-member-path"));
+    d.members[0].paths = ["src/dir"];
+    assert.ok(kinds(checkBoundaries(t.dir, t.declaration)).includes("dead-member-path"));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
