@@ -97,7 +97,7 @@ that document is a machine-facing interface governed by
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1.0",
   "standardVersion": "1.0.0",
   "status": "NON_COMPLIANT",
   "score": 88,

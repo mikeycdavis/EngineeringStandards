@@ -409,7 +409,7 @@ const VENDOR_MARKERS = new Set(["pyvenv.cfg"]);
 
 /** Extensions whose contents are worth pattern-scanning at all. */
 const TEXT_EXT = new Set([
-  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
+  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
   ".kt", ".php", ".rs", ".yml", ".yaml", ".json", ".toml", ".md", ".razor", ".vue",
   ".svelte", ".sql", ".sh", ".ps1",
 ]);
@@ -424,7 +424,7 @@ const TEXT_EXT = new Set([
  * job. Documentation describes; it does not implement. Scanning it for code signals is always wrong.
  */
 const CODE_EXT = new Set([
-  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
+  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
   ".kt", ".php", ".rs", ".razor", ".vue", ".svelte", ".sql", ".sh", ".ps1",
 ]);
 
@@ -459,10 +459,10 @@ const isCode = (f) => CODE_EXT.has(path.extname(f));
 
 /** Comment syntax by extension. Enabling the wrong one corrupts the split — `//` is floor division
  *  in Python, `--` is decrement in JavaScript, `#` starts a private field in JavaScript. */
-const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
+const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
 const HASH = [".py", ".rb", ".sh", ".ps1"];
 const TRIPLE_DOUBLE_QUOTE_EXT = new Set([".java", ".kt", ".cs"]);
-const STRING_ENDS_AT_EOL = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py"]);
+const STRING_ENDS_AT_EOL = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".py"]);
 const COMMENT_SYNTAX = new Map([
   ...C_LIKE.map((e) => [e, { line: "//", block: true }]),
   ...HASH.map((e) => [e, { line: "#", block: false }]),
@@ -511,8 +511,11 @@ function splitSource(text, ext, options = {}) {
   // seen by lastCode(). A property access (`obj.return / 2`) is not a keyword.
   const followsRegexKeyword = () => {
     // `of` is deliberately absent: it is a valid identifier (`of / x / 2` is a division).
-    const m = /(?:^|[^\w$.])(return|typeof|case|in|delete|void|throw|new|else|do|yield|await)\s*$/.exec(code.slice(-24));
+    const m = /(?:^|[^\w$.])(return|typeof|case|in|delete|void|throw|new|else|do)\s*$/.exec(code.slice(-24));
     if (m !== null) return true;
+    // `yield` and `await` are only contextual keywords: `yield / x / 2` is a division in a classic script. After
+    // them a slash is a regex only when it is not followed by whitespace (`yield /re/`), as a regex rarely is.
+    if (/(?:^|[^\w$.])(?:yield|await)\s*$/.test(code.slice(-24)) && !/\s/.test(text[i + 1] ?? " ")) return true;
     // `if (ok) /re/.test(x);` : the slash after a control-flow header's `)` starts a statement, so a regex.
     // Index-based and bounded: trimming the whole accumulated string per `/` was quadratic on padded input.
     let end = code.length;
@@ -640,11 +643,12 @@ function splitSource(text, ext, options = {}) {
     }
 
     if (mode === "line") {
-      if (c === "\n") {
+      // A line comment ends at LF, CRLF or a lone CR (a CR-only file has no LF to end it).
+      if (c === "\n" || c === "\r") {
         mode = "code";
-        code += "\n";
+        code += c;
         comments += "\n";
-        drop("\n");
+        drop(c);
         i++;
         continue;
       }
@@ -724,7 +728,7 @@ function regexLiteralEnd(text, open) {
   let inClass = false;
   for (let i = open + 1; i < text.length; i += 1) {
     const c = text[i];
-    if (c === "\n") return -1; // a regex literal does not span lines
+    if (c === "\n" || c === "\r") return -1; // a regex literal does not span lines
     if (c === "\\") {
       i += 1;
       continue;
@@ -3477,7 +3481,7 @@ const AUDIT_LANGUAGE_FAMILIES = [
   { family: "csharp", supported: true, exts: [".cs"] },
   { family: "go", supported: false, exts: [".go"] },
   { family: "java-kotlin", supported: true, exts: [".java", ".kt"] },
-  { family: "javascript-typescript", supported: true, exts: [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"] },
+  { family: "javascript-typescript", supported: true, exts: [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts"] },
   { family: "markup-components", supported: false, exts: [".razor", ".svelte", ".vue"] },
   { family: "php", supported: false, exts: [".php"] },
   { family: "python", supported: true, exts: [".py"] },
@@ -3512,7 +3516,7 @@ const AUDIT_IDIOMS = [
   { id: "csharp.type", families: ["csharp"], kind: "type", re: /\b(?:class|record|struct|interface|enum)\s+([A-Za-z_]\w*)/g, named: true },
   { id: "java-kotlin.type", families: ["java-kotlin"], kind: "type", re: /\b(?:class|interface|enum|record|object)\s+([A-Za-z_$][\w$]*)/g, named: true },
   { id: "js.class", families: ["javascript-typescript"], exts: [".js", ".mjs", ".cjs", ".jsx"], kind: "type", re: /\bclass\s+([A-Za-z_$][\w$]*)/g, named: true },
-  { id: "ts.type", families: ["javascript-typescript"], exts: [".ts", ".tsx"], kind: "type", re: /\b(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "ts.type", families: ["javascript-typescript"], exts: [".ts", ".tsx", ".mts", ".cts"], kind: "type", re: /\b(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, named: true },
   { id: "python.class", families: ["python"], kind: "type", re: /^[ \t]*class\s+([A-Za-z_]\w*)/gm, named: true },
   {
     id: "sql.create-table",

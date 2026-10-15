@@ -1053,3 +1053,33 @@ test("a Kotlin or C# raw string ending in a backslash closes; a regex after yiel
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.kt:2 type AuditEvent", "src/b.js:2 type AuditEvent"]);
   });
 });
+
+test("TypeScript module extensions .mts and .cts are part of the surface", async () => {
+  const body = "recordAuditEvent(entry);" + String.fromCharCode(10);
+  await withRepo({ "src/a.mts": body, "src/b.cts": body }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/a.mts:1 recorder-call recordAuditEvent",
+      "src/b.cts:1 recorder-call recordAuditEvent",
+    ]);
+  });
+});
+
+test("yield and await as identifiers divide; a yielded regex is a pattern", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "var n = yield / recordAuditEvent(x) / 2;",
+    "function* g(){ yield /recordAuditEvent(a)/; }",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
+  });
+});
+
+test("a line comment ends at a lone carriage return", async () => {
+  const CR = String.fromCharCode(13);
+  const js = "// note" + CR + "class AuditEvent {}" + CR;
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:2 type AuditEvent"]);
+  });
+});
