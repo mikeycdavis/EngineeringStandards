@@ -277,7 +277,7 @@ someone to lie to make the build go green.
      the old file keeps the old content, permission bits are preserved, other inode metadata is not
      (owner decision of 2026-10-14, 13:34Z; ADR 0016, "Documented exception: overwrite does not share
      the inode"). AC4's one-entry exception and its test are in scope;
-  3. READY: the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
+  3. BLOCKED until slice 1 (the resolver) lands, per ADR 0016 D4 (the wording must not name a command that does not exist): the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
      and its SVG, `CHANGELOG.md`), with a no-catalog-rule test.
 - **Release classification and gates:** the owner classified the complete change MAJOR, targeted to
   3.0.0. A Windows-safe `eligibility` and the mandatory, non-skippable real-filesystem Windows safety
