@@ -318,6 +318,19 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         expires: expiries[0] ?? null,
         reference: null,
         fixtures,
+        // An active project-level exception on the same rule is a separate, broader decision. It is
+        // carried beside the fixture pins rather than replaced by them, so neither is concealed.
+        ...(activeExceptions.has(rule.id)
+          ? {
+              projectException: {
+                reason: activeExceptions.get(rule.id).reason,
+                approvedBy: activeExceptions.get(rule.id).approvedBy,
+                approvedAt: activeExceptions.get(rule.id).approvedAt,
+                expires: activeExceptions.get(rule.id).expires ?? null,
+                reference: activeExceptions.get(rule.id).reference ?? null,
+              },
+            }
+          : {}),
       };
       results.push(result);
       continue;

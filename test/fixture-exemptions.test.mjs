@@ -758,3 +758,16 @@ test("cap-hidden pins in one directory list each directory once, not once per pi
   await rm(counter, { force: true });
   await rm(log, { force: true });
 });
+
+test("a fixture-only rule keeps its active project-level exception visible beside the fixture pins", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const file = path.join(root, "project-policy.yml");
+  const { readFile } = await import("node:fs/promises");
+  const extra = ["exceptions:", "  - rule: security.no-cert-bypass", '    reason: "legacy client being replaced"', '    approvedBy: "project-owner"', '    approvedAt: "2026-01-01"', '    expires: "2099-01-01"', ""].join(String.fromCharCode(10));
+  await writeFile(file, (await readFile(file, "utf8")) + extra);
+  const r = resultOf(cli("validate", root), CERT_RULE);
+  assert.equal(r.exception.kind, "fixture-exemption");
+  assert.equal(r.exception.fixtures.length, 1);
+  assert.equal(r.exception.projectException.reason, "legacy client being replaced");
+  assert.match(cliText("validate", root).out, /legacy client being replaced/);
+});

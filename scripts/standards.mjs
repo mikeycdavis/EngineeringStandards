@@ -320,6 +320,10 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
         for (const x of r.exception.fixtures) {
           out.push(`      ${displaySafe(x.path)} (owner ${displaySafe(x.owner)}; ${x.expires ? `expires ${displaySafe(x.expires)}` : `review when: ${displaySafe(x.reviewWhen)}`})`);
         }
+        if (r.exception.projectException) {
+          const pe = r.exception.projectException;
+          out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(pe.reason)} (project exception; expires ${displaySafe(pe.expires ?? "never")})`);
+        }
       } else {
         out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
       }
