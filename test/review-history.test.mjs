@@ -11,7 +11,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { verifyReviewHistoryAppend, ReviewHistoryVerificationError } from "../scripts/review-history.mjs";
+import { verifyReviewHistoryAppend, ReviewHistoryVerificationError, effectiveAttestations } from "../scripts/review-history.mjs";
+import { recordedRejections } from "../scripts/reviews.mjs";
 
 const POLICY_PATH = "project-policy.yml";
 
@@ -318,5 +319,27 @@ test("trusted history with malformed events inside a well-formed list has no rec
     } finally {
       await rm(fixture.dir, { recursive: true, force: true });
     }
+  }
+});
+
+test("every reader agrees: a rejection in any reviews container shape is seen and kept when the comparison is violated", () => {
+  const rejected = { id: "r1", status: "rejected", reviewedBy: "synthetic-reviewer", reviewedAt: "2026-10-01" };
+  const shapes = {
+    "list": { reviews: [rejected] },
+    "mapping that is one event": { reviews: { ...rejected } },
+    "mapping holding events": { reviews: { first: rejected } },
+    "nested mapping": { reviews: { outer: { inner: rejected } } },
+    "list holding a nested mapping event": { reviews: [{ wrapper: rejected }] },
+    "legacy single record": { ...rejected },
+  };
+  const preflight = (record) => ({ effective: false, baseAttestations: { "testing.synthetic": record } });
+  for (const [name, record] of Object.entries(shapes)) {
+    assert.ok(recordedRejections(record).length > 0, name);
+    const kept = effectiveAttestations({ "testing.synthetic": { reviews: [{ id: "g1", status: "approved" }] } }, preflight(record));
+    assert.deepEqual(kept["testing.synthetic"], record, name + ": base record must be kept");
+  }
+  // Shapes with no rejection hold none.
+  for (const record of [{ reviews: "oops" }, { reviews: { a: 1 } }, { reviews: [] }, { reviews: null }]) {
+    assert.deepEqual(recordedRejections(record), [], JSON.stringify(record));
   }
 });
