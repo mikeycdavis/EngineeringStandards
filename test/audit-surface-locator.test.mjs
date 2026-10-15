@@ -885,3 +885,25 @@ test("a Python triple-quoted string holding quotes is a literal and ends at its 
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.py:5 type AuditEvent"]);
   });
 });
+
+test("a backslash-CRLF continuation keeps the string literal open across the whole line break", async () => {
+  const BS = String.fromCharCode(92);
+  const CRLF = String.fromCharCode(13, 10);
+  const js = 'const s = "a ' + BS + CRLF + 'class AuditMention {}";' + CRLF + 'class AuditEvent {}' + CRLF;
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:3 type AuditEvent"]);
+  });
+});
+
+test("the dollar-quote masking is the locator's alone: another detector still sees an executable body", async () => {
+  const sql =
+    "CREATE FUNCTION f() RETURNS void AS $$\ntry:\n    pass\nexcept:\n    pass\n$$ LANGUAGE plpython3u;\nSELECT $$CREATE TABLE audit_fake(id int)$$;\n";
+  await withRepo({ "db/a.sql": sql }, async (dir) => {
+    const { json } = cli("audit", dir);
+    assert.deepEqual(sites(surfaceOf(json)), [], "the locator masks the literal");
+    assert.ok(
+      json.findings.some((f) => f.id === "swallowed-exception"),
+      "another detector must still see the executable body: " + JSON.stringify(json.findings.map((f) => f.id)),
+    );
+  });
+});

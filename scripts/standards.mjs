@@ -478,6 +478,10 @@ const COMMENT_SYNTAX = new Map([
  */
 function splitSource(text, ext, options = {}) {
   const templateExpressions = options.templateExpressions === true;
+  // Only the audit locator asks for this. A PostgreSQL dollar-quoted body is a string literal to the locator
+  // (DDL in it is a mention) but EXECUTABLE code to every other detector (a PL/Python body with `except: pass`),
+  // so the shared view must keep it.
+  const dollarQuotes = options.dollarQuotes === true;
   // One frame per open `${` of a template literal, each counting its own braces, so a nested template or a
   // block inside the expression closes the right thing. Empty unless `templateExpressions` is set.
   const exprStack = [];
@@ -549,7 +553,7 @@ function splitSource(text, ext, options = {}) {
       // PostgreSQL dollar-quoted string (`$$...$$`, `$tag$...$tag$`): a literal, so its body is blanked like
       // any other string. Only when the opening delimiter is not part of an identifier and the same delimiter
       // closes it; an unterminated one is left as code (the conservative direction: nothing is hidden by a guess).
-      if (c === "$" && ext === ".sql" && !/[\w$]/.test(text[i - 1] ?? "")) {
+      if (dollarQuotes && c === "$" && ext === ".sql" && !/[\w$]/.test(text[i - 1] ?? "")) {
         const open = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(text.slice(i, i + 80));
         if (open) {
           const end = text.indexOf(open[0], i + open[0].length);
@@ -654,10 +658,11 @@ function splitSource(text, ext, options = {}) {
     }
     // Inside a string literal: preserved in the code half, escapes skipped.
     if (c === "\\") {
-      code += text.substr(i, 2);
-      drop(c);
-      drop(text[i + 1] ?? " ");
-      i += 2;
+      // A backslash before CRLF continues the string over the whole line break, not just the CR.
+      const width = text[i + 1] === "\r" && text[i + 2] === "\n" ? 3 : 2;
+      code += text.substr(i, width);
+      for (let k = 0; k < width; k += 1) drop(text[i + k] ?? " ");
+      i += width;
       continue;
     }
     if (c === mode) {
@@ -3635,10 +3640,13 @@ export function locateAuditSurface(files, run, surface, options = {}) {
 
     // `${...}` in a template literal executes, so the locator scans those expressions; the shared view blanks
     // the whole literal and is left as it is for every other detector.
-    const structure =
-      fam.family === "javascript-typescript" && raw.text.includes("$" + "{")
-        ? splitSource(raw.text, ext, { templateExpressions: true }).structure
-        : view.text;
+    let structure = view.text;
+    if (fam.family === "javascript-typescript" && raw.text.includes("$" + "{")) {
+      structure = splitSource(raw.text, ext, { templateExpressions: true }).structure;
+    } else if (fam.family === "sql" && raw.text.includes("$")) {
+      // A dollar-quoted body is a literal for the locator only (see splitSource); other detectors keep it.
+      structure = splitSource(raw.text, ext, { dollarQuotes: true }).structure;
+    }
     let newlines = null;
     const lineAt = (index) => {
       if (newlines === null) {
