@@ -200,7 +200,12 @@ async function loadProjectPolicy(repoRoot) {
         // Kept whole so `audit`, which does not render a verdict, can still say that a
         // fixtureExemptions entry failed the schema and therefore waived nothing.
         schemaErrors: errors,
-        hadFixtureExemptions: Array.isArray(document?.fixtureExemptions) && document.fixtureExemptions.length > 0,
+        // Present in ANY shape (a mapping, a string, an array): a malformed section is exactly the case the
+        // report below exists for.
+        hadFixtureExemptions:
+          document?.fixtureExemptions !== undefined &&
+          document?.fixtureExemptions !== null &&
+          !(Array.isArray(document.fixtureExemptions) && document.fixtureExemptions.length === 0),
         error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
       };
@@ -3933,7 +3938,12 @@ export async function main(args) {
     if (entry.state === "matches" || entry.state === "not-read") {
       const abs = files.find((f) => rel(f) === entry.path);
       const incomplete =
-        entry.state === "not-read" || abs === undefined || !run.textOf(abs).available || run.truncated.has(abs);
+        entry.state === "not-read" ||
+        abs === undefined ||
+        // A file with no recognised text extension is never searched as text (a `.env` is judged by
+        // the repository index), so "no text available" says nothing about it: its digest was taken
+        // over the whole file and a rule that does not fire there is genuinely stale.
+        (TEXT_EXT.has(path.extname(abs)) && (!run.textOf(abs).available || run.truncated.has(abs)));
       if (incomplete) {
         addFinding({
           id: "fixture-exemption-not-established",

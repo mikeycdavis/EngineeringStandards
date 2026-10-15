@@ -506,3 +506,31 @@ test("the streaming digest equals the whole-buffer digest for every chunking, in
     assert.equal(await contentDigestOfStream(chunks), want, "chunk size " + size);
   }
 });
+
+test("a mapping-shaped fixtureExemptions is reported by audit as the reason the pin did not apply", async () => {
+  const root = await repo({ "test/fixtures/bad/bypass.js": CERT });
+  const text = [
+    'standardVersion: "2.0.0"',
+    'project: "fixture exemption specimen"',
+    "fixtureExemptions:",
+    '  path: "test/fixtures/bad/bypass.js"',
+    '  rule: "security.no-cert-bypass"',
+    "",
+  ].join("\n");
+  await writeFile(path.join(root, "project-policy.yml"), text);
+  const res = cli("audit", root);
+  assert.equal(findingsOf(res, "fixture-exemption-schema-invalid").length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
+});
+
+test("a valid pin on a .env that is no longer tracked is reported stale, not 'not established'", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": ENV }, [pin("test/fixtures/bad/.env", ENV, "scm.no-committed-env-files")]);
+  const git = (...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  git("rm", "-q", "--cached", "test/fixtures/bad/.env");
+  git("-c", "commit.gpgsign=false", "commit", "-qm", "untrack");
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((x) => x.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
+});
