@@ -429,3 +429,13 @@ test("CRLF checkout of an unchanged fixture still matches its pin; any other byt
   const root = await repo({ "test/fixtures/bad/bypass.js": crlf }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
   assert.equal(resultOf(cli("validate", root), CERT_RULE).disposition, "excepted");
 });
+
+test("a pinned file the read budget skipped is never reopened to be hashed: a wrong pin is 'not established', not a digest mismatch", async () => {
+  const wrong = pin("test/fixtures/bad/bypass.js", CLEAN, CERT_RULE); // digest of other bytes
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/bypass.js": CERT }, [wrong]);
+  const res = cli("validate", root, "--max-total-read-bytes=1");
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json.findings.map((f) => f.id)));
+  const ne = findingsOf(res, "fixture-exemption-not-established");
+  assert.equal(ne.length, 1);
+  assert.doesNotMatch(ne[0].message, /changed|digest is|stale|remove/);
+});

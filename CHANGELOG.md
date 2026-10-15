@@ -47,9 +47,10 @@ validate waive nothing and are reported by `audit`, `validate` and `standards po
 `security.no-secrets-in-artifacts` is non-exemptible and stays so, so its fixture bait is built at run
 time instead of committed. The human `Failing:` list no longer repeats rules already shown under
 `Excepted:`. **Consequence for adopters:** a consumer's deliberately violating fixtures now produce live
-findings until they carry exact entries. **Schema:** `fixtureExemptions` is an additive optional
-property of the policy schema; `VERSION` is NOT bumped here and whether the addition is a framework
-MINOR is left to the owner. Other `SKIP_DIRS` names are unchanged.
+findings until they carry exact entries. **Schema:** `fixtureExemptions` is an additive optional property of the policy schema. Level: **MINOR** under
+[Standard 21](standards/21-versioning.md) R2 (an optional property; the effect on a currently compliant project is none). Owner decision of
+2026-10-15 (option A): `VERSION` stays 2.0.0, this is recorded as Unreleased content intended to ship inside a future 3.0.0 if the owner
+authorizes that release, and there is no intermediate 2.1.0 migration. No `VERSION`, tag or release is changed here. Other `SKIP_DIRS` names are unchanged.
 
 Append-only review history (ST-17, #95; split from draft PR 109). Policy schema, widening only: `reviewEvent.reviewerRole`
 and `reviewEvent.reviewedAgainst.tree` are new optional properties (a validator older than this change rejects a policy that

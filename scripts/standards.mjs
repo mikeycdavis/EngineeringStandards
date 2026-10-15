@@ -3819,14 +3819,16 @@ export async function main(args) {
   if (Array.isArray(policy.document?.fixtureExemptions)) {
     const checked = checkEntries(policy.document.fixtureExemptions, { catalog, today });
     exemptionCheck.problems = checked.problems;
-    // A file the surface retained already has its digest, taken from the very read the detectors
-    // inspected. Only a pinned path the surface never opened as text (no recognised text extension, or
-    // the read budget was spent first) is hashed here, once: no detector holds content for it, so
-    // there is no inspected version a second read could disagree with. A retained file is never reopened.
+    // The digest of a text file comes only from the read that retained the text the detectors inspect:
+    // a pinned text file the surface did not retain (read budget spent, or unreadable) has no digest,
+    // is `not-read`, and is never reopened here, so the budget bounds this run's I/O and a pin is never
+    // checked against bytes no detector inspected. A file with no recognised text extension (a `.env`)
+    // is never opened by the surface and no detector holds content for it, so there is no inspected
+    // version a second read could disagree with: it is hashed once, here.
     for (const entry of checked.valid) {
       if (run.readDigests.has(entry.path)) continue;
       const abs = files.find((f) => rel(f) === entry.path);
-      if (abs === undefined) continue;
+      if (abs === undefined || TEXT_EXT.has(path.extname(abs))) continue;
       try {
         run.readDigests.set(entry.path, contentDigest(await readFile(abs)));
       } catch {
@@ -3902,7 +3904,7 @@ export async function main(args) {
           evidence: [entry.path],
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
-            `checked against a complete read, because this run did not read the whole file (read budget spent or read cap reached), so whether ` +
+            `checked against a complete read, because this run did not read the whole file (not retained: read budget spent, unreadable or not a recognised text file; or read cap reached), so whether ` +
             `${entry.rule} still fires there is unknown. Keep the entry; rerun with a larger budget.`,
           standardRef: R.search,
         });
