@@ -510,7 +510,8 @@ function splitSource(text, ext, options = {}) {
   // `return /re/.test(x)`: a regex literal also follows these keywords, which end in a letter and so are not
   // seen by lastCode(). A property access (`obj.return / 2`) is not a keyword.
   const followsRegexKeyword = () => {
-    const m = /(?:^|[^\w$.])(return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await)\s*$/.exec(code.slice(-24));
+    // `of` is deliberately absent: it is a valid identifier (`of / x / 2` is a division).
+    const m = /(?:^|[^\w$.])(return|typeof|case|in|delete|void|throw|new|else|do|yield|await)\s*$/.exec(code.slice(-24));
     if (m !== null) return true;
     // `if (ok) /re/.test(x);` : the slash after a control-flow header's `)` starts a statement, so a regex.
     // Index-based and bounded: trimming the whole accumulated string per `/` was quadratic on padded input.
@@ -593,7 +594,15 @@ function splitSource(text, ext, options = {}) {
           while (text[i + n] === '"') n += 1;
           delim = '"'.repeat(n);
         }
-        const end = text.indexOf(delim, i + delim.length);
+        // The closing run is the first one not preceded by an odd number of backslashes (`\"""` is an escape).
+        let end = text.indexOf(delim, i + delim.length);
+        while (end !== -1) {
+          let slashes = 0;
+          while (text[end - 1 - slashes] === "\\") slashes += 1;
+          // Kotlin and C# raw strings have no escapes: a body may end in a backslash.
+          if (slashes % 2 === 0 || (ext !== ".py" && ext !== ".java")) break;
+          end = text.indexOf(delim, end + 1);
+        }
         const stop = end === -1 ? text.length : end + delim.length;
         code += text.slice(i, stop);
         keep(delim[0]);
@@ -3448,14 +3457,14 @@ const AUDIT_EXCLUDED_PATH_RE =
  * `foo.test.ts`, `foo_test.py` and a file named `Test.java` are tests; `Contest.java`, `Latest.ts` and `Attest.cs`
  * are not, because `Test` there is the end of a word and not a word of its own.
  */
-const AUDIT_TEST_SUFFIX_RE = /(?:Tests?|[._-]tests?)\.(?:java|kt|cs|py|ts|tsx|js|jsx)$/;
+const AUDIT_TEST_SUFFIX_RE = /(?:Tests?|[._-]tests?)\.(?:java|kt|cs|py|ts|tsx|js|jsx|mjs|cjs|mts|cts)$/;
 /**
  * The shared `TEST_RE` is case-insensitive and unanchored on `Tests?\.cs$` and `test_.*\.py$`, so it also
  * classifies `Attest.cs` and `contest_x.py` as tests. It is shared with other detectors and left as it is;
  * the locator uses this narrower form of the same classification (directories, `.test.`/`.spec.` files,
  * `_test.go`/`_test.py`, `test_*.py` at the start of a file name) plus the intentional suffixes above.
  */
-const AUDIT_TEST_PATH_RE = /(?:^|\/)(?:tests?|spec|__tests__)\/|\.(?:test|spec)\.[jt]sx?$|_test\.(?:go|py)$|(?:^|\/)test_[^/]*\.py$/i;
+const AUDIT_TEST_PATH_RE = /(?:^|\/)(?:tests?|spec|__tests__)\/|\.(?:test|spec)\.(?:[jt]sx?|[mc][jt]s)$|_test\.(?:go|py)$|(?:^|\/)test_[^/]*\.py$/i;
 const isAuditExcludedPath = (r) => AUDIT_TEST_PATH_RE.test(r) || AUDIT_EXCLUDED_PATH_RE.test(r) || AUDIT_TEST_SUFFIX_RE.test(r);
 
 /**
@@ -3748,7 +3757,8 @@ function isSignatureOnly(text, nameAt, open) {
       depth -= 1;
       if (depth === 0) {
         const after = text.slice(i + 1, i + 240);
-        if (typed && !NOT_A_TYPE_WORD.has(typed[1]) && /^\s*;/.test(after)) return true;
+        // `void record(Event e) throws IOException, Other;`
+        if (typed && !NOT_A_TYPE_WORD.has(typed[1]) && /^\s*(?:throws\s+[\w$.<>,\s]+?)?\s*;/.test(after)) return true;
         // Same line only: the `)` is followed on its own line by `: Type;`. A call at the start of a line inside
         // a multi-line ternary is followed by `: other;` on the NEXT line and is a call.
         return memberOnly && /^[ \t]*\??[ \t]*:[ \t]*[^;{}\r\n]+;/.test(after);

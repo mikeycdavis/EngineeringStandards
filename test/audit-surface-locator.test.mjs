@@ -1011,3 +1011,45 @@ test("a long run of whitespace before many divisions does not make the tokenizer
     assert.ok(Date.now() - started < 8000, "tokenizing padded divisions took " + (Date.now() - started) + " ms");
   });
 });
+
+test("a contextual identifier before a slash is a division, so the call after it stays visible", async () => {
+  await withRepo({ "src/a.js": "const of = 10;\nconst n = of / recordAuditEvent(x) / 2;\n" }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:2 recorder-call recordAuditEvent"]);
+  });
+});
+
+test("audit.test.mjs, .test.cjs and .spec.mts are test files", async () => {
+  const body = "recordAuditEvent(entry);" + String.fromCharCode(10);
+  await withRepo({ "src/audit.test.mjs": body, "src/b.test.cjs": body, "src/c.spec.mts": body, "src/d.mjs": body }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/d.mjs:1 recorder-call recordAuditEvent"]);
+  });
+});
+
+test("an escaped quote run inside a Python triple-quoted string does not close it", async () => {
+  const BS = String.fromCharCode(92);
+  const NL = String.fromCharCode(10);
+  const q = String.fromCharCode(34).repeat(3);
+  const py = ["DOC = " + q + "text " + BS + q + " more", "class AuditMention:", "    pass", q, "class AuditEvent:", "    pass", ""].join(NL);
+  await withRepo({ "src/a.py": py }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.py:5 type AuditEvent"]);
+  });
+});
+
+test("a Java signature with a throws clause is a definition", async () => {
+  const NL = String.fromCharCode(10);
+  const java = ["interface R {", "  void recordAuditEvent(Event e) throws IOException, Other;", "}", ""].join(NL);
+  await withRepo({ "src/R.java": java }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/R.java:2 recorder-definition recordAuditEvent"]);
+  });
+});
+
+test("a Kotlin or C# raw string ending in a backslash closes; a regex after yield or await is a pattern", async () => {
+  const BS = String.fromCharCode(92);
+  const NL = String.fromCharCode(10);
+  const q = String.fromCharCode(34).repeat(3);
+  const kt = "val p = " + q + "C:" + BS + "dir" + BS + q + NL + "class AuditEvent" + NL;
+  const js = "function* g(){ yield /recordAuditEvent(a)/; }" + NL + "class AuditEvent {}" + NL;
+  await withRepo({ "src/a.kt": kt, "src/b.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.kt:2 type AuditEvent", "src/b.js:2 type AuditEvent"]);
+  });
+});
