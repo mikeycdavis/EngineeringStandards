@@ -27,7 +27,7 @@ It establishes nothing about the rule. A record under this contract is non-estab
 | The record states what was examined and found | Section 4 | today |
 | The record states what it does not cover | Section 5 | today |
 | The record is not an attestation and does not establish the rule | Section 6 | today |
-| A rejection recorded as an attestation fails while it is the terminal event | Section 6 | today, only for an attestable rule |
+| A rejection recorded as an attestation fails while it is the terminal event | Section 6 (prose only) | not applicable while the rule is not attestable; no claim |
 | Identity, role, base revision, tree-wide freshness, digest, live state, retention | Section 7 | future work, no claim |
 
 ## 3. Record form
@@ -50,8 +50,7 @@ of:
   category each, and which entry points emit an audit event through K;
 - for each, whether the event is recorded together with the mutation (or through a transactional
   outbox), and whether K retains it in a store queryable for reconstruction;
-- the fields each event carries, and whether they let the change be reconstructed (before and after, or
-  a changed-field set with its value; Standard 3 R2), with credentials, tokens and personal data
+- the fields each event carries, and whether they let the change be reconstructed (Standard 3 R2 lists `before` and `after`; whether a changed-field set with its value is enough is the reviewer's judgement), with credentials, tokens and personal data
   recorded as a change marker rather than the value (Standard 3 R5);
 - the stores excluded as derived or transient, each with its reconstruction rationale, under Standard 3
   R1's full conjunctive predicate: excludable only when it can be safely reconstructed *and* has none of
@@ -114,12 +113,12 @@ would have to build before a human review could establish `audit.business-state`
 - an independent component-and-store declaration with a completeness statement, a retention-policy
   artefact with a deployed-retention snapshot, an objective minimum-payload floor, and committed formats
   for the inventory, exclusion policy and payload definition;
-- the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
+- acceptance by the attestation schema and policy template of an attestation for a `code-analysis` rule, and the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3), a decision on catalog `assurance`,
   ADR 0010 acceptance, and an update to Standard 3's Implementation section;
 - versioning classification (Standard 21 R2 does not classify attestation eligibility) and `VERSION`,
   which are the owner's.
 
-None of this is made, and none of it is required for the record in sections 3 to 5.
+None of this is made, and none of it is required for the record in sections 3 to 5. Of #95 and #96, the future work needs answered: for #95, how a stale approval is re-reviewed and renewed with authenticated identity; for #96, who may clear a rejection and on what authority.
 
 ## 8. Owner decision
 
