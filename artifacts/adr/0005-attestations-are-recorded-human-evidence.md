@@ -159,8 +159,10 @@ neither the base nor the effective record holds one. When a rewrite is reported 
 base-restored rejection is the one named, never the untrusted replacement.
 
 The finding's remediation depends on where the rejection sits, in three cases. Established at the trusted base: it is
-append-only history, so deleting it is reported as `review-history-append-only`, the base rejection stays effective and
-the finding remains; the remediation advises removing the not-applicable declaration and recording a later review whose
+append-only history, so deleting it is reported as `review-history-append-only` when the comparison runs, the base
+rejection stays effective and the finding remains (when the comparison cannot run, for example because an unrelated
+base record is malformed, the result is NOT_EVALUATED and the base rejection is still named, never applied to the
+verdict); the remediation advises removing the not-applicable declaration and recording a later review whose
 `supersedes` names the chain's current (latest) review, because every successor must reference its immediate
 predecessor, or leaving both in place. Not at the base: it is advised to be removed. Base unknown (no
 readable base, such as outside a Git work tree): nothing can be enforced, so no deletion is advised and no

@@ -3899,6 +3899,7 @@ export async function main(args) {
   // can only be taken from the head.
   const recordedAttestationRules = new Set([
     ...Object.keys(reviewHistoryBase.baseAttestations ?? {}),
+    ...Object.keys(reviewHistoryBase.baseRecordedAttestations ?? {}),
     ...Object.keys(headAttestations),
   ]);
   const reviewHistoryEffective = effectiveAttestations(headAttestations, reviewHistoryBase);

@@ -256,7 +256,9 @@ declaration, because the rule applies (and then record a later review whose `sup
 current, latest review: every successor must reference its immediate predecessor), or, only when the
 rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record. A
 rejection already at the merge base is append-only history: deleting it is a `review-history-append-only`
-violation, the base rejection stays effective and the finding remains. With no readable base (for example
+violation when the comparison runs, the base rejection stays effective and the finding remains; when the comparison
+cannot run (for example an unrelated base record is malformed) it is reported as NOT_EVALUATED and the base
+rejection is still named by this finding. With no readable base (for example
 outside a Git work tree) removal cannot be verified, so no deletion is advised and none is promised to be
 reported: history is append-only once committed, so supply the base (`git fetch origin`) and run again. An older
 rejection followed by an approval is still found, and so is a rejection recorded at a readable base when the
