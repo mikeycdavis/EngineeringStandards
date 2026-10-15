@@ -461,6 +461,7 @@ const isCode = (f) => CODE_EXT.has(path.extname(f));
  *  in Python, `--` is decrement in JavaScript, `#` starts a private field in JavaScript. */
 const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
 const HASH = [".py", ".rb", ".sh", ".ps1"];
+const TRIPLE_DOUBLE_QUOTE_EXT = new Set([".java", ".kt", ".cs"]);
 const STRING_ENDS_AT_EOL = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py"]);
 const COMMENT_SYNTAX = new Map([
   ...C_LIKE.map((e) => [e, { line: "//", block: true }]),
@@ -567,11 +568,20 @@ function splitSource(text, ext, options = {}) {
         }
       }
       // Python triple-quoted string: the body may hold quotes and newlines; it ends at the same triple.
-      if (ext === ".py" && (rest3 === '"""' || rest3 === "'''")) {
-        const end = text.indexOf(rest3, i + 3);
-        const stop = end === -1 ? text.length : end + 3;
+      // Java and Kotlin text blocks / raw strings and C# raw string literals are the same shape with `"""`
+      // (a run of three or more quotes closes with an equal run).
+      const tripleDouble = TRIPLE_DOUBLE_QUOTE_EXT.has(ext) && rest3 === '"""';
+      if ((ext === ".py" && (rest3 === '"""' || rest3 === "'''")) || tripleDouble) {
+        let delim = rest3;
+        if (tripleDouble) {
+          let n = 3;
+          while (text[i + n] === '"') n += 1;
+          delim = '"'.repeat(n);
+        }
+        const end = text.indexOf(delim, i + delim.length);
+        const stop = end === -1 ? text.length : end + delim.length;
         code += text.slice(i, stop);
-        keep(rest3[0]);
+        keep(delim[0]);
         for (let k = i + 1; k < stop; k += 1) drop(text[k]);
         i = stop;
         continue;
@@ -3562,6 +3572,168 @@ function followedByBody(text, open) {
   return false;
 }
 
+/**
+ * Blank the text children of JSX elements in a structural view, preserving length and newlines.
+ *
+ * The shared view leaves JSX text intact, so `<p>Add class AuditEvent to the backend</p>` reads as a type
+ * declaration. Elements are parsed with a small recursive-descent pass over the view (strings and comments are
+ * already blanked there): tag, attributes (including `{...}` expressions, which are left as code and may hold
+ * nested elements), children (text is blanked; `{...}` expressions and nested elements are left or recursed into),
+ * closing tag. An element whose closing tag is not found or does not match (a TSX generic arrow `<T,>(x) => x`, a
+ * comparison) is NOT masked: failing to mask only costs an over-report, masking a guess could hide a declaration.
+ *
+ * @returns {string} the view with JSX text children replaced by spaces
+ */
+function maskJsxText(view) {
+  const n = view.length;
+  const blank = []; // [start, end) ranges to blank, committed only for elements that parsed completely
+  const isNameStart = (c) => /[A-Za-z_$]/.test(c ?? "");
+  const exprStartBefore = (idx) => {
+    let k = idx - 1;
+    while (k >= 0 && /\s/.test(view[k])) k -= 1;
+    if (k < 0) return true;
+    if ("(,=:?&|{};[!>".includes(view[k])) return true;
+    return /(?:^|[^\w$.])(?:return|default|yield|await|else|case|in|of)$/.test(view.slice(Math.max(0, k - 8), k + 1));
+  };
+
+  // Skip a `{ ... }` expression starting at i (view[i] === "{"), recursing into elements inside it.
+  function skipBraces(i, ranges, depth) {
+    let d = 0;
+    let j = i;
+    while (j < n) {
+      const c = view[j];
+      if (c === "{") d += 1;
+      else if (c === "}") {
+        d -= 1;
+        if (d === 0) return j + 1;
+      } else if (c === "<" && (isNameStart(view[j + 1]) || view[j + 1] === ">") && exprStartBefore(j)) {
+        const end = element(j, ranges, depth + 1);
+        if (end !== -1) {
+          j = end;
+          continue;
+        }
+      }
+      j += 1;
+    }
+    return -1;
+  }
+
+  // Parse one element at i (view[i] === "<"). Returns the index after it, or -1 when it does not parse.
+  function element(i, ranges, depth) {
+    if (depth > 200) return -1;
+    let j = i + 1;
+    let name = "";
+    if (view[j] !== ">") {
+      while (j < n && /[\w$.:-]/.test(view[j])) name += view[j++];
+    }
+    // Attributes, then `>` or `/>`.
+    for (;;) {
+      while (j < n && /\s/.test(view[j])) j += 1;
+      if (j >= n) return -1;
+      if (view[j] === "/" && view[j + 1] === ">") return j + 2;
+      if (view[j] === ">") {
+        j += 1;
+        break;
+      }
+      if (view[j] === "{") {
+        j = skipBraces(j, ranges, depth);
+        if (j === -1) return -1;
+        continue;
+      }
+      if (view[j] === '"' || view[j] === "'") {
+        const q = view[j];
+        const e = view.indexOf(q, j + 1);
+        if (e === -1) return -1;
+        j = e + 1;
+        continue;
+      }
+      if (/[\w$:.=-]/.test(view[j])) {
+        j += 1;
+        continue;
+      }
+      return -1;
+    }
+    // Children.
+    let textStart = j;
+    while (j < n) {
+      const c = view[j];
+      if (c === "<") {
+        if (view[j + 1] === "/") {
+          if (textStart < j) ranges.push([textStart, j]);
+          const close = /^<\/\s*([\w$.:-]*)\s*>/.exec(view.slice(j, j + 200));
+          if (!close || close[1] !== name) return -1;
+          return j + close[0].length;
+        }
+        if (isNameStart(view[j + 1]) || view[j + 1] === ">") {
+          if (textStart < j) ranges.push([textStart, j]);
+          const end = element(j, ranges, depth + 1);
+          if (end === -1) return -1;
+          j = end;
+          textStart = j;
+          continue;
+        }
+        return -1;
+      }
+      if (c === "{") {
+        if (textStart < j) ranges.push([textStart, j]);
+        const end = skipBraces(j, ranges, depth);
+        if (end === -1) return -1;
+        j = end;
+        textStart = j;
+        continue;
+      }
+      j += 1;
+    }
+    return -1;
+  }
+
+  let i = 0;
+  while (i < n) {
+    if (view[i] === "<" && (isNameStart(view[i + 1]) || view[i + 1] === ">") && exprStartBefore(i)) {
+      const ranges = [];
+      const end = element(i, ranges, 0);
+      if (end !== -1) {
+        blank.push(...ranges);
+        i = end;
+        continue;
+      }
+    }
+    i += 1;
+  }
+  if (blank.length === 0) return view;
+  const out = view.split("");
+  for (const [a, b] of blank) for (let k = a; k < b; k += 1) if (out[k] !== "\n" && out[k] !== "\r") out[k] = " ";
+  return out.join("");
+}
+
+const NOT_A_TYPE_WORD = new Set([
+  "return", "await", "throw", "new", "yield", "else", "case", "do", "in", "of", "typeof", "delete", "if", "while", "for",
+  "switch", "catch", "using", "lock", "goto", "break", "continue", "default", "extends", "implements", "instanceof",
+]);
+
+/**
+ * Whether the recorder-shaped name starting at `nameAt`, whose argument list opens at `open`, is a signature-only
+ * declaration (an interface or abstract member: `void recordAuditEvent(Event event);`). A declaration has a type word
+ * before the name on the same line and nothing but `;` after the closing parenthesis; a call statement is preceded by
+ * an operator, `.`, `(`, a statement start or a keyword such as `return`.
+ */
+function isSignatureOnly(text, nameAt, open) {
+  const lineStart = Math.max(text.lastIndexOf("\n", nameAt - 1), text.lastIndexOf("\r", nameAt - 1)) + 1;
+  const prefix = text.slice(lineStart, nameAt);
+  const typed = /([A-Za-z_$][\w$]*)(?:<[^<>;()]*>)?(?:\[\s*\])*\??\s+$/.exec(prefix);
+  if (!typed || NOT_A_TYPE_WORD.has(typed[1])) return false;
+  let depth = 0;
+  const limit = Math.min(text.length, open + 4000);
+  for (let i = open; i < limit; i += 1) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return /^\s*;/.test(text.slice(i + 1, i + 40));
+    }
+  }
+  return false;
+}
+
 /** Codepoint order, never locale order, so output is identical on every host. */
 const byCodepoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -3643,7 +3815,12 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     let structure = view.text;
     if (fam.family === "javascript-typescript" && raw.text.includes("$" + "{")) {
       structure = splitSource(raw.text, ext, { templateExpressions: true }).structure;
-    } else if (fam.family === "sql" && raw.text.includes("$")) {
+    }
+    if (fam.family === "javascript-typescript" && [".js", ".jsx", ".tsx"].includes(ext) && structure.includes("</")) {
+      // JSX text children are prose, not declarations (see maskJsxText); the locator's view only.
+      structure = maskJsxText(structure);
+    }
+    if (fam.family === "sql" && raw.text.includes("$")) {
       // A dollar-quoted body is a literal for the locator only (see splitSource); other detectors keep it.
       structure = splitSource(raw.text, ext, { dollarQuotes: true }).structure;
     }
@@ -3716,7 +3893,9 @@ export function locateAuditSurface(files, run, surface, options = {}) {
           // A definition is a recorder-shaped name introduced by a declaration keyword, or one whose
           // argument list is followed by a body (`{` or `=>`), as in a method shorthand or a C# member.
           const keyword = /\b(?:function\*?|def|func|fun)\s+$/.test(structure.slice(Math.max(0, at - 24), at));
-          if (keyword || followedByBody(structure, m.index + m[0].length - 1)) kind = "recorder-definition";
+          if (keyword || followedByBody(structure, m.index + m[0].length - 1) || isSignatureOnly(structure, at, m.index + m[0].length - 1)) {
+            kind = "recorder-definition";
+          }
         }
         const o = { file: r, line: lineAt(at), kind, identifier, family: fam.family, idiom: idiom.id };
         fileHit = true;

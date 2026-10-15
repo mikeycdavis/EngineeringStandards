@@ -907,3 +907,54 @@ test("the dollar-quote masking is the locator's alone: another detector still se
     );
   });
 });
+
+test("JSX text children are prose: a type-shaped sentence in an element is not an observation", async () => {
+  const jsx = [
+    "export function Page() {",
+    "  return (",
+    "    <div className=\"a\">",
+    "      <p>Add class AuditEvent to the backend</p>",
+    "      <Item label={1}>enum AuditState here</Item>",
+    "      <>fragment text interface AuditShape</>",
+    "    </div>",
+    "  );",
+    "}",
+    "class AuditEvent {}",
+    "",
+  ].join("\n");
+  await withRepo({ "src/a.jsx": jsx }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.jsx:10 type AuditEvent"]);
+  });
+});
+
+test("an executable expression inside JSX is still scanned, and a TSX generic arrow is not read as an element", async () => {
+  const tsx = [
+    "const f = <T,>(x: T) => x;",
+    "const a = <p>text {recordAuditEvent(event)} more class AuditProse</p>;",
+    "class AuditEvent {}",
+    "",
+  ].join("\n");
+  await withRepo({ "src/a.tsx": tsx }, async (dir) => {
+    const found = sites(surfaceOf(cli("audit", dir).json));
+    assert.ok(found.includes("src/a.tsx:3 type AuditEvent"), found.join("|"));
+    assert.ok(found.includes("src/a.tsx:2 recorder-call recordAuditEvent"), found.join("|"));
+    assert.ok(!found.some((s) => s.includes("AuditProse")), found.join("|"));
+  });
+});
+
+test("a quoted run in a Java text block or Kotlin raw string is a literal", async () => {
+  const java = 'class Holder {\n  String s = """\n    "class AuditMention" is a quote\n    """;\n}\nclass AuditEvent {}\n';
+  await withRepo({ "src/A.java": java }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/A.java:6 type AuditEvent"]);
+  });
+});
+
+test("a signature-only recorder declaration is a definition; a call statement is a call", async () => {
+  const java =
+    "interface Recorder {\n  void recordAuditEvent(Event event);\n}\nclass Service {\n  void run() {\n    recordAuditEvent(e);\n    return;\n  }\n}\n";
+  await withRepo({ "src/R.java": java }, async (dir) => {
+    const found = sites(surfaceOf(cli("audit", dir).json));
+    assert.ok(found.includes("src/R.java:2 recorder-definition recordAuditEvent"), found.join("|"));
+    assert.ok(found.includes("src/R.java:6 recorder-call recordAuditEvent"), found.join("|"));
+  });
+});
