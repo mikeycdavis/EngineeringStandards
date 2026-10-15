@@ -24,12 +24,36 @@ export function reviewsOf(record) {
 }
 
 /**
+ * Every value that could be a review event in a record, for negative-evidence purposes. A well-formed
+ * `reviews` value is scanned for event-shaped entries at any depth (bounded) rather than read through
+ * `reviewsOf`: a mapping that is itself an event or holds events, or an entry wrapped inside a list item,
+ * would otherwise read as "no events" and a recorded rejection would vanish. Over-seeing is the safe
+ * direction here: this feeds only negative evidence.
+ */
+function eventCandidates(record) {
+  if (!isReviewRecord(record)) return [];
+  if (!Object.hasOwn(record, "reviews")) return [record]; // legacy single record
+  const found = [];
+  const walk = (value, depth) => {
+    if (depth > 6 || value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    found.push(value);
+    for (const item of Object.values(value)) walk(item, depth + 1);
+  };
+  walk(record.reviews, 0);
+  return found;
+}
+
+/**
  * Recorded rejection events, wherever they sit in a history, in file order. A malformed chain has no
  * trustworthy order, so this does not ask which event is current: a rejection that is written down is
  * negative evidence and is reported by identity, never silently dropped with the rest of the chain.
  */
 export function recordedRejections(record) {
-  return reviewsOf(record)
+  return eventCandidates(record)
     .filter((event) => event && typeof event === "object" && !Array.isArray(event) && event.status === "rejected")
     .map((event) => ({
       id: typeof event.id === "string" ? event.id : null,
