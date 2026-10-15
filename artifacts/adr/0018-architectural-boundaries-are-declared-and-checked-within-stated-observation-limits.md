@@ -231,9 +231,24 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   used as a value, `typeof` aside for global objects) is `termination-indirect` or `require-call`, never OK. A static
   `import` or `export ... from` is read to its end with no token cutoff; one that does not reach `from "x"` is
   `ambiguous-token`. By construction fail-closed: the root set, the access forms above, a computed key, a value use
-  and an unterminated statement. Listed spelling (not by construction): which member names are treated as
-  terminating, loading or network-reaching, and which parenthesised forms count as grouping rather than a call. A
-  local variable named `self`, `window` or `global` is reported and must be acknowledged.
+  and an unterminated statement. A local variable named `self`, `window` or `global` is reported and must be
+  acknowledged.
+  **Allowlist, not denylist.** Before any member check, a string-literal member access whose key is an identifier
+  name (`X["name"]`, `X?.["name"]`) is rewritten to `X.name`, so every rule written for the dotted spelling covers the
+  bracketed one; an array literal or a computed object key follows no value and is left alone. A chain rooted at a
+  built-in namespace the declaration's reflection, termination, loading and network lists name is then judged
+  against a list of recognised-benign members: `Object` (`keys`, `values`, `entries`, `assign`, `freeze`,
+  `fromEntries`, `hasOwn`, `Object.prototype.hasOwnProperty`, and a few others; any other member, a computed key, or
+  the object aliased as a value is `reflection`), `process` (`argv`, `env`, `cwd`, `stdout`, ...; an unlisted member is
+  `termination-indirect`) and `module` (`exports`, `id`, `filename`, ...; an unlisted member is `require-call`).
+  A new or unknown member is therefore reported until it is added to the list, rather than passing until it is
+  named. A member of the global objects other than those named is not judged: a user-defined global cannot be told
+  from a built-in one by a token scan, so that spelling stays a stated limit. `import type` is read as a modifier
+  only where a type-only import follows (`type {`, `type *`, `type X from`); `import type, { A }` and
+  `import type from` bind `type` as the default. Evidence containment compares whole path segments, so an in-repo
+  name that merely begins with two dots (`..cache/note.md`) is inside the repository. Listed spelling (not by
+  construction): which names the benign lists contain, which member names are treated as terminating, loading or
+  network-reaching on the global objects, and which parenthesised forms count as grouping rather than a call.
   **Bare imports of repository packages.** A full workspace resolver is out of scope, so the check fails
   closed: the package names resolved are the `name` of `package.json` at the repository root and in each
   directory above an observed file. A bare import equal to, or under, such a name is

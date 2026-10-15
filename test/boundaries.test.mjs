@@ -34,6 +34,7 @@ import {
   loadDeclaration,
   DECLARATION_FILE,
   MECHANISMS,
+  SCAN_LISTS,
   DETECTED_MECHANISMS,
 } from "../scripts/boundaries.mjs";
 
@@ -1139,5 +1140,130 @@ test("a far-away import crossing a boundary is a violation through checkBoundari
     assert.ok(v.length > 0, JSON.stringify(v));
   } finally {
     rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Round 5: allowlist, not denylist. A string-literal member access is the dotted access; a chain
+// rooted at a built-in namespace that is not recognised-benign is reported.
+// ---------------------------------------------------------------------------------------------
+
+test("named regression: `import type, { Foo }` binds the default; an edge permitting only Foo rejects it", () => {
+  const r = scanSource('import type, { Foo } from "./x.mjs";');
+  assert.deepEqual(r.imports[0].names.sort(), ["Foo", "default"]);
+  const t = tiny(
+    { ...FILES, "src/app.mjs": 'import type, { run } from "./core.mjs";\n' },
+    baseDeclaration(),
+  );
+  assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), ["undeclared-interface"]);
+});
+test("a type-only import is still read as one", () => {
+  assert.deepEqual(scanSource('import type { Foo } from "./x.mjs";').imports[0].names, ["Foo"]);
+  assert.deepEqual(scanSource('import type * as ns from "./x.mjs";').imports[0].names, ["*"]);
+  assert.deepEqual(scanSource('import type Foo from "./x.mjs";').imports[0].names, ["default"]);
+  assert.deepEqual(scanSource('import type from "./x.mjs";').imports[0].names, ["default"]);
+});
+
+test("named regression: Object[\"getPrototypeOf\"] and Object[\"setPrototypeOf\"] are reflection", () => {
+  for (const src of ['Object["getPrototypeOf"](x);', 'Object["setPrototypeOf"](x, y);', "Object?.['getPrototypeOf'](x);"]) {
+    assert.ok(scanSource(src).mechanisms.reflection.length > 0, src);
+  }
+});
+
+test("named regression: evidence in a segment that merely starts with two dots is in the repository", () => {
+  const files = { ...FILES, "..cache/note.md": "evidence\n" };
+  const d = baseDeclaration();
+  d.members[0].evidence = ["..cache/note.md:1"];
+  const t = tiny(files, d);
+  assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), []);
+  const out = baseDeclaration();
+  out.members[0].evidence = ["../outside.md:1"];
+  const o = tiny(files, out);
+  assert.deepEqual(kinds(checkBoundaries(o.dir, o.declaration)), ["evidence-missing"]);
+});
+
+// Every member of every enumerated list, in every spelling of the access: the dotted and the
+// bracketed forms must give the same result, and every denylisted member must be reported.
+const NAMESPACES = ["globalThis", "global", "window", "self", "process", "module", "Object"];
+const MEMBERS = new Set([
+  ...SCAN_LISTS.terminating,
+  ...SCAN_LISTS.processReach,
+  "eval", "Function", "Reflect", "Proxy", "fetch", "WebSocket", "EventSource", "XMLHttpRequest",
+  "process", "module", "require", "getPrototypeOf", "setPrototypeOf", "__proto__", "constructor",
+  "defineProperty", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "prototype",
+  ...SCAN_LISTS.object, ...SCAN_LISTS.process, ...SCAN_LISTS.module,
+]);
+const SPELLINGS = [
+  [(ns, m) => `${ns}.${m}(1);`, (ns, m) => `${ns}["${m}"](1);`],
+  [(ns, m) => `${ns}?.${m}(1);`, (ns, m) => `${ns}?.["${m}"](1);`],
+  [(ns, m) => `(${ns}).${m}(1);`, (ns, m) => `(${ns})["${m}"](1);`],
+  [(ns, m) => `(${ns}?.${m})(1);`, (ns, m) => `(${ns}?.["${m}"])(1);`],
+  [(ns, m) => `x = ${ns}.${m};`, (ns, m) => `x = ${ns}['${m}'];`],
+  [(ns, m) => `const { a } = ${ns}.${m}.b;`, (ns, m) => `const { a } = ${ns}["${m}"].b;`],
+];
+const shape = (r) => JSON.stringify({ t: r.terminates, m: r.mechanisms });
+test(`generated family: ${NAMESPACES.length * MEMBERS.size * SPELLINGS.length} namespace x member x spelling cases, dot equals bracket`, () => {
+  const bad = [];
+  for (const ns of NAMESPACES) {
+    for (const m of MEMBERS) {
+      for (const [dot, bracket] of SPELLINGS) {
+        if (shape(scanSource(dot(ns, m))) !== shape(scanSource(bracket(ns, m)))) bad.push(`${dot(ns, m)} vs ${bracket(ns, m)}`);
+      }
+    }
+  }
+  assert.deepEqual(bad, []);
+});
+
+test("generated family: every denylisted member through its namespace is reported in the bracket form", () => {
+  const reported = (src) => notOk(scanSource(src));
+  const bad = [];
+  for (const m of SCAN_LISTS.terminating) for (const ns of ["process", "globalThis.process", "self.process"]) {
+    const src = `${ns}["${m}"](1);`;
+    if (!reported(src)) bad.push(src);
+  }
+  for (const m of SCAN_LISTS.processReach) {
+    const src = `process["${m}"]("x");`;
+    if (!reported(src)) bad.push(src);
+  }
+  for (const m of ["getPrototypeOf", "setPrototypeOf", "defineProperty", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "prototype", "__proto__", "constructor"]) {
+    const src = `Object["${m}"](x);`;
+    if (!reported(src)) bad.push(src);
+  }
+  for (const m of ["eval", "Function", "Reflect", "Proxy", "fetch", "WebSocket", "EventSource", "XMLHttpRequest"]) {
+    for (const ns of ["globalThis", "global", "window", "self"]) {
+      const src = `${ns}["${m}"]("x");`;
+      if (!reported(src)) bad.push(src);
+    }
+  }
+  assert.deepEqual(bad, []);
+});
+
+test("allowlist: an unrecognised member of Object, process or module is reported, never OK", () => {
+  for (const src of [
+    "Object.someFutureMethod(x);",
+    'Object["someFutureMethod"](x);',
+    "const O = Object; O.keys(x);",
+    "const { getPrototypeOf: g } = Object;",
+    'const { ["getPrototypeOf"]: g } = Object;',
+    "globalThis.Object.defineProperty(a, 'b', {});",
+    "process.someFutureMember();",
+    "module.someFutureMember;",
+  ]) {
+    assert.equal(notOk(scanSource(src)), true, src);
+  }
+});
+test("allowlist: recognised-benign Object, process and module uses stay OK", () => {
+  for (const src of [
+    "Object.keys(x); Object.entries(x); Object.assign({}, x); Object.freeze(x); Object.fromEntries(y);",
+    "Object.prototype.hasOwnProperty.call(x, 'k');",
+    "const o = Object(x); const p = new Object(); if (a instanceof Object) {}",
+    "const { keys, values } = Object;",
+    "const o = { Object: 1, process: 2 };",
+    "process.argv.slice(2); process.env.HOME; process.cwd(); process.stdout.write('x');",
+    "module.exports = { a };",
+    "return [\"a\", \"b\"];",
+    "const m = { [\"k\"]: 1 };",
+  ]) {
+    assert.equal(notOk(scanSource(src)), false, src);
   }
 });

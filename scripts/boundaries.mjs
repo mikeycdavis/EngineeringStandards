@@ -448,7 +448,74 @@ function builtinName(spec) {
  * of lines holding a recognised process-terminating form, and mechanisms maps each detected
  * mechanism id to the lines of constructs the scanner could not classify further.
  */
-function analyse(toks) {
+// Recognised-benign members of the built-in namespaces the declaration's reflection, termination,
+// loading and network lists name. A chain rooted at one of these namespaces that is not in its
+// list is REPORTED, never OK: the scanner allows what it recognises instead of denying what it
+// has thought of (ADR 0018).
+const OBJECT_BENIGN = new Set([
+  "keys", "values", "entries", "fromEntries", "assign", "freeze", "isFrozen", "seal", "isSealed",
+  "is", "hasOwn", "getOwnPropertyNames", "getOwnPropertySymbols", "create", "preventExtensions",
+  "isExtensible", "groupBy",
+]);
+const OBJECT_PROTOTYPE_BENIGN = new Set([
+  "hasOwnProperty", "propertyIsEnumerable", "isPrototypeOf", "toString", "toLocaleString", "valueOf",
+]);
+const PROCESS_BENIGN = new Set([
+  "argv", "argv0", "env", "cwd", "chdir", "platform", "arch", "version", "versions", "pid", "ppid",
+  "stdout", "stderr", "stdin", "hrtime", "uptime", "memoryUsage", "cpuUsage", "nextTick", "on",
+  "once", "off", "emitWarning", "execPath", "execArgv", "title", "release", "umask",
+]);
+const MODULE_BENIGN = new Set(["exports", "id", "filename", "path", "loaded", "paths"]);
+export const SCAN_LISTS = {
+  object: [...OBJECT_BENIGN],
+  process: [...PROCESS_BENIGN],
+  module: [...MODULE_BENIGN],
+  terminating: [...TERMINATING],
+  processReach: [...PROCESS_REACH.keys()],
+};
+
+const IDENT_NAME = /^[\p{ID_Start}_$][\p{ID_Continue}$‌‍]*$/u;
+const NOT_VALUE_KEYWORDS = new Set([
+  "return", "typeof", "void", "await", "yield", "delete", "new", "in", "of", "case", "throw", "else", "do", "instanceof",
+]);
+
+/**
+ * `X["name"]` and `X?.["name"]` with a string-literal key that is an identifier name are the same
+ * access as `X.name` and `X?.name`. They are rewritten to the dotted form before any member check,
+ * so every rule written for the dotted spelling covers the bracketed one. An array literal
+ * (`return ["x"]`) and a computed object key (`{ ["x"]: 1 }`) follow no value and are left alone.
+ */
+function normaliseMembers(raw) {
+  const out = [];
+  const isPunct = (t, v) => t?.t === "p" && t.v === v;
+  for (let k = 0; k < raw.length; k++) {
+    const t = raw[k];
+    if (isPunct(t, "[") && raw[k + 1]?.t === "str" && isPunct(raw[k + 2], "]") && IDENT_NAME.test(raw[k + 1].v)) {
+      const prev = out[out.length - 1];
+      const key = { t: "id", v: raw[k + 1].v, line: raw[k + 1].line };
+      if (isPunct(prev, ".") && isPunct(out[out.length - 2], "?")) {
+        out.push(key);
+        k += 2;
+        continue;
+      }
+      const valueEnd =
+        prev &&
+        ((prev.t === "id" && !NOT_VALUE_KEYWORDS.has(prev.v)) ||
+          prev.t === "str" || prev.t === "tmpl" || prev.t === "num" || prev.t === "re" ||
+          isPunct(prev, ")") || isPunct(prev, "]") || isPunct(prev, "}"));
+      if (valueEnd) {
+        out.push({ t: "p", v: ".", line: key.line }, key);
+        k += 2;
+        continue;
+      }
+    }
+    out.push(t);
+  }
+  return out;
+}
+
+function analyse(rawToks) {
+  const toks = normaliseMembers(rawToks);
   const imports = [];
   const terminates = [];
   const mechanisms = Object.fromEntries(DETECTED_MECHANISMS.map((m) => [m, []]));
@@ -534,6 +601,30 @@ function analyse(toks) {
     if (isId(q)) return { kind: "name", v: toks[q].v, next: q + 1 };
     return { kind: "none", next: q };
   };
+  // The chain after the built-in Object: only a recognised-benign member is OK. start is the first
+  // token of the whole expression (for the destructuring and `new Object` contexts).
+  const objectChain = (q, st, line, start, direct) => {
+    const a = readAccess(q, st);
+    if (a.kind === "name") {
+      if (OBJECT_BENIGN.has(a.v)) return;
+      if (a.v === "prototype") {
+        const b = readAccess(a.next, st);
+        if (b.kind === "name" && OBJECT_PROTOTYPE_BENIGN.has(b.v)) return;
+      }
+      flag("reflection", line);
+      return;
+    }
+    if (a.kind === "computed") { flag("reflection", line); return; }
+    // The object used as a value: a call, `new Object`, `instanceof Object` and `typeof Object`
+    // are benign; `const { names } = Object` is judged by its names; any other use is an alias.
+    if (direct && isP(q, "(")) return;
+    if (isId(start - 1, "new") || isId(start - 1, "instanceof") || isId(start - 1, "typeof")) return;
+    if (isP(start - 1, "=") && isP(start - 2, "}")) {
+      const bound = bracedBefore(start);
+      if (bound.every((b) => OBJECT_BENIGN.has(b))) return;
+    }
+    flag("reflection", line);
+  };
   // Classify the chain rooted at token k. Reports into terminates / mechanisms.
   const resolveRoot = (k) => {
     const tk = toks[k];
@@ -550,6 +641,7 @@ function analyse(toks) {
         if (a.kind === "name") {
           if (a.v === "eval" || a.v === "Function" || a.v === "Reflect" || a.v === "Proxy") flag("reflection", tk.line);
           else if (NETWORK_GLOBALS.has(a.v)) flag("network", tk.line);
+          else if (a.v === "Object") objectChain(a.next, st, tk.line, start, false);
           return;
         }
         // computed key, or the global object itself used as a value (typeof g is only a string)
@@ -561,6 +653,7 @@ function analyse(toks) {
         if (a.kind === "name") {
           if (TERMINATING.has(a.v)) terminates.push(tk.line);
           else if (PROCESS_REACH.has(a.v)) flag(PROCESS_REACH.get(a.v), tk.line);
+          else if (!PROCESS_BENIGN.has(a.v)) flag("termination-indirect", tk.line);
           return;
         }
         if (a.kind === "none" && isP(start - 1, "=") && isP(start - 2, "}")) {
@@ -574,7 +667,7 @@ function analyse(toks) {
       }
       // module
       if (a.kind === "name") {
-        if (a.v === "require") flag("require-call", tk.line);
+        if (a.v === "require" || !MODULE_BENIGN.has(a.v)) flag("require-call", tk.line);
         return;
       }
       // computed key, or the module object used as a value: it carries .require with it
@@ -643,7 +736,9 @@ function analyse(toks) {
         const names = [];
         const bindings = [];
         let x = k + 1;
-        if (isId(x, "type") && !isId(x + 1, "from")) x++;
+        // `type` is a modifier only where a type-only import follows: `type {`, `type *` or
+        // `type X from`. `import type from "x"` and `import type, { A } from "x"` bind `type`.
+        if (isId(x, "type") && (isP(x + 1, "{") || isP(x + 1, "*") || (isId(x + 1) && !isId(x + 1, "from") && isId(x + 2, "from")))) x++;
         while (x < j) {
           if (isP(x, "*")) {
             names.push("*");
@@ -690,6 +785,12 @@ function analyse(toks) {
       case "createRequire":
         flag("require-call", tk.line);
         break;
+      case "Object": {
+        if (afterDot || isP(k + 1, ":")) break;
+        const opens = groupingBefore(k);
+        objectChain(k + 1, { opens }, tk.line, k - opens, true);
+        break;
+      }
       case "eval":
       case "Function":
         // Any bare mention, not only a call: `(0, eval)(s)`, `const e = eval` and `const F = Function`
@@ -843,6 +944,11 @@ function ownerOf(members, file) {
   return members.find((m) => m.paths.some((p) => covers(p, file))) ?? null;
 }
 
+/** A relative path leaves the repository only by a whole `..` segment; `..cache` is an in-repo name. */
+function outsideRepo(rel) {
+  return rel === ".." || rel.startsWith(`..${path.sep}`) || rel.startsWith("../") || path.isAbsolute(rel);
+}
+
 /** "file" | "missing" | a description of why an evidence path is not a regular in-repository file. */
 function evidenceTarget(repoRoot, abs) {
   let st;
@@ -855,7 +961,7 @@ function evidenceTarget(repoRoot, abs) {
   if (!st.isFile()) return "not a regular file (a directory or special file)";
   try {
     const rel = path.relative(realpathSync(repoRoot), realpathSync(abs));
-    if (rel.startsWith("..") || path.isAbsolute(rel)) return "reached through a link that leaves the repository";
+    if (outsideRepo(rel)) return "reached through a link that leaves the repository";
   } catch {
     return "missing";
   }
@@ -1025,7 +1131,7 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
     const { file, line } = parseEvidence(e);
     const abs = path.resolve(repoRoot, file);
     const target = evidenceTarget(repoRoot, abs);
-    if (path.relative(path.resolve(repoRoot), abs).startsWith("..") || path.isAbsolute(path.relative(path.resolve(repoRoot), abs))) {
+    if (outsideRepo(path.relative(path.resolve(repoRoot), abs))) {
       violations.push({ kind: "evidence-missing", file, line, message: `${owner}: evidence '${e}' points outside the repository` });
     } else if (target === "missing") {
       violations.push({ kind: "evidence-missing", file, line, message: `${owner}: evidence '${e}' names a file that does not exist` });
