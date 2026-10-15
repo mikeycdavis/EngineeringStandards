@@ -209,7 +209,7 @@ const remediationOf = (establishedRejections) =>
   }).policyFindings[0].remediation;
 
 test("remediation: a rejection recorded at the trusted base is never advised to be deleted", () => {
-  for (const established of [new Set([RULE_ID]), null, undefined]) {
+  for (const established of [new Set([RULE_ID])]) {
     const text = remediationOf(established);
     assert.ok(!/remove the stray review record/.test(text), `advised deletion: ${text}`);
     assert.match(text, /without rewriting history/);
@@ -224,6 +224,57 @@ test("remediation: a rejection that is not at the trusted base may be removed, a
   assert.match(text, /remove the stray review record/);
   assert.match(text, /not recorded at the trusted base/);
   assert.ok(!/append-only \(ADR/.test(text));
+});
+
+test("remediation: with the base unknown, neither deletion nor a base-enforced removal claim is made", () => {
+  for (const unknown of [null, undefined]) {
+    const text = remediationOf(unknown);
+    assert.ok(!/remove the stray review record/.test(text), `advised deletion: ${text}`);
+    assert.ok(!/stays effective/.test(text), `claimed base enforcement: ${text}`);
+    assert.ok(!/is reported as review-history-append-only/.test(text));
+    assert.ok(!/is recorded at the trusted base/.test(text));
+    assert.match(text, /no trusted base could be read/);
+    assert.match(text, /cannot be verified/);
+    assert.match(text, /append-only once committed/);
+    assert.match(text, /supersedes\s+the rejection/);
+  }
+});
+
+// Codex P2 (compliance.mjs lookup): an older rejection followed by an approval is still a rejection
+// recorded on the rule, so it is found even when no base filters the evaluated document.
+test("a rejection followed by an approval on a not-applicable rule is flagged with no trusted base", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-superseded-"));
+  try {
+    const yaml =
+      policyYaml({ withRejection: true }) +
+      [
+        '      - id: "p2"',
+        "        status: approved",
+        '        supersedes: "p1"',
+        '        reviewedBy: "synthetic-reviewer"',
+        '        reviewedAt: "2026-10-02"',
+        '        evidence: "synthetic approval"',
+        '        reviewerRole: "synthetic-role"',
+        "        reviewedAgainst:",
+        '          revision: "1111111111111111111111111111111111111111"',
+        '          tree: "2222222222222222222222222222222222222222"',
+        '          digest: "abcdef1234567890"',
+        '          digestAlgorithm: "git-blob-set-sha256-v1"',
+        "          source: git",
+        "          paths:",
+        '            - "synthetic.txt"',
+      ].join(String.fromCharCode(10)) +
+      String.fromCharCode(10);
+    await writeFile(path.join(dir, "project-policy.yml"), yaml);
+    const { report } = validate(dir);
+    const stray = report.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
+    assert.ok(stray, "an older rejection followed by an approval vanished from the lookup");
+    assert.match(stray.message, /"p1"/);
+    assert.ok(!/remove the stray review record/.test(stray.remediation));
+    assert.match(stray.remediation, /no trusted base could be read/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // CLI: the base is read from git, so the same rejection gets the right advice in each position.
@@ -280,11 +331,14 @@ test("CLI: a rejection added only after the merge base may be removed", async ()
   }
 });
 
-test("CLI: with no trusted base the advice is the conservative one", async () => {
+test("CLI: with no trusted base the advice says removal cannot be verified", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "st47-nobase-"));
   try {
     await writeFile(path.join(dir, "project-policy.yml"), policyYaml({ withRejection: true }));
-    assert.ok(!/remove the stray review record/.test(strayRemediation(dir)));
+    const text = strayRemediation(dir);
+    assert.ok(!/remove the stray review record/.test(text));
+    assert.ok(!/stays effective/.test(text));
+    assert.match(text, /cannot be verified/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

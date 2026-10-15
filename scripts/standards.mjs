@@ -4083,6 +4083,8 @@ export async function main(args) {
   const verdict = evaluate({
     catalog,
     policy: evaluationDocument,
+    // The unfiltered recorded histories, for the not-applicable rejection lookup only.
+    recordedAttestations: headAttestations,
     findings,
     evaluated: evaluatedThisRun,
     today: new Date().toISOString().slice(0, 10),

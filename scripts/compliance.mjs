@@ -36,7 +36,7 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null, recordedAttestations = null }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -107,7 +107,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
       // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
       // alone, so a malformed history is still reported by identity (see recordedRejections).
-      const stray = recordedRejections(attestations[rule.id]);
+      // Looked up in the RETAINED history first (`recordedAttestations`, the unfiltered policy):
+      // when no trusted base exists the evaluated document keeps only chains whose CURRENT event is
+      // a rejection, so an older rejection followed by an approval would otherwise vanish from this
+      // lookup. Falls back to the evaluated record, which may hold a base-kept rejection the head
+      // no longer records.
+      const retained = recordedRejections(recordedAttestations?.[rule.id]);
+      const stray = retained.length > 0 ? retained : recordedRejections(attestations[rule.id]);
       if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }
@@ -356,11 +362,14 @@ function displaySafe(value) {
  * `establishedRejections` is the Set of rule ids whose rejection is recorded at the trusted base
  * (ADR 0005, ST-17), or null when the base could not be read. A rejection there is append-only
  * history: removing it is reported as review-history-append-only and the base rejection stays
- * effective, so deletion cannot clear this finding. Unknown is treated as established: deletion is
- * advised only when the rejection is known not to be at the base.
+ * effective, so deletion cannot clear this finding. Unknown (null) is a third case, not a claim
+ * about the base: removal is neither advised nor said to be reported, because with no base there is
+ * nothing to enforce either; deletion is advised only when the rejection is known not to be at the base.
  */
 function strayRejectionFinding(ruleId, rejections, establishedRejections = null) {
-  const established = !(establishedRejections instanceof Set) || establishedRejections.has(ruleId);
+  // Three cases: established at the base, not at the base, base unknown (null).
+  const baseKnown = establishedRejections instanceof Set;
+  const established = baseKnown && establishedRejections.has(ruleId);
   const named = rejections
     .map((r) =>
       [
@@ -388,13 +397,19 @@ function strayRejectionFinding(ruleId, rejections, establishedRejections = null)
       `${ruleId} is declared not-applicable but a rejection is recorded on it (${named}). ` +
       "The verdict is unchanged: the declaration stands and the rejection is not evaluated.",
     remediation: established
-      ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base (or the base could not be read), " +
-        "and review history is append-only (ADR 0005, ST-17), so deleting or relabeling it is reported as review-history-append-only " +
+      ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base, and review history is " +
+        "append-only (ADR 0005, ST-17), so deleting or relabeling it is reported as review-history-append-only " +
         "and the base rejection stays effective. Remove the not-applicable declaration if the rule applies, then record a later " +
         "review that supersedes the rejection (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +
         "No removal path exists for a rejection recorded at the base on a rule that stays not-applicable; that is the owner's decision."
-      : "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record, which is " +
-        "permitted only because this rejection is not recorded at the trusted base and so is not yet append-only history.",
+      : baseKnown
+        ? "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record, which is " +
+          "permitted only because this rejection is not recorded at the trusted base and so is not yet append-only history."
+        : "Reconcile the two without rewriting history: no trusted base could be read here, so whether this rejection is already " +
+          "recorded there cannot be verified, and neither can the removal of it; review history is append-only once committed " +
+          "(ADR 0005, ST-17). Do not delete or relabel it on the strength of this run; supply the base (for example git fetch origin) " +
+          "and run again. Remove the not-applicable declaration if the rule applies, then record a later review that supersedes " +
+          "the rejection (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict.",
   };
 }
 
