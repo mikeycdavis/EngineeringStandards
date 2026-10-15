@@ -268,14 +268,20 @@ const isAsciiIdPart = (c) => /[A-Za-z0-9_$]/.test(c);
  * Tokens: { t: "id" | "str" | "num" | "re" | "tmpl" | "p", v, line }. Comments are dropped. A
  * template literal yields the tokens of its ${...} expressions followed by one "tmpl" token.
  */
+// ECMAScript line terminators: LF, CR, U+2028, U+2029 (CRLF is one). A comment, string, regex or
+// template ends or counts at every one of them, never at LF alone.
+const isLineTerminator = (ch) => ch === "\n" || ch === "\r" || ch === String.fromCharCode(0x2028) || ch === String.fromCharCode(0x2029);
+
 export function tokenize(src, ambiguous = "regex") {
+  // Lines the terminator at index k adds; the LF of a CRLF pair carries the count.
+  const breaks = (k) => (isLineTerminator(src[k]) && !(src[k] === "\r" && src[k + 1] === "\n") ? 1 : 0);
   const toks = [];
   toks.ambiguousLines = [];
   toks.unclassifiedLines = [];
   const n = src.length;
   let i = 0;
   let line = 1;
-  if (src.startsWith("#!")) while (i < n && src[i] !== "\n") i++;
+  if (src.startsWith("#!")) while (i < n && !isLineTerminator(src[i])) i++;
 
   function regexAllowed() {
     const prev = toks[toks.length - 1];
@@ -300,12 +306,12 @@ export function tokenize(src, ambiguous = "regex") {
     let depth = 0;
     while (i < n) {
       const c = src[i];
-      if (c === "\n") { line++; i++; continue; }
-      if (c === " " || c === "\t" || c === "\r" || c === "\f" || c === "\v" || c === " " || c === "﻿") { i++; continue; }
-      if (c === "/" && src[i + 1] === "/") { while (i < n && src[i] !== "\n") i++; continue; }
+      if (isLineTerminator(c)) { line += breaks(i); i++; continue; }
+      if (c === " " || c === "\t" || c === "\f" || c === "\v" || c === " " || c === "﻿") { i++; continue; }
+      if (c === "/" && src[i + 1] === "/") { while (i < n && !isLineTerminator(src[i])) i++; continue; }
       if (c === "/" && src[i + 1] === "*") {
         i += 2;
-        while (i < n && !(src[i] === "*" && src[i + 1] === "/")) { if (src[i] === "\n") line++; i++; }
+        while (i < n && !(src[i] === "*" && src[i + 1] === "/")) { line += breaks(i); i++; }
         i += 2;
         continue;
       }
@@ -318,9 +324,8 @@ export function tokenize(src, ambiguous = "regex") {
             // Decode the escape to the character it denotes, as the engine does, so a specifier or
             // member name written with escapes is read as its value. A malformed escape is reported.
             const e = src[i + 1] ?? "";
-            if (e === "\n") { line++; i += 2; continue; }
             if (e === "\r") { i += src[i + 2] === "\n" ? 3 : 2; line++; continue; }
-            if (e === "\u2028" || e === "\u2029") { i += 2; continue; }
+            if (isLineTerminator(e)) { line++; i += 2; continue; }
             if (e === "x") {
               const h = src.slice(i + 2, i + 4);
               if (/^[0-9a-fA-F]{2}$/.test(h)) { v += String.fromCharCode(parseInt(h, 16)); i += 4; continue; }
@@ -347,7 +352,9 @@ export function tokenize(src, ambiguous = "regex") {
             i += 2;
             continue;
           }
-          if (src[i] === "\n") break;
+          // U+2028 and U+2029 are legal inside a string literal but still count as lines.
+          if (src[i] === "\n" || src[i] === "\r") break;
+          line += breaks(i);
           v += src[i];
           i++;
         }
@@ -360,10 +367,15 @@ export function tokenize(src, ambiguous = "regex") {
         i++;
         while (i < n) {
           const ch = src[i];
-          if (ch === "\\") { if (src[i + 1] === "\n") line++; i += 2; continue; }
+          if (ch === "\\") {
+            if (src[i + 1] === "\r") { i += src[i + 2] === "\n" ? 3 : 2; line++; continue; }
+            if (isLineTerminator(src[i + 1])) line++;
+            i += 2;
+            continue;
+          }
           if (ch === "`") { i++; break; }
           if (ch === "$" && src[i + 1] === "{") { i += 2; run(true); continue; }
-          if (ch === "\n") line++;
+          line += breaks(i);
           i++;
         }
         toks.push({ t: "tmpl", v: "", line: start });
@@ -376,7 +388,7 @@ export function tokenize(src, ambiguous = "regex") {
         while (i < n) {
           const ch = src[i];
           if (ch === "\\") { i += 2; continue; }
-          if (ch === "\n") break;
+          if (isLineTerminator(ch)) break;
           if (ch === "[") inClass = true;
           else if (ch === "]") inClass = false;
           else if (ch === "/" && !inClass) { i++; break; }

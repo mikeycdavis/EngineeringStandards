@@ -1432,3 +1432,25 @@ test("a crossing hidden behind an escaped specifier is a violation through check
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// Round 9: every ECMAScript line terminator ends a comment and counts as a line.
+for (const [name, lt] of [["LF", "\n"], ["CR", "\r"], ["CRLF", "\r\n"], ["U+2028", String.fromCharCode(0x2028)], ["U+2029", String.fromCharCode(0x2029)]]) {
+  test(`named regression: an import after a // comment ended by ${name} is seen, at the right line`, () => {
+    const r = scanSource(`// hidden${lt}import "./core.mjs";${lt}import "./b.mjs";`);
+    assert.deepEqual(specs(r), ["./core.mjs", "./b.mjs"]);
+    assert.deepEqual(r.imports.map((i) => i.line), [2, 3]);
+  });
+  test(`line numbers: ${name} inside a block comment, template and string continuation each count once`, () => {
+    const bs = String.fromCharCode(92);
+    const src = [`/* a${lt}b */`, `const t = \`x${lt}y\`;`, `const s = "p${bs}${lt}q";`, `import "./c.mjs";`].join(lt);
+    const r = scanSource(src);
+    const expected = 1 + 1 + 1 + 1 + (lt === "\r\n" ? 0 : 0) + 3; // 1 inside comment, 1 inside template, 1 continuation, 3 separators... computed below
+    void expected;
+    const wantLine = src.split(/\r\n|[\r\n\u2028\u2029]/).findIndex((l) => l.startsWith('import "./c.mjs"')) + 1;
+    assert.equal(r.imports[0].line, wantLine, name);
+  });
+}
+test("a non-terminator ends neither a comment nor a line", () => {
+  const r = scanSource('// a\u3000b\fimport "./x.mjs";\nimport "./y.mjs";');
+  assert.deepEqual(specs(r), ["./y.mjs"]);
+});
