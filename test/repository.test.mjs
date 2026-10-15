@@ -1922,9 +1922,10 @@ test("ST-44: the recovery wording names the shapes that can be recovered and the
   for (const file of ["INSTRUCTIONS.md", "artifacts/adr/0005-attestations-are-recorded-human-evidence.md"]) {
     const text = readFileSync(path.join(REPO_ROOT, file), "utf8").replace(/\s+/g, " ");
     assert.match(text, /inside a well-formed list of reviews/, `${file} must scope the unrecoverable shape`);
-    assert.match(text, /empty or not a list/, `${file} must name the recoverable shape`);
+    assert.match(text, /null or an empty list/, `${file} must name the recoverable shape`);
     assert.match(text, /begins with a genesis event/, `${file} must say what the replacement is`);
   }
   assert.match(MALFORMED_HISTORY_REMEDIATION, /malformed events inside a well-formed list/);
-  assert.match(MALFORMED_HISTORY_REMEDIATION, /empty or not a list/);
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /absent, null or an empty list/);
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /not a list .* may hide recorded events/);
 });

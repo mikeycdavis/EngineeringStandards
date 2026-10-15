@@ -130,8 +130,9 @@ no recorded rejection establishes nothing and is never read as an approval. A ma
 only while its malformed events are in an unmerged change: once it is on the trusted default branch the
 append-only comparison rejects both editing and appending of malformed events inside a well-formed list of
 reviews, and no recovery path exists yet for them (a known limitation that needs an owner decision). A `reviews`
-container that is empty or not a list is the exception: the comparison reads it as holding no events, so
-replacing it with a well-formed list that begins with a genesis event is accepted. All of this applies to an attestable rule that
+container that is not a list (a mapping or a scalar) may hide recorded events, so it is unverifiable and cannot
+be replaced either. Only a `reviews` container that is null or an empty list holds no events: replacing it with
+a well-formed list that begins with a genesis event is accepted. All of this applies to an attestable rule that
 applies, and a rule the catalog does not mark attestable is never cleared by a review: a rule declared `not-applicable` is not evaluated, so a rejection recorded for it is not consulted
 (the evaluator returns at the applicability declaration, before any review history is read). This is an
 owner-reviewable choice. Reviewer identity is

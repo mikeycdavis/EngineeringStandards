@@ -250,18 +250,48 @@ async function fixtureWithBase(baseSource) {
 const policyHead = ['standardVersion: "2.0.0"', "attestations:", "  testing.synthetic:"].join("\n");
 const genesisSource = policySource([event({ id: "g1" })]);
 
-test("trusted history whose reviews container is empty or not a list can be replaced by a well-formed list", async () => {
+test("trusted history whose reviews container is null or an empty list can be replaced by a well-formed list", async () => {
   const shapes = {
-    "empty list": `${policyHead}\n    reviews: []\n`,
-    "null container": `${policyHead}\n    reviews:\n`,
-    "scalar container": `${policyHead}\n    reviews: "oops"\n`,
-    "mapping container": `${policyHead}\n    reviews:\n      a: 1\n`,
+    "empty list": `${policyHead}
+    reviews: []
+`,
+    "null container": `${policyHead}
+    reviews:
+`,
   };
   for (const [name, base] of Object.entries(shapes)) {
     const fixture = await fixtureWithBase(base);
     try {
       const result = await verify(fixture, genesisSource);
       assert.equal(result.appendedEvents, 1, name);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a non-list reviews container may hide events and cannot be replaced, so a recorded rejection is not erasable", async () => {
+  const shapes = {
+    "scalar container": `${policyHead}
+    reviews: "oops"
+`,
+    "mapping container": `${policyHead}
+    reviews:
+      a: 1
+`,
+    "mapping holding a rejected event": `${policyHead}
+    reviews:
+      id: "r1"
+      status: "rejected"
+      reviewedBy: "synthetic-reviewer"
+`,
+  };
+  const approvedGenesis = policySource([event({ id: "g1", status: "approved" })]);
+  for (const [name, base] of Object.entries(shapes)) {
+    const fixture = await fixtureWithBase(base);
+    try {
+      await assert.rejects(verify(fixture, approvedGenesis), ReviewHistoryVerificationError, name + ": approved genesis");
+      await assert.rejects(verify(fixture, genesisSource), ReviewHistoryVerificationError, name + ": genesis");
     } finally {
       await rm(fixture.dir, { recursive: true, force: true });
     }

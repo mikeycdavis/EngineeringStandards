@@ -168,6 +168,13 @@ export async function verifyReviewHistoryAppend({
       fail(`${ruleId}: base review history is not a mapping`);
     }
     if (!Object.hasOwn(proposedHistories, ruleId)) violation(`${ruleId}: prior review history was deleted`);
+    // A `reviews` container that is present, not null and not a list may hide events (a mapping that
+    // holds an event reads as zero events). Replacing it could erase a recorded rejection, so it is
+    // unverifiable and never recoverable by replacement. Only an absent or null container, or an empty
+    // list, is zero events.
+    if (Object.hasOwn(priorRecord, "reviews") && priorRecord.reviews !== null && !Array.isArray(priorRecord.reviews)) {
+      violation(`${ruleId}: base reviews is not a list and may hide recorded events; it cannot be replaced`);
+    }
     const priorReviews = reviewsOf(priorRecord);
     const proposedRecord = proposedHistories[ruleId];
     if (!proposedRecord || typeof proposedRecord !== "object" || Array.isArray(proposedRecord)) {
