@@ -3854,6 +3854,10 @@ export async function main(args) {
   const policy = await loadProjectPolicy(root);
   const today = new Date().toISOString().slice(0, 10);
   const exemptionCheck = { problems: [], bound: [] };
+  // One relative-path index, built once: pins x files would be quadratic near the file cap.
+  const fileByRel = new Map(files.map((f) => [rel(f), f]));
+  // A valid pin on a rule declared not-applicable, seen by `validate`: a contradictory policy.
+  let applicabilityConflict = false;
   // Pinned non-text files whose one-off digest read failed: unreadable, not budget-limited.
   const digestReadFailed = new Set();
   if (Array.isArray(policy.document?.fixtureExemptions)) {
@@ -3881,6 +3885,7 @@ export async function main(args) {
     // applicability, so it keeps classifying the pinned departure on its own terms.
     checked.valid = checked.valid.filter((entry) => {
       if (!validating || !notApplicable.has(entry.rule)) return true;
+      applicabilityConflict = true;
       exemptionCheck.problems.push({
         index: entry.index,
         id: "fixture-exemption-rule-not-applicable",
@@ -3898,7 +3903,7 @@ export async function main(args) {
     // version a second read could disagree with: it is hashed once, here.
     for (const entry of checked.valid) {
       if (run.readDigests.has(entry.path)) continue;
-      const abs = files.find((f) => rel(f) === entry.path);
+      const abs = fileByRel.get(entry.path);
       if (abs === undefined || TEXT_EXT.has(path.extname(abs))) continue;
       try {
         run.readDigests.set(entry.path, await contentDigestOfStream(createReadStream(abs)));
@@ -4031,7 +4036,12 @@ export async function main(args) {
     return false;
   };
   for (const entry of exemptionCheck.bound) {
-    if (entry.state === "matches" && run.fixtureExemptionsUsed.has(`${entry.rule}\0${entry.path}`)) continue;
+    if (entry.state === "matches" && run.fixtureExemptionsUsed.has(`${entry.rule}\0${entry.path}`)) {
+      // A used pin over a file read only in part still stands for the prefix that was searched, but
+      // the waiver is not established over the whole file: say so.
+      const usedAbs = fileByRel.get(entry.path);
+      if (usedAbs === undefined || !run.truncated.has(usedAbs)) continue;
+    }
     // A file this run did not read in full cannot show that its rule "found no violation": the read
     // budget was spent before it was retained, or a violation may lie past the truncation boundary.
     // That is "not established", never "stale", and it must not tell anyone to remove the entry.
@@ -4046,7 +4056,7 @@ export async function main(args) {
       entry.state === "not-scanned" &&
       surfaceLoss.dirs.some((d) => entry.path.startsWith(rel(d) + "/") || rel(d) === "");
     if (entry.state === "matches" || entry.state === "not-read" || cappedAway || underUnreadableDir) {
-      const abs = files.find((f) => rel(f) === entry.path);
+      const abs = fileByRel.get(entry.path);
       const incomplete =
         entry.state === "not-read" ||
         abs === undefined ||
@@ -4597,6 +4607,9 @@ export async function main(args) {
   // (Standard 30 R1, ADR 0004). A required-level failure is exit 1 regardless of score.
   if (policy.error || !policy.document) return done(EXIT_INVOCATION);
   if (report.status === "NON_COMPLIANT") return done(EXIT_FINDINGS);
+  // A policy that declares a rule not-applicable AND pins a fixture departure from it contradicts
+  // itself (`standards policy` rejects the pair). It is not a pass: exit as findings.
+  if (applicabilityConflict) return done(EXIT_FINDINGS);
   // Standard 45 R6: a must-never rule nobody examined must not gate-pass CI. This is exit 1 rather
   // than exit 2 because it is a statement about the project, not about the configuration — the policy
   // read fine, and what it says is that a prohibition went unexamined.
