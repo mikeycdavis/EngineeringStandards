@@ -3924,6 +3924,15 @@ export async function main(args) {
       }
     }
     exemptionCheck.bound = await bindEntries(checked.valid, { scanned: new Set(files.map((f) => rel(f))), digests: run.readDigests });
+    // A content-derived pin over a file read only in part is never bound: the digest covers bytes no
+    // detector inspected, so the hit stays live and the entry is reported "not established". An
+    // index-only rule (an env file) is judged by the repository index and is unaffected.
+    exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
+      const abs = fileByRel.get(entry.path);
+      return entry.state === "matches" && abs !== undefined && run.truncated.has(abs) && !INDEX_ONLY_FIXTURE_RULES.has(entry.rule)
+        ? { ...entry, state: "not-read" }
+        : entry;
+    });
     run.useFixtureExemptions(exemptionCheck.bound);
   }
 

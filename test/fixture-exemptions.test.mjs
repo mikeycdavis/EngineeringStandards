@@ -803,12 +803,13 @@ test("audit stays independent of applicability: a pin on a not-applicable rule i
   assert.equal(findingsOf(res, "fixture-exempted").length, 1);
 });
 
-test("a used pin over a truncated file is still reported as not established", async () => {
+test("a content pin over a truncated file is not bound: the hit stays live and the pin is not established", async () => {
   const big = CERT + (`// ${"x".repeat(80)}${NL}`).repeat(14000);
   const root = await repo({ "test/fixtures/bad/big.js": big }, [pin("test/fixtures/bad/big.js", big, CERT_RULE)]);
   const res = cli("validate", root);
-  assert.equal(findingsOf(res, "fixture-exempted").length, 1, JSON.stringify(res.json.findings.map((f) => f.id)));
+  assert.equal(findingsOf(res, "fixture-exempted").length, 0, "a truncated content pin must not waive: "+JSON.stringify(res.json.findings.map((f) => f.id)));
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 1);
+  assert.ok(res.json.findings.some((f) => f.rule === CERT_RULE && !f.fixtureExemption), "the observed violation stays live");
 });
 
 test("a used index-only env pin over a truncated .env.json is not reported stale or not established", async () => {
