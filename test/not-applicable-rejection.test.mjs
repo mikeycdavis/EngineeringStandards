@@ -194,3 +194,98 @@ test("CLI: validate emits the policy-compliance finding and the verdict equals t
     await rm(withoutDir, { recursive: true, force: true });
   }
 });
+
+// --- Remediation must not advise rewriting append-only history (Codex P2, compliance.mjs remediation).
+
+const remediationOf = (establishedRejections) =>
+  evaluate({
+    catalog: { rules: new Map([[RULE_ID, RULE]]), aliases: new Map() },
+    policy: { applicability: { [RULE_ID]: NOT_APPLICABLE }, attestations: { [RULE_ID]: { reviews: [REJECTION] } } },
+    findings: [],
+    evaluated: [],
+    today: "2026-10-12",
+    freshness: new Map(),
+    ...(establishedRejections === undefined ? {} : { establishedRejections }),
+  }).policyFindings[0].remediation;
+
+test("remediation: a rejection recorded at the trusted base is never advised to be deleted", () => {
+  for (const established of [new Set([RULE_ID]), null, undefined]) {
+    const text = remediationOf(established);
+    assert.ok(!/remove the stray review record/.test(text), `advised deletion: ${text}`);
+    assert.match(text, /without rewriting history/);
+    assert.ok(!/not recorded at the trusted base/.test(text));
+    assert.match(text, /ADR 0005/);
+    assert.match(text, /supersedes the rejection/);
+  }
+});
+
+test("remediation: a rejection that is not at the trusted base may be removed, and says why", () => {
+  const text = remediationOf(new Set(["some.other.rule"]));
+  assert.match(text, /remove the stray review record/);
+  assert.match(text, /not recorded at the trusted base/);
+  assert.ok(!/append-only \(ADR/.test(text));
+});
+
+// CLI: the base is read from git, so the same rejection gets the right advice in each position.
+function git(dir, ...args) {
+  const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", ...args], {
+    cwd: dir,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+async function repoWith({ committedRejection, headRejection }) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-git-"));
+  git(dir, "init", "-q", "-b", "main");
+  await writeFile(path.join(dir, "project-policy.yml"), policyYaml({ withRejection: committedRejection }));
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+  git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  await writeFile(path.join(dir, "project-policy.yml"), policyYaml({ withRejection: headRejection }));
+  return dir;
+}
+const strayRemediation = (dir) =>
+  validate(dir).report.findings.find((f) => f.id === "rejection-on-not-applicable-rule")?.remediation;
+
+test("CLI: a rejection committed at the merge base gets the append-only advice, and deleting it does not clear the finding", async () => {
+  const kept = await repoWith({ committedRejection: true, headRejection: true });
+  const deleted = await repoWith({ committedRejection: true, headRejection: false });
+  try {
+    assert.match(strayRemediation(kept), /without rewriting history/);
+    assert.ok(!/remove the stray review record/.test(strayRemediation(kept)));
+    // The advice the old text gave: deleting it. The finding stays and a history violation is added.
+    const after = validate(deleted).report;
+    const stray = after.findings.find((f) => f.id === "rejection-on-not-applicable-rule");
+    assert.ok(stray, "deleting an established rejection cleared the finding");
+    assert.equal(after.findings.find((f) => f.id === "review-history-append-only")?.severity, "error");
+    assert.match(stray.remediation, /without rewriting history/);
+    assert.ok(!/not recorded at the trusted base/.test(stray.remediation));
+  } finally {
+    await rm(kept, { recursive: true, force: true });
+    await rm(deleted, { recursive: true, force: true });
+  }
+});
+
+test("CLI: a rejection added only after the merge base may be removed", async () => {
+  const added = await repoWith({ committedRejection: false, headRejection: true });
+  try {
+    const text = strayRemediation(added);
+    assert.match(text, /remove the stray review record/);
+    assert.match(text, /not recorded at the trusted base/);
+  } finally {
+    await rm(added, { recursive: true, force: true });
+  }
+});
+
+test("CLI: with no trusted base the advice is the conservative one", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-nobase-"));
+  try {
+    await writeFile(path.join(dir, "project-policy.yml"), policyYaml({ withRejection: true }));
+    assert.ok(!/remove the stray review record/.test(strayRemediation(dir)));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

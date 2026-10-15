@@ -36,7 +36,7 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -108,7 +108,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
       // alone, so a malformed history is still reported by identity (see recordedRejections).
       const stray = recordedRejections(attestations[rule.id]);
-      if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray));
+      if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }
 
@@ -352,7 +352,15 @@ function displaySafe(value) {
   return out;
 }
 
-function strayRejectionFinding(ruleId, rejections) {
+/**
+ * `establishedRejections` is the Set of rule ids whose rejection is recorded at the trusted base
+ * (ADR 0005, ST-17), or null when the base could not be read. A rejection there is append-only
+ * history: removing it is reported as review-history-append-only and the base rejection stays
+ * effective, so deletion cannot clear this finding. Unknown is treated as established: deletion is
+ * advised only when the rejection is known not to be at the base.
+ */
+function strayRejectionFinding(ruleId, rejections, establishedRejections = null) {
+  const established = !(establishedRejections instanceof Set) || establishedRejections.has(ruleId);
   const named = rejections
     .map((r) =>
       [
@@ -379,8 +387,14 @@ function strayRejectionFinding(ruleId, rejections) {
     message:
       `${ruleId} is declared not-applicable but a rejection is recorded on it (${named}). ` +
       "The verdict is unchanged: the declaration stands and the rejection is not evaluated.",
-    remediation:
-      "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record if the rejection no longer describes this project.",
+    remediation: established
+      ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base (or the base could not be read), " +
+        "and review history is append-only (ADR 0005, ST-17), so deleting or relabeling it is reported as review-history-append-only " +
+        "and the base rejection stays effective. Remove the not-applicable declaration if the rule applies, then record a later " +
+        "review that supersedes the rejection (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +
+        "No removal path exists for a rejection recorded at the base on a rule that stays not-applicable; that is the owner's decision."
+      : "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record, which is " +
+        "permitted only because this rejection is not recorded at the trusted base and so is not yet append-only history.",
   };
 }
 

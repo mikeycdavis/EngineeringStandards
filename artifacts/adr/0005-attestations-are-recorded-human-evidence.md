@@ -138,3 +138,10 @@ are visible, never raw). The finding carries no rule, so it cannot fail, pass or
 a well-formed and a malformed history alike, and not at all for a not-applicable rule that records no
 rejection. An applicable rule is unchanged: its recorded rejection still fails it. The rejection is not
 evaluated while the declaration stands; reconciling the two is the owner's decision.
+
+The finding's remediation depends on where the rejection sits. A rejection recorded at the trusted base (or when no
+base can be read) is established append-only history, so the remediation does not advise deleting it: that is reported
+as `review-history-append-only`, the base rejection stays effective, and the finding remains. It advises removing the
+not-applicable declaration and recording a later review that supersedes the rejection, or leaving both in place. Only a
+rejection not present at the base is advised to be removed. There is still no removal path for an established
+rejection on a rule that stays not-applicable; that is the owner's decision.

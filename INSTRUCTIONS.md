@@ -237,7 +237,10 @@ A review history that records a **rejection** on a rule you declared not-applica
 verdict: the declaration stands, and the rule stays `skipped` / `not-applicable`. `validate` reports it as a
 `policy-compliance` finding (in the JSON `findings` and under *Policy findings* in the human report), naming
 the rule and the rejection's id, reviewer and date with control characters escaped. Either remove the
-declaration, because the rule applies, or remove the stray review record; a not-applicable rule with no
+declaration, because the rule applies (and then supersede the rejection with a later review), or, only when the
+rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record. A
+rejection already at the merge base is append-only history: deleting it is a `review-history-append-only`
+violation, the base rejection stays effective and the finding remains. A not-applicable rule with no
 rejection emits nothing.
 
 **Some rules are non-exemptible.** `security.no-secrets-in-artifacts` and `ai.destructive-approval`

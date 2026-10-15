@@ -4087,6 +4087,10 @@ export async function main(args) {
     evaluated: evaluatedThisRun,
     today: new Date().toISOString().slice(0, 10),
     freshness,
+    // Rules whose rejection is already at the trusted base (append-only); null when unknown.
+    establishedRejections: Array.isArray(reviewHistoryBase.baseRejectionRules)
+      ? new Set(reviewHistoryBase.baseRejectionRules)
+      : null,
   });
 
   // A rejection recorded on a rule declared not-applicable is surfaced as a finding that carries no

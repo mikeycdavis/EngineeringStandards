@@ -318,6 +318,7 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
       ref,
       baseCommit,
       baseTree,
+      baseRejectionRules: baseRejectionRules(repository, baseCommit, relative),
       headIsBase: baseCommit === head,
       appendedEvents: result.appendedEvents,
       histories: result.histories,
@@ -337,11 +338,43 @@ export async function verifyAgainstTrustedBase({ repositoryPath, policyPath, pro
         } catch {
           baseAttestations = {};
         }
-        return { status: "violated", reason: error.message, ref, baseCommit, baseTree, baseAttestations };
+        return {
+          status: "violated",
+          reason: error.message,
+          ref,
+          baseCommit,
+          baseTree,
+          baseAttestations,
+          baseRejectionRules: rejectionRulesOf(baseAttestations),
+        };
       }
       return unverified(error.message, { ref, baseCommit });
     }
     throw error;
+  }
+}
+
+/** Rule ids whose recorded history holds a rejection anywhere (the ST-47 finding reads it the same way). */
+function rejectionRulesOf(attestations) {
+  if (!attestations || typeof attestations !== "object" || Array.isArray(attestations)) return [];
+  return Object.keys(attestations)
+    .filter((ruleId) => recordedRejections(attestations[ruleId]).length > 0)
+    .sort();
+}
+
+/**
+ * The rules that record a rejection in the policy AT the trusted base. A rejection there is
+ * established, append-only history; one that is only in the head can still be withdrawn, because
+ * history is compared with the base. Returns null when the base policy cannot be read, which callers
+ * must treat as unknown, never as "none".
+ */
+function baseRejectionRules(repository, baseCommit, relative) {
+  try {
+    const baseSource = tryGit(repository, ["show", `${baseCommit}:${relative}`]);
+    if (baseSource === null) return [];
+    return rejectionRulesOf(parseYaml(baseSource)?.attestations);
+  } catch {
+    return null;
   }
 }
 
