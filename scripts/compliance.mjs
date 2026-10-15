@@ -28,6 +28,23 @@ export const STATUS = {
 
 const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped: "skipped" };
 
+// A malformed history that records a rejection: the rejection is negative evidence and stays in force.
+export const MALFORMED_HISTORY_REMEDIATION =
+  "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, " +
+  "chronological order) while the malformed events are still only in your unmerged change. If they are already on " +
+  "the trusted default branch, neither editing nor appending can repair malformed events inside a well-formed list " +
+  "of reviews (the append-only check rejects both) and no recovery path exists yet for them: that needs an owner " +
+  "decision. A reviews container that is not a list (a mapping or a scalar) may hide recorded events, so it is " +
+  "unverifiable and cannot be replaced either. A legacy single-record attestation (no reviews key) is itself " +
+  "the one existing event, so a malformed one cannot be replaced either. Only a reviews key that is null or " +
+  "an empty list holds no events and may be replaced by a well-formed list.";
+export const MALFORMED_NOT_ATTESTABLE_REMEDIATION =
+  "This rule is not attestable, so no review can clear a recorded rejection or satisfy it. Remove the attestation "
+  + "and make the rule compliant through its automated check.";
+export const MALFORMED_WITH_REJECTION_REMEDIATION =
+  MALFORMED_HISTORY_REMEDIATION +
+  " A recorded rejection in this history stays in force, and once the history is well-formed only a later well-formed review clears it.";
+
 /**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
@@ -159,7 +176,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         ),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
-        remediation: "Give every review a unique id and record them in chronological order.",
+        // A rule the catalog does not mark attestable can never be cleared by a review, so promising that a
+        // later one clears the rejection would send the operator round a loop that cannot end.
+        remediation: !rule.attestable
+          ? MALFORMED_NOT_ATTESTABLE_REMEDIATION
+          : rejections.length > 0
+            ? MALFORMED_WITH_REJECTION_REMEDIATION
+            : MALFORMED_HISTORY_REMEDIATION,
       });
       continue;
     }

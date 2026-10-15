@@ -47,7 +47,7 @@ import {
   isLegacyShape,
 } from "../scripts/reviews.mjs";
 import { checkPolicy } from "../scripts/policy.mjs";
-import { evaluate } from "../scripts/compliance.mjs";
+import { evaluate, MALFORMED_HISTORY_REMEDIATION } from "../scripts/compliance.mjs";
 import { parseYaml } from "../scripts/yaml.mjs";
 
 const git = (cwd, ...args) => {
@@ -501,6 +501,61 @@ attestations:
   } finally {
     await cleanup(dir);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// ST-44: the remediation for a malformed history says what a recorded rejection in it means, and says
+// nothing of the kind for a history that records none.
+// ---------------------------------------------------------------------------------------------
+
+test("the malformed-history remediation states that a recorded rejection stays in force until a later well-formed review clears it", () => {
+  const rule = {
+    id: "testing.synthetic",
+    level: "required",
+    severity: "error",
+    validationType: "manual-review",
+    attestable: true,
+    nonExemptible: false,
+  };
+  const remediation = (reviews) => {
+    const verdict = evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { attestations: { [rule.id]: { reviews } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "fresh", detail: null }]]),
+    });
+    const result = verdict.results.find((entry) => entry.ruleId === rule.id);
+    assert.equal(result.disposition, "invalid-attestation", JSON.stringify(result));
+    return result.remediation;
+  };
+  const missingPredecessor = review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" });
+  const withRejection = remediation([review({ id: "r1", status: "rejected" }), missingPredecessor]);
+  assert.match(withRejection, /A recorded rejection in this history stays in force/);
+  assert.match(withRejection, /only a later well-formed review clears it/);
+  // Truthful about recovery: a malformed history already on the trusted branch cannot be repaired by editing
+  // or appending (the append-only check rejects both) and no recovery path exists, so the text must not promise one.
+  for (const text of [withRejection]) {
+    assert.match(text, /still only in your unmerged change/);
+    assert.match(text, /already on the trusted default branch/);
+    assert.match(text, /neither editing nor appending can repair malformed events inside a well-formed list/);
+    assert.match(text, /no recovery path exists yet/);
+    assert.match(text, /owner decision/);
+  }
+  // A missing predecessor is not cured by appending a later review: the disconnected event keeps the whole
+  // history malformed. The text must name the structural problems to fix, not only ids and order.
+  assert.match(withRejection, /every reported structural problem/);
+  assert.match(withRejection, /predecessor links/);
+  assert.match(withRejection, /required event fields/);
+  // The same structural guidance applies with no rejection (a missing predecessor satisfies "unique ids" and
+  // "chronological order"), and the rejection-clearing explanation is absent.
+  const withoutRejection = remediation([review({ id: "r1" }), missingPredecessor]);
+  assert.match(withoutRejection, /already on the trusted default branch/);
+  assert.match(withoutRejection, /no recovery path exists yet/);
+  assert.match(withoutRejection, /predecessor links/);
+  assert.match(withoutRejection, /required event fields/);
+  assert.doesNotMatch(withoutRejection, /rejection/);
 });
 
 test("the compliance call path cannot accept a rule through an incomplete appended successor", () => {
@@ -1790,6 +1845,91 @@ test("replacing the attestations section with a flow mapping yields no verdict a
   } finally {
     await cleanup(fx.root);
   }
+});
+
+test("ST-44: the documented fail-closed rule is scoped to a rule that applies; a not-applicable rule is not evaluated", () => {
+  const rule = {
+    id: "testing.synthetic",
+    level: "required",
+    severity: "error",
+    validationType: "manual-review",
+    attestable: true,
+    nonExemptible: false,
+  };
+  const reviews = [review({ id: "r1", status: "rejected" }), review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" })];
+  const run = (applicability) =>
+    evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { ...(applicability ? { applicability: { [rule.id]: applicability } } : {}), attestations: { [rule.id]: { reviews } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "fresh", detail: null }]]),
+    });
+  const applies = run(null).results.find((entry) => entry.ruleId === rule.id);
+  assert.equal(applies.disposition, "invalid-attestation");
+  assert.equal(applies.status, "failed");
+  // Pinned so the documentation cannot overclaim: the evaluator returns at the not-applicable declaration,
+  // before any review history is read. Changing this is a verdict change and belongs to its own story.
+  const notApplicable = run({ status: "not-applicable", reason: "no subject here" }).results.find((entry) => entry.ruleId === rule.id);
+  assert.equal(notApplicable.disposition, "not-applicable");
+  assert.notEqual(notApplicable.status, "failed");
+  for (const file of ["INSTRUCTIONS.md", "artifacts/adr/0005-attestations-are-recorded-human-evidence.md"]) {
+    const text = readFileSync(path.join(REPO_ROOT, file), "utf8").replace(/\s+/g, " ");
+    assert.match(text, /rule that applies/, `${file} must scope the rule`);
+    assert.match(text, /no recovery path/, `${file} must not promise a recovery that does not exist`);
+    assert.match(text, /not-applicable` is not evaluated, so a rejection recorded for it is not consulted/, `${file} must say what a not-applicable rule does`);
+  }
+});
+
+test("ST-44: for a rule the catalog does not mark attestable, the remediation says no review clears a recorded rejection", () => {
+  const make = (attestable) => ({
+    id: "testing.synthetic",
+    level: "required",
+    severity: "error",
+    validationType: attestable ? "manual-review" : "static-analysis",
+    attestable,
+    nonExemptible: false,
+  });
+  const remediation = (rule, reviews) => {
+    const verdict = evaluate({
+      catalog: { rules: new Map([[rule.id, rule]]), aliases: new Map() },
+      policy: { attestations: { [rule.id]: { reviews } } },
+      findings: [],
+      evaluated: [],
+      today: "2026-10-12",
+      freshness: new Map([[rule.id, { state: "fresh", detail: null }]]),
+    });
+    const result = verdict.results.find((entry) => entry.ruleId === rule.id);
+    assert.equal(result.disposition, "invalid-attestation", JSON.stringify(result));
+    return result.remediation;
+  };
+  const rejectedThenBroken = [review({ id: "r1", status: "rejected" }), review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" })];
+  const approvedThenBroken = [review({ id: "r1" }), review({ id: "r2", supersedes: "no-such-event", reviewedAt: "2026-08-09" })];
+  const attestable = remediation(make(true), rejectedThenBroken);
+  assert.match(attestable, /later well-formed review clears it/);
+  assert.doesNotMatch(attestable, /not attestable/);
+  for (const reviews of [rejectedThenBroken, approvedThenBroken]) {
+    const text = remediation(make(false), reviews);
+    assert.match(text, /not attestable/);
+    assert.match(text, /no review can clear/);
+    assert.match(text, /automated check/);
+    assert.doesNotMatch(text, /later well-formed review clears it/);
+  }
+});
+
+test("ST-44: the recovery wording names the shapes that can be recovered and the ones that cannot", () => {
+  for (const file of ["INSTRUCTIONS.md", "artifacts/adr/0005-attestations-are-recorded-human-evidence.md"]) {
+    const text = readFileSync(path.join(REPO_ROOT, file), "utf8").replace(/\s+/g, " ");
+    assert.match(text, /inside a well-formed list of reviews/, `${file} must scope the unrecoverable shape`);
+    assert.match(text, /null or an empty list/, `${file} must name the recoverable shape`);
+    assert.match(text, /legacy single-record attestation \(no `reviews` key\)/, `${file} must separate the legacy shape`);
+    assert.match(text, /begins with a genesis event/, `${file} must say what the replacement is`);
+  }
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /malformed events inside a well-formed list/);
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /reviews key that is null or an empty list/);
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /legacy single-record attestation \(no reviews key\)/);
+  assert.match(MALFORMED_HISTORY_REMEDIATION, /not a list .* may hide recorded events/);
 });
 
 // ---------------------------------------------------------------------------------------------
