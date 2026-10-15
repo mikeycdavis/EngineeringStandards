@@ -130,3 +130,89 @@ test("end to end: a wrapped trusted rejection replaced by an approval still fail
     }
   }
 });
+
+// --- follow-up: `__proto__` keys and an oversized trusted base ----------------------------------------
+
+test("a __proto__ key in a mapping is an ordinary entry the readers can see", () => {
+  const doc = parseYaml("reviews:\n  __proto__:\n    id: r1\n    status: rejected\n  other: 1\n");
+  assert.deepEqual(Object.keys(doc.reviews), ["__proto__", "other"]);
+  assert.equal(Object.getPrototypeOf(doc.reviews), Object.prototype, "the prototype is not replaced");
+  assert.equal(recordedRejections(doc).length, 1);
+});
+
+async function endToEnd(baseText, headText, extraFiles = {}) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "rejection-follow-"));
+  try {
+    git(dir, "init", "-q", "-b", "develop");
+    git(dir, "config", "user.email", "synthetic@example.invalid");
+    git(dir, "config", "user.name", "Synthetic");
+    git(dir, "config", "commit.gpgsign", "false");
+    await writeFile(path.join(dir, "s.txt"), "s\n");
+    for (const [name, content] of Object.entries(extraFiles)) await writeFile(path.join(dir, name), content);
+    await writeFile(path.join(dir, "project-policy.yml"), baseText);
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "trusted base");
+    git(dir, "update-ref", "refs/remotes/origin/develop", git(dir, "rev-parse", "HEAD"));
+    git(dir, "checkout", "-q", "-b", "feature");
+    await writeFile(path.join(dir, "project-policy.yml"), headText);
+    git(dir, "commit", "-q", "-a", "-m", "replace");
+    const r = spawnSync(process.execPath, [CLI, "validate", `--dir=${dir}`, "--json"], {
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
+    });
+    return { r, report: r.stdout ? JSON.parse(r.stdout) : null };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("end to end: a rejection under a __proto__ key survives its replacement", async () => {
+  const base = header + "    reviews:\n      __proto__:\n        id: \"r1\"\n        status: rejected\n";
+  const { report } = await endToEnd(base, header + approved);
+  const result = report.results.find((x) => x.ruleId === RULE);
+  assert.equal(result.status, "failed");
+  assert.equal(result.disposition, "invalid-attestation");
+});
+
+test("end to end: a trusted base beyond the string limit is a structured not-evaluated, not a crash", async () => {
+  // A 600 MB base, past V8's string cap, built as a Buffer so the test itself never holds it as a string.
+  const NL = String.fromCharCode(10);
+  const base = Buffer.concat([
+    Buffer.from(header + "    reviews: []" + NL + "# "),
+    Buffer.alloc(600 * 1024 * 1024, 120),
+    Buffer.from(NL),
+  ]);
+  const { r, report } = await endToEnd(base, header + approved);
+  assert.ok(report, "validate must produce a JSON report; stderr: " + String(r.stderr).slice(0, 300));
+  assert.doesNotMatch(String(r.stderr), /ERR_STRING_TOO_LONG/);
+  const message = JSON.stringify(report.findings.map((f) => f.message));
+  assert.match(message, /NOT_EVALUATED/);
+});
+
+test("the git read bound never exceeds this runtime's maximum string length", async () => {
+  const { constants } = await import("node:buffer");
+  const { GIT_MAX_BUFFER } = await import("../scripts/review-history.mjs");
+  // One pipe chunk (64 KiB) can arrive past the bound before ENOBUFS is reported: keep at least 256 KiB of headroom.
+  assert.ok(GIT_MAX_BUFFER <= constants.MAX_STRING_LENGTH - 256 * 1024, GIT_MAX_BUFFER + " leaves no headroom under " + constants.MAX_STRING_LENGTH);
+  assert.ok(GIT_MAX_BUFFER >= 64 * 1024 * 1024, "the bound stays far above any real policy");
+});
+
+test("end to end: an attestation keyed by an Object.prototype member name does not crash validate", async () => {
+  for (const key of ["constructor", "toString", "__proto__"]) {
+    const NL = String.fromCharCode(10);
+    const head =
+      'standardVersion: "2.0.0"' + NL + 'project: "synthetic"' + NL + "attestations:" + NL + "  " + key + ":" + NL +
+      approved.split(NL).join(NL);
+    const base = 'standardVersion: "2.0.0"' + NL + 'project: "synthetic"' + NL;
+    const { r, report } = await endToEnd(base, head);
+    assert.ok(report, key + ": validate must produce a JSON report; stderr: " + String(r.stderr).slice(0, 300));
+    assert.doesNotMatch(String(r.stderr), /TypeError/, key);
+  }
+});
+
+test("effectiveAttestations keeps a rejection recorded under a __proto__ rule key as an own entry", async () => {
+  const { effectiveAttestations } = await import("../scripts/review-history.mjs");
+  const base = parseYaml("__proto__:\n  reviews:\n    - id: \"r1\"\n      status: rejected\n");
+  const kept = effectiveAttestations({}, { effective: false, baseAttestations: base });
+  assert.deepEqual(Object.keys(kept), ["__proto__"]);
+});
