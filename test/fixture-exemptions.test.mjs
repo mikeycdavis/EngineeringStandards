@@ -810,3 +810,12 @@ test("a used pin over a truncated file is still reported as not established", as
   assert.equal(findingsOf(res, "fixture-exempted").length, 1, JSON.stringify(res.json.findings.map((f) => f.id)));
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 1);
 });
+
+test("a used index-only env pin over a truncated .env.json is not reported stale or not established", async () => {
+  const big = '{"k":"' + "x".repeat(1_100_000) + '"}';
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env.json": big }, [pin("test/fixtures/bad/.env.json", big, "scm.no-committed-env-files")]);
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exempted").length, 1, JSON.stringify(res.json.findings.map((f) => f.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0);
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0);
+});

@@ -4040,7 +4040,9 @@ export async function main(args) {
       // A used pin over a file read only in part still stands for the prefix that was searched, but
       // the waiver is not established over the whole file: say so.
       const usedAbs = fileByRel.get(entry.path);
-      if (usedAbs === undefined || !run.truncated.has(usedAbs)) continue;
+      // An index-only rule (an env file) is judged by the repository index, so a partial text read says
+      // nothing about it and the pin is fully established.
+      if (usedAbs === undefined || !run.truncated.has(usedAbs) || INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) continue;
     }
     // A file this run did not read in full cannot show that its rule "found no violation": the read
     // budget was spent before it was retained, or a violation may lie past the truncation boundary.
@@ -4546,6 +4548,10 @@ export async function main(args) {
     repo: root.split(path.sep).join("/"),
     frameworkCoverage: coverage(catalog, { evaluated: EVALUATED_RULES, totalStandards }),
   });
+
+  // A contradictory policy (a rule declared not-applicable that also carries a fixture pin) is not a
+  // pass, and the emitted verdict must say so: the rule was skipped before any waiver was considered.
+  if (applicabilityConflict && report.status !== "NON_COMPLIANT") report.status = "NOT_EVALUATED";
 
   if (cli.json) {
     // Standard 25's envelope. `findings` is additive detail beyond the contract Standard 31 R2
