@@ -3869,6 +3869,25 @@ export async function main(args) {
       },
     });
     exemptionCheck.problems = checked.problems;
+    // A rule declared not-applicable has no subject here, so a waiver of a departure from it is a
+    // contradiction. It is not bound: the file is inspected as ordinary content and the conflict is named
+    // (`standards policy` reports the same pair).
+    const notApplicable = new Set(
+      Object.entries(policy.document.applicability ?? {})
+        .filter(([, decl]) => decl?.status === "not-applicable")
+        .map(([id]) => id),
+    );
+    checked.valid = checked.valid.filter((entry) => {
+      if (!notApplicable.has(entry.rule)) return true;
+      exemptionCheck.problems.push({
+        index: entry.index,
+        id: "fixture-exemption-rule-not-applicable",
+        path: entry.path,
+        rule: entry.rule,
+        message: `'${entry.rule}' is declared not-applicable, so it cannot also carry a fixture exemption`,
+      });
+      return false;
+    });
     // The digest of a text file comes only from the read that retained the text the detectors inspect:
     // a pinned text file the surface did not retain (read budget spent, or unreadable) has no digest,
     // is `not-read`, and is never reopened here, so the budget bounds this run's I/O and a pin is never
@@ -4020,7 +4039,11 @@ export async function main(args) {
       surfaceLoss.capped &&
       existsSync(path.join(root, entry.path)) &&
       !deliberatelyExcluded(entry.path);
-    if (entry.state === "matches" || entry.state === "not-read" || cappedAway) {
+    // A directory the walk could not list hides everything beneath it: the file may well exist.
+    const underUnreadableDir =
+      entry.state === "not-scanned" &&
+      surfaceLoss.dirs.some((d) => entry.path.startsWith(rel(d) + "/") || rel(d) === "");
+    if (entry.state === "matches" || entry.state === "not-read" || cappedAway || underUnreadableDir) {
       const abs = files.find((f) => rel(f) === entry.path);
       const incomplete =
         entry.state === "not-read" ||
@@ -4043,7 +4066,9 @@ export async function main(args) {
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
             `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
-            (cappedAway
+            (underUnreadableDir
+              ? "A directory above this path could not be listed, so the path was never enumerated and may still exist. Keep the entry; restore access to the directory and rerun."
+              : cappedAway
               ? `The audit stopped collecting files at the ${MAX_FILES}-file cap, so this path was never enumerated and may still exist. Keep the entry; narrow the audited tree.`
               : abs !== undefined && (unreadableFiles.includes(abs) || digestReadFailed.has(abs))
               ? "The file could not be read; fix its permissions or presence and rerun. Keep the entry."
