@@ -274,6 +274,9 @@ test("a rejection followed by an approval on a not-applicable rule is flagged wi
     assert.match(stray.message, /"p1"/);
     assert.ok(!/remove the stray review record/.test(stray.remediation));
     assert.match(stray.remediation, /no trusted base could be read/);
+    const history = report.findings.find((f) => f.id === "review-history-append-only");
+    assert.match(history.message, /0 attestation[(]s[)] that were not recorded rejections/, history.message);
+    assert.match(history.message, /1 recorded rejection[(]s[)] on not-applicable rule[(]s[)] are named by policy findings only/, history.message);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -524,6 +527,20 @@ test("CLI: a head-retained rejection on a not-applicable rule is counted as find
     assert.match(history.message, /1 recorded rejection[(]s[)] stay effective/, history.message);
     assert.match(history.message, /1 recorded rejection[(]s[)] on not-applicable rule[(]s[)] are named by policy findings only/, history.message);
     assert.ok(report.findings.find((f) => f.id === "rejection-on-not-applicable-rule"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: the finding-only count never claims a finding for a rule that is not in the catalog", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "st47-unknown-rule-"));
+  try {
+    const yaml = policyYaml({ withRejection: true }).split("ai.propose-execute").join("no.such-rule");
+    await writeFile(path.join(dir, "project-policy.yml"), yaml);
+    const { report } = validate(dir);
+    assert.equal(report.findings.find((f) => f.id === "rejection-on-not-applicable-rule"), undefined);
+    const history = report.findings.find((f) => f.id === "review-history-append-only");
+    assert.ok(!history || !/named by policy findings only/.test(history.message), history?.message);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -46,6 +46,25 @@ export const MALFORMED_WITH_REJECTION_REMEDIATION =
   " A recorded rejection in this history stays in force, and once the history is well-formed only a later well-formed review clears it.";
 
 /**
+ * The rejections the not-applicable finding names for one rule, so the verdict engine and every
+ * caller that reports on them read exactly one lookup.
+ *
+ * Trusted history first. On a violated rewrite the base's raw history (every event, not only chains
+ * whose current event is a rejection: a base reject-then-approve chain is not effective but its
+ * rejection was recorded) is what is named, never the untrusted head replacement. Then the effective
+ * record (base-restored on a violation), and only when neither holds a rejection the RETAINED head
+ * history: without a trusted base the evaluated document keeps only chains whose CURRENT event is a
+ * rejection, so an older rejection followed by an approval would otherwise vanish from this lookup.
+ */
+export function strayRejectionsFor(ruleId, { attestations, recordedAttestations, baseRecordedAttestations }) {
+  const baseRaw = recordedRejections(baseRecordedAttestations?.[ruleId]);
+  if (baseRaw.length > 0) return baseRaw;
+  const effective = recordedRejections(attestations?.[ruleId]);
+  if (effective.length > 0) return effective;
+  return recordedRejections(recordedAttestations?.[ruleId]);
+}
+
+/**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
  * @param findings  evaluator findings, each optionally carrying `rule` (a canonical id)
@@ -125,21 +144,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
       // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
       // alone, so a malformed history is still reported by identity (see recordedRejections).
-      // Trusted history first. On a violated rewrite the base's raw history (every event, not only
-      // chains whose current event is a rejection: a base reject-then-approve chain is not effective
-      // but its rejection was recorded) is what is named, never the untrusted head replacement. Then
-      // the effective record (base-restored on a violation), and only when neither holds a rejection
-      // the RETAINED head history: without a trusted base the evaluated document keeps only chains
-      // whose CURRENT event is a rejection, so an older rejection followed by an approval would
-      // otherwise vanish from this lookup.
-      const baseRaw = recordedRejections(baseRecordedAttestations?.[rule.id]);
-      const effective = recordedRejections(attestations[rule.id]);
-      const stray =
-        baseRaw.length > 0
-          ? baseRaw
-          : effective.length > 0
-            ? effective
-            : recordedRejections(recordedAttestations?.[rule.id]);
+      const stray = strayRejectionsFor(rule.id, { attestations, recordedAttestations, baseRecordedAttestations });
       if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }

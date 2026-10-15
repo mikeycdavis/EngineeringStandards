@@ -19,7 +19,7 @@ import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
-import { evaluate, envelope } from "./compliance.mjs";
+import { evaluate, envelope, strayRejectionsFor } from "./compliance.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
@@ -3907,13 +3907,21 @@ export async function main(args) {
   // it never enters the verdict, whether its record survives in the effective document (the head
   // retained it) or only rides the base channel. It is therefore neither "kept" (effective) nor a
   // "disregarded non-rejection": it is counted apart.
-  const baseChannel = reviewHistoryBase.baseRecordedAttestations ?? {};
+  // Exactly the rules for which `evaluate` will emit the finding: catalog rules declared
+  // not-applicable whose lookup (the same function) finds a recorded rejection.
+  const strayLookupBase = reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null;
   const findingOnlyRules = new Set(
-    [...new Set([...Object.keys(reviewHistoryEffective), ...Object.keys(baseChannel)])].filter(
-      (ruleId) =>
-        policy.document?.applicability?.[ruleId]?.status === "not-applicable" &&
-        (recordedRejections(reviewHistoryEffective[ruleId]).length > 0 || recordedRejections(baseChannel[ruleId]).length > 0),
-    ),
+    [...catalog.rules.values()]
+      .filter(
+        (rule) =>
+          policy.document?.applicability?.[rule.id]?.status === "not-applicable" &&
+          strayRejectionsFor(rule.id, {
+            attestations: reviewHistoryEffective,
+            recordedAttestations: headAttestations,
+            baseRecordedAttestations: strayLookupBase,
+          }).length > 0,
+      )
+      .map((rule) => rule.id),
   );
   const findingOnlyRejections = findingOnlyRules.size;
   const keptRejections = Object.keys(reviewHistoryEffective).filter((ruleId) => !findingOnlyRules.has(ruleId)).length;
