@@ -20,8 +20,21 @@ aggregate-verdict semantics.
 
 ## 2. The claim
 
-> At digest D every call to audit sink S supplies actorType, actorId and a correlation or request
-> identifier, and agent-initiated changes use an agent actor type.
+> At digest D, over the complete source set S in scope: (a) every mutation path of persistent state
+> routes through audit sink S, so none bypasses it; (b) every call to S supplies actorType, actorId and a
+> correlation or request identifier; and (c) each entry point derives its actor type from the real
+> initiator, so that agent-initiated changes use an agent actor type and human or system changes do not.
+
+Clause (a) is what lets a claim about calls to S speak for the catalog requirement, which is that *every
+mutation* records actor context (`rules/audit.json`). Without (a) the claim covers only calls that
+already reach S. Clause (c) is reviewed per entry point: the reviewer reads how the actor type is set
+and whether the initiator signal it uses (authenticated principal, job runner, agent session) can be
+absent or forged by the caller.
+
+**Scope of what this can establish.** If a reviewer cannot establish (a) or (c) for some part of the
+system, the contract does not establish the rule; it supports partial evidence only. The attestation
+reports the whole rule with full assurance once approved, which is why the owner, not this document,
+decides under ADR 0010 whether a claim of this shape may establish a `code-analysis` rule at all.
 
 ## 3. Artefact list
 
@@ -30,13 +43,17 @@ The review MUST cite, and `reviewedAgainst.paths` MUST name:
 | Artefact | Why |
 | --- | --- |
 | The sink's signature or schema path | Defines what a call must supply. |
-| A committed call-site inventory: path, symbol, actor source expression | The subject of the claim; it must be a committed file so it is inside the digest. |
+| A committed call-site inventory: path, symbol, actor source expression | The subject of clauses (b) and (c); it must be a committed file so it is inside the digest. |
+| A mutation-path inventory with, for each path, the route to S (or a stated reason it is not a business mutation) | The subject of clause (a). |
+| The complete in-scope source set S (an enumeration or tree identity, not a hand-picked list) | The claim quantifies over every mutation path and call site, so freshness must cover every file. See section 5. |
 | One test per actor type proving the emitted event | Shows the actor type reaches the event; see section 8 for why a test is not by itself evidence of the claim. |
 | The detector's observed event definition (#125, not built) | Cross-checks the sink contract. |
 
-Mechanical cross-check: every call site the detector observes is either inventoried or excluded with a
-stated reason, so a new call site makes the attestation stale without anyone remembering to. This works
-only once #125 and the audit-surface locator (#119; PR #135 is open) exist.
+Detector cross-check, once it exists: every call site the detector observes should be either
+inventoried or excluded with a stated reason, and an uninventoried one is a finding. That is a
+detector result (a contradiction, section 10), **not freshness**. It depends on #125 and the
+audit-surface locator (#119; PR #135 is open), neither of which is on develop, so it must not be relied on
+to keep the attestation current.
 
 Actor types are those of Standard 3 R3 (`USER`, `AI_AGENT`, `SYSTEM`, `SCHEDULED_JOB`, `API_CLIENT`,
 `ADMIN`, `INTEGRATION`). The contract's "agent actor type" is `AI_AGENT`. Standard 3 R3 is where the
@@ -49,13 +66,20 @@ The person accountable for the audit sink (the sink's owner), recorded as `revie
 
 ## 5. Invalidation rule
 
-Digest-bound `reviewedAgainst` over the sink, the inventory and every inventoried call-site file, using
-`git-blob-set-sha256-v1` (ADR 0011). Stale on any change to those paths:
+Digest-bound `reviewedAgainst` over the sink, both inventories **and the complete in-scope source set
+S**, using `git-blob-set-sha256-v1` (ADR 0011). Stale on any change to a file in S or the addition of a
+file to S:
 
 > **Freshness is a separate axis from what the human decided.** (ADR 0011)
 
-A stale approval is `not-evaluated` / `skipped` and establishes nothing. A call site added outside the
-inventory changes no listed file; only the detector cross-check in section 3 can catch it.
+A stale approval is `not-evaluated` / `skipped` and establishes nothing.
+
+**This is a requirement the current mechanism does not meet.** The digest covers only the paths listed
+in `reviewedAgainst.paths`. A call site or direct write added in a file that is not listed changes
+nothing the digest covers, so the approval would stay fresh while clauses (a) and (b) became false. The
+detector cannot close that gap today. Freshness must therefore be bound to a tree identity or an
+enumerated source set (section 9); until it is, this contract MUST NOT be adopted, and the
+detector-dependent behaviour in section 3 is not a substitute.
 
 ## 6. Expiry
 
@@ -72,12 +96,11 @@ cannot see.
 
 ## 8. What the contract cannot establish
 
-- Mutations that bypass the sink entirely (direct writes, other libraries, raw queries, queues).
+- Mutations outside S: other libraries, queues, external APIs, other repositories. Within S, bypasses are the subject of clause (a) and rest on the reviewer's reading of the mutation-path inventory.
 - Truthfulness of the supplied values: a call can supply `actorId` and `correlationId` that are wrong,
   constant or copied.
-- Call sites outside the inventory and outside what the detector can observe.
-- Other repositories and services that write to the same state.
-- That an `AI_AGENT` actor type is applied to changes an agent actually initiated.
+- That the initiator signal read in clause (c) is reliable at run time: a reviewer reads code, not
+  traffic, so a mislabelled agent action at run time is outside what the review proves.
 
 Test and CI presence are not evidence for this claim. The `$assuranceNote` records that a detector bound
 to test and CI infrastructure was withdrawn because it elevated assurance (Standard 24 R2; issue #62,
@@ -95,7 +118,9 @@ the owner.
 | --- | --- | --- |
 | Set `attestable: true` on `audit.actor-attribution` | `rules/audit.json`. The field already exists and is validated by `scripts/catalog.mjs`; absent it defaults to `validationType === "manual-review"` | NOT MADE |
 | Decide whether catalog `assurance` stays `none` | `rules/audit.json`. An approved attestation reports result assurance `full` under `manualReview` (`scripts/compliance.mjs`) | NOT MADE, decision needed |
-| Require reviewer role, accountable owner, maximum age and the inventory in the attestation | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
+| Bind freshness to the complete source set in scope | Attestation `reviewedAgainst` and the digest mechanism in `scripts/repository.mjs`. Today the digest covers only the listed `paths`, so a file added outside them changes nothing. A tree identity or an enumerated set (for example one produced by the audit-surface locator, #119) whose membership changes when any in-scope file is added would be needed | NOT MADE; without it this contract MUST NOT be adopted |
+| Make `reviewedAgainst.paths`, `digest` and `digestAlgorithm` mandatory for an approval under this rule | Schema and `judgeAttestation`. Today `reviewedAgainst` and its digest are optional and freshness state `unrecorded` still establishes the rule (`scripts/compliance.mjs`), so an approval with no digest would stay a pass indefinitely | NOT MADE; without it this contract MUST NOT be adopted |
+| Require reviewer role, accountable owner, maximum age and the inventories in the attestation | Attestation schema and/or validator; today only existence, freshness and `expires` are machine-checked | NOT MADE |
 | Define the committed call-site inventory format | New schema or design document | NOT MADE |
 | Update the rule's `$assuranceNote` and Standard 3's implementation note ("Conformance is established by review.") | `rules/audit.json`, `standards/03-auditing.md` | NOT MADE |
 | Versioning impact | Standard 21 R2: widening eligibility; a MAJOR candidate. Classification and `VERSION` are the owner's | NOT MADE, not classified |
