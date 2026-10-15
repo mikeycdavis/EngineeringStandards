@@ -33,7 +33,7 @@ import {
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
-import { currentReview } from "./reviews.mjs";
+import { currentReview, recordedRejections } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
 import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
 
@@ -3904,12 +3904,22 @@ export async function main(args) {
   ]);
   const reviewHistoryEffective = effectiveAttestations(headAttestations, reviewHistoryBase);
   const keptRejections = Object.keys(reviewHistoryEffective).length;
-  const disregardedAttestations = recordedAttestationRules.size - keptRejections;
+  // Base rejections that ride only on the finding-only channel (never in the verdict) are neither
+  // "kept" nor "disregarded non-rejections": they are counted apart and named by policy findings.
+  const findingOnlyRejections = Object.keys(reviewHistoryBase.baseRecordedAttestations ?? {}).filter(
+    (ruleId) =>
+      !(ruleId in reviewHistoryEffective) &&
+      recordedRejections(reviewHistoryBase.baseRecordedAttestations[ruleId]).length > 0,
+  ).length;
+  const disregardedAttestations = recordedAttestationRules.size - keptRejections - findingOnlyRejections;
   if (reviewHistoryBase.status !== "not-applicable") {
     const base = reviewHistoryBase;
     const consequence =
       `${disregardedAttestations} attestation(s) that were not ` +
-      `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.`;
+      `recorded rejections were disregarded in this run; ${keptRejections} recorded rejection(s) stay effective.` +
+      (findingOnlyRejections > 0
+        ? ` ${findingOnlyRejections} recorded base rejection(s) are named by policy findings only and do not enter the verdict.`
+        : "");
     addFinding({
       id: "review-history-append-only",
       category: "evidence-surface",

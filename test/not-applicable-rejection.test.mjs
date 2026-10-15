@@ -440,7 +440,8 @@ test("CLI: a head that deletes the whole attestations section names a base rejec
     assert.ok(stray, "the removed base rejection was not named");
     assert.match(stray.message, /"p1"/);
     assert.match(stray.remediation, /when the comparison cannot run/);
-    assert.match(history.message, /2 attestation\(s\)/, "the disregarded count ignored the base records: " + history.message);
+    assert.match(history.message, /1 attestation[(]s[)] that were not recorded rejections/, "a base rejection was counted as a disregarded non-rejection: " + history.message);
+    assert.match(history.message, /1 recorded base rejection[(]s[)] are named by policy findings only/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
