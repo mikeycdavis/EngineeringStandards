@@ -696,3 +696,15 @@ test("a pin beyond the file-count cap is 'not established', not stale", { timeou
   assert.equal(ne.length, 1);
   assert.match(ne[0].message, /file cap/);
 });
+
+test("the global file cap does not make an ignored or vendored pin 'not established'", { timeout: 300000 }, async () => {
+  const root = await scratch();
+  await mkdir(path.join(root, "a"), { recursive: true });
+  for (let i = 0; i < 20050; i += 1) await writeFile(path.join(root, "a", "f" + i + ".txt"), "x");
+  await mkdir(path.join(root, "node_modules/pkg"), { recursive: true });
+  await writeFile(path.join(root, "node_modules/pkg/bad.js"), CERT);
+  await writeFile(path.join(root, "project-policy.yml"), policyText([pin("node_modules/pkg/bad.js", CERT, CERT_RULE)]));
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((f) => f.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
+});

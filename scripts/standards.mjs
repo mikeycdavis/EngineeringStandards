@@ -15,7 +15,7 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { existsSync, realpathSync, readdirSync, statSync, createReadStream } from "node:fs";
+import { existsSync, realpathSync, readdirSync, statSync, lstatSync, createReadStream } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
@@ -3965,13 +3965,40 @@ export async function main(args) {
       standardRef: R.search,
     });
   }
+  // The cap is global, so it explains an unscanned pin only when nothing else does: a path the
+  // repository ignores, a directory the walk excluded by name or vendor marker, or a symlink was left
+  // out on purpose, and "keep the entry" would be the wrong thing to say about it.
+  const deliberatelyExcluded = (relPath) => {
+    if (ignored.ok && ignored.files.includes(relPath)) return true;
+    const parts = relPath.split("/");
+    for (let i = 1; i < parts.length; i += 1) {
+      const dir = parts.slice(0, i).join("/");
+      if (SKIP_DIRS.has(parts[i - 1])) return true;
+      if (ignored.ok && ignored.directories.includes(dir)) return true;
+      if (surfaceLoss.excluded.some((e) => e.path === dir)) return true;
+    }
+    try {
+      let cur = root;
+      for (const part of parts) {
+        cur = path.join(cur, part);
+        if (lstatSync(cur).isSymbolicLink()) return true;
+      }
+    } catch {
+      return true; // cannot be examined: not a path this run can call hidden by the cap
+    }
+    return false;
+  };
   for (const entry of exemptionCheck.bound) {
     if (entry.state === "matches" && run.fixtureExemptionsUsed.has(`${entry.rule}\0${entry.path}`)) continue;
     // A file this run did not read in full cannot show that its rule "found no violation": the read
     // budget was spent before it was retained, or a violation may lie past the truncation boundary.
     // That is "not established", never "stale", and it must not tell anyone to remove the entry.
     // A path the file-count cap kept the walk from reaching was never enumerated: it may well exist.
-    const cappedAway = entry.state === "not-scanned" && surfaceLoss.capped && existsSync(path.join(root, entry.path));
+    const cappedAway =
+      entry.state === "not-scanned" &&
+      surfaceLoss.capped &&
+      existsSync(path.join(root, entry.path)) &&
+      !deliberatelyExcluded(entry.path);
     if (entry.state === "matches" || entry.state === "not-read" || cappedAway) {
       const abs = files.find((f) => rel(f) === entry.path);
       const incomplete =
