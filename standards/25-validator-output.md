@@ -50,7 +50,7 @@ JSON output MUST carry its own `schemaVersion` and is a machine-facing contract 
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1.0",
   "standardVersion": "1.0.0",
   "project": "CarDoc",
   "status": "NON_COMPLIANT",
@@ -164,7 +164,7 @@ for. [Standard 15](15-ai-tool-contracts.md) governs how this format may change.
 ## Implementation
 
 **Implemented.** `scripts/compliance.mjs` builds R2's envelope and `standards audit --json` emits it:
-`schemaVersion` (now the string `"1.0"`), `standardVersion`, `project`, `status`, `score`, `summary`,
+`schemaVersion` (the string `"1.1.0"`; it was `"1.0"` when this landed, and moved to a three-component minor when `findings[].detail` was added), `standardVersion`, `project`, `status`, `score`, `summary`,
 `assurance`, `denominator`, `auditedAt`, and `results`. Every result carries R3's shape — `ruleId`,
 `status`, `severity`, `validationType`, `message`, `evidence`, `files`, `remediation` — plus `level`,
 `assurance`, and `disposition`.

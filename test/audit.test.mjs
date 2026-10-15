@@ -373,7 +373,8 @@ test("every finding carries the full schema", () => {
     // Semantic versioning, normalised in ADR 0004 so schemaVersion and standardVersion share a
     // format. They remain independently versioned — independence means they may diverge
     // numerically, not that they use different shapes.
-    assert.equal(res.json.schemaVersion, "1.0.0");
+    // 1.1.0: findings[].detail and the detected-audit-surface finding are additive (Standard 15 R3).
+    assert.equal(res.json.schemaVersion, "1.1.0");
     assert.match(res.json.auditedAt, /^\d{4}-\d\d-\d\dT.*Z$/);
     for (const f of res.json.findings) {
       for (const key of required) assert.ok(key in f, `${name}: finding ${f.id} lacks ${key}`);

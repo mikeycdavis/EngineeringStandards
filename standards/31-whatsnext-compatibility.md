@@ -225,7 +225,7 @@ can be, and a consumer may be built against it now.
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1.0",
   "standardVersion": "2.0.0",
   "project": "example",
   "status": "COMPLIANT",

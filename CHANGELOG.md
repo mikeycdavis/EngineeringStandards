@@ -61,6 +61,38 @@ A genesis event may still omit its digest (the ADR 0005 first-pass workflow); th
 behaviour and not authenticated history, and no successor may omit it. The hosted self-validation job now runs the
 validator from the code under test, with a pinned baseline job beside it (see `standards-dogfood.yml`).
 
+ST-26 (#119): `scripts/standards.mjs` now locates the audit surface once, as an observation that is bound to no rule
+(refs #62 for history; separate from the verification-surface observations of #64). **Output delta, stated plainly:**
+`audit --json` and `validate --json` gain one `info` finding, `detected-audit-surface` (`rule: null`), in
+`findings[]` for every repository, and `findings[].detail` is a new optional member present only on that finding.
+Human `audit` output gains an "Audit surface" section. The sentence above is therefore true of rule results, verdicts,
+exit codes and `audit --strict`, which do not change, and not of the `findings[]` list, which grows by one entry.
+The finding reports where audit-named types, tables, recorder calls and framework attributes appear in non-test,
+non-CI code of the working tree (C#, Java/Kotlin, JavaScript/TypeScript, Python, SQL DDL), by a small fixed idiom list
+carried in `detail.idioms`. `detail` holds `observed`, `unread`, `unclassified`, `incomplete`/`incompleteReasons`,
+`blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. Test paths are those matched by the
+locator's own narrower patterns (`AUDIT_TEST_PATH_RE`, `AUDIT_TEST_SUFFIX_RE`) plus a fixed audit-specific list (CI
+directories, `e2e`, `cypress`, `__mocks__`, `mocks`, `testing`, `*.Tests/`, `*Test.java`, stories), which is narrower
+than the shared `TEST_RE` (`Attest.cs` and `contest_x.py` are searched); a test helper outside both is read as code and declared as a blind spot. A comment, a
+string literal, Markdown or a test path is a mention and never an observation; DDL embedded in an application-language
+string literal, Vue/Svelte/Razor components and code languages the tool does not read are declared blind spots. It is
+`INFERRED` and never a pass: `audit.business-state` and `audit.actor-attribution` stay not-evaluated.
+`locateAuditSurface(files, run, surface)` and `reportAuditSurface` are exported for the audit detectors (#125, #126),
+which must pass `{ surfaceLoss, unreadableFiles }` from `collectSurface`.
+
+**Output schema version, MINOR ([Standard 15](standards/15-ai-tool-contracts.md) R3, [Standard 31](standards/31-whatsnext-compatibility.md)
+R3):** the new `findings[].detail` member and the always-present finding are additive result fields, so the
+`audit --json` `schemaVersion` moves from `"1.0.0"` to `"1.1.0"` and the `validate --json` `schemaVersion` from `"1.0"` to
+`"1.1.0"` (that envelope's two-component `"1.0"` becomes three components, as Standard 21 R1 requires). A consumer
+that switches on `schemaVersion` sees the change in one field before parsing `findings`. The framework `VERSION` and
+tags are not changed.
+
+A recorder call is one observation per call site (the object-call and named-call idioms that match the same call are merged, reporting the receiver chain), and a PostgreSQL dollar-quoted string (`$$...$$`, `$tag$...$tag$`) is blanked as a literal in `.sql` files, so DDL inside one is a mention. A dollar-quoted function body that holds real DDL is therefore not located (the declared `construct:string-literal-ddl` blind spot).
+
+Read `incomplete: true` on that finding as UNKNOWN, never as absence. It is set repository-wide whenever any file was
+unread, the walk fell short, or any code file holds an audit-named identifier the idioms do not classify
+(`detail.unclassified`); that last check runs only in files that have no observation.
+
 Correction to ST-14 (#64, ST14-001): a single-file CI candidate (`Jenkinsfile`, `azure-pipelines.yml`, and the
 others) now counts only when it is a regular file, so a directory named `Jenkinsfile` no longer suppresses
 `no-ci-configuration`. A candidate that exists but cannot be inspected (for example a symlink loop) is unknown and
