@@ -14,6 +14,10 @@ import { isDeepStrictEqual } from "node:util";
 import { parseYaml } from "./yaml.mjs";
 import { resolveReviewHistory, resolveRecordedReviewHistory, reviewsOf, recordedRejections } from "./reviews.mjs";
 
+// Policy blobs are read whole through git. A bound here turns a large (or deeply nested) trusted base into
+// "could not be compared", which drops the base's recorded rejections; keep it far above any real policy.
+const GIT_MAX_BUFFER = 512 * 1024 * 1024;
+
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 export class ReviewHistoryVerificationError extends Error {
@@ -37,7 +41,7 @@ function runGit(repositoryPath, args, { acceptedStatuses = [0] } = {}) {
   const result = spawnSync("git", ["-C", repositoryPath, ...args], {
     encoding: "utf8",
     windowsHide: true,
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: GIT_MAX_BUFFER,
   });
   if (result.error) fail(`git ${args[0]} could not run: ${result.error.message}`);
   if (!acceptedStatuses.includes(result.status)) {
@@ -91,7 +95,7 @@ async function gitDiffEvidence(priorSource, proposedSource, policyPath) {
     const result = spawnSync(
       "git",
       ["diff", "--no-index", "--text", "--no-ext-diff", "--", `base/${policyPath}`, `proposed/${policyPath}`],
-      { cwd: tempRoot, encoding: "utf8", windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+      { cwd: tempRoot, encoding: "utf8", windowsHide: true, maxBuffer: GIT_MAX_BUFFER },
     );
     if (result.error) fail(`git diff could not run: ${result.error.message}`);
     if (result.status !== 0 && result.status !== 1) {
@@ -248,7 +252,7 @@ function tryGit(repositoryPath, args) {
   const result = spawnSync("git", ["-C", repositoryPath, ...args], {
     encoding: "utf8",
     windowsHide: true,
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: GIT_MAX_BUFFER,
   });
   if (result.error || result.status !== 0) return null;
   return result.stdout.trim();
