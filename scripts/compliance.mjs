@@ -16,6 +16,7 @@
  */
 
 import { resolve } from "./catalog.mjs";
+import { displaySafe } from "./display-safe.mjs";
 import { currentReview, recordedRejections, reviewProblems, reviewsOf } from "./reviews.mjs";
 
 export const STATUS = {
@@ -27,6 +28,42 @@ export const STATUS = {
 
 const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped: "skipped" };
 
+// A malformed history that records a rejection: the rejection is negative evidence and stays in force.
+export const MALFORMED_HISTORY_REMEDIATION =
+  "Fix every reported structural problem in this review history (predecessor links, required event fields, ids, " +
+  "chronological order) while the malformed events are still only in your unmerged change. If they are already on " +
+  "the trusted default branch, neither editing nor appending can repair malformed events inside a well-formed list " +
+  "of reviews (the append-only check rejects both) and no recovery path exists yet for them: that needs an owner " +
+  "decision. A reviews container that is not a list (a mapping or a scalar) may hide recorded events, so it is " +
+  "unverifiable and cannot be replaced either. A legacy single-record attestation (no reviews key) is itself " +
+  "the one existing event, so a malformed one cannot be replaced either. Only a reviews key that is null or " +
+  "an empty list holds no events and may be replaced by a well-formed list.";
+export const MALFORMED_NOT_ATTESTABLE_REMEDIATION =
+  "This rule is not attestable, so no review can clear a recorded rejection or satisfy it. Remove the attestation "
+  + "and make the rule compliant through its automated check.";
+export const MALFORMED_WITH_REJECTION_REMEDIATION =
+  MALFORMED_HISTORY_REMEDIATION +
+  " A recorded rejection in this history stays in force, and once the history is well-formed only a later well-formed review clears it.";
+
+/**
+ * The rejections the not-applicable finding names for one rule, so the verdict engine and every
+ * caller that reports on them read exactly one lookup.
+ *
+ * Trusted history first. On a violated rewrite the base's raw history (every event, not only chains
+ * whose current event is a rejection: a base reject-then-approve chain is not effective but its
+ * rejection was recorded) is what is named, never the untrusted head replacement. Then the effective
+ * record (base-restored on a violation), and only when neither holds a rejection the RETAINED head
+ * history: without a trusted base the evaluated document keeps only chains whose CURRENT event is a
+ * rejection, so an older rejection followed by an approval would otherwise vanish from this lookup.
+ */
+export function strayRejectionsFor(ruleId, { attestations, recordedAttestations, baseRecordedAttestations }) {
+  const baseRaw = recordedRejections(baseRecordedAttestations?.[ruleId]);
+  if (baseRaw.length > 0) return baseRaw;
+  const effective = recordedRejections(attestations?.[ruleId]);
+  if (effective.length > 0) return effective;
+  return recordedRejections(recordedAttestations?.[ruleId]);
+}
+
 /**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
@@ -36,7 +73,7 @@ const RESULT = { passed: "passed", failed: "failed", warning: "warning", skipped
  *                  because nothing failed is the false green this whole framework exists to stop.
  * @param today     ISO date, for exception expiry
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness }) {
+export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -94,6 +131,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
 
   const results = [];
   const silencedRules = new Set();
+  const policyFindings = [];
   for (const rule of catalog.rules.values()) {
     const level = levelOf(rule);
     const applies = applicability[rule.id];
@@ -101,6 +139,13 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // Not applicable: the rule's subject does not exist here. Visible, never a silent exclusion.
     if (applies?.status === "not-applicable") {
       results.push(base(rule, level, RESULT.skipped, "not-applicable", applies.reason));
+      // A rejection recorded against a rule declared not-applicable is not evaluated here and must
+      // not vanish: it is reported as a policy-compliance FINDING and nowhere else. The result above,
+      // and therefore the rule's status, its disposition and the aggregate verdict, are exactly what
+      // they were without the rejection (owner decision "Finding only", ST-47). It reads the record
+      // alone, so a malformed history is still reported by identity (see recordedRejections).
+      const stray = strayRejectionsFor(rule.id, { attestations, recordedAttestations, baseRecordedAttestations });
+      if (stray.length > 0) policyFindings.push(strayRejectionFinding(rule.id, stray, establishedRejections));
       continue;
     }
 
@@ -126,16 +171,23 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         validationType: "configuration",
         assurance: "full",
         disposition: "invalid-attestation",
-        message:
+        message: displaySafe(
           `${rule.id} has a malformed review history: ${structural.join("; ")}.` +
           (rejections.length > 0
             ? ` It records a rejection that stays effective: ${rejections
                 .map((r) => `${r.id ?? "(no id)"}${r.reviewedBy ? ` by ${r.reviewedBy}` : ""}${r.reviewedAt ? ` on ${r.reviewedAt}` : ""}`)
                 .join(", ")}.`
             : ""),
+        ),
         evidence: ["project-policy.yml"],
         files: ["project-policy.yml"],
-        remediation: "Give every review a unique id and record them in chronological order.",
+        // A rule the catalog does not mark attestable can never be cleared by a review, so promising that a
+        // later one clears the rejection would send the operator round a loop that cannot end.
+        remediation: !rule.attestable
+          ? MALFORMED_NOT_ATTESTABLE_REMEDIATION
+          : rejections.length > 0
+            ? MALFORMED_WITH_REJECTION_REMEDIATION
+            : MALFORMED_HISTORY_REMEDIATION,
       });
       continue;
     }
@@ -188,7 +240,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
         level,
         RESULT.skipped,
         "excepted",
-        `${rule.id} is excepted by ${manualException.approvedBy} (approved ${manualException.approvedAt}): ${manualException.reason}`,
+        `${rule.id} is excepted by ${displaySafe(manualException.approvedBy)} (approved ${displaySafe(manualException.approvedAt)}): ${displaySafe(manualException.reason)}`,
       );
       result.evidence = ["project-policy.yml"];
       result.files = ["project-policy.yml"];
@@ -314,7 +366,73 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     });
   }
 
-  return { ...summarise(results, policy), silencedRules };
+  return { ...summarise(results, policy), silencedRules, policyFindings };
+}
+
+/**
+ * A review identity is repository-controlled text: it is shown JSON-quoted (so quotes and backslashes
+ * are unambiguous) with every control character left by the JSON escape rendered as visible text by
+ * the shared display-safe module.
+ */
+const quotedSafe = (value) => displaySafe(JSON.stringify(String(value)));
+
+/**
+ * `establishedRejections` is the Set of rule ids whose rejection is recorded at the trusted base
+ * (ADR 0005, ST-17), or null when the base could not be read. A rejection there is append-only
+ * history: removing it is reported as review-history-append-only when the comparison runs, and the
+ * base rejection remains recorded and named by this finding (it is never evaluated, so it does not
+ * enter the verdict); deletion therefore cannot clear this finding. Unknown (null) is a third case, not a claim
+ * about the base: removal is neither advised nor said to be reported, because with no base there is
+ * nothing to enforce either; deletion is advised only when the rejection is known not to be at the base.
+ */
+function strayRejectionFinding(ruleId, rejections, establishedRejections = null) {
+  // Three cases: established at the base, not at the base, base unknown (null).
+  const baseKnown = establishedRejections instanceof Set;
+  const established = baseKnown && establishedRejections.has(ruleId);
+  const named = rejections
+    .map((r) =>
+      [
+        r.id === null ? "(no id)" : `id ${quotedSafe(r.id)}`,
+        r.reviewedBy === null ? null : `by ${quotedSafe(r.reviewedBy)}`,
+        r.reviewedAt === null ? null : `on ${quotedSafe(r.reviewedAt)}`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join("; ");
+  return {
+    id: "rejection-on-not-applicable-rule",
+    category: "policy-compliance",
+    severity: "warning",
+    label: "OBSERVED",
+    // Not `rule`: that field makes a finding evidence FOR a rule, and this one must never be able to
+    // fail, pass or withdraw one.
+    rule: null,
+    ruleId,
+    // Standard 20 R1: the requirement that separates "does not apply" from "applies, knowingly unmet".
+    standardRef: "standards/20-exceptions.md#r1--an-exception-waives-applicability-never-definition",
+    evidence: ["project-policy.yml"],
+    message:
+      `${ruleId} is declared not-applicable but a rejection is recorded on it (${named}). ` +
+      "The verdict is unchanged: the declaration stands and the rejection is not evaluated.",
+    remediation: established
+      ? "Reconcile the two without rewriting history: this rejection is recorded at the trusted base, and review history is " +
+        "append-only (ADR 0005, ST-17), so when the comparison runs, deleting or relabeling it is reported as " +
+        "review-history-append-only and the base rejection remains recorded and is still named by this finding (it is never evaluated, so it does not enter the verdict); when the comparison cannot run (for example an " +
+        "unrelated base record is malformed) that is reported as NOT_EVALUATED, and the base rejection is still named here. Remove the not-applicable declaration if the rule applies, then record a later " +
+        "review whose `supersedes` names the chain's current (latest) review, because every successor must reference its immediate " +
+        "predecessor (ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict. " +
+        "No removal path exists for a rejection recorded at the base on a rule that stays not-applicable; that is the owner's decision."
+      : baseKnown
+        ? "Reconcile the two: remove the not-applicable declaration if the rule applies, or remove the stray review record, which is " +
+          "permitted only because this rejection is not recorded at the trusted base and so is not yet append-only history."
+        : "Reconcile the two without rewriting history: no trusted base could be read here, so whether this rejection is already " +
+          "recorded there cannot be verified, and neither can the removal of it; review history is append-only once committed " +
+          "(ADR 0005, ST-17). Do not delete or relabel it on the strength of this run; supply the base (for example git fetch origin) " +
+          "and run again. Remove the not-applicable declaration if the rule applies, then record a later review whose `supersedes` " +
+          "names the chain's current (latest) review, because every successor must reference its immediate predecessor " +
+          "(ADR 0005, ST-18); or leave both in place, because this finding does not change the verdict.",
+  };
 }
 
 /**
@@ -352,7 +470,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   if (hits.length > 0) {
     return fail(
       "contradicted-attestation",
-      `${rule.id} is attested as approved, but an automated check found: ${hits[0].message}`,
+      `${rule.id} is attested as approved, but an automated check found: ${displaySafe(hits[0].message)}`,
       "Fix the finding. An attestation records human evidence; it never overrides what a check observed.",
     );
   }
@@ -360,7 +478,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
   if (attestation.status === "rejected") {
     return fail(
       "attested-rejected",
-      `${rule.id} was reviewed by ${attestation.reviewedBy} and found unmet.`,
+      `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} and found unmet.`,
       "Satisfy the rule, then re-attest. A recorded rejection is a failure, not silence.",
     );
   }
@@ -399,8 +517,8 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
       disposition: "not-evaluated",
       freshness: fresh.state,
       message:
-        `${rule.id} was reviewed by ${attestation.reviewedBy} on ${attestation.reviewedAt}, but that ` +
-        `review does not establish the current state: ${fresh.detail}.`,
+        `${rule.id} was reviewed by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}, but that ` +
+        `review does not establish the current state: ${displaySafe(fresh.detail)}.`,
       evidence: against?.paths ?? ["project-policy.yml"],
       files: against?.paths ?? ["project-policy.yml"],
       remediation:
@@ -422,7 +540,7 @@ function judgeAttestation(rule, level, attestation, hits, today, freshness) {
     // the assurance breakdown is the honest home for it — never `automated`.
     assurance: "full",
     disposition: "attested",
-    message: `Attested by ${attestation.reviewedBy} on ${attestation.reviewedAt}: ${attestation.evidence}`,
+    message: `Attested by ${displaySafe(attestation.reviewedBy)} on ${displaySafe(attestation.reviewedAt)}: ${displaySafe(attestation.evidence)}`,
     evidence: against?.paths ?? [],
     files: against?.paths ?? [],
     remediation: rule.remediation,

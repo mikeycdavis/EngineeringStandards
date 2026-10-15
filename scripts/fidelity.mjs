@@ -33,6 +33,7 @@
  *   node scripts/fidelity.mjs --json    machine-readable
  */
 
+import { displaySafe, humanOut } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -179,10 +180,10 @@ if (JSON_OUT) {
 
 const out = [`Verbatim claims checked: ${claims}`, `Unverified claims:       ${failures.length}`, ""];
 for (const f of failures) {
-  out.push(`! ${f.file}:${f.line} (${f.kind})`);
-  out.push(`    checked against:  ${f.source} — ${f.scope}`);
-  out.push(`    claimed verbatim: ${f.claimed}${f.claimed.length >= 160 ? "…" : ""}`);
-  out.push(`    diverges at:      ${f.diverges}`);
+  out.push(`! ${displaySafe(f.file)}:${f.line} (${displaySafe(f.kind)})`);
+  out.push(`    checked against:  ${displaySafe(f.source)} — ${displaySafe(f.scope)}`);
+  out.push(`    claimed verbatim: ${displaySafe(f.claimed)}${f.claimed.length >= 160 ? "…" : ""}`);
+  out.push(`    diverges at:      ${displaySafe(f.diverges)}`);
   out.push("");
 }
 if (failures.length > 0) {
@@ -194,5 +195,5 @@ if (failures.length > 0) {
 } else {
   out.push("Every block claimed as source text appears in the source.");
 }
-process.stdout.write(out.join("\n") + "\n");
+humanOut(out.join("\n") + "\n");
 process.exit(failures.length === 0 ? 0 : 1);

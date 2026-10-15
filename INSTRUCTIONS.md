@@ -228,10 +228,43 @@ ref, shallow history without it) the result is `NOT_EVALUATED` and every approva
 that run (run `git fetch origin`); a rewritten history withdraws them too. Only approvals are disregarded:
 a recorded **rejection stays effective**, because negative evidence is never removed for want of a
 comparison. Deleting or emptying the attestations section is itself a rewrite when a base exists.
+For an attestable rule that applies, a rejection recorded in a history that is malformed, rewritten or not comparable
+with a trusted base stays in force: the rule fails with the rejection named, and only a later well-formed
+review in a repaired history (and, once authenticated review exists, an authenticated one) clears it. A
+malformed history that records no rejection establishes nothing: it is never read as an approval. Repair is possible only while the malformed events are in an unmerged
+change: once a malformed history is on the trusted default branch the append-only check rejects both editing
+and appending of malformed events inside a well-formed list of reviews, and there is no recovery path yet for
+them (a known limitation that needs an owner decision). A `reviews` container that is
+not a list (a mapping or a scalar) may hide recorded events, so it is unverifiable and cannot be replaced either.
+A legacy single-record attestation (no `reviews` key) is itself the one existing event, so a malformed one
+cannot be replaced either. The only exception is a `reviews` key that is null or an empty list: it holds no events,
+so replacing it with a well-formed list that begins with a genesis event is accepted (it records no rejection to retain). This holds
+only for a rule that applies: a rule declared `not-applicable` is not evaluated, so a rejection recorded for
+it is not consulted. Remove the declaration or the attestation rather than relying on either. A rule the
+catalog does not mark attestable is never cleared by a review: an attestation recorded for it is an invalid
+attestation, and the rule is made compliant through its automated check.
 
 The distinction that matters most: **not-applicable is a claim about your project, not about the
 rule.** *We have no background jobs* stops being true the day you add one — which is what
 `revisitWhen` records.
+
+A review history that records a **rejection** on a rule you declared not-applicable does not change the
+verdict: the declaration stands, and the rule stays `skipped` / `not-applicable`. `validate` reports it as a
+`policy-compliance` finding (in the JSON `findings` and under *Policy findings* in the human report), naming
+the rule and the rejection's id, reviewer and date with control characters escaped. Either remove the
+declaration, because the rule applies (and then record a later review whose `supersedes` names the chain's
+current, latest review: every successor must reference its immediate predecessor), or, only when the
+rejection is not yet recorded at `merge-base(HEAD, origin default branch)`, remove the stray review record; or leave both in place, because the finding does not change the verdict. A
+rejection already at the merge base is append-only history: deleting it is a `review-history-append-only`
+violation when the comparison runs, the base rejection remains recorded and the finding still names it (it is not
+evaluated, so the verdict is unchanged); when the comparison
+cannot run (for example an unrelated base record is malformed) it is reported as NOT_EVALUATED and the base
+rejection is still named by this finding. With no readable base (for example
+outside a Git work tree) removal cannot be verified, so no deletion is advised and none is promised to be
+reported: history is append-only once committed, so supply the base (`git fetch origin`) and run again. An older
+rejection followed by an approval is still found, and so is a rejection recorded at a readable base when the
+append-only comparison itself could not run. A not-applicable rule with no
+rejection emits nothing.
 
 **Some rules are non-exemptible.** `security.no-secrets-in-artifacts` and `ai.destructive-approval`
 declare this in the catalog, and an exception against either is **rejected, not recorded** — you get

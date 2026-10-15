@@ -122,98 +122,132 @@ function tokenize(text) {
 }
 
 /** Parse a block at `indent`, starting at `lines[start]`. Returns [value, nextIndex]. */
+/**
+ * Assign a mapping entry as an OWN data property. A plain `map[key] = value` with the key `__proto__` sets the
+ * object's prototype instead and the entry vanishes from `Object.keys`/`Object.values`, which would hide an
+ * event (a recorded rejection) from every reader that enumerates a parsed mapping.
+ */
+function setKey(map, key, value) {
+  Object.defineProperty(map, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+const isDash = (text) => text === "-" || text.startsWith("- ");
+
+/**
+ * Parse the block that starts at `lines[start]`, returning `[value, consumed]`.
+ *
+ * Iterative, with an explicit stack of open mappings and sequences, so nesting depth is bounded by memory
+ * rather than by the call stack: a valid but deeply nested policy must parse, because a parse that fails
+ * on depth would hide whatever the document recorded. A sequence entry that is a mapping is parsed in
+ * place: its first key sits on the dash line, which is rewritten to that key at the entry's indent.
+ */
 function parseBlock(lines, start, indent) {
-  if (lines[start].text.startsWith("- ") || lines[start].text === "-") {
-    return parseSequence(lines, start, indent);
-  }
-  return parseMapping(lines, start, indent);
-}
+  const open = (at, at_indent, extra = {}) =>
+    isDash(lines[at].text)
+      ? { t: "seq", indent: at_indent, items: [], i: at, ...extra }
+      : { t: "map", indent: at_indent, map: {}, i: at, key: null, ...extra };
+  const stack = [open(start, indent)];
+  let finished = null; // [value, consumed] handed to the parent frame
 
-function parseSequence(lines, start, indent) {
-  const items = [];
-  let i = start;
-  while (i < lines.length && lines[i].indent === indent) {
-    const line = lines[i];
-    if (!line.text.startsWith("- ") && line.text !== "-") break;
-    const inline = line.text === "-" ? "" : line.text.slice(2).trim();
-    if (inline === "") throw new YamlError("empty sequence entries are not supported", line.lineNo);
+  while (stack.length > 0) {
+    const f = stack[stack.length - 1];
 
-    const pair = splitKey(inline);
-    if (!pair) {
-      // A scalar sequence entry.
-      items.push(parseScalar(inline, line.lineNo));
-      i++;
-      continue;
-    }
-    // A mapping entry: its first key sits on the dash line, the rest are indented beneath.
-    const entryIndent = indent + 2;
-    const synthetic = [{ indent: entryIndent, text: inline, lineNo: line.lineNo }];
-    let j = i + 1;
-    while (j < lines.length && lines[j].indent >= entryIndent) {
-      synthetic.push(lines[j]);
-      j++;
-    }
-    const [value, consumed] = parseMapping(synthetic, 0, entryIndent);
-    if (consumed !== synthetic.length) {
-      throw new YamlError("could not parse sequence entry", line.lineNo);
-    }
-    items.push(value);
-    i = j;
-  }
-  return [items, i];
-}
-
-function parseMapping(lines, start, indent) {
-  const map = {};
-  let i = start;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.indent < indent) break;
-    if (line.indent > indent) {
-      throw new YamlError(`unexpected indentation (expected ${indent} spaces)`, line.lineNo);
-    }
-    if (line.text.startsWith("- ")) break;
-
-    const pair = splitKey(line.text);
-    if (!pair) throw new YamlError(`expected 'key: value' but found '${line.text}'`, line.lineNo);
-    const key = parseScalar(pair[0], line.lineNo);
-    if (typeof key !== "string" || key === "") {
-      throw new YamlError("empty or non-scalar keys are not supported", line.lineNo);
-    }
-    if (Object.prototype.hasOwnProperty.call(map, key)) {
-      throw new YamlError(`duplicate key '${key}'`, line.lineNo);
-    }
-
-    const rest = pair[1].trim();
-    if (rest !== "") {
-      map[key] = parseScalar(rest, line.lineNo);
-      i++;
-      continue;
-    }
-
-    // No inline value: a nested block must follow at a deeper indent, or the value is empty.
-    const next = lines[i + 1];
-    if (!next || next.indent <= indent) {
-      map[key] = null;
-      i++;
-      continue;
-    }
-    // A block sequence under a key may sit at the key's own indent or one level deeper; both are
-    // conventional YAML. A nested mapping must be exactly one level deeper.
-    const isSequence = next.text === "-" || next.text.startsWith("- ");
-    if (isSequence) {
-      if (next.indent !== indent && next.indent !== indent + 2) {
-        throw new YamlError("sequence must be at the key's indent or 2 spaces deeper", next.lineNo);
+    if (f.t === "map") {
+      if (finished) {
+        setKey(f.map, f.key, finished[0]);
+        f.i = finished[1];
+        finished = null;
       }
-    } else if (next.indent !== indent + 2) {
-      throw new YamlError("nested block must be indented by 2 spaces", next.lineNo);
+      let pushed = false;
+      while (f.i < lines.length) {
+        const line = lines[f.i];
+        if (line.indent < f.indent) break;
+        if (line.indent > f.indent) {
+          throw new YamlError(`unexpected indentation (expected ${f.indent} spaces)`, line.lineNo);
+        }
+        if (line.text.startsWith("- ")) break;
+
+        const pair = splitKey(line.text);
+        if (!pair) throw new YamlError(`expected 'key: value' but found '${line.text}'`, line.lineNo);
+        const key = parseScalar(pair[0], line.lineNo);
+        if (typeof key !== "string" || key === "") {
+          throw new YamlError("empty or non-scalar keys are not supported", line.lineNo);
+        }
+        if (Object.prototype.hasOwnProperty.call(f.map, key)) {
+          throw new YamlError(`duplicate key '${key}'`, line.lineNo);
+        }
+
+        const rest = pair[1].trim();
+        if (rest !== "") {
+          setKey(f.map, key, parseScalar(rest, line.lineNo));
+          f.i++;
+          continue;
+        }
+
+        // No inline value: a nested block must follow at a deeper indent, or the value is empty.
+        const next = lines[f.i + 1];
+        if (!next || next.indent <= f.indent) {
+          setKey(f.map, key, null);
+          f.i++;
+          continue;
+        }
+        // A block sequence under a key may sit at the key's own indent or one level deeper; both are
+        // conventional YAML. A nested mapping must be exactly one level deeper.
+        if (isDash(next.text)) {
+          if (next.indent !== f.indent && next.indent !== f.indent + 2) {
+            throw new YamlError("sequence must be at the key's indent or 2 spaces deeper", next.lineNo);
+          }
+        } else if (next.indent !== f.indent + 2) {
+          throw new YamlError("nested block must be indented by 2 spaces", next.lineNo);
+        }
+        f.key = key;
+        stack.push(open(f.i + 1, next.indent));
+        pushed = true;
+        break;
+      }
+      if (pushed) continue;
+      stack.pop();
+      const result = [f.map, f.i];
+      if (f.entryEnd !== undefined && f.i !== f.entryEnd) {
+        throw new YamlError("could not parse sequence entry", f.entryLine);
+      }
+      finished = result;
+      continue;
     }
-    const childIndent = next.indent;
-    const [value, consumed] = parseBlock(lines, i + 1, childIndent);
-    map[key] = value;
-    i = consumed;
+
+    // Sequence.
+    if (finished) {
+      f.items.push(finished[0]);
+      f.i = finished[1];
+      finished = null;
+    }
+    let pushed = false;
+    while (f.i < lines.length && lines[f.i].indent === f.indent) {
+      const line = lines[f.i];
+      if (!isDash(line.text)) break;
+      const inline = line.text === "-" ? "" : line.text.slice(2).trim();
+      if (inline === "") throw new YamlError("empty sequence entries are not supported", line.lineNo);
+
+      const pair = splitKey(inline);
+      if (!pair) {
+        f.items.push(parseScalar(inline, line.lineNo));
+        f.i++;
+        continue;
+      }
+      // A mapping entry: its first key sits on the dash line, the rest are indented beneath.
+      const entryIndent = f.indent + 2;
+      let j = f.i + 1;
+      while (j < lines.length && lines[j].indent >= entryIndent) j++;
+      lines[f.i] = { indent: entryIndent, text: inline, lineNo: line.lineNo };
+      stack.push({ t: "map", indent: entryIndent, map: {}, i: f.i, key: null, entryEnd: j, entryLine: line.lineNo });
+      pushed = true;
+      break;
+    }
+    if (pushed) continue;
+    stack.pop();
+    finished = [f.items, f.i];
   }
-  return [map, i];
+  return finished;
 }
 
 /** Parse a YAML document from the supported subset. Throws YamlError on anything else. */
