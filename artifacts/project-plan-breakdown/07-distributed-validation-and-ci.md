@@ -280,7 +280,7 @@ someone to lie to make the build go green.
      the handle binding of ADR 0016 P1-P3, P6, P7), **including the existing-artifact overwrite path**
      (`--force-overwrite`), which uses the temporary-file-and-rename write and is the one documented
      exception: a hard link to
-     the old file keeps the old content, permission bits are preserved, other inode metadata is not
+     the old file keeps the old content, the permission bits observed at ADR 0021 G9 step 3 are applied (not a promise about an entry replaced after that observation), other inode metadata is not
      (owner decision of 2026-10-14, 13:34Z; ADR 0016, "Documented exception: overwrite does not share
      the inode"). AC4's one-entry exception and its test are in scope;
   3. BLOCKED until slice 1 (the resolver) lands, per ADR 0016 D4 (the wording must not name a command that does not exist): the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
