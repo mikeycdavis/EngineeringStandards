@@ -208,7 +208,10 @@ someone to lie to make the build go green.
 
 ### Establish adoption eligibility before any adoption write
 
-- **Status:** READY
+- **Status:** BLOCKED
+- **Blocked by:** the owner's acceptance of [ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md)
+  (Proposed, 2026-10-15). Every implementation slice below depends on it; the decision record itself
+  (ADR 0016, plus ADR 0021 pending) is the work in review.
 - **Tracked by:** GitHub issue [#16](https://github.com/mikeycdavis/EngineeringStandards/issues/16)
 - **Evidence:** open as of 2026-08-11. Reproduced against `StandardsOrchestrator`, whose `README.md`
   opens with `⛔ FROZEN` and whose `FROZEN.md` states "Do not adopt this repository into a governed
@@ -249,14 +252,50 @@ someone to lie to make the build go green.
   - An eligible repository's behaviour is unchanged, and the greenfield, scaffold, and
     reconstruction-required fixtures still classify as they do today. A guard that reaches
     `OUT_OF_SCOPE` too readily would block adoption entirely, which is worse than the defect.
-- **Verification:** `npm test` with the three new fixtures; the before/after tree comparison is part
-  of the assertion, not a manual check.
+- **Verification:** the test families of [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md)
+  "Required tests" and [ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md)
+  "Required tests" (the resolver and vocabulary, the capped read, `init` refusal and file safety, and the
+  Windows release gate), each with its mutation checks; the before/after tree comparison and the
+  instrumented read-only harness are part of the assertion, not a manual check.
 - **Dependencies:** `standards init` and the adoption guide above — both are downstream of the guard
   and the guide's step order is part of what changes.
-- **Possible ADR:** whether the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model, and the decision
-  that EngineeringStandards owns adoption eligibility itself rather than delegating to an external
-  registry, is consequential enough to record. It likely is: the question arises before a project has
-  adopted anything, so answering it must not require a separate enforcement repository to be present.
+- **ADR:** [ADR 0016](../adr/0016-adoption-eligibility-is-resolved-before-any-adoption-write.md),
+  status Accepted (owner, 2026-10-12) and governing until its successor is accepted
+  ([ADR 0021](../adr/0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md),
+  Proposed, owner decision of 2026-10-15T17:17Z, option C, pending acceptance), records the `IN_SCOPE / OUT_OF_SCOPE / INDETERMINATE` model
+  and the decision that EngineeringStandards owns adoption eligibility itself rather than delegating
+  to an external registry.
+- **Scope as implementation slices (owner-approved content; slices 1-3 are BLOCKED until the owner
+  accepts ADR 0021, and none is schedulable before then)** (each its own pull
+  request; none is implemented by the ADR):
+  1. BLOCKED until ADR 0021 is accepted (an owner act; then READY; source inspection and the read-time checks are governed by ADR 0021 G1-G4, because ADR 0016's no-follow, handle-bound mechanism cannot be provided from Node): the resolver and the read-only `eligibility` subcommand, with fixtures and
+     **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
+     read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`),
+     and the read-time consistency checks (same-open-file stamps, multiset re-enumeration, and a final
+     per-source identity, size and stamp comparison), which are point-in-time observations (ADR 0021 G2-G4);
+  2. BLOCKED until ADR 0021 is accepted (an owner act; then READY): `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
+     writes nothing before its first write), with the pre-write classification of every path component,
+     a re-observation immediately before each write (check-then-write, no handle-relative write, no
+     claim of exclusion), create-if-absent creation, and `entry-changed` (ADR 0021 G5-G9, superseding
+     the handle binding of ADR 0016 P1-P3, P6, P7), **including the existing-artifact overwrite path**
+     (`--force-overwrite`), which uses the temporary-file-and-rename write and is the one documented
+     exception: a hard link to
+     the old file keeps the old content, the permission bits observed at ADR 0021 G9 step 3 are applied (not a promise about an entry replaced after that observation), other inode metadata is not
+     (owner decision of 2026-10-14, 13:34Z; ADR 0016, "Documented exception: overwrite does not share
+     the inode"). AC4's one-entry exception and its test are in scope;
+  3. BLOCKED until slice 1 (the resolver) lands, per ADR 0016 D4 (the wording must not name a command that does not exist): the wording surfaces (Standard 22 step 0, `INSTRUCTIONS.md`, the adoption flow diagram
+     and its SVG, `CHANGELOG.md`), with a no-catalog-rule test.
+- **Release classification and gates:** the owner classified the complete change MAJOR, targeted to
+  3.0.0. A Windows-safe `eligibility` and the mandatory, non-skippable real-filesystem Windows safety
+  tests (the raced-in kinds at the classification-to-re-observation seam and the create-if-absent
+  behaviour, ADR 0021 "Windows release gate") are required for the 3.0.0 release gate.
+  No `VERSION` change, tag or release is authorised by the ADR or by this item.
+- **Size limits (approved 2026-10-14, relayed at 01:34Z):** a 400,000 raw-byte capped read (at most
+  cap-plus-one bytes; at most 400,000 read in full and examined; 400,001 or more `over-read-cap`,
+  INDETERMINATE, not overridable) with the grow-after-classification test and mutation check. It is part
+  of the resolver slice, whose implementation is blocked pending ADR 0021; the size-limit decision itself is approved and its former blocker is removed.
+- **`--help` (decided 2026-10-14, relayed at 01:34Z):** `eligibility --help` in any position prints usage
+  and exits 2, so exit 0 means only `IN_SCOPE`; top-level `standards --help` is unchanged.
 
 ### Prepare a truthful Engineering adapter release candidate
 
