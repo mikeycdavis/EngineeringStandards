@@ -982,3 +982,23 @@ test("a missing indexed object is reported as a repository problem, not as budge
   assert.match(ne[0].message, /indexed object/);
   assert.doesNotMatch(ne[0].message, /max-total-read-bytes/);
 });
+
+test("an index-only env pin does not stream the working-tree file for a discarded digest", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": ENV }, [pin("test/fixtures/bad/.env", ENV, "scm.no-committed-env-files")]);
+  const log = path.join(os.tmpdir(), "fx-reads-" + process.pid + "-" + Math.random().toString(36).slice(2) + ".log");
+  const pre = path.join(os.tmpdir(), "fx-reads-" + process.pid + "-" + Math.random().toString(36).slice(2) + ".cjs");
+  await writeFile(pre, [
+    'const fs = require("node:fs");',
+    "const real = fs.createReadStream;",
+    "fs.createReadStream = function (p, ...r) { if (String(p).split(String.fromCharCode(92)).join(\"/\").endsWith(\"bad/.env\")) fs.appendFileSync(" + JSON.stringify(log) + ', "x"); return real.call(this, p, ...r); };',
+  ].join(String.fromCharCode(10)));
+  const r = spawnSync(process.execPath, ["--require", pre, CLI, "validate", "--dir=" + root, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.findings.filter((f) => f.id === "fixture-exempted").length, 1);
+  const { readFile } = await import("node:fs/promises");
+  let reads = 0;
+  try { reads = (await readFile(log, "utf8")).length; } catch { reads = 0; }
+  assert.equal(reads, 0, "the working-tree .env was streamed " + reads + " time(s)");
+  await rm(pre, { force: true });
+  await rm(log, { force: true });
+});

@@ -3923,6 +3923,9 @@ export async function main(args) {
     // version a second read could disagree with: it is hashed once, here.
     for (const entry of checked.valid) {
       if (run.readDigests.has(entry.path)) continue;
+      // An index-only pin is checked against the indexed blob below; hashing the working-tree copy
+      // here would read the file for a digest that is then discarded.
+      if (INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) continue;
       const abs = fileByRel.get(entry.path);
       if (abs === undefined || TEXT_EXT.has(path.extname(abs))) continue;
       try {
@@ -4136,7 +4139,7 @@ export async function main(args) {
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
             `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
-            (indexBlobFailed.has(entry.path)
+            (INDEX_ONLY_FIXTURE_RULES.has(entry.rule) && indexBlobFailed.has(entry.path)
               ? "The indexed object for this path could not be read (a repository or index problem, not the read budget); repair the repository and rerun. Keep the entry."
               : underUnreadableDir
               ? "A directory above this path could not be listed, so the path was never enumerated and may still exist. Keep the entry; restore access to the directory and rerun."
