@@ -961,3 +961,24 @@ test("an env pin still binds when the tracked file is absent from the working tr
   assert.equal(findingsOf(res, "fixture-exempted").length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
   assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0);
 });
+
+test("an absent, detector-ignored index pin (.env.example) is stale, not 'not established'", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env.example": ENV }, [pin("test/fixtures/bad/.env.example", ENV, "scm.no-committed-env-files")]);
+  await rm(path.join(root, "test/fixtures/bad/.env.example"));
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0, JSON.stringify(res.json.findings.map((x) => x.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 1);
+});
+
+test("a missing indexed object is reported as a repository problem, not as budget exhaustion", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": ENV }, [pin("test/fixtures/bad/.env", ENV, "scm.no-committed-env-files")]);
+  const r = spawnSync("git", ["-C", root, "rev-parse", ":0:test/fixtures/bad/.env"], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const oid = r.stdout.trim();
+  await rm(path.join(root, ".git", "objects", oid.slice(0, 2), oid.slice(2)), { force: true });
+  const res = cli("validate", root);
+  const ne = findingsOf(res, "fixture-exemption-not-established");
+  assert.equal(ne.length, 1, JSON.stringify(res.json?.findings?.map((x) => x.id)));
+  assert.match(ne[0].message, /indexed object/);
+  assert.doesNotMatch(ne[0].message, /max-total-read-bytes/);
+});

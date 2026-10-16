@@ -3878,6 +3878,8 @@ export async function main(args) {
   let applicabilityConflict = false;
   // Pinned non-text files whose one-off digest read failed: unreadable, not budget-limited.
   const digestReadFailed = new Set();
+  // Index-only pins whose indexed blob could not be read while the index itself answered.
+  const indexBlobFailed = new Set();
   if (Array.isArray(policy.document?.fixtureExemptions)) {
     const checked = checkEntries(policy.document.fixtureExemptions, {
       catalog,
@@ -3947,7 +3949,10 @@ export async function main(args) {
       const trackedElsewhere = listedNow !== null && listedNow.ok && !listedNow.files.includes(entry.path);
       // No indexed blob is a settled answer only when the index itself was readable: then the path is
       // simply not tracked and the rule found no violation. If the index could not be read, nothing is known.
-      if (!blob.ok) return { ...entry, state: trackedElsewhere ? "not-tracked" : "not-read", observedSha256: null };
+      if (!blob.ok) {
+        if (!trackedElsewhere) indexBlobFailed.add(entry.path);
+        return { ...entry, state: trackedElsewhere ? "not-tracked" : "not-read", observedSha256: null };
+      }
       const observed = contentDigest(blob.bytes);
       return { ...entry, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" };
     });
@@ -4110,7 +4115,9 @@ export async function main(args) {
       const abs = fileByRel.get(entry.path);
       const incomplete =
         entry.state === "not-read" ||
-        abs === undefined ||
+        // An index-only rule enumerates the INDEX, so absence from the working tree says nothing about
+        // it (a tracked-but-absent file, or an ignored `.env.example`, was fully evaluated).
+        (abs === undefined && !INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) ||
         // A file with no recognised text extension is never searched as text (a `.env` is judged by
         // the repository index), so "no text available" says nothing about it: its digest was taken
         // over the whole file and a rule that does not fire there is genuinely stale.
@@ -4129,7 +4136,9 @@ export async function main(args) {
           message:
             `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
             `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
-            (underUnreadableDir
+            (indexBlobFailed.has(entry.path)
+              ? "The indexed object for this path could not be read (a repository or index problem, not the read budget); repair the repository and rerun. Keep the entry."
+              : underUnreadableDir
               ? "A directory above this path could not be listed, so the path was never enumerated and may still exist. Keep the entry; restore access to the directory and rerun."
               : cappedAway
               ? `The audit stopped collecting files at the ${MAX_FILES}-file cap, so this path was never enumerated and may still exist. Keep the entry; narrow the audited tree.`
