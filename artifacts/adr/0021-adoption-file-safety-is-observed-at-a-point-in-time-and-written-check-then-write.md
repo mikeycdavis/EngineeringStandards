@@ -407,7 +407,9 @@ that the platform can create (symbolic link, junction, directory, newly created 
 deletion, regular-to-regular replacement (the replacement created first and renamed over the name, so a new identity is allocated before the old is freed; identity reuse is a documented non-claim), directory component replaced by another real directory or
 by a link; the FIFO and device kinds are tested injected only) at the seam between classification and re-observation; (4) G8 at the seam after the
 re-observation, for a component and a leaf, at seam S7 for a newly created file artifact replaced by
-another regular file and by a link, at seam S12 for a created file artifact replaced by another regular
+another regular file and by a link, **and its restore variant (the original put back after S7, so only the
+baseline comparison can refuse it), and the same S7 replacement and restore variant for the temporary
+file of G9**, at seam S12 for a created file artifact replaced by another regular
 file of the same size and appended to in place, and at seam S14 for a created file artifact and for the
 temporary file of G9, the pathname replaced by another regular file and by a link before the first
 descriptor write (no byte written through the descriptor); (5) G2 with a regular source replaced, between
