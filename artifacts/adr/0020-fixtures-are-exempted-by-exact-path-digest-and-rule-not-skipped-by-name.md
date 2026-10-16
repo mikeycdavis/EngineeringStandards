@@ -91,12 +91,19 @@ An entry that does not validate waives nothing and is reported; the file is insp
 | Path not in the scanned surface, digest changed, or rule no longer fires | `fixture-exemption-stale` |
 | File unreadable, or not read in full (read budget spent, per-file cap, no repository index) | `fixture-exemption-not-established` — keep the entry and fix access or rerun; never stale, never a waiver |
 | Path exists but the 20,000-file cap kept the walk from reaching it, and nothing deliberate (ignore rule, excluded or vendor directory, symlink) explains its absence | `fixture-exemption-not-established` — keep the entry; it is never a waiver |
+| Path lies beneath a directory the walk could not list (access failure), or its existence probe was inconclusive after the cap | `fixture-exemption-not-established` — keep the entry, restore access and rerun; never stale, never a waiver |
+| The rule is declared `not-applicable` in `applicability` and also carries a pin | `fixture-exemption-rule-not-applicable` — `standards validate` does not bind the pin, reports the status `NOT_EVALUATED` and exits 1; `standards audit` stays policy-independent (ADR 0004) and still reports the pin; `standards policy` rejects the pair as `policy.conflicting-classification` |
 
 `standards policy` runs the same validator, so an entry that is malformed, expired, duplicated or names an
 un-exemptible rule is reported before an audit. It does NOT bind entries to the repository: whether a path still
 exists, whether its digest still matches and whether the rule still fires there are `fixture-exemption-stale`
 findings that only `audit` and `validate` can produce, because they need the scanned surface and the detectors.
 A policy that passes `standards policy` can therefore still carry a dead entry.
+
+When a rule is wholly excepted by fixture pins and also carries an active project-level exception, the result
+keeps both: `exception.kind` stays `fixture-exemption` with the pins in `exception.fixtures`, and the project
+exception is carried beside them as `exception.projectException` (and printed by human `validate`), so neither
+decision conceals the other.
 
 ### Which rules are exemptible
 

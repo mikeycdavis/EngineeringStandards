@@ -247,7 +247,7 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy, policyFindings = [], exemptionFindings = []) {
+function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -359,7 +359,13 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   }
 
   if (exemptionFindings.length) {
-    out.push("  Fixture exemptions (the verdict above is unchanged by these):");
+    // Truthful about the one case where they DO change the verdict: a rule declared not-applicable
+    // that also carries a pin makes the status NOT_EVALUATED (and the exit code findings).
+    out.push(
+      exemptionChangedVerdict
+        ? "  Fixture exemptions (a not-applicable rule carrying a pin made the status above NOT_EVALUATED):"
+        : "  Fixture exemptions (the verdict above is unchanged by these):",
+    );
     for (const f of exemptionFindings) out.push(`    ${displaySafe(f.message)}`);
     out.push("");
   }
@@ -4120,7 +4126,6 @@ export async function main(args) {
     }
     const why = {
       "not-scanned": "the path is not in the scanned surface (absent, ignored by the repository, or excluded)",
-      unreadable: "the file could not be read",
       "digest-mismatch":
         `the file's content digest is ${entry.observedSha256}, not the pinned ${entry.sha256}; the file changed ` +
         `after the exemption was reviewed, so it is inspected as ordinary content`,
@@ -4606,6 +4611,7 @@ export async function main(args) {
             result.exception.fixtures?.some((x) => f.evidence.includes(x.path));
           return !listed;
         }),
+        applicabilityConflict && report.status === "NOT_EVALUATED",
       ) + "\n",
     );
     // Report the current digest for any attestation that lacks one, so it can be recorded rather

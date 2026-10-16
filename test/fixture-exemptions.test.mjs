@@ -820,3 +820,105 @@ test("a used index-only env pin over a truncated .env.json is not reported stale
   assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0);
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 0);
 });
+
+// ---- deterministic verdict and probe tests (no unrelated failures, injected access failures) ----
+
+const FOUR_FAILING = ["architecture.project-manifest", "architecture.adr", "documentation.architecture", "planning.breakdown-directory"];
+const UNESTABLISHED = ("ai.no-fabricated-capabilities ai.no-safety-bypass architecture.no-hidden-global-state architecture.no-boundary-bypass " +
+  "architecture.no-duplicate-implementations concurrency.no-unmanaged-shared-state data.migration-rollback data.no-silent-discard " +
+  "data.no-audit-corruption data.no-prod-data-in-dev errors.no-false-success errors.no-unbounded-retry observability.no-silenced-failures " +
+  "meta.standards-not-weakened scm.no-shared-history-rewrite security.no-disabled-access-controls security.no-untrusted-exec " +
+  "testing.no-weakening-to-pass testing.no-fabricated-results").split(" ");
+
+function applicability(ids) {
+  const NLc = String.fromCharCode(10);
+  return "applicability:" + NLc + ids.map((id) => "  " + id + ":" + NLc + "    status: not-applicable" + NLc + '    reason: "none here"' + NLc + '    revisitWhen: "later"' + NLc).join("");
+}
+
+async function compliantRepo(naRules) {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/bypass.js": CERT }, [pin("test/fixtures/bad/bypass.js", CERT, CERT_RULE)]);
+  const { readFile } = await import("node:fs/promises");
+  const file = path.join(root, "project-policy.yml");
+  await writeFile(file, (await readFile(file, "utf8")) + applicability(naRules));
+  return root;
+}
+
+test("a not-applicable rule carrying a pin: validate exits 1 as NOT_EVALUATED; without the declaration it is COMPLIANT_WITH_EXCEPTIONS and exits 0; audit is independent", async () => {
+  const base = [...FOUR_FAILING, ...UNESTABLISHED];
+  const clean = cli("validate", await compliantRepo(base));
+  assert.equal(clean.code, 0, "control: otherwise compliant, " + JSON.stringify(clean.json?.status));
+  assert.equal(clean.json.status, "COMPLIANT_WITH_EXCEPTIONS");
+  const root = await compliantRepo([...base, CERT_RULE]);
+  const res = cli("validate", root);
+  assert.equal(res.code, 1);
+  assert.equal(res.json.status, "NOT_EVALUATED");
+  assert.equal(findingsOf(res, "fixture-exemption-rule-not-applicable").length, 1);
+  const audit = cli("audit", root);
+  assert.equal(audit.code, 0);
+  assert.equal(findingsOf(audit, "fixture-exempted").length, 1);
+  assert.equal(findingsOf(audit, "fixture-exemption-rule-not-applicable").length, 0);
+  const text = cliText("validate", root);
+  assert.doesNotMatch(text.out, /the verdict above is unchanged by these/);
+  assert.match(text.out, /made the status above NOT_EVALUATED/);
+});
+
+function preload(lines) {
+  const file = path.join(os.tmpdir(), "fx-preload-" + process.pid + "-" + Math.random().toString(36).slice(2) + ".cjs");
+  return writeFile(file, lines.join(String.fromCharCode(10))).then(() => file);
+}
+const BSL = String.fromCharCode(92);
+const norm = 'String(p).split(String.fromCharCode(92)).join("/")';
+
+test("a pin beneath a directory the walk could not list is 'not established', not stale (injected EACCES)", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "locked/bad.js": CERT }, [pin("locked/bad.js", CERT, CERT_RULE)]);
+  const pre = await preload([
+    'const fs = require("node:fs");',
+    "const deny = (p) => " + norm + '.endsWith("/locked");',
+    'const ex = (p) => Object.assign(new Error("EACCES: permission denied, scandir " + p), { code: "EACCES" });',
+    "const rs = fs.readdirSync; fs.readdirSync = function (p, ...r) { if (deny(p)) throw ex(p); return rs.call(this, p, ...r); };",
+    "const pr = fs.promises.readdir; fs.promises.readdir = async function (p, ...r) { if (deny(p)) throw ex(p); return pr.call(this, p, ...r); };",
+    "const rd = fs.readdir; fs.readdir = function (p, ...r) { if (deny(p)) return r[r.length - 1](ex(p)); return rd.call(this, p, ...r); };",
+  ]);
+  const r = spawnSync(process.execPath, ["--require", pre, CLI, "validate", "--dir=" + root, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.findings.filter((f) => f.id === "fixture-exemption-stale").length, 0, JSON.stringify(json.findings.map((f) => f.id)));
+  const ne = json.findings.filter((f) => f.id === "fixture-exemption-not-established");
+  assert.equal(ne.length, 1);
+  assert.match(ne[0].message, /could not be listed/);
+  await rm(pre, { force: true });
+});
+
+test("a cap-hidden pin whose existence probe fails with EACCES is 'not established', not stale (injected)", { timeout: 300000 }, async () => {
+  const root = await scratch();
+  await mkdir(path.join(root, "a"), { recursive: true });
+  for (let i = 0; i < 20050; i += 1) await writeFile(path.join(root, "a", "f" + i + ".txt"), "x");
+  await mkdir(path.join(root, "zzz"), { recursive: true });
+  await writeFile(path.join(root, "zzz/late.js"), CERT);
+  await writeFile(path.join(root, "project-policy.yml"), policyText([pin("zzz/late.js", CERT, CERT_RULE)]));
+  const pre = await preload([
+    'const fs = require("node:fs");',
+    "const hit = (p) => " + norm + '.endsWith("zzz/late.js");',
+    'const ex = (p) => Object.assign(new Error("EACCES: permission denied " + p), { code: "EACCES" });',
+    "const ee = fs.existsSync; fs.existsSync = function (p) { return hit(p) ? false : ee.call(this, p); };",
+    'for (const n of ["statSync", "lstatSync"]) { const o = fs[n]; fs[n] = function (p, ...r) { if (hit(p)) throw ex(p); return o.call(this, p, ...r); }; }',
+  ]);
+  const r = spawnSync(process.execPath, ["--require", pre, CLI, "validate", "--dir=" + root, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.findings.filter((f) => f.id === "fixture-exemption-stale").length, 0, JSON.stringify(json.findings.map((f) => f.id)));
+  assert.equal(json.findings.filter((f) => f.id === "fixture-exemption-not-established").length, 1);
+  await rm(pre, { force: true });
+});
+
+test("ADR 0020 and CHANGELOG state the not-applicable conflict, the unlistable-directory case and projectException", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const dir = path.join(HERE, "..", "artifacts", "adr");
+  const name = (await readdir(dir)).find((f) => f.startsWith("0020"));
+  const adr = await readFile(path.join(dir, name), "utf8");
+  const log = await readFile(path.join(HERE, "..", "CHANGELOG.md"), "utf8");
+  for (const needle of ["fixture-exemption-rule-not-applicable", "projectException", "could not list", "policy.conflicting-classification"]) {
+    assert.ok(adr.includes(needle), "ADR 0020 is missing: " + needle);
+  }
+  for (const needle of ["fixture-exemption-rule-not-applicable", "projectException"]) {
+    assert.ok(log.includes(needle), "CHANGELOG is missing: " + needle);
+  }
+});

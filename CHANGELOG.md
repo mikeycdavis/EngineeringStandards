@@ -44,7 +44,11 @@ path, changed byte or rule is inspected as ordinary content, and an entry that s
 stale. A rule whose only violations are waived reports `excepted`, never `passed`; a waiver is applied to
 a violation a detector observed, so it cannot turn an unread file into a result. Entries that do not
 validate waive nothing and are reported by `audit`, `validate` and `standards policy`. A pin whose path exists but was hidden by the 20,000-file cap is
-"not established" (keep the entry), never stale and never a waiver. `standards policy` checks shape and
+"not established" (keep the entry), never stale and never a waiver. A pin beneath a directory the walk could not list, or whose existence probe was inconclusive, is likewise "not
+established". A pin on a rule declared `not-applicable` is rejected: `validate` does not bind it
+(`fixture-exemption-rule-not-applicable`), reports `NOT_EVALUATED` and exits 1, `audit` stays independent, and
+`standards policy` rejects the pair. A result excepted by fixture pins keeps an active project exception as
+`exception.projectException`. `standards policy` checks shape and
 semantics only; a dead entry (path gone, digest changed, rule no longer fires) is reported by `audit` and `validate`.
 `security.no-secrets-in-artifacts` is non-exemptible and stays so, so its fixture bait is built at run
 time instead of committed. The human `Failing:` list no longer repeats rules already shown under
