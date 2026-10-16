@@ -953,3 +953,11 @@ test("a corrupt index never makes an env pin stale: it stays not established", a
   assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json?.findings?.map((x) => x.id)));
   assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 1);
 });
+
+test("an env pin still binds when the tracked file is absent from the working tree", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": ENV }, [pin("test/fixtures/bad/.env", ENV, "scm.no-committed-env-files")]);
+  await rm(path.join(root, "test/fixtures/bad/.env"));
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exempted").length, 1, JSON.stringify(res.json.findings.map((x) => x.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0);
+});

@@ -3935,7 +3935,11 @@ export async function main(args) {
     // against the indexed blob, never the working-tree copy: an unstaged edit must neither wake a stale
     // pin nor let unrelated bytes waive a tracked file. An unreadable index entry leaves it `not-read`.
     exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
-      if (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule) || entry.state === "not-scanned") return entry;
+      if (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) return entry;
+      // The detector enumerates the INDEX, so a tracked file absent from the working tree (unstaged
+      // deletion, sparse checkout) is still a violation and still pinnable. Only a path the detector
+      // itself skips by directory name can never be reached.
+      if (entry.state === "not-scanned" && entry.path.split("/").some((segment) => SKIP_DIRS.has(segment))) return entry;
       const blob = indexedBlob(root, entry.path);
       // "Not tracked" must be PROVEN by an actual index query that succeeds and does not list the path;
       // a corrupt index or missing git fails both lookups and proves nothing.
