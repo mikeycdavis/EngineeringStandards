@@ -3934,10 +3934,13 @@ export async function main(args) {
     // An index-only rule (an env file) derives its violation from the INDEX, so its pin is checked
     // against the indexed blob, never the working-tree copy: an unstaged edit must neither wake a stale
     // pin nor let unrelated bytes waive a tracked file. An unreadable index entry leaves it `not-read`.
+    const indexReadable = repositoryAvailable(root).available;
     exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
       if (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule) || entry.state === "not-scanned") return entry;
       const blob = indexedBlob(root, entry.path);
-      if (!blob.ok) return { ...entry, state: "not-read", observedSha256: null };
+      // No indexed blob is a settled answer only when the index itself was readable: then the path is
+      // simply not tracked and the rule found no violation. If the index could not be read, nothing is known.
+      if (!blob.ok) return { ...entry, state: indexReadable ? "not-tracked" : "not-read", observedSha256: null };
       const observed = contentDigest(blob.bytes);
       return { ...entry, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" };
     });
@@ -4136,6 +4139,7 @@ export async function main(args) {
       }
     }
     const why = {
+      "not-tracked": `the path is not tracked in the index, so ${entry.rule} found no violation; remove the entry`,
       "not-scanned": "the path is not in the scanned surface (absent, ignored by the repository, or excluded)",
       "digest-mismatch":
         `the file's content digest is ${entry.observedSha256}, not the pinned ${entry.sha256}; the file changed ` +
