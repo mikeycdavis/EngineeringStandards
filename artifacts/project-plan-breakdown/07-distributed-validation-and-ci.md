@@ -272,7 +272,7 @@ someone to lie to make the build go green.
      **Windows-safe source inspection** of `README.md` and `FROZEN.md`, using the approved capped
      read (400,000 raw bytes; at most cap-plus-one bytes read; 400,001 or more is `over-read-cap`),
      and the read-time consistency checks (same-open-file stamps, multiset re-enumeration, and a final
-     per-source identity comparison), which are point-in-time observations (ADR 0021 G2-G4);
+     per-source identity, size and stamp comparison), which are point-in-time observations (ADR 0021 G2-G4);
   2. BLOCKED until ADR 0021 is accepted (an owner act; then READY): `init` consults the resolver and refuses on `OUT_OF_SCOPE` or `INDETERMINATE` (exit `2`,
      writes nothing before its first write), with the pre-write classification of every path component,
      a re-observation immediately before each write (check-then-write, no handle-relative write, no

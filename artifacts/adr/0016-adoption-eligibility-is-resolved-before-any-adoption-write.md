@@ -435,7 +435,7 @@ spellings that fold together are two entries, and a name cannot repeat within on
 difference is `INDETERMINATE` (`listing-changed`). Every matching entry of the first enumeration was
 read, so equal multisets mean no unread twin exists at the second enumeration.
 
-> **To be superseded in part, on acceptance of [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G3, G4).** "Through the same held handle" is withdrawn (the re-enumeration is by path), the final pass gains a per-source identity comparison, and the "Remaining limit" paragraph is replaced by ADR 0021's "What a result asserts". These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
+> **To be superseded in part, on acceptance of [ADR 0021](0021-adoption-file-safety-is-observed-at-a-point-in-time-and-written-check-then-write.md) (G3, G4).** "Through the same held handle" is withdrawn (the re-enumeration is by path), the final pass gains a per-source identity, size and stamp comparison, and the "Remaining limit" paragraph is replaced by ADR 0021's "What a result asserts". These withdrawals take effect when ADR 0021 is accepted; the text below is the record as amended on 2026-10-14 and is not edited.
 
 **Status.** The contract above (same-handle stamps, re-enumeration) is a **clarification within the
 approved P3/P6 binding**, not a new owner decision. The **residual limit** below is a **documented
