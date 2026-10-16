@@ -47,7 +47,7 @@ validate waive nothing and are reported by `audit`, `validate` and `standards po
 "not established" (keep the entry), never stale and never a waiver. A pin beneath a directory the walk could not list, or whose existence probe was inconclusive, is likewise "not
 established". A pin on a rule declared `not-applicable` is rejected: `validate` does not bind it
 (`fixture-exemption-rule-not-applicable`), reports `NOT_EVALUATED` and exits 1, `audit` stays independent, and
-`standards policy` rejects the pair. A result excepted by fixture pins keeps an active project exception as
+`standards policy` rejects the pair. An env-file pin (`scm.no-committed-env-files`) is checked against the indexed blob, not the working-tree copy. A result excepted by fixture pins keeps an active project exception as
 `exception.projectException`. `standards policy` checks shape and
 semantics only; a dead entry (path gone, digest changed, rule no longer fires) is reported by `audit` and `validate`.
 `security.no-secrets-in-artifacts` is non-exemptible and stays so, so its fixture bait is built at run

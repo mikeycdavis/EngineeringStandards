@@ -48,6 +48,7 @@ import {
   repositoryAvailable,
   repositoryDigest,
   trackedMatching,
+  indexedBlob,
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
@@ -3930,6 +3931,16 @@ export async function main(args) {
       }
     }
     exemptionCheck.bound = await bindEntries(checked.valid, { scanned: new Set(files.map((f) => rel(f))), digests: run.readDigests });
+    // An index-only rule (an env file) derives its violation from the INDEX, so its pin is checked
+    // against the indexed blob, never the working-tree copy: an unstaged edit must neither wake a stale
+    // pin nor let unrelated bytes waive a tracked file. An unreadable index entry leaves it `not-read`.
+    exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
+      if (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule) || entry.state === "not-scanned") return entry;
+      const blob = indexedBlob(root, entry.path);
+      if (!blob.ok) return { ...entry, state: "not-read", observedSha256: null };
+      const observed = contentDigest(blob.bytes);
+      return { ...entry, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" };
+    });
     // A content-derived pin over a file read only in part is never bound: the digest covers bytes no
     // detector inspected, so the hit stays live and the entry is reported "not established". An
     // index-only rule (an env file) is judged by the repository index and is unaffected.

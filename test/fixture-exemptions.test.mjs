@@ -922,3 +922,26 @@ test("ADR 0020 and CHANGELOG state the not-applicable conflict, the unlistable-d
     assert.ok(log.includes(needle), "CHANGELOG is missing: " + needle);
   }
 });
+
+test("an env pin is checked against the INDEXED bytes, not the working-tree copy", async () => {
+  const REVIEWED = "API_TOKEN=reviewed" + NL;
+  const OTHER = "API_TOKEN=other-value" + NL;
+  const ENVR = "scm.no-committed-env-files";
+  const git = (root, ...args) => {
+    const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  // Index holds OTHER; the working tree was edited to the reviewed bytes without staging.
+  const a = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": OTHER }, [pin("test/fixtures/bad/.env", REVIEWED, ENVR)]);
+  await writeFile(path.join(a, "test/fixtures/bad/.env"), REVIEWED);
+  const ra = cli("validate", a);
+  assert.equal(findingsOf(ra, "fixture-exempted").length, 0, "unrelated working-tree bytes must not waive an indexed file");
+  assert.equal(findingsOf(ra, "fixture-exemption-stale").length, 1);
+  assert.ok(ra.json.findings.some((f) => f.id === "committed-env-file"), "the violation stays live");
+  // Index holds the reviewed bytes; the working tree drifted: the pin still applies to what is tracked.
+  const b = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": REVIEWED }, [pin("test/fixtures/bad/.env", REVIEWED, ENVR)]);
+  await writeFile(path.join(b, "test/fixtures/bad/.env"), OTHER);
+  git(b, "status", "--short");
+  const rb = cli("validate", b);
+  assert.equal(findingsOf(rb, "fixture-exempted").length, 1, JSON.stringify(rb.json.findings.map((f) => f.id)));
+});

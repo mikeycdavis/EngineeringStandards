@@ -100,6 +100,12 @@ exists, whether its digest still matches and whether the rule still fires there 
 findings that only `audit` and `validate` can produce, because they need the scanned surface and the detectors.
 A policy that passes `standards policy` can therefore still carry a dead entry.
 
+Which bytes a pin is checked against follows where the rule's violation comes from. For the per-file text
+detectors it is the very read the detector inspected. For `scm.no-committed-env-files`, whose violation is
+the path being tracked in the index, it is the indexed blob (`git cat-file blob :0:<path>`), never the
+working-tree copy, so an unstaged edit can neither wake a stale pin nor let unrelated bytes waive a tracked
+file. If the index entry cannot be read the pin is not established.
+
 When a rule is wholly excepted by fixture pins and also carries an active project-level exception, the result
 keeps both: `exception.kind` stays `fixture-exemption` with the pins in `exception.fixtures`, and the project
 exception is carried beside them as `exception.projectException` (and printed by human `validate`), so neither

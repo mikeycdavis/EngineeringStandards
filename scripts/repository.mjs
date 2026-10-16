@@ -109,6 +109,19 @@ export function repositoryAvailable(root) {
  * answer, and a caller must report evidence unavailability rather than substitute a filesystem
  * guess (Standard 44 R12).
  */
+/**
+ * The bytes the index holds for one tracked path (stage 0), or `{ ok: false }`.
+ *
+ * For a rule whose violation is derived from the INDEX (a tracked environment file), the working-tree
+ * copy is not the evidence: an unstaged edit can make the two differ. No fallback to the working tree,
+ * as everywhere in this module.
+ */
+export function indexedBlob(root, relPath) {
+  const r = spawnSync("git", ["-C", root, "cat-file", "blob", ":0:" + relPath], { encoding: "buffer", windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return { ok: false, bytes: null };
+  return { ok: true, bytes: r.stdout };
+}
+
 export function trackedMatching(root, pathspecs) {
   const r = git(root, ["ls-files", "-z", "--cached", "--", ...pathspecs]);
   if (!r.ok) return { ok: false, files: null };
