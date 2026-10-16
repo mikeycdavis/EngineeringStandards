@@ -945,3 +945,11 @@ test("an env pin is checked against the INDEXED bytes, not the working-tree copy
   const rb = cli("validate", b);
   assert.equal(findingsOf(rb, "fixture-exempted").length, 1, JSON.stringify(rb.json.findings.map((f) => f.id)));
 });
+
+test("a corrupt index never makes an env pin stale: it stays not established", async () => {
+  const root = await repo({ "src/ok.js": CLEAN, "test/fixtures/bad/.env": ENV }, [pin("test/fixtures/bad/.env", ENV, "scm.no-committed-env-files")]);
+  await writeFile(path.join(root, ".git", "index"), "this is not a git index");
+  const res = cli("validate", root);
+  assert.equal(findingsOf(res, "fixture-exemption-stale").length, 0, JSON.stringify(res.json?.findings?.map((x) => x.id)));
+  assert.equal(findingsOf(res, "fixture-exemption-not-established").length, 1);
+});

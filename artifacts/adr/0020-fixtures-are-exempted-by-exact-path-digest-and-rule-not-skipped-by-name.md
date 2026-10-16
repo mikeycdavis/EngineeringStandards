@@ -126,8 +126,10 @@ SHA-256 over the file's bytes with each CRLF pair read as LF. Hashing raw workin
 make one entry fresh on one platform and stale on another for the same commit — the defect ADR 0011
 and ADR 0015 measured for attestations — and this repository is developed on Windows with
 `core.autocrlf`. The documented consequence: a change that is *only* LF to CRLF does not invalidate an
-entry; every other byte change does. The digest is computed over the file as the run reads it, not
-over a Git blob, so it needs no Git and has no fallback to disagree with.
+entry; every other byte change does. For the content-derived rules the digest is computed over the file as the run reads it, not
+over a Git blob, so it needs no Git and has no fallback to disagree with. The one exception is the index-derived
+`scm.no-committed-env-files`, whose pin is the digest of the INDEXED blob (see Validation above), computed with the
+same CRLF-as-LF rule; a maintainer pins it from `git cat-file blob :0:<path>`, not from the working-tree file.
 
 ### `audit` and `validate`
 

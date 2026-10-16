@@ -3934,13 +3934,16 @@ export async function main(args) {
     // An index-only rule (an env file) derives its violation from the INDEX, so its pin is checked
     // against the indexed blob, never the working-tree copy: an unstaged edit must neither wake a stale
     // pin nor let unrelated bytes waive a tracked file. An unreadable index entry leaves it `not-read`.
-    const indexReadable = repositoryAvailable(root).available;
     exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
       if (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule) || entry.state === "not-scanned") return entry;
       const blob = indexedBlob(root, entry.path);
+      // "Not tracked" must be PROVEN by an actual index query that succeeds and does not list the path;
+      // a corrupt index or missing git fails both lookups and proves nothing.
+      const listedNow = blob.ok ? null : trackedMatching(root, [entry.path]);
+      const trackedElsewhere = listedNow !== null && listedNow.ok && !listedNow.files.includes(entry.path);
       // No indexed blob is a settled answer only when the index itself was readable: then the path is
       // simply not tracked and the rule found no violation. If the index could not be read, nothing is known.
-      if (!blob.ok) return { ...entry, state: indexReadable ? "not-tracked" : "not-read", observedSha256: null };
+      if (!blob.ok) return { ...entry, state: trackedElsewhere ? "not-tracked" : "not-read", observedSha256: null };
       const observed = contentDigest(blob.bytes);
       return { ...entry, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" };
     });
