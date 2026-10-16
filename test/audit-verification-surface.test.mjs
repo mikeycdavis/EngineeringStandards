@@ -193,9 +193,9 @@ async function bare(body) {
 
 test("no-test-surface is withheld when a framework-excluded directory holds the tests", () =>
   bare(async (dir) => {
-    // `fixtures` is in SKIP_DIRS: the walk never enters it, so a test there is invisible to `files`.
-    await mkdir(path.join(dir, "fixtures", "test"), { recursive: true });
-    await writeFile(path.join(dir, "fixtures", "test", "a.test.js"), "// real tests live here\n");
+    // `vendor` is in SKIP_DIRS (`fixtures` stopped being, ST-19a): the walk never enters it, so a test there is invisible to `files`.
+    await mkdir(path.join(dir, "vendor", "test"), { recursive: true });
+    await writeFile(path.join(dir, "vendor", "test", "a.test.js"), "// real tests live here\n");
     const audit = cli("audit", dir).json;
     assert.equal(audit.evidenceSurface.complete, false, "precondition: the surface must report itself incomplete");
     assert.deepEqual(idsOf(audit.findings.filter((f) => f.id === NO_TESTS)), [], "a categorical no-tests claim over an incomplete walk");

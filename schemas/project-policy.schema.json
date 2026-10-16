@@ -40,6 +40,12 @@
       "items": { "$ref": "#/$defs/exception" }
     },
 
+    "fixtureExemptions": {
+      "description": "Exact, content-pinned waivers for deliberately violating test fixtures (ST-19a, ADR 0020). Each entry names ONE repository-relative file, the SHA-256 of its content, and ONE rule. It applies only while path, digest and rule all match; any other path, any changed byte and any other rule is inspected as ordinary content. No wildcard, directory or glob is accepted. Distinct from `exceptions`: an exception waives a rule for the project, a fixture exemption waives one rule for one pinned file and is reported as EXCEPTED, never as passed.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/fixtureExemption" }
+    },
+
     "attestations": {
       "description": "Recorded human judgement for rules the catalog says a human evaluates (ADR 0005, added in 1.1.0). An attestation is EVIDENCE, not a waiver: it says the rule applies and is satisfied on human review. It never overrides an automated failure, never applies to a rule the catalog marks non-attestable, and returns the rule to not-evaluated once stale or expired.",
       "type": "object",
@@ -249,6 +255,39 @@
         },
         "reference": {
           "description": "An ADR, issue, or work item carrying the decision.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+
+    "fixtureExemption": {
+      "description": "One file, one digest, one rule. Exactly one of expires or reviewWhen is required: an entry with neither, or with both, is reported as invalid and does not apply (the schema dialect this validator supports cannot express it over fields; scripts/fixture-exemptions.mjs enforces it).",
+      "type": "object",
+      "required": ["path", "sha256", "rule", "reason", "owner"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Exact repository-relative file path, forward slashes. No wildcard, directory or glob.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "description": "SHA-256 of the file's content with CRLF read as LF (scripts/fixture-exemptions.mjs, contentDigest), as 64 lower-case hexadecimal characters.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rule": { "$ref": "#/$defs/ruleId" },
+        "reason": { "description": "Why this file is deliberately violating.", "type": "string", "minLength": 1 },
+        "owner": { "description": "Who answers for keeping this entry true.", "type": "string", "minLength": 1 },
+        "expires": {
+          "description": "Date after which the entry no longer applies.",
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "reviewWhen": {
+          "description": "The condition under which this entry must be re-examined, when no expiry date fits.",
           "type": "string",
           "minLength": 1
         }

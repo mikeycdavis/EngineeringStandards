@@ -383,12 +383,12 @@ test("a tool-decided exclusion of tracked first-party code makes the surface inc
   try {
     const commit = await initRepo(root);
     await firstParty(root);
-    await baitIn(root, "fixtures");
+    await baitIn(root, "vendor");
     commit();
 
     const surface = surfaceOf(audit(root));
-    const hit = excludedDir(surface, "fixtures");
-    assert.ok(hit, `fixtures was not excluded at all: ${JSON.stringify(surface.excludedDirectories)}`);
+    const hit = excludedDir(surface, "vendor");
+    assert.ok(hit, `vendor was not excluded at all: ${JSON.stringify(surface.excludedDirectories)}`);
     assert.equal(hit.reason, "conventional non-project directory");
     assert.equal(hit.authorizedBy, "framework", "a name match is this tool's decision, not the project's");
 
@@ -397,7 +397,7 @@ test("a tool-decided exclusion of tracked first-party code makes the surface inc
       false,
       "the surface claimed completeness over a tracked tree this tool dropped from a hardcoded name",
     );
-    assert.deepEqual(surface.frameworkExcludedDirectories, ["fixtures"]);
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["vendor"]);
 
     // Load-bearing: without it, an implementation that excluded the whole repository would satisfy
     // every assertion above by reporting nothing and losing everything.
@@ -504,14 +504,14 @@ test("the incomplete-surface header names the tool-decided exclusion that caused
   try {
     const commit = await initRepo(root);
     await firstParty(root);
-    await baitIn(root, "fixtures");
+    await baitIn(root, "vendor");
     commit();
 
     // The exclusion is the ONLY loss mode here: nothing unreadable, nothing truncated, no cap, no
     // budget. So the reason list has exactly one thing it can say, and an empty list is the defect.
     const surface = surfaceOf(audit(root));
     assert.equal(surface.complete, false, JSON.stringify(surface, null, 2));
-    assert.deepEqual(surface.frameworkExcludedDirectories, ["fixtures"]);
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["vendor"]);
     assert.deepEqual(surface.unreadableFiles, []);
     assert.deepEqual(surface.truncatedFiles, []);
     assert.equal(surface.fileCapReached, false);
@@ -521,7 +521,7 @@ test("the incomplete-surface header names the tool-decided exclusion that caused
     const reasons = incompleteHeader(out);
     assert.ok(reasons !== null, `no incomplete-surface header was printed at all: ${out.slice(0, 1200)}`);
     assert.notEqual(reasons.trim(), "", "the header declared incompleteness and then named nothing");
-    assert.match(reasons, /fixtures/, `the header did not name the directory that caused it: "${reasons}"`);
+    assert.match(reasons, /vendor/, `the header did not name the directory that caused it: "${reasons}"`);
     assert.match(
       reasons,
       /this tool rather than by the repository/,
@@ -533,7 +533,7 @@ test("the incomplete-surface header names the tool-decided exclusion that caused
     // so a reader who has only that line cannot tell which subset made the surface incomplete.
     // Remove it, and the cause must still be named.
     const withoutSummary = out.replace(/^\d+ directory\(ies\) excluded as not this project's own code.*$/m, "");
-    assert.match(incompleteHeader(withoutSummary) ?? "", /fixtures/);
+    assert.match(incompleteHeader(withoutSummary) ?? "", /vendor/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -18,10 +18,12 @@
 import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { statSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseYaml, YamlError } from "./yaml.mjs";
 import { validate, assertSchemaSupported, SchemaError } from "./jsonschema.mjs";
+import { checkEntries } from "./fixture-exemptions.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -76,7 +78,7 @@ function detectAliases(document) {
 }
 
 /** Compliance conditions that a well-formed policy can still fail. */
-function complianceFindings(document, today, catalog) {
+function complianceFindings(document, today, catalog, repoRoot = null) {
   const findings = [];
 
   // Standard 20 R4: a rule its standard declared non-exemptible admits no exception. Caught here so
@@ -107,6 +109,30 @@ function complianceFindings(document, today, catalog) {
     }
   }
 
+  // Fixture exemptions (ST-19a, ADR 0020): the same validator the audit uses, so an entry that would
+  // be ignored at run time is an error here and an adopter learns it from `standards policy`.
+  const fixtureCheck = checkEntries(document.fixtureExemptions, {
+    catalog,
+    today,
+    isDirectory: repoRoot
+      ? (rel) => {
+          try {
+            return statSync(path.join(repoRoot, rel)).isDirectory();
+          } catch {
+            return false;
+          }
+        }
+      : null,
+  });
+  for (const problem of fixtureCheck.problems) {
+    findings.push({
+      id: `policy.${problem.id}`.replace("policy.fixture-exemption-", "fixture-exemption-"),
+      severity: "error",
+      message: `fixtureExemptions[${problem.index}]: ${problem.message}`,
+      remediation: "Correct the entry, re-pin it after review, or remove it. An entry that does not validate waives nothing.",
+    });
+  }
+
   // An exception says the rule applies and is knowingly unmet; not-applicable says the rule has no
   // subject here. A rule cannot be both, and a policy asserting both is ambiguous rather than
   // strict — there is no safe way to pick one (Standard 34 R3).
@@ -122,6 +148,18 @@ function complianceFindings(document, today, catalog) {
         severity: "error",
         message: `'${entry.rule}' is declared not-applicable and also carries an exception`,
         remediation: "Remove one. not-applicable means the rule has no subject; an exception means it applies and is unmet.",
+      });
+    }
+  }
+  // The same contradiction through a fixture exemption: a waiver of a departure from a rule that is
+  // declared to have no subject here.
+  for (const entry of fixtureCheck.valid) {
+    if (notApplicable.has(entry.rule)) {
+      findings.push({
+        id: "policy.conflicting-classification",
+        severity: "error",
+        message: `'${entry.rule}' is declared not-applicable and also carries a fixture exemption (${entry.path})`,
+        remediation: "Remove one. not-applicable means the rule has no subject; a fixture exemption waives a departure from a rule that applies.",
       });
     }
   }
@@ -171,7 +209,7 @@ export async function checkPolicy(policyPath, schemaPath, today) {
       return null; // A missing catalog disables the rule-aware checks; it never fakes a pass.
     }
   })();
-  const findings = complianceFindings(document, today, catalog);
+  const findings = complianceFindings(document, today, catalog, path.dirname(path.resolve(policyPath)));
   return { status: findings.length > 0 ? "findings" : "ok", errors: [], findings, aliases, document };
 }
 

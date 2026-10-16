@@ -15,14 +15,32 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
+import { existsSync, realpathSync, readdirSync, statSync, lstatSync, createReadStream } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
 import { evaluate, envelope, strayRejectionsFor } from "./compliance.mjs";
+import { checkEntries, bindEntries, contentDigest, contentDigestOfStream } from "./fixture-exemptions.mjs";
 import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
+
+const isAbsentError = (error) => error?.code === "ENOENT" || error?.code === "ENOTDIR";
+/** Tri-state existence: false only when the filesystem says the path is absent; an access failure is "may exist". */
+const pathMayExist = (p) => {
+  try {
+    statSync(p);
+    return true;
+  } catch (error) {
+    return !isAbsentError(error);
+  }
+};
+
+/**
+ * Exemptible rules whose detector judges a file by the repository index and its name, never by its
+ * content: a truncated or unavailable text read does not make "found no violation" unestablished.
+ */
+const INDEX_ONLY_FIXTURE_RULES = new Set(["scm.no-committed-env-files"]);
 import { validate } from "./jsonschema.mjs";
 import {
   classifyFreshness,
@@ -30,6 +48,7 @@ import {
   repositoryAvailable,
   repositoryDigest,
   trackedMatching,
+  indexedBlob,
   DIGEST_ALGORITHM,
   FRESHNESS,
 } from "./repository.mjs";
@@ -189,25 +208,47 @@ async function loadProjectPolicy(repoRoot) {
     return { document: null, error: null, reason: "no project-policy.yml — nothing declares what applies here" };
   }
   const schemaPath = path.join(path.dirname(SELF), "..", "schemas/project-policy.schema.json");
+  let rawText = "";
   try {
     const schema = JSON.parse(await readFile(schemaPath, "utf8"));
-    const document = parseYaml(await readFile(file, "utf8"));
+    rawText = await readFile(file, "utf8");
+    const document = parseYaml(rawText);
     const errors = validate(document, schema);
     if (errors.length > 0) {
       return {
         document: null,
+        // Kept whole so `audit`, which does not render a verdict, can still say that a
+        // fixtureExemptions entry failed the schema and therefore waived nothing.
+        schemaErrors: errors,
+        // Present in ANY shape (a mapping, a string, an array): a malformed section is exactly the case the
+        // report below exists for.
+        // An empty array is the only "no entries" spelling; `fixtureExemptions:` with no value (null)
+        // is a present, malformed section.
+        hadFixtureExemptions:
+          document !== null &&
+          typeof document === "object" &&
+          Object.hasOwn(document, "fixtureExemptions") &&
+          !(Array.isArray(document.fixtureExemptions) && document.fixtureExemptions.length === 0),
         error: `project-policy.yml does not match the schema (${errors.length} error(s)): ` +
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
       };
     }
     return { document, error: null };
   } catch (error) {
-    return { document: null, error: `project-policy.yml could not be read: ${error.message}` };
+    return {
+      document: null,
+      error: `project-policy.yml could not be read: ${error.message}`,
+      // The file did not parse (a flow mapping such as `{}`, say), so no schema error exists to show;
+      // what matters to `audit` is that a fixtureExemptions key was written and could not apply.
+      // An unread file (rawText still empty) cannot be shown to hold no pins: report it too.
+      unparsedFixtureExemptions: rawText === "" || /^["']?fixtureExemptions["']?[ \t]*:/m.test(rawText),
+      parseError: error.message,
+    };
   }
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy, policyFindings = []) {
+function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -231,7 +272,7 @@ function renderVerdict(report, policy, policyFindings = []) {
   out.push(`  Cover:  ${a.automated} automated, ${a.manualReview} manual-review, ${a.notEvaluated} not-evaluated`);
   out.push("");
 
-  const failed = report.results.filter((r) => r.status === "failed");
+  const failed = report.results.filter((r) => r.status === "failed" && r.disposition !== "excepted");
   if (failed.length) {
     out.push("  Failing:");
     for (const r of failed) {
@@ -283,7 +324,22 @@ function renderVerdict(report, policy, policyFindings = []) {
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
     out.push("  Excepted:");
-    for (const r of excepted) out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
+    for (const r of excepted) {
+      if (r.exception.kind === "fixture-exemption") {
+        // One line per pinned file: a reader must be able to see WHICH fixtures are carrying the
+        // waiver, and a count alone is how an exemption list grows unnoticed.
+        out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)}`);
+        for (const x of r.exception.fixtures) {
+          out.push(`      ${displaySafe(x.path)} (owner ${displaySafe(x.owner)}; ${x.expires ? `expires ${displaySafe(x.expires)}` : `review when: ${displaySafe(x.reviewWhen)}`})`);
+        }
+        if (r.exception.projectException) {
+          const pe = r.exception.projectException;
+          out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(pe.reason)} (project exception; expires ${displaySafe(pe.expires ?? "never")})`);
+        }
+      } else {
+        out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
+      }
+    }
     out.push("");
   }
   const attested = report.results.filter((r) => r.disposition === "attested");
@@ -300,6 +356,18 @@ function renderVerdict(report, policy, policyFindings = []) {
       out.push(`    ${f.message}`);
       out.push(`      -> ${f.remediation}`);
     }
+    out.push("");
+  }
+
+  if (exemptionFindings.length) {
+    // Truthful about the one case where they DO change the verdict: a rule declared not-applicable
+    // that also carries a pin makes the status NOT_EVALUATED (and the exit code findings).
+    out.push(
+      exemptionChangedVerdict
+        ? "  Fixture exemptions (a not-applicable rule carrying a pin made the status above NOT_EVALUATED):"
+        : "  Fixture exemptions (the verdict above is unchanged by these):",
+    );
+    for (const f of exemptionFindings) out.push(`    ${displaySafe(f.message)}`);
     out.push("");
   }
 
@@ -361,16 +429,19 @@ const R = {
 /**
  * Directories never worth walking: build output, dependencies, virtualenvs, caches.
  *
- * `fixtures` is here for a different reason than the rest. Test fixtures are deliberately malformed —
- * that is their job — so scanning them reports the test data's planted defects as the repository's
- * own. This tool's own fixtures would otherwise make it report itself as non-compliant. The cost is
- * that a genuine `fixtures/` directory of production code is skipped; that trade is worth it, and a
- * repository can still audit one directly with `--dir=`.
+ * `fixtures` is deliberately NOT here (ST-19a, ADR 0020). It was, because test fixtures are
+ * deliberately malformed and scanning them reports planted defects as the repository's own. That
+ * reason is real and the mechanism was wrong: a directory NAME removed every file beneath it from
+ * every detector at once, so a prohibition reported clean over tracked code the run never read, and
+ * a genuine production `fixtures/` directory was invisible. A deliberately violating fixture is now
+ * declared exactly — path, content digest and rule — in `fixtureExemptions`
+ * (`scripts/fixture-exemptions.mjs`). Everything else beneath a `fixtures/` directory is ordinary
+ * content.
  */
 const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", "out", "bin", "obj", ".next", ".nuxt",
   ".venv", "venv", "__pycache__", "target", "vendor", "coverage", ".turbo",
-  ".gradle", ".idea", ".vs", ".vscode", "packages-cache", ".pytest_cache", "fixtures",
+  ".gradle", ".idea", ".vs", ".vscode", "packages-cache", ".pytest_cache",
   ".mypy_cache",
 ]);
 
@@ -922,6 +993,9 @@ function createRun({ root, strict, json }) {
   // is right to search it and right to keep what it finds. This records the one thing the retained
   // text cannot say about itself — that there was more of it.
   const truncated = new Set();
+  // Digests of the bytes each file had when the surface read retained it, by repository-relative
+  // path: the one source a fixture pin is compared against (ADR 0020).
+  const readDigests = new Map();
 
   /**
    * Checks that could not run, by the rule they would have fed.
@@ -935,12 +1009,18 @@ function createRun({ root, strict, json }) {
    */
   const unknownChecks = new Map();
 
+  // Fixture exemptions bound to this invocation's bytes, and which of them fired. Per run, like
+  // everything else here (ADR 0014).
+  const exemptions = new Map();
+  const exemptionUsed = new Set();
+
   return {
     root,
     strict,
     json,
     findings,
     truncated,
+    readDigests,
     unknownChecks,
 
     /**
@@ -1000,7 +1080,7 @@ function createRun({ root, strict, json }) {
      * This remains the only writer of `findings`, which is what keeps the accumulator auditable. The
      * single-writer property ADR 0007 identified is preserved; what changed is the lifetime.
      */
-    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation }) {
+    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation, exemption }) {
       const shown = evidence.slice(0, MAX_EVIDENCE);
       const omitted = evidence.length - shown.length;
       findings.push({
@@ -1020,7 +1100,75 @@ function createRun({ root, strict, json }) {
         // `undefined`, because an absent key and a key holding undefined are the same thing to
         // `JSON.stringify` and different things to a reader of the audit output.
         ...(remediation ? { remediation } : {}),
+        // Present only on a finding a fixture exemption has waived (ST-19a). The compliance engine
+        // reads it to report EXCEPTED instead of failed; it is never set by a detector directly.
+        ...(exemption ? { fixtureExemption: exemption } : {}),
       });
+    },
+
+    /**
+     * Bind the validated, digest-checked fixture exemptions to this run (ST-19a, ADR 0020).
+     * Only an entry whose path, rule AND current content digest were all established can ever match.
+     */
+    useFixtureExemptions(bound) {
+      exemptions.clear();
+      for (const entry of bound) if (entry.state === "matches") exemptions.set(`${entry.rule}\0${entry.path}`, entry);
+    },
+
+    /** The bound entries that matched at least one violation this run — the rest are stale. */
+    fixtureExemptionsUsed: exemptionUsed,
+
+    /**
+     * Route one detector's per-file hits: return those that are LIVE, and record each waived hit as an
+     * `info` finding carrying the exemption that waived it.
+     *
+     * THE DETECTOR HAS ALREADY RUN ON THE FILE. A hit exists only because the file was read and the
+     * rule's own check found the violation, so an exemption can never convert a file nobody read into
+     * a waived one: an unread file produced `run.unknown` and no hit, and the rule withdraws as it
+     * always did. What is waived is a violation that was observed, by exact path, exact content and
+     * exact rule — never the inspection.
+     *
+     * `pathOf` maps an item to its repository-relative path, for detectors whose evidence entries
+     * carry a suffix. One exemption covers every item of the same file: the digest pins the bytes.
+     */
+    settleFixtureHits(rule, items, pathOf = (item) => item) {
+      if (exemptions.size === 0) return items;
+      const live = [];
+      const waivedPaths = new Set();
+      for (const item of items) {
+        const file = pathOf(item);
+        const entry = exemptions.get(`${rule}\0${file}`);
+        if (!entry) {
+          live.push(item);
+          continue;
+        }
+        if (waivedPaths.has(file)) continue;
+        waivedPaths.add(file);
+        exemptionUsed.add(`${rule}\0${file}`);
+        const lifetime = entry.expires ? `expires ${entry.expires}` : `review when: ${entry.reviewWhen}`;
+        this.addFinding({
+          id: "fixture-exempted",
+          category: "Fixture exemptions",
+          severity: "info",
+          label: "OBSERVED",
+          evidence: [file],
+          message:
+            `${file} departs from ${rule} and is waived by an exact fixture exemption (sha256 ${entry.sha256.slice(0, 12)}…, ` +
+            `owner ${entry.owner}; ${lifetime}): ${entry.reason}`,
+          standardRef: R.search,
+          rule,
+          exemption: {
+            path: entry.path,
+            sha256: entry.sha256,
+            rule,
+            reason: entry.reason,
+            owner: entry.owner,
+            expires: entry.expires ?? null,
+            reviewWhen: entry.reviewWhen ?? null,
+          },
+        });
+      }
+      return live;
     },
   };
 }
@@ -1162,7 +1310,9 @@ async function readText(file) {
     const buf = await readFile(file);
     const truncated = buf.length > MAX_READ_BYTES;
     const text = truncated ? buf.subarray(0, MAX_READ_BYTES).toString("utf8") : buf.toString("utf8");
-    return { ok: true, text, truncated, bytes: buf.length };
+    // The digest is taken from THIS read, the one whose text the detectors will inspect, so a pin can
+    // only be checked against bytes that were actually inspected. Nothing reopens the path to hash it.
+    return { ok: true, text, truncated, bytes: buf.length, digest: contentDigest(buf) };
   } catch {
     return { ok: false, text: "", truncated: false, bytes: 0 };
   }
@@ -1930,6 +2080,14 @@ function detectUnfinished(files, run) {
     if (!comments.available || !code.available) continue;
     for (const [re, kind] of UNFINISHED_COMMENTS) if (re.test(comments.text)) record(kind, f);
     for (const [re, kind] of UNFINISHED_CODE) if (re.test(code.text)) record(kind, f);
+  }
+  // A file waived by an exact fixture exemption leaves every kind it contributed to; a kind with no
+  // live file left is not reported (ST-19a).
+  const livePaths = new Set(run.settleFixtureHits("quality.unfinished-work", uniq([...byKind.values()].flat())));
+  for (const [kind, paths] of [...byKind]) {
+    const kept = paths.filter((p) => livePaths.has(p));
+    if (kept.length === 0) byKind.delete(kind);
+    else byKind.set(kind, kept);
   }
   if (byKind.size === 0) return;
 
@@ -2819,7 +2977,10 @@ function detectCommittedEnvFiles(files, repoRoot, repo, run) {
   // SKIP_DIRS the walk uses, so one exclusion rule governs both halves of the seam rather than two
   // that drift.
   const skipped = (p) => p.split("/").some((segment) => SKIP_DIRS.has(segment));
-  const tracked = listed.files.filter((p) => isCandidate(p) && !skipped(p)).sort();
+  const tracked = run.settleFixtureHits(
+    "scm.no-committed-env-files",
+    listed.files.filter((p) => isCandidate(p) && !skipped(p)).sort(),
+  );
   if (tracked.length === 0) return { evaluated: true };
 
   addFinding({
@@ -3049,10 +3210,11 @@ function detectSecretsInArtifacts(files, run) {
     if (!evidence.available) continue;
 
     for (const [re, what] of SECRET_PATTERNS) {
-      if (re.test(evidence.text)) hits.push(`${p} (${what})`);
+      if (re.test(evidence.text)) hits.push({ p, text: `${p} (${what})` });
     }
   }
-  if (hits.length === 0) return;
+  const live = run.settleFixtureHits("security.no-secrets-in-artifacts", hits, (h) => h.p).map((h) => h.text);
+  if (live.length === 0) return;
 
   addFinding({
     id: "secret-in-artifact",
@@ -3060,8 +3222,8 @@ function detectSecretsInArtifacts(files, run) {
     category: "Standards violations",
     severity: "error",
     label: "INFERRED",
-    evidence: uniq(hits).sort(),
-    message: `${hits.length} credential-shaped value(s) in tracked files. Rotate first — removing it from HEAD does not remove it from history.`,
+    evidence: uniq(live).sort(),
+    message: `${live.length} credential-shaped value(s) in tracked files. Rotate first — removing it from HEAD does not remove it from history.`,
     standardRef: N.secrets,
   });
 }
@@ -3175,7 +3337,8 @@ function detectSwallowedExceptions(files, run) {
     }
     if (unjustified > 0) hits.push(rel(f));
   }
-  if (hits.length === 0) return;
+  const live = run.settleFixtureHits("errors.no-swallowed-exceptions", uniq(hits));
+  if (live.length === 0) return;
 
   addFinding({
     id: "swallowed-exception",
@@ -3183,8 +3346,8 @@ function detectSwallowedExceptions(files, run) {
     category: "Standards violations",
     severity: "error",
     label: "INFERRED",
-    evidence: uniq(hits).sort(),
-    message: `${hits.length} file(s) contain a catch block empty of both handling code and justification.`,
+    evidence: live,
+    message: `${live.length} file(s) contain a catch block empty of both handling code and justification.`,
     standardRef: N.swallowed,
   });
 }
@@ -3221,7 +3384,8 @@ function detectCertBypass(files, run) {
     if (CERT_BYPASS.some((re) => re.test(code.text))) hits.push(rel(f));
     else if (path.extname(f) === ".sh" && /\bcurl\b[^\n|]*\s-[a-zA-Z]*k\b/.test(code.text)) hits.push(rel(f));
   }
-  if (hits.length === 0) return;
+  const live = run.settleFixtureHits("security.no-cert-bypass", uniq(hits));
+  if (live.length === 0) return;
 
   addFinding({
     id: "certificate-validation-bypass",
@@ -3229,8 +3393,8 @@ function detectCertBypass(files, run) {
     category: "Standards violations",
     severity: "error",
     label: "INFERRED",
-    evidence: uniq(hits).sort(),
-    message: `${hits.length} file(s) disable TLS certificate or hostname verification.`,
+    evidence: live,
+    message: `${live.length} file(s) disable TLS certificate or hostname verification.`,
     standardRef: N.certBypass,
   });
 }
@@ -3270,7 +3434,8 @@ function detectSqlConcat(files, run) {
     if (!code.available) continue;
     if (SQL_TEMPLATE.test(code.text) || SQL_FSTRING.test(code.text)) hits.push(rel(f));
   }
-  if (hits.length === 0) return;
+  const live = run.settleFixtureHits("security.no-sql-concat", uniq(hits));
+  if (live.length === 0) return;
 
   addFinding({
     id: "sql-string-interpolation",
@@ -3278,8 +3443,8 @@ function detectSqlConcat(files, run) {
     category: "Standards violations",
     severity: "error",
     label: "INFERRED",
-    evidence: uniq(hits).sort(),
-    message: `${hits.length} file(s) interpolate a value into SQL text. Use a parameterized query, or validate an identifier against an allow-list.`,
+    evidence: live,
+    message: `${live.length} file(s) interpolate a value into SQL text. Use a parameterized query, or validate an identifier against an allow-list.`,
     standardRef: N.sqlConcat,
   });
 }
@@ -3499,6 +3664,7 @@ async function loadSurface(run, root, maxTotalReadBytes) {
       run.truncated.add(f);
     }
     run.retain(f, read.text);
+    run.readDigests.set(rel(f), read.digest);
 
     // The derived `sources` entry is proportional to the same text, so one accounting bounds both.
     budget.retainedBytes += cost;
@@ -3694,6 +3860,117 @@ export async function main(args) {
     exclusionsFrom: ignored.ok ? "repository" : "unavailable",
   };
 
+  // Fixture exemptions (ST-19a, ADR 0020) are the one policy input `audit` reads, and it reads ONLY
+  // them: an exemption changes how a departure is classified, never whether the file was inspected,
+  // and `audit` still lists every waived departure as its own finding. A policy that is absent or
+  // does not parse yields no exemptions, so the failure direction is more findings, never fewer.
+  // They are prepared here, before any detector runs, because a detector asks "is this exact path, at these
+  // exact bytes, waived for this rule" at the moment it has a hit — and the loaded catalog is what
+  // says a rule is non-exemptible. An entry that does not validate, or whose digest does not match
+  // the file on disk, simply never matches: the file is inspected as ordinary content.
+  const catalog = await loadCatalog();
+  const policy = await loadProjectPolicy(root);
+  const today = new Date().toISOString().slice(0, 10);
+  const exemptionCheck = { problems: [], bound: [] };
+  // One relative-path index, built once: pins x files would be quadratic near the file cap.
+  const fileByRel = new Map(files.map((f) => [rel(f), f]));
+  // A valid pin on a rule declared not-applicable, seen by `validate`: a contradictory policy.
+  let applicabilityConflict = false;
+  // Pinned non-text files whose one-off digest read failed: unreadable, not budget-limited.
+  const digestReadFailed = new Set();
+  // Index-only pins whose indexed blob could not be read while the index itself answered.
+  const indexBlobFailed = new Set();
+  if (Array.isArray(policy.document?.fixtureExemptions)) {
+    const checked = checkEntries(policy.document.fixtureExemptions, {
+      catalog,
+      today,
+      isDirectory: (relPath) => {
+        try {
+          return statSync(path.join(root, relPath)).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+    });
+    exemptionCheck.problems = checked.problems;
+    // A rule declared not-applicable has no subject here, so a waiver of a departure from it is a
+    // contradiction. It is not bound: the file is inspected as ordinary content and the conflict is named
+    // (`standards policy` reports the same pair).
+    const notApplicable = new Set(
+      Object.entries(policy.document.applicability ?? {})
+        .filter(([, decl]) => decl?.status === "not-applicable")
+        .map(([id]) => id),
+    );
+    // Verdict-only: `audit` is policy-independent evidence (ADR 0004, ADR 0020) and applies no
+    // applicability, so it keeps classifying the pinned departure on its own terms.
+    checked.valid = checked.valid.filter((entry) => {
+      if (!validating || !notApplicable.has(entry.rule)) return true;
+      applicabilityConflict = true;
+      exemptionCheck.problems.push({
+        index: entry.index,
+        id: "fixture-exemption-rule-not-applicable",
+        path: entry.path,
+        rule: entry.rule,
+        message: `'${entry.rule}' is declared not-applicable, so it cannot also carry a fixture exemption`,
+      });
+      return false;
+    });
+    // The digest of a text file comes only from the read that retained the text the detectors inspect:
+    // a pinned text file the surface did not retain (read budget spent, or unreadable) has no digest,
+    // is `not-read`, and is never reopened here, so the budget bounds this run's I/O and a pin is never
+    // checked against bytes no detector inspected. A file with no recognised text extension (a `.env`)
+    // is never opened by the surface and no detector holds content for it, so there is no inspected
+    // version a second read could disagree with: it is hashed once, here.
+    for (const entry of checked.valid) {
+      if (run.readDigests.has(entry.path)) continue;
+      // An index-only pin is checked against the indexed blob below; hashing the working-tree copy
+      // here would read the file for a digest that is then discarded.
+      if (INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) continue;
+      const abs = fileByRel.get(entry.path);
+      if (abs === undefined || TEXT_EXT.has(path.extname(abs))) continue;
+      try {
+        run.readDigests.set(entry.path, await contentDigestOfStream(createReadStream(abs)));
+      } catch {
+        /* unreadable: no digest, so the entry is `not-read` */
+        digestReadFailed.add(abs);
+      }
+    }
+    exemptionCheck.bound = await bindEntries(checked.valid, { scanned: new Set(files.map((f) => rel(f))), digests: run.readDigests });
+    // An index-only rule (an env file) derives its violation from the INDEX, so its pin is checked
+    // against the indexed blob, never the working-tree copy: an unstaged edit must neither wake a stale
+    // pin nor let unrelated bytes waive a tracked file. An unreadable index entry leaves it `not-read`.
+    exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
+      if (!INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) return entry;
+      // The detector enumerates the INDEX, so a tracked file absent from the working tree (unstaged
+      // deletion, sparse checkout) is still a violation and still pinnable. Only a path the detector
+      // itself skips by directory name can never be reached.
+      if (entry.state === "not-scanned" && entry.path.split("/").some((segment) => SKIP_DIRS.has(segment))) return entry;
+      const blob = indexedBlob(root, entry.path);
+      // "Not tracked" must be PROVEN by an actual index query that succeeds and does not list the path;
+      // a corrupt index or missing git fails both lookups and proves nothing.
+      const listedNow = blob.ok ? null : trackedMatching(root, [entry.path]);
+      const trackedElsewhere = listedNow !== null && listedNow.ok && !listedNow.files.includes(entry.path);
+      // No indexed blob is a settled answer only when the index itself was readable: then the path is
+      // simply not tracked and the rule found no violation. If the index could not be read, nothing is known.
+      if (!blob.ok) {
+        if (!trackedElsewhere) indexBlobFailed.add(entry.path);
+        return { ...entry, state: trackedElsewhere ? "not-tracked" : "not-read", observedSha256: null };
+      }
+      const observed = contentDigest(blob.bytes);
+      return { ...entry, observedSha256: observed, state: observed === entry.sha256 ? "matches" : "digest-mismatch" };
+    });
+    // A content-derived pin over a file read only in part is never bound: the digest covers bytes no
+    // detector inspected, so the hit stays live and the entry is reported "not established". An
+    // index-only rule (an env file) is judged by the repository index and is unaffected.
+    exemptionCheck.bound = exemptionCheck.bound.map((entry) => {
+      const abs = fileByRel.get(entry.path);
+      return entry.state === "matches" && abs !== undefined && run.truncated.has(abs) && !INDEX_ONLY_FIXTURE_RULES.has(entry.rule)
+        ? { ...entry, state: "not-read" }
+        : entry;
+    });
+    run.useFixtureExemptions(exemptionCheck.bound);
+  }
+
   // Descriptive first: detectUnverifiedFunctionality reads the capability findings they produce.
   detectArchitecture(files, run);
   detectCapabilities(files, run);
@@ -3726,6 +4003,179 @@ export async function main(args) {
   detectCertBypass(files, run);
   detectSqlConcat(files, run);
 
+  // Every declared exemption is accounted for: one that does not apply says so, and why. A silent
+  // dead entry is a waiver nobody can tell is still protecting anything — or is protecting the wrong
+  // file after a rename. Rule-less on purpose: these are facts about the policy and the run, and the
+  // compliance consequence of a dead entry is already carried by the violation it no longer waives.
+  // ANY schema error makes the whole policy unreadable, so no pin validated or applied, whichever
+  // field is at fault. `audit` renders no verdict, so without this the pins would look simply absent.
+  if (policy.unparsedFixtureExemptions) {
+    addFinding({
+      id: "fixture-exemption-schema-invalid",
+      category: "Fixture exemptions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: ["project-policy.yml"],
+      message:
+        `project-policy.yml could not be read (${policy.parseError}), so none of the fixture exemptions applies. ` +
+        "Every file is inspected as ordinary content.",
+      standardRef: R.search,
+    });
+  }
+  if (policy.hadFixtureExemptions && (policy.schemaErrors ?? []).length > 0) {
+    const errs = policy.schemaErrors;
+    const own = errs.filter((x) => String(x.path ?? "").startsWith("fixtureExemptions"));
+    const shown = [...own, ...errs.filter((x) => !own.includes(x))].slice(0, 3);
+    addFinding({
+      id: "fixture-exemption-schema-invalid",
+      category: "Fixture exemptions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: ["project-policy.yml"],
+      message:
+        `project-policy.yml does not match the schema (${errs.length} error(s): ` +
+        shown.map((x) => `${x.path || "(document)"} ${x.message}`).join("; ") +
+        "), so none of the fixture exemptions applies. Every file is inspected as ordinary content.",
+      standardRef: R.search,
+    });
+  }
+  for (const problem of exemptionCheck.problems) {
+    addFinding({
+      id: problem.id,
+      category: "Fixture exemptions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [problem.path ?? `fixtureExemptions[${problem.index}]`],
+      message: `fixtureExemptions[${problem.index}] does not apply: ${problem.message}. The file is inspected as ordinary content.`,
+      standardRef: R.search,
+    });
+  }
+  // The cap is global, so it explains an unscanned pin only when nothing else does: a path the
+  // repository ignores, a directory the walk excluded by name or vendor marker, or a symlink was left
+  // out on purpose, and "keep the entry" would be the wrong thing to say about it.
+  // One directory listing per directory per audit: with many cap-hidden pins in one large directory
+  // an unmemoised check lists that directory once per pin per ancestor.
+  const markerCache = new Map();
+  const hasVendorMarker = (dir) => {
+    if (!markerCache.has(dir)) {
+      let found;
+      try {
+        found = readdirSync(path.join(root, dir), { withFileTypes: true }).some((e) => e.isFile() && VENDOR_MARKERS.has(e.name));
+      } catch (error) {
+        // Absent (ENOENT/ENOTDIR) is a settled answer; an access failure is not, and must not be read as
+        // "a marker is here" nor as "the path is gone".
+        found = isAbsentError(error);
+      }
+      markerCache.set(dir, found);
+    }
+    return markerCache.get(dir);
+  };
+  const deliberatelyExcluded = (relPath) => {
+    if (ignored.ok && ignored.files.includes(relPath)) return true;
+    const parts = relPath.split("/");
+    for (let i = 1; i < parts.length; i += 1) {
+      const dir = parts.slice(0, i).join("/");
+      if (SKIP_DIRS.has(parts[i - 1])) return true;
+      if (ignored.ok && ignored.directories.includes(dir)) return true;
+      if (surfaceLoss.excluded.some((e) => e.path === dir)) return true;
+      // A vendor marker is read from inside the directory, which a capped walk may never have listed.
+      if (hasVendorMarker(dir)) return true;
+    }
+    try {
+      let cur = root;
+      for (const part of parts) {
+        cur = path.join(cur, part);
+        if (lstatSync(cur).isSymbolicLink()) return true;
+      }
+    } catch (error) {
+      return isAbsentError(error); // an access failure leaves the path possibly cap-hidden
+    }
+    return false;
+  };
+  for (const entry of exemptionCheck.bound) {
+    if (entry.state === "matches" && run.fixtureExemptionsUsed.has(`${entry.rule}\0${entry.path}`)) {
+      // A used pin over a file read only in part still stands for the prefix that was searched, but
+      // the waiver is not established over the whole file: say so.
+      const usedAbs = fileByRel.get(entry.path);
+      // An index-only rule (an env file) is judged by the repository index, so a partial text read says
+      // nothing about it and the pin is fully established.
+      if (usedAbs === undefined || !run.truncated.has(usedAbs) || INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) continue;
+    }
+    // A file this run did not read in full cannot show that its rule "found no violation": the read
+    // budget was spent before it was retained, or a violation may lie past the truncation boundary.
+    // That is "not established", never "stale", and it must not tell anyone to remove the entry.
+    // A path the file-count cap kept the walk from reaching was never enumerated: it may well exist.
+    const cappedAway =
+      entry.state === "not-scanned" &&
+      surfaceLoss.capped &&
+      pathMayExist(path.join(root, entry.path)) &&
+      !deliberatelyExcluded(entry.path);
+    // A directory the walk could not list hides everything beneath it: the file may well exist.
+    const underUnreadableDir =
+      entry.state === "not-scanned" &&
+      surfaceLoss.dirs.some((d) => entry.path.startsWith(rel(d) + "/") || rel(d) === "");
+    if (entry.state === "matches" || entry.state === "not-read" || cappedAway || underUnreadableDir) {
+      const abs = fileByRel.get(entry.path);
+      const incomplete =
+        entry.state === "not-read" ||
+        // An index-only rule enumerates the INDEX, so absence from the working tree says nothing about
+        // it (a tracked-but-absent file, or an ignored `.env.example`, was fully evaluated).
+        (abs === undefined && !INDEX_ONLY_FIXTURE_RULES.has(entry.rule)) ||
+        // A file with no recognised text extension is never searched as text (a `.env` is judged by
+        // the repository index), so "no text available" says nothing about it: its digest was taken
+        // over the whole file and a rule that does not fire there is genuinely stale.
+        // An index-only rule is as established as the index read behind it: when the detector could
+        // not read the index (no repository) it withdrew the rule, and a pin is not "stale" over that.
+        (INDEX_ONLY_FIXTURE_RULES.has(entry.rule)
+          ? envCheck.evaluated === false
+          : TEXT_EXT.has(path.extname(abs)) && (!run.textOf(abs).available || run.truncated.has(abs)));
+      if (incomplete) {
+        addFinding({
+          id: "fixture-exemption-not-established",
+          category: "Fixture exemptions",
+          severity: "warning",
+          label: "OBSERVED",
+          evidence: [entry.path],
+          message:
+            `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is not established: the pin could not be ` +
+            `checked against a complete read, so whether ${entry.rule} still fires there is unknown. ` +
+            (INDEX_ONLY_FIXTURE_RULES.has(entry.rule) && indexBlobFailed.has(entry.path)
+              ? "The indexed object for this path could not be read (a repository or index problem, not the read budget); repair the repository and rerun. Keep the entry."
+              : underUnreadableDir
+              ? "A directory above this path could not be listed, so the path was never enumerated and may still exist. Keep the entry; restore access to the directory and rerun."
+              : cappedAway
+              ? `The audit stopped collecting files at the ${MAX_FILES}-file cap, so this path was never enumerated and may still exist. Keep the entry; narrow the audited tree.`
+              : abs !== undefined && (unreadableFiles.includes(abs) || digestReadFailed.has(abs))
+              ? "The file could not be read; fix its permissions or presence and rerun. Keep the entry."
+              : abs !== undefined && run.truncated.has(abs)
+                ? `The file is larger than the per-file read cap (${MAX_READ_BYTES} bytes), which --max-total-read-bytes does not raise, so a pin over it cannot be established; shrink or split the fixture. Keep the entry.`
+                : INDEX_ONLY_FIXTURE_RULES.has(entry.rule) && envCheck.evaluated === false
+                  ? "The repository index could not be read; run the audit inside the Git repository. Keep the entry."
+                  : "The aggregate read budget was spent before the file was retained; rerun with a larger --max-total-read-bytes. Keep the entry."),
+          standardRef: R.search,
+        });
+        continue;
+      }
+    }
+    const why = {
+      "not-tracked": `the path is not tracked in the index, so ${entry.rule} found no violation; remove the entry`,
+      "not-scanned": "the path is not in the scanned surface (absent, ignored by the repository, or excluded)",
+      "digest-mismatch":
+        `the file's content digest is ${entry.observedSha256}, not the pinned ${entry.sha256}; the file changed ` +
+        `after the exemption was reviewed, so it is inspected as ordinary content`,
+      matches: `the file's bytes match but ${entry.rule} found no violation in it; remove the entry`,
+    }[entry.state];
+    addFinding({
+      id: "fixture-exemption-stale",
+      category: "Fixture exemptions",
+      severity: "warning",
+      label: "OBSERVED",
+      evidence: [entry.path],
+      message: `The ${entry.rule} exemption for ${entry.path} (owner ${entry.owner}) is stale: ${why}.`,
+      standardRef: R.search,
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Verdict — catalog + policy + findings (Standards 25, 27, 30)
   //
@@ -3733,7 +4183,6 @@ export async function main(args) {
   // identity and metadata, project-policy.yml defines what applies to THIS project, and everything
   // above produces evidence. Nothing in this section redefines a rule or invents applicability.
 
-  const catalog = await loadCatalog();
   assertBindings(
     catalog,
     findings.map((f) => f.rule).filter(Boolean),
@@ -3773,8 +4222,6 @@ export async function main(args) {
   // The three-way separation must not be violated here: the catalog defines rule identity and
   // metadata, project-policy.yml defines what applies to THIS project, and everything above produces
   // evidence. Nothing in this section redefines a rule or invents applicability.
-
-  const policy = await loadProjectPolicy(root);
 
   /**
    * The version-identity guard — a verdict may not be reported for version X unless the framework
@@ -4074,7 +4521,11 @@ export async function main(args) {
   // that ran, and withdrawing the rule would discard a real finding because a DIFFERENT check went
   // unread. `reconstruction.baseline-artifacts` is exactly that shape — structural R4, content R6 —
   // and it is why no table over rule ids can express this.
-  const confirmed = new Set(findings.filter((f) => f.rule).map((f) => f.rule));
+  // A finding a fixture exemption waived is NOT a confirmed violation: it must not keep a rule
+  // "evaluated" over a file the run did not finish reading, and it must not let an unestablished rule
+  // report anything but not-evaluated. Waiving is a statement about a violation the run observed, not
+  // evidence about the rest of the surface.
+  const confirmed = new Set(findings.filter((f) => f.rule && !f.fixtureExemption).map((f) => f.rule));
 
   // TWO OBSERVATION POINTS, ONE QUESTION, and the question is asked of the RULE's checks rather than
   // of the rule. `unknownChecks` carries the checks that asked `contentOf` for content and were told
@@ -4117,7 +4568,7 @@ export async function main(args) {
     baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null,
     findings,
     evaluated: evaluatedThisRun,
-    today: new Date().toISOString().slice(0, 10),
+    today,
     freshness,
     // Rules whose rejection is already at the trusted base (append-only); null when unknown.
     establishedRejections: Array.isArray(reviewHistoryBase.baseRejectionRules)
@@ -4159,6 +4610,10 @@ export async function main(args) {
     frameworkCoverage: coverage(catalog, { evaluated: EVALUATED_RULES, totalStandards }),
   });
 
+  // A contradictory policy (a rule declared not-applicable that also carries a fixture pin) is not a
+  // pass, and the emitted verdict must say so: the rule was skipped before any waiver was considered.
+  if (applicabilityConflict && report.status !== "NON_COMPLIANT") report.status = "NOT_EVALUATED";
+
   if (cli.json) {
     // Standard 25's envelope. `findings` is additive detail beyond the contract Standard 31 R2
     // guarantees — a consumer joins on results[].ruleId, never on a finding category.
@@ -4167,7 +4622,32 @@ export async function main(args) {
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
   } else {
-    emitText(renderVerdict(report, policy, verdict.policyFindings ?? []) + "\n");
+    emitText(
+      renderVerdict(
+        report,
+        policy,
+        verdict.policyFindings ?? [],
+        findings.filter((f) => {
+          if (f.category !== "Fixture exemptions") return false;
+          // Optional-rule silence (Standard 18 R3) applies to the human report as it does to JSON.
+          if (f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)) return false;
+          if (f.severity === "warning") return true;
+          // A waived departure is listed under "Excepted:" when its rule is wholly excepted. Where the
+          // rule also has a live, unwaived violation it is "failed", and this line is the only place
+          // a human reader sees that a fixture was waived beside it.
+          if (f.id !== "fixture-exempted") return false;
+          const result = report.results.find((r) => r.ruleId === f.rule);
+          // Hidden only where the result's own "Excepted:" block already lists this exact file. A
+          // project-level exception on the same rule does not list the fixture, so the waiver stays.
+          const listed =
+            result?.disposition === "excepted" &&
+            result.exception?.kind === "fixture-exemption" &&
+            result.exception.fixtures?.some((x) => f.evidence.includes(x.path));
+          return !listed;
+        }),
+        applicabilityConflict && report.status === "NOT_EVALUATED",
+      ) + "\n",
+    );
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
     // than computed by hand (ADR 0005). A digest is offered ONLY where none is recorded: computing a
     // replacement for a record that already carries one would invite exactly the substitution this
@@ -4195,6 +4675,9 @@ export async function main(args) {
   // (Standard 30 R1, ADR 0004). A required-level failure is exit 1 regardless of score.
   if (policy.error || !policy.document) return done(EXIT_INVOCATION);
   if (report.status === "NON_COMPLIANT") return done(EXIT_FINDINGS);
+  // A policy that declares a rule not-applicable AND pins a fixture departure from it contradicts
+  // itself (`standards policy` rejects the pair). It is not a pass: exit as findings.
+  if (applicabilityConflict) return done(EXIT_FINDINGS);
   // Standard 45 R6: a must-never rule nobody examined must not gate-pass CI. This is exit 1 rather
   // than exit 2 because it is a statement about the project, not about the configuration — the policy
   // read fine, and what it says is that a prohibition went unexamined.

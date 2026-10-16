@@ -18,7 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, mkdtempSync, cpSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,34 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "scripts", "standards.mjs");
 const REPO = path.join(HERE, "..");
 const fixture = (name) => path.join(HERE, "fixtures", name);
+
+/**
+ * The `never-violations` fixture, with its credential bait materialised at run time.
+ *
+ * `security.no-secrets-in-artifacts` is non-exemptible (Standard 20 R4), so a tracked file holding a
+ * credential-shaped value can never be waived by a fixture exemption (ADR 0020) — and since the
+ * walk no longer skips `fixtures/`, committing it would leave this repository permanently failing a
+ * prohibition it cannot except. The bait is therefore written here, into a throwaway copy that is
+ * also made a Git repository, because `scm.no-committed-env-files` asks the index and the copied
+ * `.env` has to be tracked in it to stay the positive control for that rule. The key is the
+ * provider's documented example value, assembled so this file is not itself a credential-shaped
+ * match for the detector it tests.
+ */
+let neverViolationsCopy = null;
+function neverViolations() {
+  if (neverViolationsCopy) return neverViolationsCopy;
+  const dir = mkdtempSync(path.join(os.tmpdir(), "never-violations-"));
+  cpSync(fixture("never-violations"), dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, "config.yml"),
+    ["aws:", `  accessKeyId: ${"AKIA" + "IOSFODNN7EXAMPLE"}`, "  region: us-east-1", ""].join("\n"),
+  );
+  assert.equal(spawnSync("git", ["init", "-q", dir]).status, 0, "git init failed");
+  assert.equal(spawnSync("git", ["-C", dir, "add", "-f", "."]).status, 0, "git add failed");
+  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+  neverViolationsCopy = dir;
+  return dir;
+}
 
 function audit(dir, extra = []) {
   const r = spawnSync(process.execPath, [CLI, "audit", `--dir=${dir}`, "--json", ...extra], {
@@ -99,10 +127,13 @@ test("prose describing schedulers and routes is not code", () => {
 test("a comment naming a job library is not a job, but importing one is", () => {
   // The fifth instance: a comment in this suite naming Celery and BullMQ made the test file itself
   // register as a background job. Library names go through importPattern() everywhere now.
+  // `test/fixtures` is scanned like any other directory now (ST-19a), so the one fixture that really
+  // imports a queue library is reported as what it is. That is the only job here: this repository's
+  // own scripts and the many comments naming job libraries must not register.
   assert.deepEqual(
     evidenceOf(audit(REPO), "detected-jobs"),
-    [],
-    "this repository runs no background jobs; comments naming them must not say otherwise",
+    ["test/fixtures/compliant/src/jobs/nightly.js"],
+    "this repository runs no background jobs of its own; comments naming them must not say otherwise",
   );
 
   assert.deepEqual(
@@ -410,7 +441,7 @@ test("every standardRef resolves to a heading in the file it names", async () =>
 
   let checked = 0;
   for (const name of ["compliant", "delegated", "naming-only", "markers", "never-violations", "never-clean"]) {
-    for (const f of audit(fixture(name)).json.findings) {
+    for (const f of audit(name === "never-violations" ? neverViolations() : fixture(name)).json.findings) {
       const [file, anchor] = f.standardRef.split("#");
       const anchors = await load(file);
       assert.ok(anchors.has(anchor), `${f.id} points at ${file}#${anchor}, which is not a heading there`);
@@ -423,7 +454,7 @@ test("every standardRef resolves to a heading in the file it names", async () =>
 
 test("heuristic findings are never labeled OBSERVED", () => {
   for (const name of ["compliant", "delegated", "naming-only", "markers"]) {
-    for (const f of audit(fixture(name)).json.findings) {
+    for (const f of audit(name === "never-violations" ? neverViolations() : fixture(name)).json.findings) {
       if (/naming|pattern|inferred from|referenced in source|no test files/i.test(f.message)) {
         assert.equal(f.label, "INFERRED", `${name}: ${f.id} reports a heuristic as observed`);
       }
@@ -561,7 +592,7 @@ const NEVER = [
 ];
 
 test("every must-never detector fires on the fixture that violates it", () => {
-  const res = audit(fixture("never-violations"));
+  const res = audit(neverViolations());
   for (const [id, rule, evidence] of NEVER) {
     const found = of(res, id);
     assert.equal(found.length, 1, `${id} did not fire`);
@@ -774,7 +805,7 @@ test("the swallowed-exception detector decides by site, not by counting", () => 
 
   // And the property the counting was trying to preserve still holds: one justified catch does not
   // excuse an unjustified one beside it, because each site is decided on its own body.
-  const violating = of(audit(fixture("never-violations")), "swallowed-exception");
+  const violating = of(audit(neverViolations()), "swallowed-exception");
   assert.equal(violating.length, 1);
   assert.ok(
     violating[0].evidence.some((e) => e.startsWith("src/mixed-catch.js")),
@@ -785,7 +816,7 @@ test("the swallowed-exception detector decides by site, not by counting", () => 
 test("the secret detector leaves .env files to the rule that owns them", () => {
   // Single owner, so one defect produces one finding: the fixture's .env holds a credential and is
   // already an error by filename. A content scan on top would report the same defect twice.
-  const res = audit(fixture("never-violations"));
+  const res = audit(neverViolations());
   assert.deepEqual(
     of(res, "secret-in-artifact")[0].evidence.filter((e) => e.startsWith(".env")),
     [],
@@ -995,6 +1026,8 @@ test("a fully readable tree reports a complete evidence surface and no evidence-
 });
 
 test("this repository's own evidence surface loses nothing unintentionally, and names what it does lose", async () => {
+  // HISTORY: the paragraph below describes the state before ST-19a (`test/fixtures` excluded by name),
+  // kept because it is why this test exists. The assertions at the end are the current contract.
   // THIS TEST PREVIOUSLY ASSERTED `complete === true` FOR THIS REPOSITORY, AND THAT WAS FALSE.
   //
   // Its reason for existing was right and is kept: the self-audit's zero-error-findings claim is
@@ -1019,13 +1052,12 @@ test("this repository's own evidence surface loses nothing unintentionally, and 
   assert.equal(s.fileCapReached, false, shown);
   assert.equal(s.readBudget.exhausted, false, shown);
 
-  // The single intentional loss, pinned by path. `test/fixtures` holds deliberate violations used by
-  // the detector suites; whether `fixtures` should be in `SKIP_DIRS` at all is a separate question
-  // about the name list, deliberately not settled here.
-  assert.deepEqual(s.frameworkExcludedDirectories, ["test/fixtures"], shown);
-
-  // And therefore the surface is honestly incomplete, rather than dishonestly whole.
-  assert.equal(s.complete, false, shown);
+  // ST-19a: `test/fixtures` is no longer a tool-decided exclusion. Its deliberate violations are
+  // declared one file, one digest and one rule at a time in project-policy.yml, so nothing in this
+  // repository's own tree is withheld from any detector by a directory name, and the surface is
+  // complete for the first time since the exclusion was introduced.
+  assert.deepEqual(s.frameworkExcludedDirectories, [], shown);
+  assert.equal(s.complete, true, shown);
 });
 
 // ---------------------------------------------------------------------------

@@ -196,7 +196,9 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // pushed, so a live exception on the same forbidden manual-review rule can still be read below.
     let nonEstablishing = null;
     if (attestation) {
-      const hits = byRule.get(rule.id) ?? [];
+      // A violation waived by an exact fixture exemption is not evidence against a human review of
+      // the project's own code, so it is not offered as a contradiction (ST-19a).
+      const hits = (byRule.get(rule.id) ?? []).filter((h) => !h.fixtureExemption);
       const verdict = judgeAttestation(rule, level, attestation, hits, today, attestationFreshness);
       // Additive only: an approval whose immediate predecessor is a recorded rejection says so, so a
       // cleared rejection is never read as an acceptance that was always there (ST-18).
@@ -274,9 +276,63 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
       continue;
     }
 
-    const hits = byRule.get(rule.id) ?? [];
-    if (hits.length === 0) {
+    // Violations a fixture exemption waived (ST-19a, ADR 0020) are kept apart from live ones. The
+    // detector observed each of them — a waiver is applied to a violation the run found, never to a
+    // file it did not read — so a rule whose ONLY violations are waived is EXCEPTED, not passed:
+    // "no violation was observed" would be untrue. A live violation anywhere still fails the rule,
+    // and only the live ones are its evidence.
+    const allHits = byRule.get(rule.id) ?? [];
+    const hits = allHits.filter((h) => !h.fixtureExemption);
+    const waived = allHits.filter((h) => h.fixtureExemption);
+    if (hits.length === 0 && waived.length === 0) {
       results.push(base(rule, level, RESULT.passed, "evaluated", `No violation of ${rule.id} was observed.`));
+      continue;
+    }
+    if (hits.length === 0) {
+      // An optional rule is silent on violation (Standard 18 R3); a waived one is no louder.
+      if (level === "optional" && !activeExceptions.has(rule.id)) {
+        silencedRules.add(rule.id);
+        continue;
+      }
+      const outcome = level === "required" || level === "forbidden" ? RESULT.failed : RESULT.warning;
+      const fixtures = waived.map((h) => h.fixtureExemption);
+      const owners = [...new Set(fixtures.map((x) => x.owner))].sort();
+      const expiries = fixtures.map((x) => x.expires).filter(Boolean).sort();
+      const result = base(
+        rule,
+        level,
+        outcome,
+        "excepted",
+        `${rule.id} is excepted for ${fixtures.length} fixture file(s) by exact path, content digest and rule: ` +
+          `${fixtures.map((x) => x.path).join(", ")}.`,
+      );
+      result.evidence = fixtures.map((x) => x.path);
+      result.files = result.evidence;
+      // Same shape as a policy exception, so every consumer of `disposition: excepted` reads it
+      // unchanged; `kind` and `fixtures` say which mechanism produced it and carry the pins.
+      result.exception = {
+        kind: "fixture-exemption",
+        reason: `${fixtures.length} fixture file(s) waived by exact path+sha256+rule`,
+        approvedBy: owners.join(", "),
+        approvedAt: null,
+        expires: expiries[0] ?? null,
+        reference: null,
+        fixtures,
+        // An active project-level exception on the same rule is a separate, broader decision. It is
+        // carried beside the fixture pins rather than replaced by them, so neither is concealed.
+        ...(activeExceptions.has(rule.id)
+          ? {
+              projectException: {
+                reason: activeExceptions.get(rule.id).reason,
+                approvedBy: activeExceptions.get(rule.id).approvedBy,
+                approvedAt: activeExceptions.get(rule.id).approvedAt,
+                expires: activeExceptions.get(rule.id).expires ?? null,
+                reference: activeExceptions.get(rule.id).reference ?? null,
+              },
+            }
+          : {}),
+      };
+      results.push(result);
       continue;
     }
 
