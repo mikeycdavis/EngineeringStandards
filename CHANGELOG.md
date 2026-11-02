@@ -31,7 +31,32 @@ untouched; because `standards/51-architecture-integrity.md` is a reviewed path, 
 
 **No change to the framework, the rule catalog, the policy schema, or any published contract.** This
 is repository tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
-The one exception is the review-history entry directly below, which widens the policy schema.
+The exceptions are the fixture-exemption entry and the review-history entry directly below, each of which widens the policy schema.
+
+**Fixtures are exempted by exact path, content digest and rule, not skipped by name** (ST-19a, #110;
+[ADR 0020](artifacts/adr/0020-fixtures-are-exempted-by-exact-path-digest-and-rule-not-skipped-by-name.md)).
+`fixtures` is removed from `SKIP_DIRS`: every file beneath a `fixtures/` directory is an ordinary scanned
+file, and the evidence surface is no longer marked incomplete for the directory's name. A deliberately
+violating fixture is waived by an entry in the new optional `fixtureExemptions` section of
+`project-policy.yml` — exact path, SHA-256 of the content (CRLF read as LF), one rule, reason, owner, and
+`expires` or `reviewWhen`. It applies only while all three of path, digest and rule match; any other
+path, changed byte or rule is inspected as ordinary content, and an entry that stops matching is reported
+stale. A rule whose only violations are waived reports `excepted`, never `passed`; a waiver is applied to
+a violation a detector observed, so it cannot turn an unread file into a result. Entries that do not
+validate waive nothing and are reported by `audit`, `validate` and `standards policy`. A pin whose path exists but was hidden by the 20,000-file cap is
+"not established" (keep the entry), never stale and never a waiver. A pin beneath a directory the walk could not list, or whose existence probe was inconclusive, is likewise "not
+established". A pin on a rule declared `not-applicable` is rejected: `validate` does not bind it
+(`fixture-exemption-rule-not-applicable`), reports `NOT_EVALUATED` and exits 1, `audit` stays independent, and
+`standards policy` rejects the pair. An env-file pin (`scm.no-committed-env-files`) is checked against the indexed blob, not the working-tree copy. A result excepted by fixture pins keeps an active project exception as
+`exception.projectException`. `standards policy` checks shape and
+semantics only; a dead entry (path gone, digest changed, rule no longer fires) is reported by `audit` and `validate`.
+`security.no-secrets-in-artifacts` is non-exemptible and stays so, so its fixture bait is built at run
+time instead of committed. The human `Failing:` list no longer repeats rules already shown under
+`Excepted:`. **Consequence for adopters:** a consumer's deliberately violating fixtures now produce live
+findings until they carry exact entries. **Schema:** `fixtureExemptions` is an additive optional property of the policy schema. Level: **MINOR** under
+[Standard 21](standards/21-versioning.md) R2 (an optional property; the effect on a currently compliant project is none). Owner decision of
+2026-10-15 (option A): `VERSION` stays 2.0.0, this is recorded as Unreleased content intended to ship inside a future 3.0.0 if the owner
+authorizes that release, and there is no intermediate 2.1.0 migration. No `VERSION`, tag or release is changed here. Other `SKIP_DIRS` names are unchanged.
 
 Append-only review history (ST-17, #95; split from draft PR 109). Policy schema, widening only: `reviewEvent.reviewerRole`
 and `reviewEvent.reviewedAgainst.tree` are new optional properties (a validator older than this change rejects a policy that

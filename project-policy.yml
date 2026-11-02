@@ -224,6 +224,63 @@ applicability:
 # failing rule is reported as a failure rather than waived (Standard 20, Standard 30 R2).
 exceptions: []
 
+# Deliberately violating test fixtures, waived by EXACT path + content digest + rule (ST-19a, ADR 0020).
+#
+# This is not a skip. `fixtures/` is scanned like any other directory; each entry below waives ONE
+# rule for ONE file while that file's bytes still hash to `sha256`. Another path, another rule, or a
+# changed byte is inspected as ordinary content, and an entry that stops matching is reported as
+# stale. The rule is reported EXCEPTED, never passed. Digest: sha256 of the file with CRLF read as LF
+# (scripts/fixture-exemptions.mjs, contentDigest).
+fixtureExemptions:
+  - path: "test/fixtures/evidence-availability-bait/bait.js"
+    sha256: "033184bb6466e696efd25e8957452debe6c6eb0f70e6411da111927ad6032ebb"
+    rule: "security.no-cert-bypass"
+    reason: "Deliberate certificate-validation bypass: the bait test/evidence-availability.test.mjs plants to prove an unread file cannot pass its prohibition."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/evidence-availability-bait/bait.js"
+    sha256: "033184bb6466e696efd25e8957452debe6c6eb0f70e6411da111927ad6032ebb"
+    rule: "security.no-sql-concat"
+    reason: "Deliberate SQL interpolation: the bait test/evidence-availability.test.mjs plants to prove an unread file cannot pass its prohibition."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/never-violations/src/mixed-catch.js"
+    sha256: "86438eb60099fe1222d057c176c7cfa8ee8b07b5abd525f9aea668b44961ac24"
+    rule: "errors.no-swallowed-exceptions"
+    reason: "Deliberate unjustified empty catch beside a justified one: pins that the detector decides by site, not by count."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/never-violations/src/swallow.js"
+    sha256: "c5ed190b3d4dfea7fb13046e06764c68d897256cd5061ca136ff7ad90774f104"
+    rule: "errors.no-swallowed-exceptions"
+    reason: "Deliberate swallowed exception: the positive control for errors.no-swallowed-exceptions."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/never-violations/src/tls.js"
+    sha256: "ea5d55dd4868f1e701f40992acb2a8156040a4647c809333ee1e8a2fb65b709d"
+    rule: "security.no-cert-bypass"
+    reason: "Deliberate certificate-validation bypass: the positive control for security.no-cert-bypass."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/never-violations/src/query.js"
+    sha256: "76ee3327ffb9e4aad6bf797d72f3e95875bd495f9ba618d98e96e7a969bf2768"
+    rule: "security.no-sql-concat"
+    reason: "Deliberate SQL interpolation: the positive control for security.no-sql-concat."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/never-violations/.env"
+    sha256: "bdba25e980bd40c2d865f90cdf65cb4f965692cee59842ba9fa720508f28acb8"
+    rule: "scm.no-committed-env-files"
+    reason: "Deliberately tracked environment file: the positive control for scm.no-committed-env-files."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+  - path: "test/fixtures/markers/src/work.js"
+    sha256: "17669a929c2cc6025558c80a0459c641a9a9de93ff5b0bf971c4b26dcc66b22c"
+    rule: "quality.unfinished-work"
+    reason: "Deliberate unfinished-work markers: the positive control for quality.unfinished-work."
+    owner: "project-owner"
+    reviewWhen: "The fixture is rewritten, renamed or no longer read by its test, or the detector changes what it treats as a violation."
+
 # Recorded human judgement for rules the catalog says a human evaluates (ADR 0005).
 #
 # An attestation is EVIDENCE, not a waiver. It never overrides an automated failure, and it goes

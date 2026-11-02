@@ -51,7 +51,7 @@ test("#101 P2 (standards.mjs:2211): text that only starts with # is not a headin
   assert.deepEqual(parsePlanDocument(text, "p.md").items[0].spans.map((s) => s.attributed), [true]);
 });
 
-for (const dir of ["fixtures", "vendor", "build", "node_modules"]) {
+for (const dir of ["vendor", "build", "node_modules"]) {
   test(`#101 P2 (ownership.mjs:184): a plan file under a framework-excluded \`${dir}\` directory is NOT_EVALUATED, not silently absent`, async () => {
     const root = await scratch({
       [`${PLAN}/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n`,

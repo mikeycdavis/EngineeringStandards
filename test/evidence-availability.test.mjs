@@ -604,13 +604,12 @@ test("a starved run reaches no verdict that needed content, in either polarity",
 /**
  * One file tripping three content-derived rules at once, so one specimen covers all three.
  *
- * Read from `test/fixtures/` rather than written inline, and the reason is this suite's own
- * subject: that directory is excluded by name, so nothing inside it is ever scanned. Inline, the
- * SQL interpolation in it is a real finding against THIS repository — `security.no-sql-concat`
- * reads `sourceOf`, where string contents stay intact, so bait sitting in a test file is
- * indistinguishable from the construct it imitates. That is not a use/mention question, and
- * blanking it would be evading the detector rather than satisfying it. It cost a red self-audit to
- * learn, which is the right way to learn it: the detector was correct and the test was wrong.
+ * Read from `test/fixtures/` rather than written inline. Inline, the SQL interpolation in it would be
+ * a real finding against THIS repository — `security.no-sql-concat` reads `sourceOf`, where string
+ * contents stay intact, so bait sitting in a test file is indistinguishable from the construct it
+ * imitates. In a fixture directory it is a scanned file like any other (ST-19a), and the two
+ * violations it carries are waived by exact path + content digest + rule in project-policy.yml. That
+ * is not evading the detector: it still reads the file and finds the violation.
  */
 const CONTENT_BAIT = readFileSync(
   path.join(HERE, "fixtures", "evidence-availability-bait", "bait.js"),
@@ -672,10 +671,10 @@ function baitedVerdicts(root) {
 }
 
 test("framework-excluded tracked content withdraws the rules it would have fed", async () => {
-  const root = await excludedFixture({ dir: "fixtures" });
+  const root = await excludedFixture({ dir: "vendor" });
   try {
     const surface = run("audit", root, AMPLE).evidenceSurface;
-    assert.deepEqual(surface.frameworkExcludedDirectories, ["fixtures"], "the fixture stopped being framework-excluded");
+    assert.deepEqual(surface.frameworkExcludedDirectories, ["vendor"], "the fixture stopped being framework-excluded");
     assert.equal(surface.complete, false);
     assert.equal(surface.readBudget.exhausted, false, "budget loss would make this a duplicate of the falsifiers above");
 
