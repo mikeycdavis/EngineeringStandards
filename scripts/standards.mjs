@@ -671,7 +671,7 @@ function splitSource(text, ext, options = {}) {
   // block inside the expression closes the right thing. Empty unless `templateExpressions` is set.
   const exprStack = [];
   const syntax = COMMENT_SYNTAX.get(ext);
-  if (!syntax) return { code: text, structure: text, comments: "" };
+  if (!syntax) return { code: text, structure: text, comments: "", regexSpans: [] };
 
   let code = "";
   let comments = "";
@@ -681,6 +681,11 @@ function splitSource(text, ext, options = {}) {
   // the only thing a detector could do was count matches in one view and count them in another —
   // and two counts never establish that they refer to the same site.
   const structure = [];
+  // Every span blanked as a regex literal, as [start, end] (inclusive) offsets into `text`. The regex-versus-division
+  // decision is a guess (one previous character plus keywords, no parser), so a division read as a regex opener
+  // blanks real code up to the next `/`. The guess is not made cleverer; the spans it acted on are reported, so a
+  // caller that must not read silence as absence can look at what was blanked (see `locateAuditSurface`).
+  const regexSpans = [];
   const keep = (c) => structure.push(c);
   const drop = (c) => structure.push(c === "\n" ? "\n" : " ");
 
@@ -724,57 +729,6 @@ function splitSource(text, ext, options = {}) {
     return end - 2 >= stop && code[end - 1] === code[end - 2] && (code[end - 1] === "+" || code[end - 1] === "-");
   };
   const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
-  // `}` ends either a block (a statement follows, so `/` may open a regex) or an expression such as an object
-  // literal (`x = { a: 1 } / n`), after which `/` divides. One entry per open `{` in code: true when that brace
-  // opened an expression, decided by what precedes it. `closedExpression` is the kind of the last `}`. A brace
-  // after anything else (`)`, `=>`, a block keyword, a statement boundary) is a block, the existing behaviour.
-  const braceStack = [];
-  let closedExpression = false;
-  const LINE_SEPARATOR = String.fromCharCode(0x2028);
-  const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
-  // Whether the block comment being read holds a line terminator, and the length `code` had where the last
-  // such comment ended (-1 for none).
-  let blockHasBreak = false;
-  let blockBreakAt = -1;
-  const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
-  // What lies between the previous `;`, `{` or `}` and here, trimmed: the statement a brace is inside of.
-  const statementSoFar = () => {
-    let start = code.length;
-    const stop = Math.max(0, start - 400);
-    while (start > stop && !";{}".includes(code[start - 1])) start -= 1;
-    return code.slice(start).trim();
-  };
-  const braceOpensExpression = () => {
-    const prev = lastCode();
-    // `x++` or `x--` ends an expression statement; a brace after it (on the next line, by automatic semicolon
-    // insertion) is a block, never an operand. Without this the trailing `+` or `-` reads as a binary operator.
-    if (afterPostfixUpdate()) return false;
-    // A TypeScript TYPE literal is not a runtime expression, and a regex may legally follow it on the next
-    // line: `type R = { ok: boolean }` and a declaration's annotation `const x: { a: number }`.
-    if (/^(?:export\s+)?(?:declare\s+)?type\s+[A-Za-z_$][\w$]*\b/.test(statementSoFar())) return false;
-    if (prev === ":" && /^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*:$/.test(statementSoFar())) return false;
-    if (prev === ":") {
-      // A colon before a brace is three different things. Inside an object literal it is a property value
-      // (an expression). Elsewhere it is a ternary's else-branch (an expression), unless the statement it
-      // ends is a `case X:`, a `default:` or a label (`name:`): there the brace opens a BLOCK, and a regex
-      // literal may follow its `}`. The statement is what lies between the previous `;`, `{` or `}` and here.
-      if (braceStack.length > 0 && braceStack[braceStack.length - 1]) return true;
-      const statement = statementSoFar().replace(/:$/, "").trim();
-      return !/^(?:case\b[\s\S]*|default|[A-Za-z_$][\w$]*)$/.test(statement);
-    }
-    // `return`, `yield` and `await` take an expression only on the SAME line: a line terminator after them ends
-    // the statement (automatic semicolon insertion) or, for `await`, which is an ordinary identifier in a classic
-    // script, leaves a plain statement, so a brace on the next line is a block. A brace on the same line cannot
-    // follow an identifier, so there the word is the keyword and the brace is its operand.
-    const sameLine = /(?:^|[^\w$.])(?:return|yield|await)([^\S\n\r\u2028\u2029]*)$/.exec(code.slice(-24));
-    // ...unless a block comment holding a line terminator sits between the keyword and the brace.
-    if (sameLine !== null) return blockBreakAt < code.length - sameLine[1].length;
-    if (/(?:^|[^\w$.])(?:return|yield|await)\s*$/.test(code.slice(-24))) return false;
-    return (
-      EXPRESSION_BRACE_AFTER.has(prev) ||
-      /(?:^|[^\w$.])(?:typeof|case|in|delete|void|throw|new)\s*$/.test(code.slice(-24))
-    );
-  };
 
   const quoteCache = {};
   let mode = "code";
@@ -808,7 +762,6 @@ function splitSource(text, ext, options = {}) {
       }
       if (syntax.block && rest2 === "/*") {
         mode = "block";
-        blockHasBreak = false;
         drop("/");
         drop("*");
         i += 2;
@@ -878,10 +831,11 @@ function splitSource(text, ext, options = {}) {
       // inside the unfinished-work pattern table is a description of a stub, not a stub, and the
       // detector could not tell the difference. Contents stay in `code`, because sourceOf() exists
       // for import matching and a specifier is never a regex.
-      if (syntax.block && c === "/" && ((REGEX_MAY_START_AFTER.has(lastCode()) && !afterPostfixUpdate() && !(lastCode() === "}" && closedExpression)) || followsRegexKeyword())) {
+      if (syntax.block && c === "/" && ((REGEX_MAY_START_AFTER.has(lastCode()) && !afterPostfixUpdate()) || followsRegexKeyword())) {
         const close = regexLiteralEnd(text, i);
         if (close !== -1) {
           code += text.slice(i, close + 1);
+          regexSpans.push([i, close]);
           keep("/");
           for (let k = i + 1; k < close; k += 1) drop(text[k]);
           keep("/");
@@ -889,8 +843,6 @@ function splitSource(text, ext, options = {}) {
           continue;
         }
       }
-      if (c === "{") braceStack.push(braceOpensExpression());
-      else if (c === "}") closedExpression = braceStack.pop() === true;
       code += c;
       keep(c);
       i++;
@@ -898,8 +850,9 @@ function splitSource(text, ext, options = {}) {
     }
 
     if (mode === "line") {
-      // A line comment ends at LF, CRLF or a lone CR (a CR-only file has no LF to end it).
-      if (c === "\n" || c === "\r") {
+      // A line comment ends at LF, CRLF or a lone CR (a CR-only file has no LF to end it), and in JavaScript and
+      // TypeScript at U+2028 and U+2029 as well: without them the code after one was read as comment text.
+      if (c === "\n" || c === "\r" || ((c === "\u2028" || c === "\u2029") && STRING_ENDS_AT_EOL.has(ext) && ext !== ".py")) {
         mode = "code";
         code += c;
         comments += "\n";
@@ -916,16 +869,12 @@ function splitSource(text, ext, options = {}) {
     if (mode === "block") {
       if (rest2 === "*/") {
         mode = "code";
-        // A block comment that contains a line terminator counts as one for automatic semicolon insertion,
-        // but its text is not in `code`; remember where in `code` it fell (see `braceOpensExpression`).
-        if (blockHasBreak) blockBreakAt = code.length;
         comments += "\n";
         drop("*");
         drop("/");
         i += 2;
         continue;
       }
-      if (c === "\n" || c === "\r" || c === LINE_SEPARATOR || c === PARAGRAPH_SEPARATOR) blockHasBreak = true;
       comments += c;
       drop(c);
       i++;
@@ -971,7 +920,7 @@ function splitSource(text, ext, options = {}) {
     code += c;
     i++;
   }
-  return { code, structure: structure.join(""), comments };
+  return { code, structure: structure.join(""), comments, regexSpans };
 }
 
 /**
@@ -3997,12 +3946,29 @@ const AUDIT_LANGUAGE_FAMILIES = [
  * `IAuditService`, `AuditableEntity`, `orders_audit`, `audit.events`). A person who audits is not an audit
  * mechanism. Only the WORD auditor is excluded (`Auditor`, `Auditors`, `AuditorService`, `auditor_id`, `AUDITOR`):
  * `AuditOrder` and `AuditOrganization` merely begin with the same letters. The stem is matched in ANY letter case
- * (`AuDiT_events` is an audit name, as it was under the `i` flag); only the auditor exclusion is case-sensitive, so
- * that a CamelCase boundary (`AuditorService` against `AuditOrder`) can be told apart. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
- * it a use, and any other identifier that merely contains the word is reported as unclassified, never
+ * (`AuDiT_events` is an audit name); only the auditor exclusion is case-sensitive, so that a CamelCase boundary
+ * (`AuditorService` against `AuditOrder`) can be told apart. This is a NAME test only: the declaration keyword
+ * (`class`, `CREATE TABLE`) is what makes it a use, and any other identifier that merely contains the word is reported as unclassified, never
  * as an observation.
  */
 const AUDIT_NAME_RE = /[Aa][Uu][Dd][Ii][Tt](?!(?:ors?(?![a-z])|ORS?(?![A-Z])))/;
+
+/**
+ * Whether a span `splitSource` blanked as a regex literal could have hidden an audit mechanism: it holds an
+ * audit-named identifier in the raw text (a call between two divisions), or a string delimiter (a misread span can
+ * swallow the quote that opens or closes a string, after which the code up to the next quote is read as string
+ * text, outside any span), or, where template expressions are scanned, a brace (the expression's closing brace is
+ * found by counting braces, and a span skips them). Each span is tested separately, so the cost is linear in the
+ * blanked text.
+ */
+function blankedRegexMayHideAudit(text, ext, options) {
+  for (const [start, end] of splitSource(text, ext, options).regexSpans) {
+    const span = text.slice(start, end + 1);
+    if (AUDIT_NAME_RE.test(span) || /['"`]/.test(span)) return true;
+    if (options.templateExpressions === true && /[{}]/.test(span)) return true;
+  }
+  return false;
+}
 
 const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
 
@@ -4067,7 +4033,7 @@ const AUDIT_BLIND_SPOTS = [
   { id: "language-family:shell", kind: "language-family", description: "Shell and PowerShell (.sh, .ps1) have no idiom; nothing in them is read for audit mechanisms." },
   { id: "language-family:markup-components", kind: "language-family", description: "Vue, Svelte and Razor components (.vue, .svelte, .razor) mix markup with script; they are not tokenised as plain JavaScript or C#, so none of their content is read." },
   { id: "language-family:unlisted-code-languages", kind: "language-family", description: "Code languages outside this tool's code-extension list (for example .swift, .scala, .fs, .cpp, .c, .kts, .cshtml, .vb, .dart) are never read; their files are counted in languageFamilies but not searched." },
-  { id: "construct:audit-named-identifiers-outside-idioms", kind: "construct", description: "An identifier containing `audit` that is not a declared type, audit-table DDL, a recorder-shaped call or a listed attribute (variables, parameters, imports, DI registrations) is not classified; files holding one and no observation are listed as `unclassified` and make the search incomplete. Files that already hold an observation are not checked for further unclassified identifiers." },
+  { id: "construct:audit-named-identifiers-outside-idioms", kind: "construct", description: "An identifier containing `audit` that is not a declared type, audit-table DDL, a recorder-shaped call or a listed attribute (variables, parameters, imports, DI registrations) is not classified; files holding one and no observation are listed as `unclassified` and make the search incomplete. Files that already hold an observation are not checked for further unclassified identifiers, with one exception: a span the tokenizer blanked as a regex literal (a division can be misread as a regex opener) that holds an audit-named identifier or a string delimiter (inside a template expression, or a brace) lists the file as `unclassified` even when it holds an observation." },
   { id: "construct:logging-frameworks-as-audit-trails", kind: "construct", description: "Audit trails written through a general logging framework, a message bus or an event store, with no audit-named construct, are not located." },
   { id: "construct:attribute-forms-not-matched", kind: "construct", description: "Audit attributes, annotations and decorators are matched only at the start of a line and, in C#, only first in an attribute list; inline and listed forms are not seen." },
   { id: "construct:database-native-audit", kind: "construct", description: "Triggers, views, stored procedures, temporal or system-versioned tables, change-data-capture and database audit extensions are not located." },
@@ -4391,8 +4357,12 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     // `${...}` in a template literal executes, so the locator scans those expressions; the shared view blanks
     // the whole literal and is left as it is for every other detector.
     let structure = view.text;
+    // The options of the splitSource call that produced `structure` (the shared view takes none), so the regex spans
+    // checked below are the ones that call blanked.
+    let splitOptions = {};
     if (fam.family === "javascript-typescript" && raw.text.includes("$" + "{")) {
-      structure = splitSource(raw.text, ext, { templateExpressions: true }).structure;
+      splitOptions = { templateExpressions: true };
+      structure = splitSource(raw.text, ext, splitOptions).structure;
     }
     if (fam.family === "javascript-typescript" && [".js", ".jsx", ".tsx"].includes(ext) && structure.includes("</")) {
       // JSX text children are prose, not declarations (see maskJsxText); the locator's view only.
@@ -4400,7 +4370,8 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     }
     if (fam.family === "sql" && raw.text.includes("$")) {
       // A dollar-quoted body is a literal for the locator only (see splitSource); other detectors keep it.
-      structure = splitSource(raw.text, ext, { dollarQuotes: true }).structure;
+      splitOptions = { dollarQuotes: true };
+      structure = splitSource(raw.text, ext, splitOptions).structure;
     }
     let newlines = null;
     const lineAt = (index) => {
@@ -4514,7 +4485,18 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     }
     // An audit-named identifier in a file with no observation is something the locator saw and could
     // not classify. It is reported, and it makes the search incomplete: silence there is not absence.
-    if (!fileHit && AUDIT_NAME_RE.test(structure)) unclassified.push({ file: r, family: fam.family });
+    // The tokenizer decides regex-versus-division by a guess, and a division read as a regex opener blanks real code
+    // up to the next `/`, where the structural view above cannot see it. So an audit-named identifier inside any span
+    // blanked as a regex literal makes the file unclassified, whether or not the file also holds an observation:
+    // the blanked span may hold a call the locator never counted. So does a string delimiter in such a span, which can
+    // desynchronise the string state after it. A genuine pattern such as /audit/i or /["']/ is the same report,
+    // the honest-unknown direction. Only a file that names an audit identifier at all pays for the extra scan.
+    if (
+      (!fileHit && AUDIT_NAME_RE.test(structure)) ||
+      (AUDIT_NAME_RE.test(raw.text) && blankedRegexMayHideAudit(raw.text, ext, splitOptions))
+    ) {
+      unclassified.push({ file: r, family: fam.family });
+    }
   }
 
   unread.sort((a, b) => byCodepoint(a.file, b.file) || byCodepoint(a.reason, b.reason));

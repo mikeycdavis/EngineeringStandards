@@ -1167,175 +1167,6 @@ test("class names that merely begin with Audit-Or are observed; only the word au
   });
 });
 
-test("a recorder call after a } that closes an expression is code, not a blanked regex literal", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "const n = { valueOf() { return 8; } } / recordAuditEvent(x) / 2;",
-    "const m = [ { a: 1 } ] / 2; const k = ({ b: 2 }) / recordAuditEvent(y) / 2;",
-    "const o = f({ c: 3 } / recordAuditEvent(z) / 2);",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    const f = surfaceOf(cli("audit", dir).json);
-    assert.deepEqual(sites(f), [
-      "src/a.js:1 recorder-call recordAuditEvent",
-      "src/a.js:2 recorder-call recordAuditEvent",
-      "src/a.js:3 recorder-call recordAuditEvent",
-    ]);
-  });
-});
-
-test("a } that closes a block still lets a regex literal follow, so its contents are not observations", async () => {
-  const NL = String.fromCharCode(10);
-  const js = ["if (ok) { go(); }", "/recordAuditEvent(x)/.test(s);", "function f() { return 1; } /recordAuditEvent(y)/.test(s);", ""].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("a block after a case colon or a label is a block: a regex literal may follow it", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "switch (value) { case 1: { work(); } /recordAuditEvent(x)/.test(s); break; }",
-    "switch (value) { default: { work(); } /recordAuditEvent(y)/.test(s); }",
-    "outer: { work(); } /recordAuditEvent(z)/.test(s);",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("a brace after a colon that starts an expression is an expression: a ternary branch and a property value", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "const a = ok ? b : { c: 1 } / recordAuditEvent(x) / 2;",
-    "const o = { k: { a: 1 } / recordAuditEvent(y) / 2 };",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
-      "src/a.js:1 recorder-call recordAuditEvent",
-      "src/a.js:2 recorder-call recordAuditEvent",
-    ]);
-  });
-});
-
-test("a brace after return, throw or typeof is an expression (the keyword set is real, not a typo)", async () => {
-  const NL = String.fromCharCode(10);
-  const js = ["function f() { return { a: 1 } / recordAuditEvent(x) / 2; }", ""].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
-  });
-});
-
-test("a brace on the line after return or yield is a block (automatic semicolon insertion): a regex literal may follow it", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "function* f() { yield",
-    "{ work(); } /recordAuditEvent(x)/.test(s); }",
-    "function g() { return",
-    "{ work(); } /recordAuditEvent(y)/.test(s); }",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("a brace on the same line as return or yield, even after a comment, is an expression", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "function g() { return /* note */ { a: 1 } / recordAuditEvent(x) / 2; }",
-    "function* h() { yield { a: 1 } / recordAuditEvent(y) / 2; }",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
-      "src/a.js:1 recorder-call recordAuditEvent",
-      "src/a.js:2 recorder-call recordAuditEvent",
-    ]);
-  });
-});
-
-test("a Unicode line separator after return also ends the statement", async () => {
-  const NL = String.fromCharCode(10);
-  const LS = String.fromCharCode(0x2028);
-  const js = ["function g() { return" + LS + "{ work(); } /recordAuditEvent(y)/.test(s); }", ""].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("a line terminator inside a block comment after return or yield also ends the statement", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "function* f() { yield /*" + NL + "*/ { work(); } /recordAuditEvent(x)/.test(s); }",
-    "function g() { return/*" + NL + "*/{ work(); } /recordAuditEvent(y)/.test(s); }",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("a block comment WITHOUT a line terminator after return does not end the statement", async () => {
-  const NL = String.fromCharCode(10);
-  const js = ["function g() { return /* one line */ { a: 1 } / recordAuditEvent(x) / 2; }", ""].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
-  });
-});
-
-test("a Unicode line separator inside a block comment after return ends the statement too", async () => {
-  const NL = String.fromCharCode(10);
-  const LS = String.fromCharCode(0x2028);
-  const PS = String.fromCharCode(0x2029);
-  const js = [
-    "function g() { return /*" + LS + "*/ { work(); } /recordAuditEvent(x)/.test(s); }",
-    "function h() { return /*" + PS + "*/ { work(); } /recordAuditEvent(y)/.test(s); }",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("a TypeScript type literal is a block-like brace: a regex statement may follow a semicolonless type alias or annotation", async () => {
-  const NL = String.fromCharCode(10);
-  const ts = [
-    "type Result = { ok: boolean }",
-    "/recordAuditEvent(a)/.test(s);",
-    "export type Pair<T> = { a: T }",
-    "/recordAuditEvent(b)/.test(s);",
-    "declare type Hole = { h: 1 }",
-    "/recordAuditEvent(c)/.test(s);",
-    "const x: { a: number }",
-    "/recordAuditEvent(d)/.test(s);",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.ts": ts }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
-  });
-});
-
-test("the type-literal exemption is narrow: an assignment to a variable named type, and a ternary after a declaration, stay expressions", async () => {
-  const NL = String.fromCharCode(10);
-  const ts = [
-    "type = { a: 1 } / recordAuditEvent(a) / 2;",
-    "const y = ok ? 1 : { a: 1 } / recordAuditEvent(b) / 2;",
-    "const z = { a: 1 } / recordAuditEvent(c) / 2;",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.ts": ts }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
-      "src/a.ts:1 recorder-call recordAuditEvent",
-      "src/a.ts:2 recorder-call recordAuditEvent",
-      "src/a.ts:3 recorder-call recordAuditEvent",
-    ]);
-  });
-});
-
 test("the audit stem is matched in any letter case; only the auditor exclusion is case-sensitive", async () => {
   const NL = String.fromCharCode(10);
   const files = {
@@ -1353,52 +1184,157 @@ test("the audit stem is matched in any letter case; only the auditor exclusion i
   });
 });
 
-test("a brace on the line after a postfix update is a block (automatic semicolon insertion)", async () => {
-  const NL = String.fromCharCode(10);
-  const js = [
-    "let x = 0; x++",
-    "{ work(); } /recordAuditEvent(a)/.test(s);",
-    "x--",
-    "{ work(); } /recordAuditEvent(b)/.test(s);",
-    "",
-  ].join(NL);
+// The tokenizer reads `/` as a regex opener or as division from one previous character and a keyword list, so it
+// can be wrong, and a division read as a regex blanks the code up to the next `/`. It is not made cleverer. The
+// locator is told which spans were blanked as regex literals and, when one holds an audit-named identifier in the
+// raw text, reports the file as unclassified (so `incomplete: true`). Each case below is a hostile input where the
+// tokenizer's guess is wrong (or right: a genuine pattern is the same report); none may be silently dropped.
+
+const NLC = String.fromCharCode(10);
+// The backtick and the template opener are spelled out so this file is not itself a template-literal scan target.
+const BT = String.fromCharCode(96);
+const DS = "$" + "{";
+const HOSTILE = {
+  "src/jsx.jsx": "const V = () => <ul><li>a</li><li onClick={() => recordAuditEvent(x)}>b</li></ul>;" + NLC,
+  "src/nonnull.ts": "const a = x! / 2; recordAuditEvent(x); // half / quarter" + NLC,
+  "src/typelit.ts": "const q = T{} / 2; recordAuditEvent(x); const z = b / 3;" + NLC,
+  "src/brace.js": "const n = { valueOf() { return 8; } } / recordAuditEvent(x) / 2;" + NLC,
+  "src/ret.js": "function f() { return { a: 1 } / recordAuditEvent(x) / 2; }" + NLC,
+  "src/ternary.js": "const a = ok ? b : { c: 1 } / recordAuditEvent(x) / 2;" + NLC,
+  "src/after-await.mjs": "async function f() { await { a: 1 } / recordAuditEvent(b) / 2; }" + NLC,
+  "src/generic.ts": "const g = a<b>/c; recordAuditEvent(x); z = 4 / 2" + NLC,
+};
+
+test("a division the tokenizer reads as a regex opener is never a silent drop: the file is unclassified and the search incomplete", async () => {
+  await withRepo(HOSTILE, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    const observedFiles = new Set(f.detail.observed.map((o) => o.file));
+    const unclassifiedFiles = new Set(f.detail.unclassified.map((u) => u.file));
+    for (const file of Object.keys(HOSTILE)) {
+      assert.ok(observedFiles.has(file) || unclassifiedFiles.has(file), file + " is in neither observed nor unclassified");
+    }
+    assert.equal(f.detail.incomplete, true);
+    assert.ok(f.detail.incompleteReasons.includes("unclassified-audit-named-identifiers"));
+  });
+});
+
+test("each hostile division is listed by the blanked-span rule alone: nothing else in its file is observed", async () => {
+  // One repository per input, so a later or neighbouring check cannot be what lists the file.
+  for (const [file, content] of Object.entries(HOSTILE)) {
+    await withRepo({ [file]: content }, async (dir) => {
+      const f = surfaceOf(cli("audit", dir).json);
+      assert.deepEqual(f.detail.unclassified, [{ file, family: "javascript-typescript" }], file);
+      assert.deepEqual(sites(f), [], file);
+      assert.equal(f.detail.incomplete, true, file);
+    });
+  }
+});
+
+test("a blanked regex span that names an audit identifier lists the file even when another observation is in it", async () => {
+  // `class AuditEvent` is observed, which used to end the check for the file; the call after `x! /` is blanked.
+  const js = ["class AuditEvent {}", "const a = x! / 2; recordAuditEvent(x); // half / quarter", ""].join(NLC);
+  await withRepo({ "src/a.ts": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), ["src/a.ts:1 type AuditEvent"]);
+    assert.deepEqual(f.detail.unclassified, [{ file: "src/a.ts", family: "javascript-typescript" }]);
+    assert.equal(f.detail.incomplete, true);
+  });
+});
+
+test("a regex literal that does not name an audit identifier, or a name outside every regex span, costs nothing", async () => {
+  const js = ["const re = /ab+c/g;", "recordAuditEvent(re.test(s));", "const half = n / 2;", ""].join(NLC);
   await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), ["src/a.js:2 recorder-call recordAuditEvent"]);
+    assert.deepEqual(f.detail.unclassified, []);
+    assert.equal(f.detail.incomplete, false);
   });
 });
 
-test("a binary plus or minus before a brace still starts an expression", async () => {
-  const NL = String.fromCharCode(10);
-  const js = ["const a = 1 + { v: 1 } / recordAuditEvent(a) / 2;", "const b = 1 - { v: 1 } / recordAuditEvent(b) / 2;", ""].join(NL);
+test("a genuine regex literal holding an audit name is reported as unclassified, never as an observation", async () => {
+  const js = ["if (/recordAuditEvent(x)/.test(s)) { go(); }", ""].join(NLC);
   await withRepo({ "src/a.js": js }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
-      "src/a.js:1 recorder-call recordAuditEvent",
-      "src/a.js:2 recorder-call recordAuditEvent",
-    ]);
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), []);
+    assert.deepEqual(f.detail.unclassified, [{ file: "src/a.js", family: "javascript-typescript" }]);
+    assert.equal(f.detail.incomplete, true);
   });
 });
 
-test("await is an identifier in a classic script: a brace on the next line is a block; on the same line it is the operand", async () => {
-  const NL = String.fromCharCode(10);
-  const cjs = ["let await = 1; await", "{ work(); } /recordAuditEvent(a)/.test(s);", ""].join(NL);
-  const mjs = ["async function f() { await { a: 1 } / recordAuditEvent(b) / 2; }", ""].join(NL);
-  await withRepo({ "src/a.cjs": cjs, "src/b.mjs": mjs }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/b.mjs:1 recorder-call recordAuditEvent"]);
+test("the blanked-span check reads the same view as the locator: a span that exists only inside a template expression is found", async () => {
+  // The shared view blanks the whole template literal; only the locator's template-expression view sees the
+  // `x! / ... /` span inside the template expression.
+  const js = ["const s = " + BT + DS + "x! / recordAuditEvent(y) / 2}" + BT + ";", ""].join(NLC);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), []);
+    assert.deepEqual(f.detail.unclassified, [{ file: "src/a.js", family: "javascript-typescript" }]);
   });
 });
 
-test("a TypeScript non-null assertion ends a statement, and any brace inside a type alias is a type", async () => {
-  const NL = String.fromCharCode(10);
-  const ts = [
-    "const value = 1; value!",
-    "{ Math.random(); } /recordAuditEvent(a)/.test('s');",
-    "type X = A & { b: 1 }",
-    "/recordAuditEvent(b)/.test('s');",
-    "type Y = { p: { q: 1 } }",
-    "/recordAuditEvent(c)/.test('s');",
-    "",
-  ].join(NL);
-  await withRepo({ "src/a.ts": ts }, async (dir) => {
-    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+// A misread span can do more than blank its own text: it can swallow the quote or the brace that the tokenizer
+// counts, after which the code that follows is read as string text although no span covers it. The locator lists
+// the file for a span holding a string delimiter (or, inside `${...}`, a brace), not only for an audit name.
+
+test("a blanked span that swallows a string delimiter lists the file, though the call after it is outside every span", async () => {
+  // `x! / 2; const t = `/` is read as one regex literal; the backtick that closes the real template then opens a new
+  // one that runs to the end of the file, so the call after it is blanked without being inside the span.
+  const js = ["const a = x! / 2; const t = " + BT + "/" + BT + "; recordAuditEvent(y);", ""].join(NLC);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), []);
+    assert.deepEqual(f.detail.unclassified, [{ file: "src/a.js", family: "javascript-typescript" }]);
+    assert.equal(f.detail.incomplete, true);
   });
+});
+
+test("inside a template expression, a blanked span that swallows a brace lists the file", async () => {
+  // The span `/ 2 }) /` hides the function body's closing brace, so the expression's own `}` closes nothing and the
+  // call after the template is read as template text.
+  const js = ["const s = " + BT + DS + "f(function () { return x! / 2 }) / 3}" + BT + ";", "recordAuditEvent(y);", ""].join(NLC);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), []);
+    assert.deepEqual(f.detail.unclassified, [{ file: "src/a.js", family: "javascript-typescript" }]);
+  });
+});
+
+test("a regex literal holding a brace does not list a file that has no template expression", async () => {
+  const js = ["const r = /a{2}/;", "recordAuditEvent(r);", ""].join(NLC);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), ["src/a.js:2 recorder-call recordAuditEvent"]);
+    assert.deepEqual(f.detail.unclassified, []);
+  });
+});
+
+test("U+2028 and U+2029 end a JavaScript line comment, so the code after one is read; Python's comment runs on", async () => {
+  const LS = String.fromCharCode(0x2028);
+  const PS = String.fromCharCode(0x2029);
+  const js = ["// note" + LS + "recordAuditEvent(a);", "// note" + PS + "recordAuditEvent(b);", ""].join(NLC);
+  const py = ["# note" + LS + "class AuditThing:", "    pass", ""].join(NLC);
+  await withRepo({ "src/a.js": js, "src/b.py": py }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), ["src/a.js:1 recorder-call recordAuditEvent", "src/a.js:2 recorder-call recordAuditEvent"]);
+  });
+});
+
+// Linear time. The tokenizer is shared by every detector, and an earlier change made it quadratic in the number of
+// `{` (it re-read the accumulated text at every brace): 200,000 braces took about 7.5 s against 28 ms. The bound is
+// relative to a control repository of the same shape and size without braces, plus a margin far above run-to-run
+// noise and far below the quadratic cost.
+
+test("braces are linear: a file of braces audits in time comparable to one without", async () => {
+  const braces = "{}".repeat(190000);
+  const opens = "a{".repeat(190000);
+  const plain = "ab".repeat(190000);
+  const time = (files) =>
+    withRepo(files, async (dir) => {
+      const started = process.hrtime.bigint();
+      surfaceOf(cli("audit", dir).json);
+      return Number(process.hrtime.bigint() - started) / 1e6;
+    });
+  const control = await time({ "src/a.js": plain, "src/b.js": plain });
+  const hostile = await time({ "src/a.js": braces, "src/b.js": opens });
+  assert.ok(hostile < control * 4 + 2500, "braces took " + hostile.toFixed(0) + " ms against a " + control.toFixed(0) + " ms control");
 });
