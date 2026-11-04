@@ -1629,3 +1629,92 @@ test("named regression: an unreadable observed directory is reported, not a cras
     rmSync(t.dir, { recursive: true, force: true });
   }
 });
+
+// Repair R1 (PR #158 follow-up): the structured-failure contract on reads that can fail on a path that exists.
+// A real permission change is not available on every host (a Windows ACL cannot be set portably), so the
+// failure is injected through the same `io` seam the checker reads through; a real-chmod case above covers
+// the scan-time listing where the host enforces permissions.
+const EACCES = () => Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+
+function dirMemberRepo() {
+  const files = { ...FILES, "src/lib/x.mjs": "export const x = 1;\n" };
+  const d = baseDeclaration();
+  d.members.push({ id: "lib", kind: "layer", description: "d", paths: ["src/lib/"], evidence: ["NOTES.md:1"] });
+  return tiny(files, d);
+}
+
+test("R1/D2: a declared member directory that exists but cannot be listed is a violation, not a crash", () => {
+  const t = dirMemberRepo();
+  try {
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), [], "the control repository must be clean");
+    const io = {
+      readFileSync,
+      readdirSync: (p, ...rest) => {
+        if (String(p).split(path.sep).join("/").replace(/\/+$/, "").endsWith("src/lib")) throw EACCES();
+        return readdirSync(p, ...rest);
+      },
+    };
+    const v = checkBoundaries(t.dir, t.declaration, undefined, io);
+    assert.deepEqual(kinds(v), ["unreadable-path"], JSON.stringify(v));
+    assert.equal(v[0].file, "src/lib/");
+    assert.ok(!v.some((x) => x.kind === "dead-member-path"), "an unlistable directory is not a dead path");
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("R1/D3: an evidence file that exists but cannot be read is a violation, not a crash", () => {
+  const t = tiny(FILES, baseDeclaration());
+  try {
+    assert.deepEqual(kinds(checkBoundaries(t.dir, t.declaration)), []);
+    const io = {
+      readdirSync,
+      readFileSync: (p, ...rest) => {
+        if (String(p).split(path.sep).join("/").endsWith("/NOTES.md")) throw EACCES();
+        return readFileSync(p, ...rest);
+      },
+    };
+    const v = checkBoundaries(t.dir, t.declaration, undefined, io);
+    assert.ok(v.length > 0 && v.every((x) => x.kind === "unreadable-path" && x.file === "NOTES.md"), JSON.stringify(v));
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("R1/D2 on a real directory: an unlistable member directory is reported where the host enforces permissions", (t0) => {
+  const t = dirMemberRepo();
+  const locked = path.join(t.dir, "src", "lib");
+  try {
+    chmodSync(locked, 0o000);
+    try {
+      readdirSync(locked);
+      chmodSync(locked, 0o755);
+      return t0.skip("this host does not enforce directory permissions (Windows ACLs are not set by chmod); the injected-failure tests above cover the contract");
+    } catch { /* unreadable, as intended */ }
+    const v = checkBoundaries(t.dir, t.declaration);
+    assert.ok(kinds(v).includes("unreadable-path"), JSON.stringify(v));
+  } finally {
+    try { chmodSync(locked, 0o755); } catch { /* absent */ }
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test("R1/D4: naming process.exit.call or binding process.exit without invoking it is not a termination", () => {
+  for (const src of ["const call = process.exit.call;", "const b = process.exit.bind(null);", "process.exit.bind(null);", "const a = process.exit.apply;"]) {
+    const r = scanSource(src);
+    assert.deepEqual(r.terminates, [], src);
+    assert.ok(r.mechanisms["termination-indirect"].length > 0, `${src} is still an indirect use and must be reported`);
+  }
+  for (const src of ["process.exit.bind(null)(1);", "process.exit.bind(null)?.(1);", "process.exit.call(process, 1);", "process.exit.call?.(process, 1);", "process.exit.apply(process, [1]);", "process.exit(1);"]) {
+    assert.ok(scanSource(src).terminates.length > 0, src);
+  }
+});
+
+test("R1/D5: a plain parameter named like a network global is not the global", () => {
+  for (const src of ["function visit(fetch) {}", "const f = (WebSocket) => 1;", "const g = fetch => 1;", "const h = (a, fetch) => 1;", "const i = async (EventSource) => 1;", "function* k(WebSocket) {}", "class C { m(fetch) {} }", "try {} catch (fetch) {}", "function d(fetch = 1) {}"]) {
+    assert.equal(scanSource(src).mechanisms.network.length, 0, src);
+  }
+  for (const src of ["if (fetch) {}", "run(fetch);", "const f = (x) => fetch;", "const g = (a = fetch) => 1;", "fetch(u);", "new WebSocket(u);"]) {
+    assert.ok(scanSource(src).mechanisms.network.length > 0, src);
+  }
+});

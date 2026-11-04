@@ -15,6 +15,8 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Forward repair of the consolidation PR 158 (refs #107 and #148; no rule, verdict semantics, VERSION or tag change). A fixture exemption and a path justification on the same rule no longer make the justification recount pick the info-level `fixture-exempted` record as its template: the true `swallowed-exception` error finding and the waiver record both survive. `boundaries-check` reports a member directory it cannot list, or an evidence file it cannot read, as an `unreadable-path` violation (exit 1) instead of crashing. `process.exit.call`, `.apply` and `.bind` are a termination only where the result is invoked; naming them is an indirect use. A plain parameter named like a network global (`function f(fetch) {}`) is no longer recorded as network use. `checkEntries` with no rule catalog now applies no fixture exemption (fail closed). ADR 0018 (still Proposed) has its Number paragraph and section 6 brought up to date with the merged ADRs and policy schema.
+
 Boundary declaration and checker (ST-23 follow-on, refs #112; split from draft PR 113, the Standard 51 text is a separate
 change). Adds an optional, additive boundary declaration ([ADR 0018](artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)):
 a root-level `architecture-boundaries.yml`, discovered by name beside `project-policy.yml` and described by the new
