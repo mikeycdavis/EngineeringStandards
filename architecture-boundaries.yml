@@ -123,6 +123,20 @@ members:
     evidence:
       - scripts/init.mjs:312
       - scripts/agent-instructions.mjs:86
+  - id: "fixture-exemptions"
+    kind: "layer"
+    description: "Validates and binds exact, content-pinned fixture exemptions (ST-19a, ADR 0020). Holds no catalog, applicability or verdict knowledge."
+    paths:
+      - scripts/fixture-exemptions.mjs
+    evidence:
+      - scripts/fixture-exemptions.mjs:20
+  - id: "justifications"
+    kind: "layer"
+    description: "Validates path-scoped justifications and subtracts them from the findings of the rules the engine admits (ADR 0017). Reads the tracked file set through repository provenance."
+    paths:
+      - scripts/justifications.mjs
+    evidence:
+      - scripts/justifications.mjs:22
   - id: "boundary-check"
     kind: "layer"
     description: "Validates and enforces this declaration. A library; it never terminates the process."
@@ -206,7 +220,7 @@ edges:
       - effectiveAttestations
       - IDENTITY_NOTE
     evidence:
-      - scripts/standards.mjs:37
+      - scripts/standards.mjs:56
   - from: "boundary-check"
     to: "parsers"
     via:
@@ -238,8 +252,9 @@ edges:
       - plan
       - apply
       - render
+      - PLAN_DIR
     evidence:
-      - scripts/standards.mjs:23
+      - scripts/standards.mjs:24
   - from: "validator-cli"
     to: "parsers"
     via:
@@ -249,9 +264,9 @@ edges:
       - OUTCOME
       - validate
     evidence:
-      - scripts/standards.mjs:24
       - scripts/standards.mjs:25
       - scripts/standards.mjs:26
+      - scripts/standards.mjs:44
   - from: "validator-cli"
     to: "repository-provenance"
     via:
@@ -262,22 +277,23 @@ edges:
       - trackedMatching
       - DIGEST_ALGORITHM
       - FRESHNESS
+      - indexedBlob
     evidence:
-      - scripts/standards.mjs:27
+      - scripts/standards.mjs:45
   - from: "validator-cli"
     to: "reviews"
     via:
       - currentReview
       - recordedRejections
     evidence:
-      - scripts/standards.mjs:36
+      - scripts/standards.mjs:55
   - from: "validator-cli"
     to: "boundary-check"
     via:
       - loadDeclaration
       - DECLARATION_FILE
     evidence:
-      - scripts/standards.mjs:38
+      - scripts/standards.mjs:57
   - from: "tool-clis"
     to: "parsers"
     via:
@@ -293,8 +309,8 @@ edges:
       - scripts/ci-triage.mjs:80
       - scripts/fidelity.mjs:40
       - scripts/inventory.mjs:44
-      - scripts/policy.mjs:23
-      - scripts/policy.mjs:23
+      - scripts/policy.mjs:27
+      - scripts/policy.mjs:28
   - from: "tool-clis"
     to: "repository-provenance"
     via:
@@ -319,8 +335,8 @@ edges:
     via:
       - loadCatalog
     evidence:
-      - scripts/policy.mjs:44
-      - scripts/policy.mjs:44
+      - scripts/policy.mjs:50
+      - scripts/policy.mjs:241
   - from: "tool-clis"
     to: "review-history"
     via:
@@ -336,7 +352,7 @@ edges:
       - checkBoundaries
       - DECLARATION_FILE
     evidence:
-      - scripts/policy.mjs:25
+      - scripts/policy.mjs:30
       - scripts/boundaries-check.mjs:22
 
   - from: "tool-clis"
@@ -370,6 +386,46 @@ edges:
       - humanOut
     evidence:
       - scripts/ownership.mjs:58
+  - from: "validator-cli"
+    to: "fixture-exemptions"
+    via:
+      - checkEntries
+      - bindEntries
+      - contentDigest
+      - contentDigestOfStream
+    evidence:
+      - scripts/standards.mjs:23
+  - from: "tool-clis"
+    to: "fixture-exemptions"
+    via:
+      - checkEntries
+    evidence:
+      - scripts/policy.mjs:29
+  - from: "validator-cli"
+    to: "justifications"
+    via:
+      - JUSTIFIABLE_RULES
+      - applyJustifications
+      - justificationProblems
+      - justifiedRecord
+      - splitByExpiry
+      - trackedProvider
+    evidence:
+      - scripts/standards.mjs:59
+  - from: "tool-clis"
+    to: "justifications"
+    via:
+      - justificationProblems
+      - trackedProvider
+    evidence:
+      - scripts/policy.mjs:31
+  - from: "justifications"
+    to: "repository-provenance"
+    via:
+      - repositoryAvailable
+      - trackedMatching
+    evidence:
+      - scripts/justifications.mjs:22
 external:
   allowPrefixes:
     - "node:"
