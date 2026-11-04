@@ -32,7 +32,7 @@
  * Holds no module-level run state: every mutable value is local to a call.
  */
 
-import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut, jsonText } from "./display-safe.mjs";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -252,7 +252,7 @@ function main(argv) {
 
   if (mode === "list") {
     if (flags.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ stages: STAGES, restore: RESTORE }, null, 2)}\n`);
+      process.stdout.write(`${jsonText({ stages: STAGES, restore: RESTORE }, null, 2)}\n`);
     } else {
       for (const s of STAGES) {
         humanOut(`${s.gating ? "gate    " : "advisory"}  ${s.id.padEnd(10)} ${s.command}\n`);
@@ -292,7 +292,7 @@ function main(argv) {
 
   if (reportPath) {
     mkdirSync(path.dirname(reportPath), { recursive: true });
-    writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    writeFileSync(reportPath, `${jsonText(report, null, 2)}\n`);
   }
 
   // The human-readable verification evidence, rendered here rather than in the host scripts. Two

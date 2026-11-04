@@ -60,13 +60,17 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Repository paths, branch names, remote URLs, the project name and git output are escaped before they are
+# shown (ST-48 b); see scripts/display-safe.ps1.
+. (Join-Path $PSScriptRoot 'display-safe.ps1')
+
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ReportPath = Join-Path $RepoRoot 'artifacts/local-ci/latest.json'
 Push-Location $RepoRoot
 
 function Fail([string] $Message, [int] $Code = 1) {
     Write-Host ""
-    Write-Host $Message -ForegroundColor Red
+    Write-Host (ConvertTo-DisplaySafe $Message -Layout) -ForegroundColor Red
     Pop-Location
     exit $Code
 }
@@ -105,13 +109,13 @@ try {
     # a real refusal and stops the run before the container is even built.
     if (-not $pre.allowed -and $pre.reason -ne 'no-evidence') { Fail $pre.message }
 
-    Write-Host "repository : $(Git-Out config --get remote.origin.url)"
-    Write-Host "branch     : $branch  ->  $Base"
-    Write-Host "commit     : $shaBefore"
+    Write-Host "repository : $(ConvertTo-DisplaySafe (Git-Out config --get remote.origin.url) -Native)"
+    Write-Host "branch     : $(ConvertTo-DisplaySafe $branch -Native)  ->  $(ConvertTo-DisplaySafe $Base)"
+    Write-Host "commit     : $(ConvertTo-DisplaySafe $shaBefore)"
 
     # --- Verification ------------------------------------------------------------------------------
     Write-Host ""
-    Write-Host "==> Verifying $shaBefore in Docker" -ForegroundColor Cyan
+    Write-Host "==> Verifying $(ConvertTo-DisplaySafe $shaBefore) in Docker" -ForegroundColor Cyan
     if (Test-Path $ReportPath) { Remove-Item $ReportPath -Force }
     & "$PSScriptRoot\ci.ps1"
     $ciExit = $LASTEXITCODE
@@ -133,11 +137,11 @@ try {
     if (-not $verdict.allowed) { Fail $verdict.message }
 
     Write-Host ""
-    Write-Host $verdict.message -ForegroundColor Green
+    Write-Host (ConvertTo-DisplaySafe $verdict.message -Layout) -ForegroundColor Green
 
     # --- Push the exact verified commit ------------------------------------------------------------
     Write-Host ""
-    Write-Host "==> Pushing $shaBefore to origin/$branch" -ForegroundColor Cyan
+    Write-Host "==> Pushing $(ConvertTo-DisplaySafe $shaBefore) to origin/$(ConvertTo-DisplaySafe $branch -Native)" -ForegroundColor Cyan
     # `<sha>:refs/heads/<branch>` rather than the branch name. Pushing by name would send whatever
     # the branch points at when git runs, and the whole point of this script is that the thing which
     # reaches the remote is the thing that was verified.
@@ -196,7 +200,7 @@ try {
     if ($ghExit -ne 0) { Fail "gh pr create failed. The verified commit is pushed; open the pull request manually." }
 
     Write-Host ""
-    Write-Host "Submitted $shaBefore." -ForegroundColor Green
+    Write-Host "Submitted $(ConvertTo-DisplaySafe $shaBefore)." -ForegroundColor Green
     Pop-Location
     exit 0
 }

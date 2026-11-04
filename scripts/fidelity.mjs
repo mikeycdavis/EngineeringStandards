@@ -33,7 +33,7 @@
  *   node scripts/fidelity.mjs --json    machine-readable
  */
 
-import { displaySafe, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanOut, jsonText } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -174,7 +174,7 @@ for (const file of files) {
 }
 
 if (JSON_OUT) {
-  process.stdout.write(JSON.stringify({ claims, failures, ok: failures.length === 0 }, null, 2) + "\n");
+  process.stdout.write(jsonText({ claims, failures, ok: failures.length === 0 }, null, 2) + "\n");
   process.exit(failures.length === 0 ? 0 : 1);
 }
 

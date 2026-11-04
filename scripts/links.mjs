@@ -71,7 +71,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
-import { displaySafe, humanLog } from "./display-safe.mjs";
+import { displaySafe, humanLog, jsonText } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -262,7 +262,7 @@ async function main(argv) {
   const result = await checkLinks(ROOT);
 
   if (json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(jsonText(result, null, 2));
   } else if (result.broken.length === 0) {
     humanLog(`OK — ${result.checked} relative links across ${result.files} files all resolve.`);
     for (const u of result.unread) humanLog(`  (not read: ${displaySafe(u.file)} — ${displaySafe(u.reason)})`);

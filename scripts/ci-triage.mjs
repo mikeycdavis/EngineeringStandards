@@ -71,7 +71,7 @@
  *   node scripts/ci-triage.mjs --sha <commit-sha> [--json]
  *   node scripts/ci-triage.mjs --branch <branch-name> [--json]
  */
-import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
+import { displaySafe, displaySafeText, humanErr, jsonText } from "./display-safe.mjs";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -678,7 +678,7 @@ export function main(argv) {
   }
 
   const result = classify(observation);
-  process.stdout.write(json ? JSON.stringify({ ...observation, ...result }, null, 2) + "\n" : displaySafeText(render(observation, result)));
+  process.stdout.write(json ? jsonText({ ...observation, ...result }, null, 2) + "\n" : displaySafeText(render(observation, result)));
   return EXIT[result.verdict];
 }
 
