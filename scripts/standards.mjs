@@ -56,6 +56,14 @@ import { currentReview, recordedRejections } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
 import { loadDeclaration, DECLARATION_FILE } from "./boundaries.mjs";
 import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
+import {
+  JUSTIFIABLE_RULES,
+  applyJustifications,
+  justificationProblems,
+  justifiedRecord,
+  splitByExpiry,
+  trackedProvider,
+} from "./justifications.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -263,7 +271,7 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false) {
+function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false, justifications = null) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -285,6 +293,11 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   out.push(`  Score:  ${report.score === null ? "n/a" : report.score + "%"}  (${report.denominator.basis}: ${report.denominator.scored})`);
   out.push(`  Rules:  ${s.passed} passed, ${s.failed} failed, ${s.warnings} warning(s), ${s.skipped} skipped`);
   out.push(`  Cover:  ${a.automated} automated, ${a.manualReview} manual-review, ${a.notEvaluated} not-evaluated`);
+  const exceptedCount = report.results.filter((r) => r.disposition === "excepted").length;
+  if (exceptedCount > 0) {
+    const byJustification = report.results.filter((r) => r.disposition === "excepted" && r.justified?.length).length;
+    out.push(`  Excepted: ${exceptedCount} rule(s) (${exceptedCount - byJustification} by exception, ${byJustification} by path justification)`);
+  }
   out.push("");
 
   const failed = report.results.filter((r) => r.status === "failed" && r.disposition !== "excepted");
@@ -340,7 +353,9 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   if (excepted.length) {
     out.push("  Excepted:");
     for (const r of excepted) {
-      if (r.exception.kind === "fixture-exemption") {
+      if (!r.exception) {
+        out.push(`    ${displaySafe(r.ruleId)} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
+      } else if (r.exception.kind === "fixture-exemption") {
         // One line per pinned file: a reader must be able to see WHICH fixtures are carrying the
         // waiver, and a count alone is how an exemption list grows unnoticed.
         out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)}`);
@@ -355,6 +370,35 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
         out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
       }
     }
+    out.push("");
+  }
+  // Path-scoped justifications are never silent: what was subtracted, where, why, who approved it,
+  // when it lapses, and what removes it.
+  if (justifications?.applied?.length) {
+    out.push(`  Justified (path-scoped, ${justifications.trackedBasis}):`);
+    for (const j of justifications.applied) {
+      out.push(
+        `    ${j.rule} @ ${j.path} — ${j.reason} (owner ${j.approvedBy}, approved ${j.approvedAt}, ` +
+          `expires ${j.expires ?? "never"}; ${j.reference}; remove when: ${j.removeWhen})`,
+      );
+    }
+    out.push("");
+  }
+  if (justifications?.expired?.length) {
+    out.push("  Expired justifications (NOT applied; the violation is reported again):");
+    for (const j of justifications.expired) {
+      out.push(`    ${j.rule} @ ${j.path} — expired ${j.expires} (owner ${j.approvedBy})`);
+    }
+    out.push("");
+  }
+  if (justifications?.stale?.length) {
+    out.push("  Stale justifications (warning — remove them):");
+    for (const j of justifications.stale) out.push(`    ${j.rule} @ ${j.path} — ${j.why}`);
+    out.push("");
+  }
+  if (justifications?.unverified?.length) {
+    out.push("  Unverified justifications (the path was not read in full this run):");
+    for (const j of justifications.unverified) out.push(`    ${j.rule} @ ${j.path}`);
     out.push("");
   }
   const attested = report.results.filter((r) => r.disposition === "attested");
@@ -3634,18 +3678,30 @@ function carriesJustification(raw, structure, from, to) {
 function detectSwallowedExceptions(files, run) {
   const { rel, structureOf, addFinding } = run;
   const hits = [];
+  // What a path-scoped justification needs to know and a finding cannot say: which files this rule
+  // actually looked at, and which it could not read. A justification for a path in neither set was
+  // never in a position to be needed or stale.
+  const examined = [];
+  const unreadable = [];
   for (const f of files) {
     if (!isCode(f)) continue;
     const view = structureOf(f);
     const source = run.textOf(f);
     if (view.lost || source.lost) {
       run.unknown("errors.no-swallowed-exceptions", rel(f), view.reason ?? source.reason);
+      unreadable.push(rel(f));
       continue;
     }
     if (!view.available || !source.available) continue;
     const structure = view.text;
     const raw = source.text;
     if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
+    // A file read only up to the cap was searched in part: a violation in its prefix is real, but "no
+    // violation" over it says nothing about the tail. It is therefore not "examined" for the purpose
+    // of calling a justification stale; it is unverified, and the rule itself is withdrawn by the
+    // truncation term in the verdict.
+    if (run.truncated.has(f)) unreadable.push(rel(f));
+    else examined.push(rel(f));
 
     // Constructed here, so their `lastIndex` cannot outlive this file's turn through the loop.
     const catchOpen = new RegExp(CATCH_OPEN_SOURCE, "g");
@@ -3667,19 +3723,29 @@ function detectSwallowedExceptions(files, run) {
     }
     if (unjustified > 0) hits.push(rel(f));
   }
-  const live = run.settleFixtureHits("errors.no-swallowed-exceptions", uniq(hits));
-  if (live.length === 0) return;
+  const violating = uniq(hits);
+  const live = run.settleFixtureHits("errors.no-swallowed-exceptions", violating);
+  if (live.length > 0) {
+    addFinding({
+      id: "swallowed-exception",
+      rule: "errors.no-swallowed-exceptions",
+      category: "Standards violations",
+      severity: "error",
+      label: "INFERRED",
+      evidence: live,
+      message: swallowedExceptionMessage(live.length),
+      standardRef: N.swallowed,
+    });
+  }
+  return { violating: live, examined, unreadable };
+}
 
-  addFinding({
-    id: "swallowed-exception",
-    rule: "errors.no-swallowed-exceptions",
-    category: "Standards violations",
-    severity: "error",
-    label: "INFERRED",
-    evidence: live,
-    message: `${live.length} file(s) contain a catch block empty of both handling code and justification.`,
-    standardRef: N.swallowed,
-  });
+/**
+ * The finding's sentence, in one place, so a finding re-counted after path-scoped justifications
+ * subtract paths from it cannot drift from the one the detector emitted.
+ */
+function swallowedExceptionMessage(count) {
+  return `${count} file(s) contain a catch block empty of both handling code and justification.`;
 }
 
 /**
@@ -5050,7 +5116,7 @@ export async function main(args) {
   const envCheck = detectCommittedEnvFiles(files, root, repoAvailability, run);
   detectConflictMarkers(files, root, repoAvailability, run);
   detectSecretsInArtifacts(files, run);
-  detectSwallowedExceptions(files, run);
+  const swallowedObservation = detectSwallowedExceptions(files, run);
   detectCertBypass(files, run);
   detectSqlConcat(files, run);
   // Last on purpose, and read-only: it observes where audit mechanisms are and binds to no rule.
@@ -5345,6 +5411,99 @@ export async function main(args) {
   }
 
   /**
+   * Path-scoped justifications (ADR 0017).
+   *
+   * Validated here, after the version guard and before any finding is read by the verdict, because a
+   * justification that is malformed must fail the CONFIGURATION (exit 2, no verdict), never be
+   * partially applied: a half-honoured waiver list is a verdict nobody can reproduce from the policy.
+   *
+   * Applied by subtracting declared paths from ONE rule's own observed violating paths. Nothing else
+   * is touched — every other detector has already run over every file, and no other finding is read
+   * or rewritten here.
+   */
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const justificationReport = {
+    trackedBasis: null,
+    trackedNote: null,
+    // Filled after evaluation: the number of rules whose disposition is `excepted` (by either
+    // mechanism) and the number of path justifications that produced one.
+    exceptionCount: 0,
+    justificationCount: 0,
+    exceptedRules: [],
+    applied: [],
+    expired: [],
+    stale: [],
+    unverified: [],
+    problems: [],
+  };
+  const declaredJustifications = Array.isArray(policy.document?.justifications) ? policy.document.justifications : [];
+  let expiredJustified = [];
+  if (declaredJustifications.length > 0) {
+    const tracked = trackedProvider(root, files.map((f) => rel(f)));
+    justificationReport.trackedBasis = tracked.basis;
+    justificationReport.trackedNote = tracked.note;
+    const problems = justificationProblems(declaredJustifications, { catalog, root, tracked });
+    justificationReport.problems = problems.map((p) => ({ index: p.index, field: p.field, code: p.code, message: p.message }));
+
+    if (problems.length > 0) {
+      const shown = problems
+        .slice(0, 6)
+        .map((p) => `justifications[${p.index}].${p.field} [${p.code}] ${p.message}`)
+        .join("; ");
+      const more = problems.length > 6 ? `; and ${problems.length - 6} more` : "";
+      policy = {
+        document: null,
+        error:
+          `project-policy.yml has ${problems.length} invalid path justification(s), so none were applied: ${shown}${more}`,
+      };
+    } else {
+      // The registry of rules whose detector can be subtracted from. Kept beside the allowlist in
+      // justifications.mjs by an assertion, so admitting a rule there without wiring it here fails.
+      const observations = new Map([["errors.no-swallowed-exceptions", swallowedObservation]]);
+      for (const rule of JUSTIFIABLE_RULES) {
+        if (!observations.has(rule)) throw new Error(`justifiable rule ${rule} has no detector observation`);
+      }
+      // An expired justification is NOT applied: the violation it covered stays a finding and the
+      // rule fails on it, and a separate failed result names the lapse. It is classified against the
+      // same observations so an expired entry whose path no longer violates is only stale.
+      const { active, expired } = splitByExpiry(declaredJustifications, todayIso);
+      const lapsed = applyJustifications(expired, observations);
+      justificationReport.expired = lapsed.applied.map(justifiedRecord);
+      expiredJustified = lapsed.applied;
+      const outcome = applyJustifications(active, observations);
+      outcome.stale.push(...lapsed.stale.map((e) => ({ ...e, why: `expired on ${e.expires} and ${e.why}` })));
+      outcome.unverified.push(...lapsed.unverified);
+      justificationReport.applied = outcome.applied.map(justifiedRecord);
+      justificationReport.stale = outcome.stale.map((e) => ({ ...justifiedRecord(e), why: e.why }));
+      justificationReport.unverified = outcome.unverified.map((e) => ({ ...justifiedRecord(e), why: e.why }));
+
+      // Re-count the one finding the detector emitted: same id, label, severity and reference, with
+      // only the justified paths removed from its evidence. The caller's evidence cap is not applied
+      // twice because `addFinding` is the single writer and applies it itself.
+      const recount = { "errors.no-swallowed-exceptions": swallowedExceptionMessage };
+      for (const [rule, remaining] of outcome.remaining) {
+        if (!outcome.applied.some((e) => e.rule === rule)) continue;
+        const template = findings.find((x) => x.rule === rule);
+        for (let i = findings.length - 1; i >= 0; i--) if (findings[i].rule === rule) findings.splice(i, 1);
+        if (remaining.length > 0 && template) {
+          addFinding({ ...template, evidence: remaining, message: recount[rule](remaining.length) });
+        }
+      }
+      for (const e of outcome.stale) {
+        addFinding({
+          id: "stale-justification",
+          category: "Justifications",
+          severity: "warning",
+          label: "OBSERVED",
+          evidence: [e.path],
+          message: `The justification for ${e.rule} at ${e.path} is stale: ${e.why}. Remove it when: ${e.removeWhen}`,
+          standardRef: N.swallowed,
+        });
+      }
+    }
+  }
+
+  /**
    * Digest the paths each attestation says it reviewed, so a material change to them makes the
    * attestation stale (ADR 0005 rule 4).
    *
@@ -5627,7 +5786,15 @@ export async function main(args) {
     establishedRejections: Array.isArray(reviewHistoryBase.baseRejectionRules)
       ? new Set(reviewHistoryBase.baseRejectionRules)
       : null,
+    justified: justificationReport.applied,
+    expiredJustified,
   });
+  justificationReport.exceptedRules = verdict.results
+    .filter((r) => r.disposition === "excepted")
+    .map((r) => r.ruleId)
+    .sort();
+  justificationReport.exceptionCount = justificationReport.exceptedRules.length;
+  justificationReport.justificationCount = justificationReport.applied.length;
 
   // A rejection recorded on a rule declared not-applicable is surfaced as a finding that carries no
   // rule, so it cannot change any result or the verdict (ST-47). It is added here, after evaluate,
@@ -5673,7 +5840,19 @@ export async function main(args) {
     // Standard 18 R3: a violation of an effectively-`optional` rule is silent, so the finding that
     // evidences it is withheld here too. `audit` (policy-independent evidence, ADR 0004) is unchanged.
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
-    emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
+    emit(
+      JSON.stringify(
+        {
+          ...report,
+          findings: visibleFindings,
+          // Additive. Present on every validate run so a consumer never has to guess whether the
+          // absence of the key means "none declared" or "not reported".
+          justifications: justificationReport,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
   } else {
     emitText(
       renderVerdict(
@@ -5699,6 +5878,7 @@ export async function main(args) {
           return !listed;
         }),
         applicabilityConflict && report.status === "NOT_EVALUATED",
+        justificationReport,
       ) + "\n",
     );
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
@@ -5735,6 +5915,8 @@ export async function main(args) {
   // than exit 2 because it is a statement about the project, not about the configuration — the policy
   // read fine, and what it says is that a prohibition went unexamined.
   if (report.unestablishedProhibitions?.length) return done(EXIT_FINDINGS);
+  // NOT_EVALUATED is non-zero whichever way it was reached.
+  if (report.status === "NOT_EVALUATED") return done(EXIT_FINDINGS);
   return done(EXIT_OK);
 }
 
