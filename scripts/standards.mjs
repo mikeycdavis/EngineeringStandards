@@ -307,6 +307,9 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
       out.push(`    ${displaySafe(r.ruleId)} [${r.level}] ${displaySafe(r.message)}`);
       out.push(`      -> ${displaySafe(r.remediation)}`);
     }
+    if (failed.some((r) => r.attestation)) {
+      out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
+    }
     out.push("");
   }
   // Standard 45 R6. Named individually rather than counted: "3 unestablished prohibitions" tells a
