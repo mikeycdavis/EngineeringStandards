@@ -1335,3 +1335,20 @@ test("the type-literal exemption is narrow: an assignment to a variable named ty
     ]);
   });
 });
+
+test("the audit stem is matched in any letter case; only the auditor exclusion is case-sensitive", async () => {
+  const NL = String.fromCharCode(10);
+  const files = {
+    "db/a.sql": ["CREATE TABLE AuDiT_events (id INT);", "CREATE TABLE aUDIT_two (id INT);", ""].join(NL),
+    "src/a.js": ["class AuDiTLog {}", "class aUdItor {}", "class AuditorService {}", ""].join(NL),
+  };
+  await withRepo(files, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), [
+      "db/a.sql:1 table AuDiT_events",
+      "db/a.sql:2 table aUDIT_two",
+      "src/a.js:1 type AuDiTLog",
+    ]);
+    assert.equal(f.detail.incomplete, false);
+  });
+});

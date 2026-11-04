@@ -3991,12 +3991,13 @@ const AUDIT_LANGUAGE_FAMILIES = [
  * A declared type or table name containing `audit`, except `auditor` (`AuditEvent`, `AuditService`,
  * `IAuditService`, `AuditableEntity`, `orders_audit`, `audit.events`). A person who audits is not an audit
  * mechanism. Only the WORD auditor is excluded (`Auditor`, `Auditors`, `AuditorService`, `auditor_id`, `AUDITOR`):
- * `AuditOrder` and `AuditOrganization` merely begin with the same letters. The test is case-sensitive on purpose,
- * so that a CamelCase boundary (`AuditorService` against `AuditOrder`) can be told apart. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
+ * `AuditOrder` and `AuditOrganization` merely begin with the same letters. The stem is matched in ANY letter case
+ * (`AuDiT_events` is an audit name, as it was under the `i` flag); only the auditor exclusion is case-sensitive, so
+ * that a CamelCase boundary (`AuditorService` against `AuditOrder`) can be told apart. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
  * it a use, and any other identifier that merely contains the word is reported as unclassified, never
  * as an observation.
  */
-const AUDIT_NAME_RE = /(?:[Aa]udit(?!ors?(?![a-z]))|AUDIT(?!ORS?(?![A-Z])))/;
+const AUDIT_NAME_RE = /[Aa][Uu][Dd][Ii][Tt](?!(?:ors?(?![a-z])|ORS?(?![A-Z])))/;
 
 const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
 
