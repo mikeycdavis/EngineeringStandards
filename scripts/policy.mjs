@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { parseYaml, YamlError } from "./yaml.mjs";
 import { validate, assertSchemaSupported, SchemaError } from "./jsonschema.mjs";
 import { checkEntries } from "./fixture-exemptions.mjs";
+import { loadDeclaration, DECLARATION_FILE } from "./boundaries.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -200,6 +201,14 @@ export async function checkPolicy(policyPath, schemaPath, today) {
   const aliases = detectAliases(document);
   const errors = validate(document, schema);
   if (errors.length > 0) return { status: "invalid", errors, findings: [], aliases, document };
+
+  // An optional boundary declaration beside the policy must be well-formed and internally
+  // consistent (ADR 0018). Absent, this adds nothing, so no existing policy changes status.
+  const declared = loadDeclaration(path.dirname(path.resolve(policyPath)));
+  if (declared.state === "invalid") {
+    const boundaryErrors = declared.errors.map((message) => ({ path: DECLARATION_FILE, message }));
+    return { status: "invalid", errors: boundaryErrors, findings: [], aliases, document };
+  }
 
   const catalog = await (async () => {
     try {

@@ -2134,6 +2134,7 @@ test("ST-41: displaySafeText keeps layout and escapes the rest, and every raw wr
   // the serializer and must not change. A new raw write fails here until it is routed or justified.
   const RAW_ALLOWED = {
     "attestations.mjs": 2,
+    "boundaries-check.mjs": 1,
     "ci-triage.mjs": 1,
     "fidelity.mjs": 1,
     "inventory.mjs": 1,
