@@ -3,7 +3,7 @@
 **Status: proposal for the owner's decision; the owner chose the narrow reading (B) on 2026-10-15.**
 Nothing here is adopted, implemented or signed. This document changes no rule result, catalog entry,
 schema, script, policy or attestation, and it does **not** set `attestable: true`: the catalog
-`assurance` for `audit.actor-attribution` stays `none` and the rule stays not-evaluated. Implementation,
+`assurance` for `audit.actor-attribution` stays `none`; the catalog evaluates nothing for it, so where it applies it is reported not-evaluated (this repository instead declares it not-applicable in `project-policy.yml`, which this document does not change). Implementation,
 if any, is a new item.
 
 ## 1. What this proposes
@@ -41,7 +41,7 @@ whether that holds is not machine-checked.
 
 ## 4. The review statement
 
-At digest D, over the paths read, with the audit sink called K, the reviewer states what they observed
+At commit D, over the paths read, with the audit sink called K, the reviewer states what they observed
 of:
 
 - (a) the mutation paths of persistent state found in those paths, and for each whether it routes

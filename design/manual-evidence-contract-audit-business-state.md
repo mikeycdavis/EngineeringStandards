@@ -3,7 +3,7 @@
 **Status: proposal for the owner's decision; the owner chose the narrow reading (B) on 2026-10-15.**
 Nothing here is adopted, implemented or signed. This document changes no rule result, catalog entry,
 schema, script, policy or attestation, and it does **not** set `attestable: true`: the catalog
-`assurance` for `audit.business-state` stays `none` and the rule stays not-evaluated. Implementation, if
+`assurance` for `audit.business-state` stays `none`; the catalog evaluates nothing for it, so where it applies it is reported not-evaluated (this repository instead declares it not-applicable in `project-policy.yml`, which this document does not change). Implementation, if
 any, is a new item.
 
 ## 1. What this proposes
@@ -12,7 +12,7 @@ any, is a new item.
 (`rules/audit.json`). Its `$assuranceNote` records that a detector once bound to it observed only test
 and CI infrastructure and was withdrawn because it elevated assurance (Standard 24 R2, issue #62). The
 planned detector item (#126) is negative-only: it reports mutation sites observed with no audit
-mechanism anywhere in the repository, and keeps the rule not-evaluated, because "business-relevant" and
+mechanism anywhere in the repository, and keeps the rule not-evaluated where it applies, because "business-relevant" and
 "safely reconstructable" are classifications no repository states. This document defines what a human
 reviewer **can** establish and record about the rule today, and what that record may and may not be used
 for.
@@ -43,7 +43,7 @@ review; whether that holds is not machine-checked.
 
 ## 4. The review statement
 
-At digest D, over the paths read, with the audit sink called K, the reviewer states what they observed
+At commit D, over the paths read, with the audit sink called K, the reviewer states what they observed
 of:
 
 - the entry points that write persistent business state, listed with their stores and a mutation
