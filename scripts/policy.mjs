@@ -326,9 +326,9 @@ async function main() {
       humanOut(`  ${displaySafe(error.path || "(document)")}: ${displaySafe(error.message)}\n`);
     }
     if (result.justifications && result.justifications.trackedBasis !== "git-index") {
-      process.stdout.write(
-        `  NOTE justifications: tracked-ness was not established (basis: ${result.justifications.trackedBasis}). ` +
-          `${result.justifications.trackedNote}\n\n`,
+      humanOut(
+        `  NOTE justifications: tracked-ness was not established (basis: ${displaySafe(result.justifications.trackedBasis)}). ` +
+          `${displaySafe(result.justifications.trackedNote)}\n\n`,
       );
     }
     for (const finding of result.findings) {

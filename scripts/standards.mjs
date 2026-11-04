@@ -351,23 +351,23 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
 
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
-    out.push("  Excepted:");
+    out.push("  EXCEPTED:");
     for (const r of excepted) {
       if (!r.exception) {
-        out.push(`    ${displaySafe(r.ruleId)} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
+        out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
       } else if (r.exception.kind === "fixture-exemption") {
         // One line per pinned file: a reader must be able to see WHICH fixtures are carrying the
         // waiver, and a count alone is how an exemption list grows unnoticed.
-        out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)}`);
+        out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)}`);
         for (const x of r.exception.fixtures) {
           out.push(`      ${displaySafe(x.path)} (owner ${displaySafe(x.owner)}; ${x.expires ? `expires ${displaySafe(x.expires)}` : `review when: ${displaySafe(x.reviewWhen)}`})`);
         }
         if (r.exception.projectException) {
           const pe = r.exception.projectException;
-          out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(pe.reason)} (project exception; expires ${displaySafe(pe.expires ?? "never")})`);
+          out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${displaySafe(pe.reason)} (project exception; expires ${displaySafe(pe.expires ?? "never")})`);
         }
       } else {
-        out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
+        out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
       }
     }
     out.push("");
@@ -4986,7 +4986,7 @@ export async function main(args) {
   // says a rule is non-exemptible. An entry that does not validate, or whose digest does not match
   // the file on disk, simply never matches: the file is inspected as ordinary content.
   const catalog = await loadCatalog();
-  const policy = await loadProjectPolicy(root);
+  let policy = await loadProjectPolicy(root);
   const today = new Date().toISOString().slice(0, 10);
   const exemptionCheck = { problems: [], bound: [] };
   // One relative-path index, built once: pins x files would be quadratic near the file cap.
