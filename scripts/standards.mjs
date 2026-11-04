@@ -731,9 +731,25 @@ function splitSource(text, ext, options = {}) {
   const braceStack = [];
   let closedExpression = false;
   const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "!", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
-  const braceOpensExpression = () =>
-    EXPRESSION_BRACE_AFTER.has(lastCode()) ||
-    /(?:^|[^w$.])(?:return|typeof|case|in|delete|void|throw|new|yield|await)s*$/.test(code.slice(-24));
+  const braceOpensExpression = () => {
+    const prev = lastCode();
+    if (prev === ":") {
+      // A colon before a brace is three different things. Inside an object literal it is a property value
+      // (an expression). Elsewhere it is a ternary's else-branch (an expression), unless the statement it
+      // ends is a `case X:`, a `default:` or a label (`name:`): there the brace opens a BLOCK, and a regex
+      // literal may follow its `}`. The statement is what lies between the previous `;`, `{` or `}` and here.
+      if (braceStack.length > 0 && braceStack[braceStack.length - 1]) return true;
+      let start = code.length - 1;
+      const stop = Math.max(0, start - 400);
+      while (start > stop && !";{}".includes(code[start - 1])) start -= 1;
+      const statement = code.slice(start, code.length).replace(/:\s*$/, "").trim();
+      return !/^(?:case\b[\s\S]*|default|[A-Za-z_$][\w$]*)$/.test(statement);
+    }
+    return (
+      EXPRESSION_BRACE_AFTER.has(prev) ||
+      /(?:^|[^\w$.])(?:return|typeof|case|in|delete|void|throw|new|yield|await)\s*$/.test(code.slice(-24))
+    );
+  };
 
   const quoteCache = {};
   let mode = "code";

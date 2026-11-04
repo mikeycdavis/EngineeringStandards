@@ -1192,3 +1192,39 @@ test("a } that closes a block still lets a regex literal follow, so its contents
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
   });
 });
+
+test("a block after a case colon or a label is a block: a regex literal may follow it", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "switch (value) { case 1: { work(); } /recordAuditEvent(x)/.test(s); break; }",
+    "switch (value) { default: { work(); } /recordAuditEvent(y)/.test(s); }",
+    "outer: { work(); } /recordAuditEvent(z)/.test(s);",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});
+
+test("a brace after a colon that starts an expression is an expression: a ternary branch and a property value", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "const a = ok ? b : { c: 1 } / recordAuditEvent(x) / 2;",
+    "const o = { k: { a: 1 } / recordAuditEvent(y) / 2 };",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/a.js:1 recorder-call recordAuditEvent",
+      "src/a.js:2 recorder-call recordAuditEvent",
+    ]);
+  });
+});
+
+test("a brace after return, throw or typeof is an expression (the keyword set is real, not a typo)", async () => {
+  const NL = String.fromCharCode(10);
+  const js = ["function f() { return { a: 1 } / recordAuditEvent(x) / 2; }", ""].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
+  });
+});
