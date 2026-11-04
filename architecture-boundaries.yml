@@ -363,6 +363,7 @@ edges:
       - humanErr
       - humanLog
       - humanOut
+      - jsonText
     evidence:
       - scripts/attestations.mjs:22
   - from: "evaluator"
@@ -384,6 +385,7 @@ edges:
       - displaySafeText
       - humanErr
       - humanOut
+      - jsonText
     evidence:
       - scripts/ownership.mjs:58
   - from: "validator-cli"

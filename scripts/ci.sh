@@ -18,6 +18,12 @@
 #   ./scripts/ci.sh [--keep-on-failure] [--verbose] [--project NAME]
 set -euo pipefail
 
+# Every value taken from the repository, the environment or git is shown through display_safe (ST-48 b): a
+# path, branch, project name or remote URL can hold control, bidi or format characters that recolour or
+# forge terminal and CI-log output.
+# shellcheck source=display-safe.sh
+. "$(dirname "${BASH_SOURCE[0]}")/display-safe.sh"
+
 keep_on_failure=0
 verbose=0
 project=""
@@ -28,7 +34,7 @@ while [ $# -gt 0 ]; do
     --verbose) verbose=1 ;;
     --project) project="${2:?--project needs a name}"; shift ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; exit 2 ;;
+    *) echo "unknown option: $(display_safe "$1")" >&2; exit 2 ;;
   esac
   shift
 done
@@ -56,7 +62,7 @@ export CI_IMAGE="$image"
 export LOCAL_CI_VERBOSE="$verbose"
 
 compose() { docker compose -p "$project" -f "$compose_file" "$@"; }
-stage() { printf '\n==> %s\n' "$1"; }
+stage() { printf '\n==> %s\n' "$(display_safe "$1")"; }
 
 # Teardown removes exactly what this run created, scoped by the unique project name. It can never
 # reach a developer's own containers, volumes, or databases. There is deliberately no
@@ -81,10 +87,10 @@ exit_code=1
 finish() {
   if [ "$keep_on_failure" -eq 1 ] && [ "$exit_code" -ne 0 ]; then
     printf '\nContainers kept for inspection (--keep-on-failure).\n'
-    [ -n "$context_root" ] && printf '  context: %s\n' "$context_root"
-    printf '  docker logs %s\n' "$ci_container"
-    printf '  docker compose -p %s -f compose.ci.yml run --rm --entrypoint bash ci\n' "$project"
-    printf '  docker rm -f %s && docker compose -p %s -f compose.ci.yml down --volumes --remove-orphans\n' "$ci_container" "$project"
+    [ -n "$context_root" ] && printf '  context: %s\n' "$(display_safe "$context_root")"
+    printf '  docker logs %s\n' "$(display_safe "$ci_container")"
+    printf '  docker compose -p %s -f compose.ci.yml run --rm --entrypoint bash ci\n' "$(display_safe "$project")"
+    printf '  docker rm -f %s && docker compose -p %s -f compose.ci.yml down --volumes --remove-orphans\n' "$(display_safe "$ci_container")" "$(display_safe "$project")"
   else
     teardown
   fi
@@ -114,9 +120,9 @@ if [ -f "$repo_root/.git" ]; then
   exit_code=2; exit 2
 fi
 
-echo "repository : $repo_root"
-echo "image      : $image"
-echo "project    : $project"
+echo "repository : $(display_safe "$repo_root")"
+echo "image      : $(display_safe "$image")"
+echo "project    : $(display_safe "$project")"
 
 # The build context is committed content, not the working directory — see scripts/ci-context.sh.
 # This is the only thing that decides what Docker copies, and it refuses a dirty tree rather than
@@ -127,7 +133,7 @@ stage "Materialising the CI context from committed HEAD"
 # exists to remove.
 context_root="$(bash "$(dirname "${BASH_SOURCE[0]}")/ci-context.sh" "$repo_root" "$project")"
 export CI_CONTEXT="$context_root"
-echo "context    : $context_root"
+echo "context    : $(display_safe "$context_root")"
 
 stage "Building the CI image"
 compose build
@@ -159,7 +165,7 @@ rm -f "$report_path"
 docker cp "${ci_container}:/work/artifacts/local-ci/latest.json" "$report_path" >/dev/null 2>&1 || true
 
 if [ -f "$report_path" ]; then
-  echo "record          : $report_path"
+  echo "record          : $(display_safe "$report_path")"
 elif [ "$pipeline_exit" -eq 0 ]; then
   # A pass with no record is not a pass anyone can act on: submit-pr has nothing to check the commit
   # against, and a reader has nothing to read.

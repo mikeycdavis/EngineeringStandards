@@ -19,7 +19,7 @@
  * an argument (ADR 0014).
  */
 
-import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut, jsonText } from "./display-safe.mjs";
 import { pathToFileURL } from "node:url";
 
 const EXIT_REFUSED = 1;
@@ -243,7 +243,7 @@ async function main(argv) {
   }
 
   const verdict = evaluateSubmission(input);
-  process.stdout.write(`${JSON.stringify(verdict)}\n`);
+  process.stdout.write(`${jsonText(verdict)}\n`);
   return verdict.allowed ? 0 : EXIT_REFUSED;
 }
 
