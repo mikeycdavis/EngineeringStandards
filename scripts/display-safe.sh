@@ -4,7 +4,7 @@
 #                          included, so one field cannot forge a second physical line
 #   display_safe_lines     the same for each line of stdin (git output), one escaped line per input line
 #
-# The escaped set is the one scripts/display-safe.mjs escapes; test/display-safe-wrappers.test.mjs holds
+# The escaped set is the one scripts/display-safe.mjs escapes; test/display-safety-residual.test.mjs holds
 # the two to the same classes. Printable ASCII is returned unchanged, and so is any well-formed UTF-8
 # character outside the set. A byte that is not part of a well-formed character is shown as \xNN. This is
 # plain bash: the wrappers' contract is Docker and git on the host, and no Node.

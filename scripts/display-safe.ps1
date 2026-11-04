@@ -9,7 +9,7 @@
 #   ConvertTo-DisplaySafe VALUE -Layout    keep the line feed and tab that lay a block of text out, and a CR LF
 #                                          pair; escape everything else (a lone CR can overwrite a line)
 #
-# The escaped set is the one scripts/display-safe.mjs escapes; test/display-safe-wrappers.test.mjs holds the
+# The escaped set is the one scripts/display-safe.mjs escapes; test/display-safety-residual.test.mjs holds the
 # two to the same classes. A well-formed surrogate pair is one supplementary character and is escaped only in
 # the tag and variation-selector ranges; a lone surrogate is always escaped.
 $script:DisplaySafePattern = [regex]::new(
