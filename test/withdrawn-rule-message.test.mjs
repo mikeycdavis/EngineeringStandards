@@ -148,6 +148,24 @@ test("a rule withdrawn over several truncated files names three of them and coun
   });
 });
 
+// The two changes meet here: the plan reader (ST-24 part B) says a truncated README is a supporting document
+// and not plan-item evidence, and the message (ST-25) must then name it only for the rule whose own domain
+// reaches it, and must not describe planning.item-fields as withdrawn.
+test("a truncated README withdraws plan-code-consistency by name and leaves planning.item-fields evaluated", async () => {
+  await withRepo(
+    { [`${PLAN}/00-overview.md`]: OVERVIEW, [`${PLAN}/01-plan.md`]: GOOD, [`${PLAN}/README.md`]: sized("# Guide\n\n", CAP + 20 * 1024) },
+    (root) => {
+      const json = validate(root);
+      const fields = resultFor(json, "planning.item-fields");
+      assert.equal(fields.disposition, "evaluated");
+      assert.ok(!fields.message.startsWith("A check for "), fields.message);
+      const consistency = resultFor(json, "planning.plan-code-consistency");
+      assert.equal(consistency.disposition, "not-evaluated");
+      assert.ok(consistency.message.includes(`${PLAN}/README.md read only up to the ${CAP}-byte cap`), consistency.message);
+    },
+  );
+});
+
 test("a rule with no detector keeps the old sentence, and no rule is described as having run unless its detector exists", async () => {
   const detectors = await evaluatedRules();
   const big = sized(`${GOOD}\n`, CAP + 160 * 1024);
