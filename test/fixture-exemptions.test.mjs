@@ -296,6 +296,18 @@ test("checkEntries: canonical path rules and rule exemptibility", () => {
   assert.equal(problems[0].id, "fixture-exemption-non-exemptible");
 });
 
+test("checkEntries: with no catalog nothing can be shown exemptible, so no entry applies (fail closed)", () => {
+  const entries = [GOOD(), { ...GOOD("a.js"), rule: "security.no-secrets-in-artifacts" }];
+  for (const none of [null, undefined]) {
+    const { valid, problems } = checkEntries(entries, { catalog: none, today: "2026-10-12" });
+    assert.equal(valid.length, 0, "an entry must not be honoured when its rule cannot be checked against the catalog");
+    assert.deepEqual(problems.map((p) => p.id), ["fixture-exemption-no-catalog", "fixture-exemption-no-catalog"]);
+  }
+  // A rule outside the per-file allowlist is still reported for that reason, catalog or not.
+  const { problems } = checkEntries([{ ...GOOD(), rule: "ai.no-safety-bypass" }], { catalog: null, today: "2026-10-12" });
+  assert.equal(problems[0].id, "fixture-exemption-rule-not-exemptible");
+});
+
 // ---- stale entries -------------------------------------------------------------------------------
 
 test("an entry for a path that is not in the scanned surface is reported, not silently dead", async () => {

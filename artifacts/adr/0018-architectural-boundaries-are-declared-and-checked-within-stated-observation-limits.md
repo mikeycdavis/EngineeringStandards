@@ -9,9 +9,9 @@
   [ADR 0011](0011-attestation-freshness-is-repository-content-not-checkout-bytes.md),
   [ADR 0014](0014-run-state-is-owned-by-an-invocation-not-recognised-by-a-table.md)
 - **Issue:** #112 (ST-23)
-- **Number:** 0018 is the next free number. 0016 is claimed twice among open pull requests (#105 and
-  #111) and 0017 by #108; whichever of those lands second will need renumbering, which is not decided
-  here.
+- **Number:** 0018. The neighbouring records have since landed under their own numbers: ADR 0016
+  (adoption eligibility), ADR 0017 (path-scoped justification), ADR 0020 (fixture exemptions) and
+  ADR 0021 (adoption file safety). No ADR 0019 exists; the number is not reused here.
 
 ## Context
 
@@ -183,8 +183,10 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
 ### 6. Compatibility and migration
 
 - **Additive.** An absent `architecture-boundaries.yml` changes no verdict, score or exit code of
-  `audit`, `validate` or `policy`, in either output mode, and `schemas/project-policy.schema.json`
-  is unchanged. Present, the declaration is checked for consistency only; `validate` does not read the tree for it and gains no new rule result. Pinned by
+  `audit`, `validate` or `policy`, in either output mode, and this decision adds no boundary key to
+  `schemas/project-policy.schema.json`: the declaration lives in its own file and schema. (That policy
+  schema has since gained `justifications` and `fixtureExemptions` from other records, ADR 0017 and
+  ADR 0020; neither is part of this decision.) Present, the declaration is checked for consistency only; `validate` does not read the tree for it and gains no new rule result. Pinned by
   `test/boundaries.test.mjs` (identical bytes and exit, with and without).
 - **No version bump here.** `validate` refuses any policy whose `standardVersion` differs from
   `VERSION` with `VERSION_MISMATCH` (exit 2). A MINOR bump therefore changes the exit code for every
@@ -202,8 +204,9 @@ The check supplies evidence a reviewer can rely on within its limits; it does no
   `templates/architecture-boundaries/architecture-boundaries.yml`) and runs `node scripts/boundaries-check.mjs`. A consumer without one gets `NOT_EVALUATED` (exit 2) from that
   command, never a pass.
 - **Deliberately not bundled:** any behaviour that turns unestablished rules at all levels into
-  `NOT_EVALUATED`, and any change to attestation freshness, review history (ST-17) or path
-  justifications (#107).
+  `NOT_EVALUATED`, and any change to attestation freshness or review history (ST-17). Path
+  justifications (#107) were decided separately in
+  [ADR 0017](0017-path-scoped-justification-is-not-an-exception.md) and are not part of this record.
 
 ## Consequences
 
