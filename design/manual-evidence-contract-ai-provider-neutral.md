@@ -3,7 +3,7 @@
 **Status: proposal for the owner's decision; the owner chose the narrow reading (B) on 2026-10-15.**
 Nothing here is adopted, implemented or signed. This document changes no rule result, catalog entry,
 schema, script, policy or attestation, and it does **not** set `attestable: true`: the catalog
-`assurance` for `ai.provider-neutral` stays `none` and the rule stays not-evaluated. Implementation, if
+`assurance` for `ai.provider-neutral` stays `none`; the catalog evaluates nothing for it, so where it applies it is reported not-evaluated (this repository instead declares it not-applicable in `project-policy.yml`, which this document does not change). Implementation, if
 any, is a new item.
 
 ## 1. What this proposes
@@ -46,7 +46,7 @@ the change under review; whether that holds is not machine-checked.
 
 ## 4. The review statement
 
-At digest D, over the paths the reviewer read, the reviewer states which of these they observed:
+At commit D, over the paths the reviewer read, the reviewer states which of these they observed:
 
 - provider-specific SDK, HTTP-endpoint, model-identifier and literal prompt-format usage, and the
   modules it appears in;
@@ -112,7 +112,7 @@ contract above is not mistaken for it:
   subject (#96, PR #116 chains successors but authenticates nothing);
 - freshness bound to the enumerated tracked tree, a digest mandatory on genesis events too (successor events already carry one), and a mandatory expiry or maximum age (`expires` exists and is optional); `tree` is recorded today but not used for freshness;
 - a derived exclusion policy with a named owner, and a boundary declaration for the adapter list
-  (Standard 51 R2 defines the vocabulary (#112, delivered by PR #146), and #148 / PR #147 propose a declaration; no second vocabulary is implied);
+  (Standard 51 R2 defines the vocabulary (#112, delivered by PR #146), and the boundary declaration is in `architecture-boundaries.yml` (ADR 0018, Proposed; further work is tracked on #148); no second vocabulary is implied);
 - the catalog opt-in (`attestable: true`, ADR 0005 binding rule 3, and the invariant in `test/compliance.test.mjs` that only manual-review rules are attestable; the policy schema already accepts an attestation under any canonical rule id, and the evaluator's catalog eligibility check is the gate), with any policy-template documentation, a decision on catalog `assurance`,
   and ADR 0010 acceptance;
 - versioning classification (Standard 21 R2 does not classify attestation eligibility) and `VERSION`,
