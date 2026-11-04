@@ -1386,3 +1386,19 @@ test("await is an identifier in a classic script: a brace on the next line is a 
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/b.mjs:1 recorder-call recordAuditEvent"]);
   });
 });
+
+test("a TypeScript non-null assertion ends a statement, and any brace inside a type alias is a type", async () => {
+  const NL = String.fromCharCode(10);
+  const ts = [
+    "const value = 1; value!",
+    "{ Math.random(); } /recordAuditEvent(a)/.test('s');",
+    "type X = A & { b: 1 }",
+    "/recordAuditEvent(b)/.test('s');",
+    "type Y = { p: { q: 1 } }",
+    "/recordAuditEvent(c)/.test('s');",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.ts": ts }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});

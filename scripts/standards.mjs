@@ -736,7 +736,7 @@ function splitSource(text, ext, options = {}) {
   // such comment ended (-1 for none).
   let blockHasBreak = false;
   let blockBreakAt = -1;
-  const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "!", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
+  const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
   // What lies between the previous `;`, `{` or `}` and here, trimmed: the statement a brace is inside of.
   const statementSoFar = () => {
     let start = code.length;
@@ -751,7 +751,7 @@ function splitSource(text, ext, options = {}) {
     if (afterPostfixUpdate()) return false;
     // A TypeScript TYPE literal is not a runtime expression, and a regex may legally follow it on the next
     // line: `type R = { ok: boolean }` and a declaration's annotation `const x: { a: number }`.
-    if (prev === "=" && /^(?:export\s+)?(?:declare\s+)?type\s+[A-Za-z_$][\w$]*[^=]*=$/.test(statementSoFar())) return false;
+    if (/^(?:export\s+)?(?:declare\s+)?type\s+[A-Za-z_$][\w$]*\b/.test(statementSoFar())) return false;
     if (prev === ":" && /^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*:$/.test(statementSoFar())) return false;
     if (prev === ":") {
       // A colon before a brace is three different things. Inside an object literal it is a property value
