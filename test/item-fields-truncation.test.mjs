@@ -10,7 +10,7 @@
  * <path>, <reason>)` for each plan file `readPlanItems` listed as truncated. It is a read-site record
  * scoped by the one plan-file predicate (`isPlanFile`), NOT a `CONTENT_DERIVED_RULES` entry: that
  * table would also subject the rule to the coarse whole-walk term, so a fully read valid plan beside
- * a framework-excluded `fixtures/` directory would be withdrawn. The over-withdrawal cases below pin
+ * a framework-excluded `vendor/` directory (`fixtures` was removed from the exclusions by ST-19a) would be withdrawn. The over-withdrawal cases below pin
  * that choice.
  *
  * CURRENT cases pin what the plan-file predicate is today and what ST-24 part B (README and
@@ -273,7 +273,7 @@ test("a valid, fully read plan beside a framework-excluded directory stays PASSE
     {
       [`${PLAN}/00-overview.md`]: OVERVIEW,
       [PLAN_FILE]: `${GOOD("One")}\n${GOOD("Two")}`,
-      "fixtures/sample.js": "export const x = 1;\n",
+      "vendor/sample.js": "export const x = 1;\n",
     },
     async (root) => {
       const json = cli("validate", root);
@@ -283,19 +283,19 @@ test("a valid, fully read plan beside a framework-excluded directory stays PASSE
       assert.equal(
         resultFor(json, "security.no-sql-concat").disposition,
         "not-evaluated",
-        "fixtures/ no longer makes the walk go short; this test has stopped proving anything",
+        "vendor/ no longer makes the walk go short; this test has stopped proving anything",
       );
     },
   );
 });
 
-test("no plan directory: the result is whatever it is without the change, even beside fixtures/", async () => {
-  const withFixtures = await withRepo({ "fixtures/sample.js": "export const x = 1;\n" }, (root) =>
+test("no plan directory: the result is whatever it is without the change, even beside vendor/", async () => {
+  const withVendor = await withRepo({ "vendor/sample.js": "export const x = 1;\n" }, (root) =>
     shape(cli("validate", root), RULE),
   );
   const without = await withRepo({ "src/sample.js": "export const x = 1;\n" }, (root) => shape(cli("validate", root), RULE));
-  assert.equal(withFixtures, without, "a framework-excluded directory must not move a rule that has no plan to read");
-  assert.doesNotMatch(withFixtures, /^not-evaluated/, `a repository with no plan reported ${withFixtures}`);
+  assert.equal(withVendor, without, "a framework-excluded directory must not move a rule that has no plan to read");
+  assert.doesNotMatch(withVendor, /^not-evaluated/, `a repository with no plan reported ${withVendor}`);
 });
 
 test("a truncated Markdown file OUTSIDE the plan directory does not withdraw the rule", async () => {
