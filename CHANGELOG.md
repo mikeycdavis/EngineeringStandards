@@ -15,6 +15,20 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Boundary declaration and checker (ST-23 follow-on, refs #112; split from draft PR 113, the Standard 51 text is a separate
+change). Adds an optional, additive boundary declaration ([ADR 0018](artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)):
+a root-level `architecture-boundaries.yml`, discovered by name beside `project-policy.yml` and described by the new
+`schemas/architecture-boundaries.schema.json` (members with path ownership, permitted edges and interfaces, and the
+declaration's own observation limits; `templates/architecture-boundaries/architecture-boundaries.yml` is the starting point).
+It is a separate file so that it can be a reviewed path of an attestation without being the file that records one. An absent
+file changes no status, score or exit code, and the policy schema is unchanged; a present one is checked for shape and
+internal consistency by `standards policy` and `validate`, and against the import graph of its roots by the new
+`node scripts/boundaries-check.mjs` (`npm run boundaries`; exit 0 conforms, 1 violations, 2 NOT_EVALUATED) and
+`test/boundaries.test.mjs`. New library `scripts/boundaries.mjs`. This repository declares its own `scripts/` boundaries.
+`VERSION` stays `2.0.0`: `validate` refuses a policy whose `standardVersion` differs from `VERSION` (`VERSION_MISMATCH`,
+exit 2), so a MINOR bump would change the exit code of every consumer pinned at `2.0.0` and is therefore not additive.
+A pre-existing unrelated root file named `architecture-boundaries.yml` would be treated as a declaration.
+
 ST-44 follow-up: a rejection recorded anywhere in a trusted `reviews` value stays in force at any nesting depth (the scan had a depth cap of 6, so a deeper rejection was dropped and the rule read as not evaluated). The scan is unbounded, iterative and cycle-safe; the policy parser is iterative so a deeply nested policy parses instead of overflowing the stack; git reads of the policy blob no longer fail at 16 MB. No rule, verdict semantics, VERSION or tag changes.
 
 Standard 51 R2 now defines *architectural boundary* (one explicitly declared by the repository's architecture manifest or
@@ -86,6 +100,38 @@ A genesis event may still omit its digest (the ADR 0005 first-pass workflow); th
 behaviour and not authenticated history, and no successor may omit it. The hosted self-validation job now runs the
 validator from the code under test, with a pinned baseline job beside it (see `standards-dogfood.yml`).
 
+ST-26 (#119): `scripts/standards.mjs` now locates the audit surface once, as an observation that is bound to no rule
+(refs #62 for history; separate from the verification-surface observations of #64). **Output delta, stated plainly:**
+`audit --json` and `validate --json` gain one `info` finding, `detected-audit-surface` (`rule: null`), in
+`findings[]` for every repository, and `findings[].detail` is a new optional member present only on that finding.
+Human `audit` output gains an "Audit surface" section. The sentence above is therefore true of rule results, verdicts,
+exit codes and `audit --strict`, which do not change, and not of the `findings[]` list, which grows by one entry.
+The finding reports where audit-named types, tables, recorder calls and framework attributes appear in non-test,
+non-CI code of the working tree (C#, Java/Kotlin, JavaScript/TypeScript, Python, SQL DDL), by a small fixed idiom list
+carried in `detail.idioms`. `detail` holds `observed`, `unread`, `unclassified`, `incomplete`/`incompleteReasons`,
+`blindSpots`, `languageFamilies`, `idioms` and `excluded` as separate parts. Test paths are those matched by the
+locator's own narrower patterns (`AUDIT_TEST_PATH_RE`, `AUDIT_TEST_SUFFIX_RE`) plus a fixed audit-specific list (CI
+directories, `e2e`, `cypress`, `__mocks__`, `mocks`, `testing`, `*.Tests/`, `*Test.java`, stories), which is narrower
+than the shared `TEST_RE` (`Attest.cs` and `contest_x.py` are searched); a test helper outside both is read as code and declared as a blind spot. A comment, a
+string literal, Markdown or a test path is a mention and never an observation; DDL embedded in an application-language
+string literal, Vue/Svelte/Razor components and code languages the tool does not read are declared blind spots. It is
+`INFERRED` and never a pass: `audit.business-state` and `audit.actor-attribution` stay not-evaluated.
+`locateAuditSurface(files, run, surface)` and `reportAuditSurface` are exported for the audit detectors (#125, #126),
+which must pass `{ surfaceLoss, unreadableFiles }` from `collectSurface`.
+
+**Output schema version, MINOR ([Standard 15](standards/15-ai-tool-contracts.md) R3, [Standard 31](standards/31-whatsnext-compatibility.md)
+R3):** the new `findings[].detail` member and the always-present finding are additive result fields, so the
+`audit --json` `schemaVersion` moves from `"1.0.0"` to `"1.1.0"` and the `validate --json` `schemaVersion` from `"1.0"` to
+`"1.1.0"` (that envelope's two-component `"1.0"` becomes three components, as Standard 21 R1 requires). A consumer
+that switches on `schemaVersion` sees the change in one field before parsing `findings`. The framework `VERSION` and
+tags are not changed.
+
+A recorder call is one observation per call site (the object-call and named-call idioms that match the same call are merged, reporting the receiver chain), and a PostgreSQL dollar-quoted string (`$$...$$`, `$tag$...$tag$`) is blanked as a literal in `.sql` files, so DDL inside one is a mention. A dollar-quoted function body that holds real DDL is therefore not located (the declared `construct:string-literal-ddl` blind spot).
+
+Read `incomplete: true` on that finding as UNKNOWN, never as absence. It is set repository-wide whenever any file was
+unread, the walk fell short, or any code file holds an audit-named identifier the idioms do not classify
+(`detail.unclassified`); that last check runs only in files that have no observation.
+
 Correction to ST-14 (#64, ST14-001): a single-file CI candidate (`Jenkinsfile`, `azure-pipelines.yml`, and the
 others) now counts only when it is a regular file, so a directory named `Jenkinsfile` no longer suppresses
 `no-ci-configuration`. A candidate that exists but cannot be inspected (for example a symlink loop) is unknown and
@@ -96,6 +142,57 @@ character literal, so an escaped `[` opens no label and an escaped `]` closes no
 when that `]` closes a `[` that is itself unescaped (`data:\[x](<issue url>)` and `data:[x\](<issue url>)` are no
 longer claims). A backslash before whitespace is not an escape, `\\` is an escaped backslash that leaves a following
 bracket real, and link extraction stays linear.
+**Apart from the path-scoped justification entry directly below, no change to the framework, the rule
+catalog, the policy schema, or any published contract.** Every other entry in this section is repository
+tooling: nothing an adopting project consumes is affected, and `VERSION` is unchanged.
+
+### Changed — verdict precedence: NOT_EVALUATED now outranks COMPLIANT_WITH_EXCEPTIONS (framework-wide)
+
+**This changes the verdict of existing projects that use `exceptions[]`**, not only of those that adopt
+justifications (ADR 0017, owner decision). `summarise()` previously decided `COMPLIANT_WITH_EXCEPTIONS` before
+it looked for an unexamined forbidden rule, so a live exception hid the unexamined rule in the verdict word. The
+order is now: any non-excepted failure `NON_COMPLIANT`; then any applicable forbidden rule with no detector and
+no valid attestation `NOT_EVALUATED`; then `COMPLIANT_WITH_EXCEPTIONS`; then `COMPLIANT`. Exit codes are
+unchanged (an unestablished prohibition already exited 1). Existing assertions changed: `test/compliance.test.mjs`
+"an exception on a manual-review rule applies only to the rule it names" (`COMPLIANT_WITH_EXCEPTIONS` to
+`NOT_EVALUATED`) and "the exception on a manual-review rule reaches the validate CLI output and JSON"
+(`Excepted:` section to `EXCEPTED:` with an `EXCEPTED` line label). Excepted results also carry
+`verdictLabel: "EXCEPTED"`; `unexaminedRules` (informational) is added to the envelope. Under Standard 21 a verdict
+that moves a project from exit-0-class wording to `NOT_EVALUATED` is **MAJOR**-shaped, and `VERSION` is not bumped
+here; Standard 45 R6's wording ("does not intercept the exception machinery") was not edited. Both are owner calls.
+
+### Added — path-scoped justifications (ADR 0017)
+
+The policy schema gains an optional `justifications` list: one rule knowingly unmet at one exact tracked
+file ([ADR 0017](artifacts/adr/0017-path-scoped-justification-is-not-an-exception.md)). It exists for
+frozen, digest-locked copies that carry an empty catch block, where a rule-wide `exceptions[]` entry would
+also waive `errors.no-swallowed-exceptions` for every other file. **This is an additive change to the policy
+schema** (an optional section; no existing policy changes meaning). `VERSION` is **not** bumped here: a bump
+makes every consumer's pinned `standardVersion` a `VERSION_MISMATCH`, so the release level is the owner's
+decision ([Standard 21](standards/21-versioning.md)).
+
+- Each entry requires `rule`, `path`, `reason`, `approvedBy`, `approvedAt`, `reference` and `removeWhen`;
+  unknown keys are rejected.
+- Only rules in an explicit allowlist in `scripts/justifications.mjs` may be justified, initially
+  `errors.no-swallowed-exceptions` alone. Unknown, legacy-alias, non-exemptible and non-allowlisted rules are
+  rejected with distinct codes.
+- Paths are exact and canonical. Wildcards, directories, absolute/drive-letter/UNC paths, `..`, backslashes,
+  non-canonical forms (`./x`, `a//b`, surrounding whitespace), duplicates, nonexistent files and untracked files
+  are each rejected with their own code. Tracked-ness is `git ls-files` in the audited root; outside a git work
+  tree it falls back to the discovered file set and the result says which basis answered.
+- `validate` subtracts only the justified path's evidence from that one rule. Remaining violations still fail
+  the rule, and every other rule still inspects the file. **A rule whose every violating path is justified is
+  `excepted`, never `passed`** (disposition `excepted`, the existing exception vocabulary), so the verdict is
+  `COMPLIANT_WITH_EXCEPTIONS`, not `COMPLIANT`. Applied justifications are listed in the human report (with
+  owner, expiry and an exception count), in `justifications` of `validate --json` (`exceptionCount`,
+  `justificationCount`, `exceptedRules`, `applied`, `expired`, `stale`, `unverified`), and as `justified` on the
+  rule's result; one whose path no longer violates is a `stale-justification` warning. Any invalid entry is exit 2
+  (`NOT_EVALUATED`) and none is applied.
+- Optional `expires` (ISO date). An expired justification is not applied: the violation is reported again, the
+  rule fails, and an `expired-justification` result names the lapse (as for `exceptions[]`); `npm run policy`
+  reports `policy.expired-justification`.
+- `npm run policy` validates the same entries (`--root <dir>` selects the repository the paths resolve
+  against). `audit` is unchanged: it remains policy-independent evidence.
 
 Correction to the entry below, after Codex review of #101 and #99: an empty `##` or `#` heading now ends ownership
 attribution like any other; a plan directory the audit walk skipped on the framework's say-so (`fixtures`, `vendor`,
@@ -319,6 +416,38 @@ or a hierarchy container, and only claimed-once issues are release-eligible. Tem
 is recorded as `temporarilyUnscoped` in `artifacts/backlog/github-mapping.json`. It takes a supplied
 snapshot of the open issues and reports `NOT_EVALUATED`, exit 2, without one; it is not a pipeline
 stage. No change to the framework, rule catalog, policy schema or any published contract.
+
+Extracted one plan-item reader, one plan-directory constant and one fence-aware line walk (ST-24 part A,
+#117). **A pure refactor: no rule result, finding, message, exit code or JSON member changes.**
+`readPlanItems(files, run)` in `scripts/standards.mjs` is now the only place plan files are collected and
+parsed, and returns the plan files, the items, the executable items, the unreadable files with their reasons and
+the truncated ones; `detectPlanDiscrepancies` and `scripts/ownership.mjs` both consume it, with `isPlanFile` and
+`isExecutableItem` as the one plan-file and executable definitions. `PLAN_DIR` is defined once, in
+`scripts/init.mjs` (a leaf, so no import cycle and no new module) and re-exported from `standards.mjs`.
+`markdownLines()` is the shared fence-aware walk, and `conflictGroups` now consumes it. Both are exported.
+`test/plan-reader.test.mjs` proves the equivalence against frozen copies of the replaced code, and against a
+named baseline checkout with `ES_GOLDEN_BASE`. The README and nested-file classification is deliberately NOT
+part of this change (ST-24 part B): a `README.md` or a nested file with a `###` heading and a `Status` is still an
+executable item today.
+
+Fixed a fail-open in `planning.item-fields` (ST-25, #118, truncation half): a plan file larger than the 400,000-byte
+read cap was parsed from its leading part and the rule reported `passed` over items after the cap that nobody read, while
+`planning.plan-code-consistency` over the same bytes was withdrawn. The rule is now `not-evaluated` when a plan file
+(`isPlanFile`) was read only up to the cap. A violation confirmed in the part that was read still fails and carries only
+that finding, and an item the cap cuts through is treated as unknown: it contributes no missing-field or syntax finding
+(a field that is past the cap looks absent, a label cut before its colon looks malformed), so a valid plan whose cap falls
+mid-item is `not-evaluated` rather than `failed`. It is recorded at the read site, not by adding the rule to
+`CONTENT_DERIVED_RULES`, so a fully read plan beside a `fixtures/` directory, or a repository with no plan directory, is
+unchanged. A truncated Markdown file outside the plan directory does not withdraw it. Unreadable and read-budget-exhausted
+behaviour is unchanged.
+
+Consumer-visible consequences, for a repository with a plan file over the cap: `planning.item-fields` moves from
+`passed` / `evaluated` to `skipped` / `not-evaluated` with the generic message `No implemented check evaluates ...`;
+`assurance` (automated and notEvaluated counts), `summary` (passed and skipped counts), `denominator.scored` and `score`
+move with it (in the test corpus case, score 63 to 57, passed 10 to 9, skipped 37 to 38, scored 8 to 7); the exit code was
+unchanged in every case run. `audit` output is unchanged. The generic message is the remaining half of #118 (a rule
+withdrawn after its detector ran should say so) and is not part of this change. A truncated `README.md` in the plan
+directory withdraws the rule today because `isPlanFile` still accepts it; ST-24 part B narrows that.
 
 ## 2.0.0 — 2026-08-09
 

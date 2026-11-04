@@ -21,7 +21,7 @@ import path from "node:path";
 import { loadCatalog, assertBindings, coverage, resolve as resolveRule } from "./catalog.mjs";
 import { evaluate, envelope, strayRejectionsFor } from "./compliance.mjs";
 import { checkEntries, bindEntries, contentDigest, contentDigestOfStream } from "./fixture-exemptions.mjs";
-import { plan as planInit, apply as applyInit, render as renderInit } from "./init.mjs";
+import { plan as planInit, apply as applyInit, render as renderInit, PLAN_DIR } from "./init.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { discoverBacklog, resolveTracked, OUTCOME } from "./tracking.mjs";
 
@@ -54,7 +54,16 @@ import {
 } from "./repository.mjs";
 import { currentReview, recordedRejections } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
+import { loadDeclaration, DECLARATION_FILE } from "./boundaries.mjs";
 import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
+import {
+  JUSTIFIABLE_RULES,
+  applyJustifications,
+  justificationProblems,
+  justifiedRecord,
+  splitByExpiry,
+  trackedProvider,
+} from "./justifications.mjs";
 
 /**
  * This file's own location, used to resolve framework-relative paths — the schema, VERSION, the
@@ -81,7 +90,11 @@ import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
  */
 const SELF = fileURLToPath(import.meta.url);
 
-const SCHEMA_VERSION = "1.0.0";
+// The audit --json envelope version. 1.1.0: `findings[].detail` and the always-present
+// `detected-audit-surface` finding are additive result fields, a MINOR change (Standard 15 R3, which
+// Standard 31 R3 requires `schemaVersion` to follow). The validate envelope is versioned in
+// compliance.mjs and moves in step.
+const SCHEMA_VERSION = "1.1.0";
 
 /**
  * The rules this evaluator actually examines.
@@ -233,6 +246,16 @@ async function loadProjectPolicy(repoRoot) {
           errors.slice(0, 3).map((e) => `${e.path || "(document)"} ${e.message}`).join("; "),
       };
     }
+    // An optional boundary declaration beside the policy must be well-formed and internally
+    // consistent (ADR 0018). Absent, there is nothing to check and no existing policy changes status.
+    const declared = loadDeclaration(repoRoot);
+    if (declared.state === "invalid") {
+      return {
+        document: null,
+        error: `${DECLARATION_FILE} is invalid (${declared.errors.length} problem(s)): ` +
+          declared.errors.slice(0, 3).join("; "),
+      };
+    }
     return { document, error: null };
   } catch (error) {
     return {
@@ -248,7 +271,7 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false) {
+function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false, justifications = null) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
@@ -270,6 +293,11 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   out.push(`  Score:  ${report.score === null ? "n/a" : report.score + "%"}  (${report.denominator.basis}: ${report.denominator.scored})`);
   out.push(`  Rules:  ${s.passed} passed, ${s.failed} failed, ${s.warnings} warning(s), ${s.skipped} skipped`);
   out.push(`  Cover:  ${a.automated} automated, ${a.manualReview} manual-review, ${a.notEvaluated} not-evaluated`);
+  const exceptedCount = report.results.filter((r) => r.disposition === "excepted").length;
+  if (exceptedCount > 0) {
+    const byJustification = report.results.filter((r) => r.disposition === "excepted" && r.justified?.length).length;
+    out.push(`  Excepted: ${exceptedCount} rule(s) (${exceptedCount - byJustification} by exception, ${byJustification} by path justification)`);
+  }
   out.push("");
 
   const failed = report.results.filter((r) => r.status === "failed" && r.disposition !== "excepted");
@@ -278,6 +306,9 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
     for (const r of failed) {
       out.push(`    ${displaySafe(r.ruleId)} [${r.level}] ${displaySafe(r.message)}`);
       out.push(`      -> ${displaySafe(r.remediation)}`);
+    }
+    if (failed.some((r) => r.attestation)) {
+      out.push("    Reviewer identities are asserted by the policy text, not authenticated.");
     }
     out.push("");
   }
@@ -323,23 +354,54 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
 
   const excepted = report.results.filter((r) => r.disposition === "excepted");
   if (excepted.length) {
-    out.push("  Excepted:");
+    out.push("  EXCEPTED:");
     for (const r of excepted) {
-      if (r.exception.kind === "fixture-exemption") {
+      if (!r.exception) {
+        out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${r.justified?.length ?? 0} path-scoped justification(s), listed under Justified`);
+      } else if (r.exception.kind === "fixture-exemption") {
         // One line per pinned file: a reader must be able to see WHICH fixtures are carrying the
         // waiver, and a count alone is how an exemption list grows unnoticed.
-        out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)}`);
+        out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)}`);
         for (const x of r.exception.fixtures) {
           out.push(`      ${displaySafe(x.path)} (owner ${displaySafe(x.owner)}; ${x.expires ? `expires ${displaySafe(x.expires)}` : `review when: ${displaySafe(x.reviewWhen)}`})`);
         }
         if (r.exception.projectException) {
           const pe = r.exception.projectException;
-          out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(pe.reason)} (project exception; expires ${displaySafe(pe.expires ?? "never")})`);
+          out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${displaySafe(pe.reason)} (project exception; expires ${displaySafe(pe.expires ?? "never")})`);
         }
       } else {
-        out.push(`    ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
+        out.push(`    EXCEPTED ${displaySafe(r.ruleId)} — ${displaySafe(r.exception.reason)} (expires ${displaySafe(r.exception.expires ?? "never")})`);
       }
     }
+    out.push("");
+  }
+  // Path-scoped justifications are never silent: what was subtracted, where, why, who approved it,
+  // when it lapses, and what removes it.
+  if (justifications?.applied?.length) {
+    out.push(`  Justified (path-scoped, ${justifications.trackedBasis}):`);
+    for (const j of justifications.applied) {
+      out.push(
+        `    ${j.rule} @ ${j.path} — ${j.reason} (owner ${j.approvedBy}, approved ${j.approvedAt}, ` +
+          `expires ${j.expires ?? "never"}; ${j.reference}; remove when: ${j.removeWhen})`,
+      );
+    }
+    out.push("");
+  }
+  if (justifications?.expired?.length) {
+    out.push("  Expired justifications (NOT applied; the violation is reported again):");
+    for (const j of justifications.expired) {
+      out.push(`    ${j.rule} @ ${j.path} — expired ${j.expires} (owner ${j.approvedBy})`);
+    }
+    out.push("");
+  }
+  if (justifications?.stale?.length) {
+    out.push("  Stale justifications (warning — remove them):");
+    for (const j of justifications.stale) out.push(`    ${j.rule} @ ${j.path} — ${j.why}`);
+    out.push("");
+  }
+  if (justifications?.unverified?.length) {
+    out.push("  Unverified justifications (the path was not read in full this run):");
+    for (const j of justifications.unverified) out.push(`    ${j.rule} @ ${j.path}`);
     out.push("");
   }
   const attested = report.results.filter((r) => r.disposition === "attested");
@@ -392,6 +454,7 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   out.push("  compliance of this project — the two never combine into one number.");
   return out.join("\n");
 }
+const STD03 = "standards/03-auditing.md";
 const STD44 = "standards/44-existing-project-reconstruction.md";
 const STD46 = "standards/46-source-control-safety.md";
 const STD48 = "standards/48-error-handling-and-observability.md";
@@ -421,6 +484,9 @@ const R = {
   questions: `${STD44}#r8--question-list`,
   resolution: `${STD44}#r9--question-resolution`,
   done: `${STD44}#r10--definition-of-done`,
+  // Standard 3 R1 is where the audit-surface observation points the reader. It is a pointer, never a
+  // binding: that finding carries no rule (ST-26, #119).
+  audit: `${STD03}#r1--the-core-rule`,
   // Standard 44 R12 is the invariant the evidence-surface findings exist to honour: a negative
   // discovery result is evidence about the search mechanism before it is evidence about the project.
   search: `${STD44}#r12--the-validated-search-invariant`,
@@ -481,7 +547,7 @@ const VENDOR_MARKERS = new Set(["pyvenv.cfg"]);
 
 /** Extensions whose contents are worth pattern-scanning at all. */
 const TEXT_EXT = new Set([
-  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
+  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
   ".kt", ".php", ".rs", ".yml", ".yaml", ".json", ".toml", ".md", ".razor", ".vue",
   ".svelte", ".sql", ".sh", ".ps1",
 ]);
@@ -496,7 +562,7 @@ const TEXT_EXT = new Set([
  * job. Documentation describes; it does not implement. Scanning it for code signals is always wrong.
  */
 const CODE_EXT = new Set([
-  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
+  ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".py", ".go", ".rb", ".java",
   ".kt", ".php", ".rs", ".razor", ".vue", ".svelte", ".sql", ".sh", ".ps1",
 ]);
 
@@ -531,8 +597,56 @@ const isCode = (f) => CODE_EXT.has(path.extname(f));
 
 /** Comment syntax by extension. Enabling the wrong one corrupts the split — `//` is floor division
  *  in Python, `--` is decrement in JavaScript, `#` starts a private field in JavaScript. */
-const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
+const C_LIKE = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx", ".cs", ".go", ".java", ".kt", ".rs", ".php", ".vue", ".svelte", ".razor"];
 const HASH = [".py", ".rb", ".sh", ".ps1"];
+/**
+ * Whether the quote at `i` is not a string delimiter. See the call site in splitSource.
+ */
+function isQuoteInText(text, i, cache) {
+  const q = text[i];
+  // Per-line index of unescaped quote positions, built once per line: a scan per quote was quadratic on a long
+  // line of escaped quotes.
+  if (cache.start === undefined || i < cache.start || i > cache.end) {
+    let start = i;
+    while (start > 0 && text[start - 1] !== "\n" && text[start - 1] !== "\r") start -= 1;
+    let end = i;
+    while (end < text.length && text[end] !== "\n" && text[end] !== "\r") end += 1;
+    const closers = { "'": [], '"': [] };
+    let slashes = 0;
+    for (let k = start; k < end; k += 1) {
+      const ch = text[k];
+      if (ch === "\\") slashes += 1;
+      else {
+        if ((ch === "'" || ch === '"') && slashes % 2 === 0) closers[ch].push(k);
+        slashes = 0;
+      }
+    }
+    cache.start = start;
+    cache.end = end;
+    cache.closers = closers;
+    cache.continues = slashes % 2 === 1;
+  }
+  const list = cache.closers[q];
+  // The first closer strictly after i (binary search).
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid] <= i) lo = mid + 1;
+    else hi = mid;
+  }
+  const closed = lo < list.length;
+  // A trailing backslash continues the literal onto the next line, so it is a string, not text.
+  if (!closed) return !cache.continues;
+  if (q === "'" && /[A-Za-z]/.test(text[i - 1] ?? "") && /[A-Za-z]/.test(text[i + 1] ?? "")) {
+    const word = /([A-Za-z_$][\w$]*)$/.exec(text.slice(Math.max(0, i - 24), i));
+    if (word && !/^(?:return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await|default|export|import|from|as|instanceof|extends|module|namespace|declare|enum|interface|type|async|static|public|private|protected|readonly|abstract|get|set|let|var|const)$/.test(word[1])) return true;
+  }
+  return false;
+}
+
+const TRIPLE_DOUBLE_QUOTE_EXT = new Set([".java", ".kt", ".cs"]);
+const STRING_ENDS_AT_EOL = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".py"]);
 const COMMENT_SYNTAX = new Map([
   ...C_LIKE.map((e) => [e, { line: "//", block: true }]),
   ...HASH.map((e) => [e, { line: "#", block: false }]),
@@ -547,7 +661,15 @@ const COMMENT_SYNTAX = new Map([
  * Approximate by design: it does not understand regex literals, Python docstrings, or heredocs. It
  * only has to be right enough that a sentence in a comment stops being mistaken for a call.
  */
-function splitSource(text, ext) {
+function splitSource(text, ext, options = {}) {
+  const templateExpressions = options.templateExpressions === true;
+  // Only the audit locator asks for this. A PostgreSQL dollar-quoted body is a string literal to the locator
+  // (DDL in it is a mention) but EXECUTABLE code to every other detector (a PL/Python body with `except: pass`),
+  // so the shared view must keep it.
+  const dollarQuotes = options.dollarQuotes === true;
+  // One frame per open `${` of a template literal, each counting its own braces, so a nested template or a
+  // block inside the expression closes the right thing. Empty unless `templateExpressions` is set.
+  const exprStack = [];
   const syntax = COMMENT_SYNTAX.get(ext);
   if (!syntax) return { code: text, structure: text, comments: "" };
 
@@ -569,15 +691,64 @@ function splitSource(text, ext) {
     for (let j = code.length - 1; j >= 0; j -= 1) if (!/\s/.test(code[j])) return code[j];
     return "";
   };
+  // `return /re/.test(x)`: a regex literal also follows these keywords, which end in a letter and so are not
+  // seen by lastCode(). A property access (`obj.return / 2`) is not a keyword.
+  const followsRegexKeyword = () => {
+    // `of` is deliberately absent: it is a valid identifier (`of / x / 2` is a division).
+    const m = /(?:^|[^\w$.])(return|typeof|case|in|delete|void|throw|new|else|do)\s*$/.exec(code.slice(-24));
+    if (m !== null) return true;
+    // `yield` and `await` are only contextual keywords: `yield / x / 2` is a division in a classic script. After
+    // them a slash is a regex only when it is not followed by whitespace (`yield /re/`), as a regex rarely is.
+    if (/(?:^|[^\w$.])(?:yield|await)\s*$/.test(code.slice(-24)) && !/\s/.test(text[i + 1] ?? " ")) return true;
+    // `if (ok) /re/.test(x);` : the slash after a control-flow header's `)` starts a statement, so a regex.
+    // Index-based and bounded: trimming the whole accumulated string per `/` was quadratic on padded input.
+    let end = code.length;
+    const stop = Math.max(0, end - 2000);
+    while (end > stop && /\s/.test(code[end - 1])) end -= 1;
+    if (end <= stop || code[end - 1] !== ")") return false;
+    let depth = 0;
+    for (let k = end - 1; k >= stop; k -= 1) {
+      if (code[k] === ")") depth += 1;
+      else if (code[k] === "(") {
+        depth -= 1;
+        if (depth === 0) return /(?:^|[^\w$.])(?:if|while|for|with)\s*$/.test(code.slice(Math.max(0, k - 12), k));
+      }
+    }
+    return false;
+  };
+  // `i++ / x`: after a postfix update the slash divides (a regex cannot follow `++` or `--`). Bounded scan.
+  const afterPostfixUpdate = () => {
+    let end = code.length;
+    const stop = Math.max(0, end - 64);
+    while (end > stop && /\s/.test(code[end - 1])) end -= 1;
+    return end - 2 >= stop && code[end - 1] === code[end - 2] && (code[end - 1] === "+" || code[end - 1] === "-");
+  };
   const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
 
+  const quoteCache = {};
   let mode = "code";
   let i = 0;
   while (i < text.length) {
     const c = text[i];
     const rest2 = text.substr(i, 2);
+    const rest3 = text.substr(i, 3);
 
     if (mode === "code") {
+      if (exprStack.length) {
+        const top = exprStack[exprStack.length - 1];
+        if (c === "{") top.depth += 1;
+        else if (c === "}") {
+          if (top.depth === 0) {
+            exprStack.pop();
+            mode = "`";
+            code += c;
+            drop(c);
+            i++;
+            continue;
+          }
+          top.depth -= 1;
+        }
+      }
       if (rest2 === syntax.line || (syntax.line.length === 1 && c === syntax.line)) {
         mode = "line";
         for (let k = 0; k < syntax.line.length; k += 1) drop(text[i + k]);
@@ -589,6 +760,58 @@ function splitSource(text, ext) {
         drop("/");
         drop("*");
         i += 2;
+        continue;
+      }
+      // PostgreSQL dollar-quoted string (`$$...$$`, `$tag$...$tag$`): a literal, so its body is blanked like
+      // any other string. Only when the opening delimiter is not part of an identifier and the same delimiter
+      // closes it; an unterminated one is left as code (the conservative direction: nothing is hidden by a guess).
+      if (dollarQuotes && c === "$" && ext === ".sql" && !/[\w$]/.test(text[i - 1] ?? "")) {
+        const open = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(text.slice(i, i + 80));
+        if (open) {
+          const end = text.indexOf(open[0], i + open[0].length);
+          if (end !== -1) {
+            code += text.slice(i, end + open[0].length);
+            // Delimiters are blanked with the body: a tag may itself be audit-shaped (`$audit$...$audit$`).
+            for (let k = i; k < end + open[0].length; k += 1) drop(text[k]);
+            i = end + open[0].length;
+            continue;
+          }
+        }
+      }
+      // Python triple-quoted string: the body may hold quotes and newlines; it ends at the same triple.
+      // Java and Kotlin text blocks / raw strings and C# raw string literals are the same shape with `"""`
+      // (a run of three or more quotes closes with an equal run).
+      const tripleDouble = TRIPLE_DOUBLE_QUOTE_EXT.has(ext) && rest3 === '"""';
+      if ((ext === ".py" && (rest3 === '"""' || rest3 === "'''")) || tripleDouble) {
+        let delim = rest3;
+        if (tripleDouble) {
+          let n = 3;
+          while (text[i + n] === '"') n += 1;
+          delim = '"'.repeat(n);
+        }
+        // The closing run is the first one not preceded by an odd number of backslashes (`\"""` is an escape).
+        let end = text.indexOf(delim, i + delim.length);
+        while (end !== -1) {
+          let slashes = 0;
+          while (text[end - 1 - slashes] === "\\") slashes += 1;
+          // Kotlin and C# raw strings have no escapes: a body may end in a backslash.
+          if (slashes % 2 === 0 || (ext !== ".py" && ext !== ".java")) break;
+          end = text.indexOf(delim, end + 1);
+        }
+        const stop = end === -1 ? text.length : end + delim.length;
+        code += text.slice(i, stop);
+        keep(delim[0]);
+        for (let k = i + 1; k < stop; k += 1) drop(text[k]);
+        i = stop;
+        continue;
+      }
+      // A quote that is JSX text rather than a string delimiter: in a JS-family file a `'` or `"` whose literal
+      // would not close on its own line is not a string (JS strings cannot span lines), and an apostrophe between
+      // two letters after a non-keyword word is a contraction in text (`don't`).
+      if ((c === "'" || c === '"') && STRING_ENDS_AT_EOL.has(ext) && ext !== ".py" && isQuoteInText(text, i, quoteCache)) {
+        code += c;
+        keep(c);
+        i++;
         continue;
       }
       if (c === "'" || c === '"' || c === "`") {
@@ -603,7 +826,7 @@ function splitSource(text, ext) {
       // inside the unfinished-work pattern table is a description of a stub, not a stub, and the
       // detector could not tell the difference. Contents stay in `code`, because sourceOf() exists
       // for import matching and a specifier is never a regex.
-      if (syntax.block && c === "/" && REGEX_MAY_START_AFTER.has(lastCode())) {
+      if (syntax.block && c === "/" && ((REGEX_MAY_START_AFTER.has(lastCode()) && !afterPostfixUpdate()) || followsRegexKeyword())) {
         const close = regexLiteralEnd(text, i);
         if (close !== -1) {
           code += text.slice(i, close + 1);
@@ -621,11 +844,12 @@ function splitSource(text, ext) {
     }
 
     if (mode === "line") {
-      if (c === "\n") {
+      // A line comment ends at LF, CRLF or a lone CR (a CR-only file has no LF to end it).
+      if (c === "\n" || c === "\r") {
         mode = "code";
-        code += "\n";
+        code += c;
         comments += "\n";
-        drop("\n");
+        drop(c);
         i++;
         continue;
       }
@@ -650,12 +874,34 @@ function splitSource(text, ext) {
       continue;
     }
 
+    // An executable `${ ... }` inside a template literal is code, not literal text: the expression is scanned
+    // in the structural view when the caller asked for it (the audit locator); the default view is unchanged.
+    // (The opener is spelled as two strings so this source is not itself a SQL-looking template literal.)
+    if (templateExpressions && mode === "`" && rest2 === "$" + "{") {
+      exprStack.push({ depth: 0 });
+      mode = "code";
+      code += rest2;
+      drop("$");
+      drop("{");
+      i += 2;
+      continue;
+    }
+    // A single- or double-quoted string in a JavaScript-family file or Python cannot span a line: the line end
+    // closes it. Without this an apostrophe in JSX text (`don't`) opened a "string" that swallowed the file.
+    if ((c === "\n" || c === "\r") && (mode === "'" || mode === '"') && STRING_ENDS_AT_EOL.has(ext)) {
+      mode = "code";
+      code += c;
+      keep(c);
+      i++;
+      continue;
+    }
     // Inside a string literal: preserved in the code half, escapes skipped.
     if (c === "\\") {
-      code += text.substr(i, 2);
-      drop(c);
-      drop(text[i + 1] ?? " ");
-      i += 2;
+      // A backslash before CRLF continues the string over the whole line break, not just the CR.
+      const width = text[i + 1] === "\r" && text[i + 2] === "\n" ? 3 : 2;
+      code += text.substr(i, width);
+      for (let k = 0; k < width; k += 1) drop(text[i + k] ?? " ");
+      i += width;
       continue;
     }
     if (c === mode) {
@@ -683,7 +929,7 @@ function regexLiteralEnd(text, open) {
   let inClass = false;
   for (let i = open + 1; i < text.length; i += 1) {
     const c = text[i];
-    if (c === "\n") return -1; // a regex literal does not span lines
+    if (c === "\n" || c === "\r") return -1; // a regex literal does not span lines
     if (c === "\\") {
       i += 1;
       continue;
@@ -1080,7 +1326,7 @@ function createRun({ root, strict, json }) {
      * This remains the only writer of `findings`, which is what keeps the accumulator auditable. The
      * single-writer property ADR 0007 identified is preserved; what changed is the lifetime.
      */
-    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation, exemption }) {
+    addFinding({ id, category, severity = "info", label, evidence, message, standardRef, rule, remediation, exemption, detail }) {
       const shown = evidence.slice(0, MAX_EVIDENCE);
       const omitted = evidence.length - shown.length;
       findings.push({
@@ -1103,6 +1349,10 @@ function createRun({ root, strict, json }) {
         // Present only on a finding a fixture exemption has waived (ST-19a). The compliance engine
         // reads it to report EXCEPTED instead of failed; it is never set by a detector directly.
         ...(exemption ? { fixtureExemption: exemption } : {}),
+        // A structured, machine-readable payload for an observation whose parts must not be hidden
+        // in `message` (ST-26, #119). Present only on a finding that supplies one, so every other
+        // finding serialises byte-for-byte as before and the property is purely additive.
+        ...(detail ? { detail } : {}),
       });
     },
 
@@ -1903,7 +2153,7 @@ function detectArchitectureArtifacts(files, run) {
  */
 function detectMissingPlanningArtifacts(files, run) {
   const { has, addFinding, rel } = run;
-  const dir = "artifacts/project-plan-breakdown";
+  const dir = PLAN_DIR;
   if (!has(dir)) {
     addFinding({
       id: "missing-planning-artifacts",
@@ -2433,6 +2683,73 @@ export function parsePlanItems(text, file) {
 }
 
 /**
+ * The plan directory, re-exported so a consumer of the plan reader names it through the same module
+ * that owns the reader. Defined once in `scripts/init.mjs`, a leaf, so this module can import it
+ * without a cycle (see the note there).
+ */
+export { PLAN_DIR };
+
+const PLAN_FILE_PATTERN = new RegExp(
+  "^" + PLAN_DIR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/.+\\.md$",
+);
+
+/**
+ * Is this repository-relative path a plan file: a `.md` anywhere under the plan directory.
+ *
+ * THE ONE PREDICATE. `detectPlanDiscrepancies` and `collectPlanOwnership` each carried their own copy
+ * of this test. It is deliberately the CURRENT definition and nothing narrower: a `README.md` and a
+ * nested `notes/scratch.md` are plan files today, and the numbered-filename inventory that would
+ * exclude them is a separate, owner-decided change (ST-24 part B).
+ */
+export function isPlanFile(relPath) {
+  return PLAN_FILE_PATTERN.test(relPath);
+}
+
+/**
+ * Is this plan item executable: does it carry a `Status` field. The one definition both plan rules
+ * evaluate over.
+ */
+export function isExecutableItem(item) {
+  return item.fields.has("Status");
+}
+
+/**
+ * Read every plan file once and return what both plan rules and the ownership collector derive from it.
+ *
+ *   planFiles   the plan files (`isPlanFile`), in the order `files` supplied them
+ *   items       the `###` items of every plan file that WAS read, in file order then document order,
+ *               exactly as `parsePlanItems` returns them (malformed-field diagnostics read these)
+ *   executable  `items` filtered by `isExecutableItem`
+ *   documents   `{ file, items, orphans }` per plan file that was read, from `parsePlanDocument`
+ *   unreadable  `{ file, reason }` per plan file whose text is unavailable. It is never given text.
+ *   truncated   repository-relative paths of plan files that were read only up to the read cap. They
+ *               ARE parsed (a violation in the prefix is real), but they are listed so no consumer has
+ *               to present them as whole; `detectPlanDiscrepancies` withdraws `planning.item-fields`
+ *               for each.
+ *
+ * No input is read twice and nothing is recorded on `run`: whether an unread file becomes an unknown
+ * check is the caller's decision, because the two callers decide it differently (the audit records
+ * an unknown against two rules; ownership refuses to answer).
+ */
+export function readPlanItems(files, run) {
+  const planFiles = files.filter((f) => isPlanFile(run.rel(f)));
+  const unreadable = [];
+  const truncated = [];
+  const documents = [];
+  for (const f of planFiles) {
+    const content = run.textOf(f);
+    if (!content.available) {
+      unreadable.push({ file: run.rel(f), reason: content.reason });
+      continue;
+    }
+    if (run.truncated.has(f)) truncated.push(run.rel(f));
+    documents.push({ file: run.rel(f), ...parsePlanDocument(content.text, run.rel(f)) });
+  }
+  const items = documents.flatMap((d) => d.items);
+  return { planFiles, items, executable: items.filter(isExecutableItem), documents, unreadable, truncated };
+}
+
+/**
  * The canonical lifecycle vocabulary — Standard 8, decided in ADR 0001. Legacy tokens are accepted
  * as aliases during migration (Standard 8 R6); a reference to another system is never a status, so
  * `tracked as <id>` has no entry here and is read from a separate `Tracked by` field instead.
@@ -2451,25 +2768,48 @@ const canonicalStatus = (raw) => {
 
 async function detectPlanDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
-  const planFiles = files.filter((f) => /^artifacts\/project-plan-breakdown\/.+\.md$/.test(rel(f)));
-  if (planFiles.length === 0) return;
+  const read = readPlanItems(files, run);
+  if (read.planFiles.length === 0) return;
 
   // One read, two rules, and they must move together. `planning.item-fields` and
-  // `planning.plan-code-consistency` are both derived from these bytes, and today one is withdrawn
-  // by CONTENT_DERIVED_RULES while the other is not — byte-identical evidence classified two ways by
-  // a table that is not addressing the thing that varies. Recording the unknown against both is what
-  // makes the read site, rather than the table, the thing that decides.
+  // `planning.plan-code-consistency` are both derived from these bytes. Recording the unknown at the
+  // read site, rather than relying on a table, is what makes them move together for an unreadable
+  // file; a truncated file is recorded for `planning.item-fields` below, and
+  // `planning.plan-code-consistency` is withdrawn for it by `TRUNCATION_DOMAIN`.
   //
   // Files that WERE read are still parsed: a violation found in one plan file is established
   // regardless of another going unread, and aggregation keeps it.
-  for (const f of planFiles.filter((f) => !run.textOf(f).available)) {
-    const reason = run.textOf(f).reason;
-    run.unknown("planning.item-fields", rel(f), reason);
-    run.unknown("planning.plan-code-consistency", rel(f), reason);
+  for (const { file, reason } of read.unreadable) {
+    run.unknown("planning.item-fields", file, reason);
+    run.unknown("planning.plan-code-consistency", file, reason);
   }
-  const items = planFiles
-    .filter((f) => run.textOf(f).available)
-    .flatMap((f) => parsePlanItems(run.textOf(f).text, rel(f)));
+  // A plan file read only up to the cap is a partial read of exactly the evidence this rule consumes
+  // (#118). Its items before the cap are parsed and any violation among them is kept, but "no item
+  // lacks a field" cannot be said of text nobody read, so the rule is withdrawn here, at the read
+  // site, for the paths `isPlanFile` selected — the same predicate that decided which files are read.
+  // The table is not used for this on purpose: `CONTENT_DERIVED_RULES` membership would also subject
+  // `planning.item-fields` to the coarse whole-walk term (a `fixtures/` directory, an unlistable
+  // directory), withdrawing it over repositories whose plan was read whole, or that have none.
+  // `planning.plan-code-consistency` needs no record: a truncated `.md` already withdraws it.
+  for (const file of read.truncated) {
+    run.unknown(
+      "planning.item-fields",
+      file,
+      `plan file read only up to the ${MAX_READ_BYTES}-byte cap, so its remaining items were not checked`,
+    );
+  }
+  // The item a truncated file ends inside. The cap cuts it at an arbitrary byte, so a field that is
+  // present after the cap looks absent, and a label cut before its colon looks malformed. Reporting
+  // either is a violation nobody observed: a valid plan would FAIL. That item is therefore UNKNOWN
+  // (the rule is already withdrawn above), and it contributes no finding of any kind except a
+  // syntax problem that ends before the cut line. Every earlier item is read whole and reports as usual.
+  const cutItems = new Map();
+  for (const d of read.documents) {
+    if (!read.truncated.includes(d.file) || d.items.length === 0) continue;
+    const f = read.planFiles.find((p) => run.rel(p) === d.file);
+    cutItems.set(d.items[d.items.length - 1], run.textOf(f).text.split(/\r?\n/).length);
+  }
+  const { items } = read;
   // BEFORE the executable filter, and before its early return, because a malformed `Status` is
   // exactly what stops an item being executable. A diagnostic that ran after this point could not
   // see the case that most needs reporting: a plan whose every item has a broken Status would be
@@ -2479,6 +2819,7 @@ async function detectPlanDiscrepancies(files, run) {
   const malformed = [];
   for (const item of items) {
     for (const problem of item.syntax) {
+      if (cutItems.has(item) && problem.line >= cutItems.get(item)) continue; // the label the cap cut
       const what =
         problem.kind === "duplicate"
           ? `a second ${problem.key} field`
@@ -2507,7 +2848,7 @@ async function detectPlanDiscrepancies(files, run) {
     });
   }
 
-  const executable = items.filter((i) => i.fields.has("Status"));
+  const { executable } = read;
   if (executable.length === 0) return;
 
   const dangling = [];
@@ -2522,6 +2863,7 @@ async function detectPlanDiscrepancies(files, run) {
   const backlog = discoverBacklog(root);
 
   for (const item of executable) {
+    if (cutItems.has(item)) continue; // straddles the read cap: unknown, not a violation
     for (const field of PLAN_FIELDS) {
       if (!item.fields.has(field)) incomplete.push(`${item.file} :: ${item.title} (no ${field})`);
     }
@@ -2892,6 +3234,7 @@ const DESCRIPTIVE = [
   ["detected-jobs", "Detected background jobs"],
   ["detected-integrations", "Detected integrations"],
   ["detected-ai-interfaces", "Detected AI interfaces"],
+  ["detected-audit-surface", "Audit surface (observed, not evaluated)"],
 ];
 
 // ---------------------------------------------------------------------------
@@ -3054,6 +3397,55 @@ const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const FENCED_EXT = new Set([".md", ".markdown"]);
 
 /**
+ * Walk Markdown text one line at a time with fenced code tracked. The ONE fence-aware line walk.
+ *
+ * Returns one record per line, in order: `{ line, text, inFence, fenceLine }`.
+ *
+ *   line        the 1-based line number
+ *   text        the line, without its terminator (`LF` or `CRLF`)
+ *   inFence     true for every line of a fenced block: the opening fence, the content, and the closing
+ *               fence. A fence line is never itself content for the caller to match against.
+ *   fenceLine   true only for the opening and closing fence lines
+ *
+ * With `fenced: false` (a file type that has no fences) every record has `inFence: false`, so the
+ * caller does not need two code paths.
+ *
+ * The fence rule is CommonMark's, as `conflictGroups` has always applied it: up to three leading
+ * spaces and three or more backticks or tildes open a block; a closing fence must use the same
+ * character and be at least as long as the opener; anything else inside is content. An unterminated
+ * fence runs to the end of the text. This function only classifies lines. What a caller does with a
+ * fenced line (`conflictGroups` skips it) is the caller's decision, so a second content detector can
+ * share the fence definition without sharing that policy.
+ */
+export function markdownLines(text, { fenced = true } = {}) {
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let fence = null; // the opening run, when inside a fenced block
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const record = { line: i + 1, text: line, inFence: false, fenceLine: false };
+    if (fenced) {
+      const f = line.match(FENCE_OPEN);
+      if (fence !== null) {
+        // Closing requires the same character and at least the opening length; anything else is
+        // ordinary content inside the block.
+        record.inFence = true;
+        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) {
+          fence = null;
+          record.fenceLine = true;
+        }
+      } else if (f) {
+        fence = f[1];
+        record.inFence = true;
+        record.fenceLine = true;
+      }
+    }
+    out.push(record);
+  }
+  return out;
+}
+
+/**
  * Line numbers of every conflict-marker group in a file, ignoring fenced regions where the file
  * type has them.
  *
@@ -3061,36 +3453,21 @@ const FENCED_EXT = new Set([".md", ".markdown"]);
  * prose or a file so damaged that a marker group is the least of it, and reporting partial groups
  * would reintroduce the token-level matching this check exists to avoid.
  */
-function conflictGroups(text, fenced) {
-  const lines = text.split(/\r?\n/);
+export function conflictGroups(text, fenced) {
   const groups = [];
-  let fence = null; // the opening run, when inside a fenced block
   // `open` and `sep` deliberately survive a fenced block rather than resetting at its edge. A real
   // conflict region can contain a fence -- the merge cut through a code example -- and pairing
   // across it catches that case. The cost is theoretical: two column-0 marker lines of opposite
   // kinds, in prose, on either side of a block.
   let open = null;
   let sep = null;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (fenced) {
-      const f = line.match(FENCE_OPEN);
-      if (fence !== null) {
-        // Closing requires the same character and at least the opening length; anything else is
-        // ordinary content inside the block, and out of scope.
-        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-        continue;
-      }
-      // A fence line is never itself a marker. Everything else outside a block falls through to
-      // the matching below, which is where the `8870a43` specimen lived: immediately after a
-      // closing fence, not inside one.
-      if (f) {
-        fence = f[1];
-        continue;
-      }
-    }
+  for (const { line: lineNumber, text: line, inFence } of markdownLines(text, { fenced })) {
+    // A fenced line, fence lines included, is never itself a marker. Everything else outside a
+    // block falls through to the matching below, which is where the `8870a43` specimen lived:
+    // immediately after a closing fence, not inside one.
+    if (inFence) continue;
     if (CONFLICT_OPEN.test(line)) {
-      open = i + 1;
+      open = lineNumber;
       sep = null;
       continue;
     }
@@ -3099,11 +3476,11 @@ function conflictGroups(text, fenced) {
     // consumed rather than treated as a reset, so `merge.conflictStyle=diff3` is covered.
     if (CONFLICT_BASE.test(line)) continue;
     if (CONFLICT_SEP.test(line)) {
-      sep = i + 1;
+      sep = lineNumber;
       continue;
     }
     if (sep !== null && CONFLICT_END.test(line)) {
-      groups.push({ open, end: i + 1 });
+      groups.push({ open, end: lineNumber });
       open = null;
       sep = null;
     }
@@ -3304,18 +3681,30 @@ function carriesJustification(raw, structure, from, to) {
 function detectSwallowedExceptions(files, run) {
   const { rel, structureOf, addFinding } = run;
   const hits = [];
+  // What a path-scoped justification needs to know and a finding cannot say: which files this rule
+  // actually looked at, and which it could not read. A justification for a path in neither set was
+  // never in a position to be needed or stale.
+  const examined = [];
+  const unreadable = [];
   for (const f of files) {
     if (!isCode(f)) continue;
     const view = structureOf(f);
     const source = run.textOf(f);
     if (view.lost || source.lost) {
       run.unknown("errors.no-swallowed-exceptions", rel(f), view.reason ?? source.reason);
+      unreadable.push(rel(f));
       continue;
     }
     if (!view.available || !source.available) continue;
     const structure = view.text;
     const raw = source.text;
     if (raw.length !== structure.length) continue; // views are not aligned; say nothing rather than guess
+    // A file read only up to the cap was searched in part: a violation in its prefix is real, but "no
+    // violation" over it says nothing about the tail. It is therefore not "examined" for the purpose
+    // of calling a justification stale; it is unverified, and the rule itself is withdrawn by the
+    // truncation term in the verdict.
+    if (run.truncated.has(f)) unreadable.push(rel(f));
+    else examined.push(rel(f));
 
     // Constructed here, so their `lastIndex` cannot outlive this file's turn through the loop.
     const catchOpen = new RegExp(CATCH_OPEN_SOURCE, "g");
@@ -3337,19 +3726,29 @@ function detectSwallowedExceptions(files, run) {
     }
     if (unjustified > 0) hits.push(rel(f));
   }
-  const live = run.settleFixtureHits("errors.no-swallowed-exceptions", uniq(hits));
-  if (live.length === 0) return;
+  const violating = uniq(hits);
+  const live = run.settleFixtureHits("errors.no-swallowed-exceptions", violating);
+  if (live.length > 0) {
+    addFinding({
+      id: "swallowed-exception",
+      rule: "errors.no-swallowed-exceptions",
+      category: "Standards violations",
+      severity: "error",
+      label: "INFERRED",
+      evidence: live,
+      message: swallowedExceptionMessage(live.length),
+      standardRef: N.swallowed,
+    });
+  }
+  return { violating: live, examined, unreadable };
+}
 
-  addFinding({
-    id: "swallowed-exception",
-    rule: "errors.no-swallowed-exceptions",
-    category: "Standards violations",
-    severity: "error",
-    label: "INFERRED",
-    evidence: live,
-    message: `${live.length} file(s) contain a catch block empty of both handling code and justification.`,
-    standardRef: N.swallowed,
-  });
+/**
+ * The finding's sentence, in one place, so a finding re-counted after path-scoped justifications
+ * subtract paths from it cannot drift from the one the detector emitted.
+ */
+function swallowedExceptionMessage(count) {
+  return `${count} file(s) contain a catch block empty of both handling code and justification.`;
 }
 
 /**
@@ -3446,6 +3845,727 @@ function detectSqlConcat(files, run) {
     evidence: live,
     message: `${live.length} file(s) interpolate a value into SQL text. Use a parameterized query, or validate an identifier against an allow-list.`,
     standardRef: N.sqlConcat,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Audit surface locator (ST-26, #119) — an observation, never a rule result
+// ---------------------------------------------------------------------------
+
+/**
+ * WHERE audit mechanisms are, stated once so the two audit detectors (#125, #126) do not each grow
+ * their own locator (Standard 51 R4). It answers "which files hold something shaped like an audit
+ * event type, audit table, audit recorder or audit framework attribute", and nothing else.
+ *
+ * What it deliberately is NOT, because #62 removed the previous binding for exactly this confusion:
+ *
+ *   - It evaluates no rule. The finding it produces carries no `rule`, so `validate` builds no
+ *     verdict from it, and it is `info`, so `audit --strict` does not start failing over it.
+ *   - It is never a pass. Finding an audit-named type is not evidence that business-state changes
+ *     are audited, that events carry the Standard 3 R2 fields, or that anything is tracked in
+ *     version control (ADR 0008: it reports the working tree it walked and says no more).
+ *   - Silence is not absence. Three parts are reported SEPARATELY and never folded into one another
+ *     or into message text only: `unread` (code files not read whole), `incomplete` (the search
+ *     could not see everywhere it needed to, with reasons), and `blindSpots` (language families and
+ *     constructs this locator has no idiom for). A consumer must treat `incomplete` or a relevant
+ *     blind spot as UNKNOWN, never as "no audit mechanism".
+ *
+ * Use versus mention (ADR 0009). Only positions where a use can occur are searched:
+ *
+ *   - Test and CI paths are excluded by classification (`AUDIT_TEST_PATH_RE`, `AUDIT_TEST_SUFFIX_RE`, `AUDIT_EXCLUDED_PATH_RE`). This
+ *     repository's own audit fixtures live under `test/` for this reason and are not
+ *     self-observations.
+ *   - Only code files (`isCode`) are read; Markdown, YAML and JSON never yield an observation.
+ *   - Identifiers are matched in the STRUCTURAL view, where comments are removed and string
+ *     contents blanked, so an identifier named in a comment or a string is a mention and invisible.
+ *   - SQL is the one place the structural view is read together with the raw text. `CREATE TABLE`
+ *     is found structurally (so DDL inside a comment or a SQL string literal is invisible) and the
+ *     name is then read from the raw text at the same offset, because quoted identifiers
+ *     (`"audit_log"`, `` `audit_log` ``) are blanked by the tokenizer as though they were strings.
+ *   - DDL embedded in a string literal of an application language is a DECLARED BLIND SPOT, not an
+ *     observation. Matching it would need the raw view, and the raw view cannot tell a statement
+ *     that is executed from a message that merely mentions DDL (`"run CREATE TABLE audit_log
+ *     first"`) without parsing the host language. Reporting a mention as a mechanism is the error
+ *     this layer exists to prevent, so the locator says it cannot see there instead.
+ *
+ * Deterministic: files are processed in codepoint order of their repository-relative path and
+ * observations are sorted and de-duplicated, so the output is independent of walk order.
+ */
+
+/**
+ * Paths that never count as audit PRESENCE: test paths by the existing classification, plus CI
+ * configuration directories. A recorder call in a test is a test of recording, not a recorder.
+ */
+const AUDIT_EXCLUDED_PATH_RE =
+  /(^|\/)(\.github|\.circleci|\.gitlab|\.azure-pipelines|ci|e2e|cypress|__mocks__|mocks?|testing|testdata)\/|(^|\/)[^/]*\.tests?\/|\.(stories|story|mock|mocks)\.[jt]sx?$/i;
+
+/**
+ * A test-file SUFFIX must be an intentional one, and the match is case-sensitive: `FooTest.java`, `Foo.Tests.cs`,
+ * `foo.test.ts`, `foo_test.py` and a file named `Test.java` are tests; `Contest.java`, `Latest.ts` and `Attest.cs`
+ * are not, because `Test` there is the end of a word and not a word of its own.
+ */
+const AUDIT_TEST_SUFFIX_RE = /(?:Tests?|[._-]tests?)\.(?:java|kt|cs|py|ts|tsx|js|jsx|mjs|cjs|mts|cts)$/;
+/**
+ * The shared `TEST_RE` is case-insensitive and unanchored on `Tests?\.cs$` and `test_.*\.py$`, so it also
+ * classifies `Attest.cs` and `contest_x.py` as tests. It is shared with other detectors and left as it is;
+ * the locator uses this narrower form of the same classification (directories, `.test.`/`.spec.` files,
+ * `_test.go`/`_test.py`, `test_*.py` at the start of a file name) plus the intentional suffixes above.
+ */
+const AUDIT_TEST_PATH_RE = /(?:^|\/)(?:tests?|spec|__tests__)\/|\.(?:test|spec)\.(?:[jt]sx?|[mc][jt]s)$|_test\.(?:go|py)$|(?:^|\/)test_[^/]*\.py$/i;
+const isAuditExcludedPath = (r) => AUDIT_TEST_PATH_RE.test(r) || AUDIT_EXCLUDED_PATH_RE.test(r) || AUDIT_TEST_SUFFIX_RE.test(r);
+
+/**
+ * Code-file extensions by language family. `supported` is the contract with the idiom table below:
+ * a family is supported exactly when at least one idiom names it, and the others are blind spots
+ * declared by name. An extension in `CODE_EXT` that is not named here is reported under
+ * `language-family:unmapped` rather than guessed at.
+ */
+const AUDIT_LANGUAGE_FAMILIES = [
+  { family: "csharp", supported: true, exts: [".cs"] },
+  { family: "go", supported: false, exts: [".go"] },
+  { family: "java-kotlin", supported: true, exts: [".java", ".kt"] },
+  { family: "javascript-typescript", supported: true, exts: [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts"] },
+  { family: "markup-components", supported: false, exts: [".razor", ".svelte", ".vue"] },
+  { family: "php", supported: false, exts: [".php"] },
+  { family: "python", supported: true, exts: [".py"] },
+  { family: "ruby", supported: false, exts: [".rb"] },
+  { family: "rust", supported: false, exts: [".rs"] },
+  { family: "shell", supported: false, exts: [".sh", ".ps1"] },
+  { family: "sql", supported: true, exts: [".sql"] },
+];
+
+/**
+ * A declared type or table name containing `audit`, except `auditor` (`AuditEvent`, `AuditService`,
+ * `IAuditService`, `AuditableEntity`, `orders_audit`, `audit.events`). A person who audits is not an audit
+ * mechanism. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
+ * it a use, and any other identifier that merely contains the word is reported as unclassified, never
+ * as an observation.
+ */
+const AUDIT_NAME_RE = /audit(?!or)/i;
+
+const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
+
+/**
+ * THE initial idiom list, small on purpose and reported verbatim in every observation's payload so
+ * the observation is auditable. Each regex has the identifier in capture group 1 and is matched
+ * against the structural view. `named` applies `AUDIT_NAME_RE` to the identifier; the others spell
+ * the audit name into the pattern. `rawName` reads the identifier from the raw text at the offset
+ * where the match ended (see the SQL note above).
+ *
+ * Adding an idiom is adding a claim: it needs a fixture, a use-versus-mention case, and a place in
+ * the list below. Widening it silently is how this became a rule result in #62.
+ */
+const AUDIT_IDIOMS = [
+  { id: "csharp.type", families: ["csharp"], kind: "type", re: /\b(?:class|record|struct|interface|enum)\s+([A-Za-z_]\w*)/g, named: true },
+  { id: "java-kotlin.type", families: ["java-kotlin"], kind: "type", re: /\b(?:class|interface|enum|record|object)\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "js.class", families: ["javascript-typescript"], exts: [".js", ".mjs", ".cjs", ".jsx"], kind: "type", re: /\bclass\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "ts.type", families: ["javascript-typescript"], exts: [".ts", ".tsx", ".mts", ".cts"], kind: "type", re: /\b(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, named: true },
+  { id: "python.class", families: ["python"], kind: "type", re: /^[ \t]*class\s+([A-Za-z_]\w*)/gm, named: true },
+  {
+    id: "sql.create-table",
+    families: ["sql"],
+    kind: "table",
+    re: /\bCREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:(?:TEMP|TEMPORARY|UNLOGGED|VOLATILE|EXTERNAL)\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?/gi,
+    named: true,
+    rawName: true,
+  },
+  {
+    id: "recorder.named-call",
+    families: AUDIT_JS_TS_PY_JAVA_CS,
+    kind: "recorder-call",
+    re: /(?<![A-Za-z0-9])((?:record|write|log|emit|append|publish|save|persist|capture|track)_?audit(?:_?(?:event|entry|record|log|trail))?s?(?:_?async)?)\s*\(/gi,
+  },
+  {
+    id: "recorder.audit-object-call",
+    families: AUDIT_JS_TS_PY_JAVA_CS,
+    kind: "recorder-call",
+    re: /(?<![A-Za-z0-9])(\w*audit(?!or)\w*(?:\s*\??\.\s*\w+)*?\s*\??\.\s*(?:record|write|append|emit|publish|log|save|create|add|insert|send|track|capture|persist|info|warn|error)\w*)\s*\(/gi,
+  },
+  {
+    id: "recorder.audit-method-call",
+    families: AUDIT_JS_TS_PY_JAVA_CS,
+    kind: "recorder-call",
+    re: /(?<![A-Za-z0-9])(\w+\s*\??\.\s*audit(?:_?(?:log|event|entry|record|trail))?(?:_?async)?)\s*\(/gi,
+  },
+  { id: "csharp.attribute", families: ["csharp"], kind: "framework-attribute", re: /^[ \t]*\[\s*((?:Audit|Audited|Auditable|AuditLog)(?:Attribute)?)\s*[\](,]/gm },
+  { id: "annotation.at-name", families: ["java-kotlin", "javascript-typescript"], kind: "framework-attribute", re: /^[ \t]*@(Audited|Auditable|Audit|AuditLog|EnableJpaAuditing)\b/gm },
+  { id: "java-kotlin.entity-listener", families: ["java-kotlin"], kind: "framework-attribute", re: /@EntityListeners\s*\(\s*(?:\{\s*)?([\w.]*Audit[\w.]*)/g },
+  { id: "python.decorator", families: ["python"], kind: "framework-attribute", re: /^[ \t]*@(audit|audited|auditable|audit_log)\b/gim },
+];
+
+/**
+ * What this locator cannot see, as a FIXED set: the same on every run and every repository, so it
+ * can be tested exactly and a consumer can rely on it. "Every" here means every gap the locator
+ * knows about, which is not every gap there is; an observation is never "all audit mechanisms".
+ */
+const AUDIT_BLIND_SPOTS = [
+  { id: "language-family:go", kind: "language-family", description: "Go source (.go) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:php", kind: "language-family", description: "PHP source (.php) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:ruby", kind: "language-family", description: "Ruby source (.rb) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:rust", kind: "language-family", description: "Rust source (.rs) has no idiom; nothing in it is read for audit mechanisms." },
+  { id: "language-family:shell", kind: "language-family", description: "Shell and PowerShell (.sh, .ps1) have no idiom; nothing in them is read for audit mechanisms." },
+  { id: "language-family:markup-components", kind: "language-family", description: "Vue, Svelte and Razor components (.vue, .svelte, .razor) mix markup with script; they are not tokenised as plain JavaScript or C#, so none of their content is read." },
+  { id: "language-family:unlisted-code-languages", kind: "language-family", description: "Code languages outside this tool's code-extension list (for example .swift, .scala, .fs, .cpp, .c, .kts, .cshtml, .vb, .dart) are never read; their files are counted in languageFamilies but not searched." },
+  { id: "construct:audit-named-identifiers-outside-idioms", kind: "construct", description: "An identifier containing `audit` that is not a declared type, audit-table DDL, a recorder-shaped call or a listed attribute (variables, parameters, imports, DI registrations) is not classified; files holding one and no observation are listed as `unclassified` and make the search incomplete. Files that already hold an observation are not checked for further unclassified identifiers." },
+  { id: "construct:logging-frameworks-as-audit-trails", kind: "construct", description: "Audit trails written through a general logging framework, a message bus or an event store, with no audit-named construct, are not located." },
+  { id: "construct:attribute-forms-not-matched", kind: "construct", description: "Audit attributes, annotations and decorators are matched only at the start of a line and, in C#, only first in an attribute list; inline and listed forms are not seen." },
+  { id: "construct:database-native-audit", kind: "construct", description: "Triggers, views, stored procedures, temporal or system-versioned tables, change-data-capture and database audit extensions are not located." },
+  { id: "construct:framework-configuration", kind: "construct", description: "Auditing enabled by configuration or by a dependency package (framework settings, history or versioning libraries) rather than by a named construct is not located." },
+  { id: "construct:names-without-audit", kind: "construct", description: "A mechanism whose identifiers do not contain `audit` (history, ledger, activity, journal, change log, event stream) is not located." },
+  { id: "construct:orm-names-in-string-literals", kind: "construct", description: "Table and entity names given as string literals to an ORM or migration DSL (for example a table-name attribute or a migration builder) are blanked in the structural view and are not located." },
+  { id: "construct:string-literal-ddl", kind: "construct", description: "DDL embedded in a string literal of an application language is not located: a statement that is run cannot be told from a message that mentions one without parsing the host language." },
+  { id: "surface:non-code-files", kind: "surface", description: "Markdown, YAML, JSON, TOML, XML and other non-code files are never read for audit mechanisms." },
+  { id: "surface:test-helper-paths-not-recognised", kind: "surface", description: "Test and CI paths are excluded by the locator's own classification, not the shared TEST_RE: directories named test, tests, spec or __tests__; .test. and .spec. files; _test.go and _test.py; test_*.py at the start of a file name; a Test, Tests, .test or .tests suffix on a code file; plus a fixed audit-specific list of CI, e2e, mock and story paths. Names that merely end in those letters (Contest.java, Attest.cs) are read as code. A test helper outside all of these is read as ordinary code and may be reported as a mechanism." },
+  { id: "construct:string-interpolation-outside-js-templates", kind: "construct", description: "Expressions inside string interpolation other than JavaScript and TypeScript template literals (Python f-strings, C# interpolated strings, Kotlin and Groovy templates) are blanked with the string and not scanned; a recorder call written only there is not located." },
+];
+
+/** Code-language extensions this tool does not read. Counted from the file list, never searched. */
+const AUDIT_UNLISTED_CODE_EXT = new Set([
+  ".swift", ".scala", ".sc", ".fs", ".fsx", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".kts", ".cshtml", ".vb",
+  ".dart", ".m", ".mm", ".lua", ".pl", ".pm", ".r", ".jl", ".ex", ".exs", ".erl", ".clj", ".groovy", ".gradle",
+]);
+
+/**
+ * Whether the call-shaped text whose `(` is at `open` is followed, after its balanced argument list, by a body.
+ * Bounded, and answers false when the list does not close within the bound.
+ */
+function followedByBody(text, open) {
+  let depth = 0;
+  const limit = Math.min(text.length, open + 4000);
+  for (let i = open; i < limit; i += 1) {
+    const c = text[i];
+    if (c === "(") depth += 1;
+    else if (c === ")") {
+      depth -= 1;
+      if (depth === 0) return /^\s*(?::\s*[\w.<>\[\]?, |]+?)?\s*(?:\{|=>)/.test(text.slice(i + 1, i + 200));
+    }
+  }
+  return false;
+}
+
+/**
+ * Blank the text children of JSX elements in a structural view, preserving length and newlines.
+ *
+ * The shared view leaves JSX text intact, so `<p>Add class AuditEvent to the backend</p>` reads as a type
+ * declaration. Elements are parsed with a small recursive-descent pass over the view (strings and comments are
+ * already blanked there): tag, attributes (including `{...}` expressions, which are left as code and may hold
+ * nested elements), children (text is blanked; `{...}` expressions and nested elements are left or recursed into),
+ * closing tag. An element whose closing tag is not found or does not match (a TSX generic arrow `<T,>(x) => x`, a
+ * comparison) is NOT masked: failing to mask only costs an over-report, masking a guess could hide a declaration.
+ *
+ * @returns {string} the view with JSX text children replaced by spaces
+ */
+function maskJsxText(view) {
+  const n = view.length;
+  const blank = []; // [start, end) ranges to blank, committed only for elements that parsed completely
+  const isNameStart = (c) => /[A-Za-z_$]/.test(c ?? "");
+  const exprStartBefore = (idx) => {
+    let k = idx - 1;
+    while (k >= 0 && /\s/.test(view[k])) k -= 1;
+    if (k < 0) return true;
+    if ("(,=:?&|{};[!>".includes(view[k])) return true;
+    return /(?:^|[^\w$.])(?:return|default|yield|await|else|case|in|of)$/.test(view.slice(Math.max(0, k - 8), k + 1));
+  };
+
+  // Skip a `{ ... }` expression starting at i (view[i] === "{"), recursing into elements inside it.
+  function skipBraces(i, ranges, depth) {
+    let d = 0;
+    let j = i;
+    while (j < n) {
+      const c = view[j];
+      if (c === "{") d += 1;
+      else if (c === "}") {
+        d -= 1;
+        if (d === 0) return j + 1;
+      } else if (c === "<" && (isNameStart(view[j + 1]) || view[j + 1] === ">") && exprStartBefore(j)) {
+        const end = element(j, ranges, depth + 1);
+        if (end !== -1) {
+          j = end;
+          continue;
+        }
+      }
+      j += 1;
+    }
+    return -1;
+  }
+
+  // Parse one element at i (view[i] === "<"). Returns the index after it, or -1 when it does not parse.
+  function element(i, ranges, depth) {
+    if (depth > 200) return -1;
+    let j = i + 1;
+    let name = "";
+    if (view[j] !== ">") {
+      while (j < n && /[\w$.:-]/.test(view[j])) name += view[j++];
+    }
+    // Attributes, then `>` or `/>`.
+    for (;;) {
+      while (j < n && /\s/.test(view[j])) j += 1;
+      if (j >= n) return -1;
+      if (view[j] === "/" && view[j + 1] === ">") return j + 2;
+      if (view[j] === ">") {
+        j += 1;
+        break;
+      }
+      if (view[j] === "{") {
+        j = skipBraces(j, ranges, depth);
+        if (j === -1) return -1;
+        continue;
+      }
+      if (view[j] === '"' || view[j] === "'") {
+        const q = view[j];
+        const e = view.indexOf(q, j + 1);
+        if (e === -1) return -1;
+        j = e + 1;
+        continue;
+      }
+      if (/[\w$:.=-]/.test(view[j])) {
+        j += 1;
+        continue;
+      }
+      return -1;
+    }
+    // Children.
+    let textStart = j;
+    while (j < n) {
+      const c = view[j];
+      if (c === "<") {
+        if (view[j + 1] === "/") {
+          if (textStart < j) ranges.push([textStart, j]);
+          const close = /^<\/\s*([\w$.:-]*)\s*>/.exec(view.slice(j, j + 200));
+          if (!close || close[1] !== name) return -1;
+          return j + close[0].length;
+        }
+        if (isNameStart(view[j + 1]) || view[j + 1] === ">") {
+          if (textStart < j) ranges.push([textStart, j]);
+          const end = element(j, ranges, depth + 1);
+          if (end === -1) return -1;
+          j = end;
+          textStart = j;
+          continue;
+        }
+        return -1;
+      }
+      if (c === "{") {
+        if (textStart < j) ranges.push([textStart, j]);
+        const end = skipBraces(j, ranges, depth);
+        if (end === -1) return -1;
+        j = end;
+        textStart = j;
+        continue;
+      }
+      j += 1;
+    }
+    return -1;
+  }
+
+  let i = 0;
+  while (i < n) {
+    if (view[i] === "<" && (isNameStart(view[i + 1]) || view[i + 1] === ">") && exprStartBefore(i)) {
+      const ranges = [];
+      const end = element(i, ranges, 0);
+      if (end !== -1) {
+        blank.push(...ranges);
+        i = end;
+        continue;
+      }
+    }
+    i += 1;
+  }
+  if (blank.length === 0) return view;
+  const out = view.split("");
+  for (const [a, b] of blank) for (let k = a; k < b; k += 1) if (out[k] !== "\n" && out[k] !== "\r") out[k] = " ";
+  return out.join("");
+}
+
+const NOT_A_TYPE_WORD = new Set([
+  "return", "await", "throw", "new", "yield", "else", "case", "do", "in", "of", "typeof", "delete", "if", "while", "for",
+  "switch", "catch", "using", "lock", "goto", "break", "continue", "default", "extends", "implements", "instanceof",
+]);
+
+/**
+ * Whether the recorder-shaped name starting at `nameAt`, whose argument list opens at `open`, is a signature-only
+ * declaration (an interface or abstract member: `void recordAuditEvent(Event event);`). A declaration has a type word
+ * before the name on the same line and nothing but `;` after the closing parenthesis; a call statement is preceded by
+ * an operator, `.`, `(`, a statement start or a keyword such as `return`.
+ */
+/**
+ * The type word just before a declared name, as `[typeWord]` or null: `Event`, `List<Event>`,
+ * `Task<Result<Event>>`, `Event[]`, `Event?`. Generic arguments may nest, so the angle brackets are matched by
+ * depth (bounded) rather than with a single-level pattern.
+ */
+function typeWordBefore(prefix) {
+  let end = prefix.length;
+  if (!/\s/.test(prefix[end - 1] ?? "")) return null;
+  while (end > 0 && /\s/.test(prefix[end - 1])) end -= 1;
+  while (end > 0 && (prefix[end - 1] === "?" || prefix[end - 1] === "]")) {
+    if (prefix[end - 1] === "?") end -= 1;
+    else {
+      end -= 1;
+      while (end > 0 && /\s/.test(prefix[end - 1])) end -= 1;
+      if (prefix[end - 1] !== "[") return null;
+      end -= 1;
+    }
+  }
+  if (prefix[end - 1] === ">") {
+    let depth = 0;
+    let k = end - 1;
+    const floor = Math.max(0, end - 300);
+    for (; k >= floor; k -= 1) {
+      if (prefix[k] === ">") depth += 1;
+      else if (prefix[k] === "<") {
+        depth -= 1;
+        if (depth === 0) break;
+      } else if (prefix[k] === ";" || prefix[k] === "(" || prefix[k] === ")") return null;
+    }
+    if (depth !== 0) return null;
+    end = k;
+  }
+  const word = /([A-Za-z_$][\w$]*)$/.exec(prefix.slice(0, end));
+  return word ? [word[1], word[1]] : null;
+}
+
+function isSignatureOnly(text, nameAt, open) {
+  const lineStart = Math.max(text.lastIndexOf("\n", nameAt - 1), text.lastIndexOf("\r", nameAt - 1)) + 1;
+  const prefix = text.slice(lineStart, nameAt);
+  const typed = typeWordBefore(prefix);
+  // TypeScript member syntax puts the type after the parameters: `recordAuditEvent(event: Event): void;`, so
+  // the name may be preceded by nothing but modifiers.
+  const memberOnly = /^\s*(?:(?:public|private|protected|abstract|readonly|static|declare|export|async)\s+)*$/.test(prefix);
+  if ((!typed || NOT_A_TYPE_WORD.has(typed[1])) && !memberOnly) return false;
+  let depth = 0;
+  const limit = Math.min(text.length, open + 4000);
+  for (let i = open; i < limit; i += 1) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        const after = text.slice(i + 1, i + 240);
+        // `void record(Event e) throws IOException, Other;`
+        if (typed && !NOT_A_TYPE_WORD.has(typed[1]) && /^\s*(?:throws\s+[\w$.<>,\s]+?)?\s*;/.test(after)) return true;
+        // Same line only: the `)` is followed on its own line by `: Type;`. A call at the start of a line inside
+        // a multi-line ternary is followed by `: other;` on the NEXT line and is a call.
+        return memberOnly && /^[ \t]*\??[ \t]*:[ \t]*[^;{}\r\n]+;/.test(after);
+      }
+    }
+  }
+  return false;
+}
+
+/** Codepoint order, never locale order, so output is identical on every host. */
+const byCodepoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Locate the audit surface. Pure over the run's retained content: it adds no finding and records no
+ * unknown, so calling it has no effect on any rule. `surface` is `{ surfaceLoss, unreadableFiles }`
+ * from `loadSurface`/`collectSurface`; it is required because completeness cannot be claimed from
+ * the file list alone.
+ *
+ * `options.maxObserved` bounds the retained `observed` list to its first N in report order; `observedCount` and
+ * `observedFiles` always cover every observation, so a caller that prints a prefix keeps exact totals.
+ *
+ * @returns {{ observed, observedCount, observedFiles, unread, incomplete, incompleteReasons, blindSpots, languageFamilies, idioms, excluded }}
+ */
+export function locateAuditSurface(files, run, surface, options = {}) {
+  const maxObserved = options.maxObserved ?? Infinity;
+  if (!surface || !surface.surfaceLoss) {
+    throw new TypeError("locateAuditSurface needs the surface loss record: completeness cannot be claimed without it");
+  }
+  const { rel, textOf, structureOf } = run;
+  const { surfaceLoss } = surface;
+  const unreadable = new Set(surface.unreadableFiles ?? []);
+
+  const familyByExt = new Map();
+  for (const fam of AUDIT_LANGUAGE_FAMILIES) for (const e of fam.exts) familyByExt.set(e, fam);
+
+  const entries = files.map((f) => ({ f, r: rel(f) })).sort((a, b) => byCodepoint(a.r, b.r));
+
+  const observed = [];
+  let observedCount = 0;
+  const observedFiles = [];
+  const unread = [];
+  const familyCounts = new Map();
+  const unclassified = [];
+  let excludedCodeFiles = 0;
+  let unlistedCodeFiles = 0;
+
+  for (const { f, r } of entries) {
+    if (!isCode(f)) {
+      // A code language this tool does not list is never read, so it is counted from the file list
+      // and declared as a blind spot rather than being invisible.
+      if (!isAuditExcludedPath(r) && AUDIT_UNLISTED_CODE_EXT.has(path.extname(f).toLowerCase())) {
+        unlistedCodeFiles += 1;
+      }
+      continue;
+    }
+    if (isAuditExcludedPath(r)) {
+      excludedCodeFiles += 1;
+      continue;
+    }
+    const ext = path.extname(f);
+    const fam = familyByExt.get(ext) ?? { family: "unlisted-code-languages", supported: false };
+
+    const raw = textOf(f);
+    if (!raw.available) {
+      let reason = "not-read";
+      if (unreadable.has(f)) reason = "unreadable";
+      else if (surfaceLoss.budget?.exhausted) reason = "read-budget-exhausted";
+      unread.push({ file: r, reason });
+      continue;
+    }
+    const view = structureOf(f);
+    if (!view.available || view.text.length !== raw.text.length) {
+      // The offset alignment between the structural view and the raw text is what site identity and
+      // the SQL name read rest on. A file where it does not hold is reported, not guessed at.
+      unread.push({ file: r, reason: "view-misaligned" });
+      continue;
+    }
+    // Counted only once the content was actually obtained: an unread file was not "read".
+    familyCounts.set(fam.family, (familyCounts.get(fam.family) ?? 0) + 1);
+    const truncated = run.truncated.has(f);
+    if (truncated) unread.push({ file: r, reason: "truncated" });
+    if (!fam.supported) continue;
+    let fileHit = false;
+    const fileObserved = new Map();
+
+    // `${...}` in a template literal executes, so the locator scans those expressions; the shared view blanks
+    // the whole literal and is left as it is for every other detector.
+    let structure = view.text;
+    if (fam.family === "javascript-typescript" && raw.text.includes("$" + "{")) {
+      structure = splitSource(raw.text, ext, { templateExpressions: true }).structure;
+    }
+    if (fam.family === "javascript-typescript" && [".js", ".jsx", ".tsx"].includes(ext) && structure.includes("</")) {
+      // JSX text children are prose, not declarations (see maskJsxText); the locator's view only.
+      structure = maskJsxText(structure);
+    }
+    if (fam.family === "sql" && raw.text.includes("$")) {
+      // A dollar-quoted body is a literal for the locator only (see splitSource); other detectors keep it.
+      structure = splitSource(raw.text, ext, { dollarQuotes: true }).structure;
+    }
+    let newlines = null;
+    const lineAt = (index) => {
+      if (newlines === null) {
+        // LF, CRLF and a lone CR each end one line, so a CR-only file does not collapse to line 1.
+        newlines = [];
+        for (const brk of raw.text.matchAll(/\r\n|\r|\n/g)) newlines.push(brk.index + brk[0].length - 1);
+      }
+      let lo = 0;
+      let hi = newlines.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (newlines[mid] < index) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo + 1;
+    };
+
+    for (const idiom of AUDIT_IDIOMS) {
+      if (!idiom.families.includes(fam.family)) continue;
+      if (idiom.exts && !idiom.exts.includes(ext)) continue;
+      for (const m of structure.matchAll(idiom.re)) {
+        let identifier;
+        let at;
+        let end = m.index + m[0].length;
+        if (idiom.rawName) {
+          // A quoted part may hold its own delimiter doubled (`"order""audit"`, `` `a``b` ``, `[a]]b]`).
+          const name = /((?:\[(?:[^\]\r\n]|\]\])*\]|"(?:[^"\r\n]|"")*"|`(?:[^`\r\n]|``)*`|[A-Za-z_#@][\w$#@]*)(?:\s*\.\s*(?:\[(?:[^\]\r\n]|\]\])*\]|"(?:[^"\r\n]|"")*"|`(?:[^`\r\n]|``)*`|[A-Za-z_#@][\w$#@]*))*)/y;
+          name.lastIndex = end;
+          const hit = name.exec(raw.text);
+          if (!hit) continue;
+          identifier = hit[1].replace(/\s+/g, "").replace(/[\[\]"`]/g, "");
+          at = end;
+          end = name.lastIndex;
+        } else {
+          identifier = m[1].replace(/\s+/g, "");
+          at = m.index + m[0].indexOf(m[1]);
+        }
+        if (idiom.named && !AUDIT_NAME_RE.test(identifier)) continue;
+        // A prefix ends mid-token: `class Audit` may have been `class AuditableThing`. Nothing at the
+        // very end of a truncated read is a complete identifier, so it is dropped rather than reported.
+        if (truncated && end >= raw.text.length) continue;
+        // MySQL writes a comment as `#`, which the SQL tokenizer does not know: a line that opens with one is
+        // a comment, so DDL on it is a mention.
+        if (fam.family === "sql") {
+          // `structure` has strings, quoted identifiers and `--`/`/* */` comments blanked, so a `#` left in the
+          // line before the match is outside them. It is a MySQL comment when it is the first thing on the
+          // line or is followed by whitespace; `#name` (a T-SQL temporary table) and the Postgres operators
+          // `#>`, `#>>`, `#-`, `##`, `#=` are not comments. `[...]` identifiers are skipped first.
+          const lineStart = Math.max(structure.lastIndexOf("\n", at - 1), structure.lastIndexOf("\r", at - 1)) + 1;
+          const before = structure.slice(lineStart, at).replace(/\[[^\]\r\n]*\]/g, (m) => " ".repeat(m.length));
+          if (/^[ \t]*#/.test(before) || /(?:^|[^#<>@\w])#(?=\s|$)/.test(before)) continue;
+          // `#comment` with no space after the marker: a `#` that starts a word and is not where a temporary
+          // table name goes (`FROM #t`, `INTO #t`, `JOIN #t`, `TABLE #t`) is a MySQL comment as well.
+          // A `#` is a comment even when attached to the preceding token (`SELECT 1#comment ...`), except the
+          // Postgres operator forms (`#>`, `#>>`, `#-`, `##`, `#=`, `<#>`) and a T-SQL temporary table name.
+          const bare = /#(?![>\-#=])/g;
+          let hash;
+          let comment = false;
+          while ((hash = bare.exec(before)) !== null) {
+            const prev = hash.index > 0 ? before[hash.index - 1] : "";
+            if (/[#<@.,(]/.test(prev)) continue; // operator, or the start of a temporary-table name
+            const prefix = before.slice(0, hash.index);
+            if (/[.,(]\s*$/.test(prefix)) continue; // `, #b`, `x..#t`, `(#t`: a temporary-table name
+            // `emp#no`: `#` inside an identifier (T-SQL, Oracle); a number or closing token before it is not one.
+            if (/[A-Za-z_][\w$]*$/.test(prefix)) continue;
+            if (!/\b(?:TABLE|INTO|FROM|JOIN|USING|APPLY|UPDATE|EXISTS|ON|REFERENCES|TRUNCATE|DELETE|INSERT|ALTER|DROP|EXEC|EXECUTE)\s*$/i.test(prefix)) {
+              comment = true;
+              break;
+            }
+          }
+          if (comment) continue;
+        }
+        let kind = idiom.kind;
+        if (kind === "recorder-call") {
+          // A definition is a recorder-shaped name introduced by a declaration keyword, or one whose
+          // argument list is followed by a body (`{` or `=>`), as in a method shorthand or a C# member.
+          const keyword = /\b(?:function\*?|def|func|fun)\s+$/.test(structure.slice(Math.max(0, at - 24), at));
+          if (keyword || followedByBody(structure, m.index + m[0].length - 1) || isSignatureOnly(structure, at, m.index + m[0].length - 1)) {
+            kind = "recorder-definition";
+          }
+        }
+        const o = { file: r, line: lineAt(at), kind, identifier, family: fam.family, idiom: idiom.id };
+        fileHit = true;
+        // Keyed by OFFSET, not by line: two occurrences of one identifier on a line (minified or generated
+        // code) are two constructs. Only the same occurrence matched by two idioms is merged.
+        if (idiom.kind === "recorder-call") {
+          // One call site is one construct however many idioms match it: `auditLogger.recordAuditEvent(x)`
+          // matches the object-call and the named-call idiom at different starts but the same `(`. Keyed by
+          // that `(`; the longest identifier (the whole receiver chain) is the one reported.
+          const site = `call\u0000${m.index + m[0].length - 1}\u0000${o.kind}`;
+          const prior = fileObserved.get(site);
+          if (!prior || prior.o.identifier.length < o.identifier.length) fileObserved.set(site, { at, o });
+          continue;
+        }
+        fileObserved.set(`${at}\u0000${o.kind}\u0000${o.identifier}`, { at, o });
+      }
+    }
+    // Files arrive in codepoint order, so a file's observations (sorted here) already follow every earlier
+    // file's: the report order is the processing order, and only the first `maxObserved` are retained.
+    if (fileObserved.size) {
+      const inFile = [...fileObserved.values()]
+        .sort(
+          (a, b) =>
+            a.o.line - b.o.line || byCodepoint(a.o.kind, b.o.kind) || byCodepoint(a.o.identifier, b.o.identifier) || a.at - b.at,
+        )
+        .map((e) => e.o);
+      observedCount += inFile.length;
+      observedFiles.push(r);
+      for (const o of inFile) if (observed.length < maxObserved) observed.push(o);
+    }
+    // An audit-named identifier in a file with no observation is something the locator saw and could
+    // not classify. It is reported, and it makes the search incomplete: silence there is not absence.
+    if (!fileHit && AUDIT_NAME_RE.test(structure)) unclassified.push({ file: r, family: fam.family });
+  }
+
+  unread.sort((a, b) => byCodepoint(a.file, b.file) || byCodepoint(a.reason, b.reason));
+
+  // Reasons the SEARCH ITSELF fell short, beyond individual unread files. Each is a place an audit
+  // mechanism could be that this run never listed. A repository-authorized exclusion is not one:
+  // content the project declared disposable was never owed to the run (same rule as `complete`).
+  const frameworkExcluded = (surfaceLoss.excluded ?? []).filter((e) => e.authorizedBy === "framework");
+  const reasons = [];
+  if (unread.length) reasons.push("unread-files");
+  if (surfaceLoss.capped) reasons.push("file-cap-reached");
+  if ((surfaceLoss.dirs ?? []).length) reasons.push("unlistable-directories");
+  if (frameworkExcluded.length) reasons.push("framework-excluded-directories");
+  if (unclassified.length) reasons.push("unclassified-audit-named-identifiers");
+
+  return {
+    observed,
+    observedCount,
+    observedFiles,
+    unread,
+    unclassified: unclassified.sort((a, b) => byCodepoint(a.file, b.file)),
+    incomplete: reasons.length > 0,
+    incompleteReasons: reasons,
+    blindSpots: AUDIT_BLIND_SPOTS.map((b) => ({ ...b })).sort((a, b) => byCodepoint(a.id, b.id)),
+    languageFamilies: AUDIT_LANGUAGE_FAMILIES.map(({ family, supported }) => ({
+      family,
+      supported,
+      codeFilesRead: familyCounts.get(family) ?? 0,
+    })).concat([
+      // Never read at all, so a count of files present rather than of files read.
+      { family: "unlisted-code-languages", supported: false, codeFilesRead: 0, codeFilesPresent: unlistedCodeFiles },
+    ]),
+    idioms: AUDIT_IDIOMS.map((i) => ({
+      id: i.id,
+      families: [...i.families],
+      kind: i.kind,
+      view: i.rawName ? "structure+raw-name" : "structure",
+      pattern: `/${i.re.source}/${i.re.flags}`,
+      ...(i.named ? { nameFilter: `/${AUDIT_NAME_RE.source}/${AUDIT_NAME_RE.flags}` } : {}),
+    })),
+    excluded: {
+      reason: "test and CI paths never count as audit presence",
+      testPathPattern: `/${AUDIT_TEST_PATH_RE.source}/${AUDIT_TEST_PATH_RE.flags}`,
+      ciPathPattern: `/${AUDIT_EXCLUDED_PATH_RE.source}/${AUDIT_EXCLUDED_PATH_RE.flags}`,
+      testSuffixPattern: `/${AUDIT_TEST_SUFFIX_RE.source}/${AUDIT_TEST_SUFFIX_RE.flags}`,
+      codeFilesExcluded: excludedCodeFiles,
+    },
+  };
+}
+
+/** Bounds on the structured payload, so a very large repository cannot make one finding unbounded. */
+const AUDIT_PAYLOAD_MAX_OBSERVED = 500;
+const AUDIT_PAYLOAD_MAX_UNREAD = 200;
+
+/**
+ * Emit the one unbound `info` finding. Always emitted — including with zero observations — because
+ * `blindSpots` and `incomplete` are the content of the observation, and a run that said nothing
+ * would be indistinguishable from a tool that never looked.
+ */
+export function reportAuditSurface(files, run, surface) {
+  const found = locateAuditSurface(files, run, surface, { maxObserved: AUDIT_PAYLOAD_MAX_OBSERVED });
+  const observedFiles = found.observedFiles;
+  const parts = [];
+  if (found.observedCount) {
+    parts.push(
+      `${found.observedCount} audit-named construct(s) were observed in ${observedFiles.length} non-test code file(s) of the working tree ` +
+        `by a fixed list of name idioms. This locates where audit-related code is. It is not evidence that business-state changes are ` +
+        `audited, that events carry the Standard 3 R2 fields, or that the code is committed, and no rule is evaluated from it.`,
+    );
+  } else {
+    parts.push(
+      "No audit-named construct was observed in the non-test code files read. That is not evidence that no audit mechanism exists: " +
+        "see the declared blind spots in `detail.blindSpots`.",
+    );
+  }
+  if (found.unclassified.length) {
+    parts.push(
+      `${found.unclassified.length} code file(s) hold an audit-named identifier the locator could not classify (see detail.unclassified).`,
+    );
+  }
+  if (found.incomplete) {
+    parts.push(
+      `The search was incomplete (${found.incompleteReasons.join(", ")})` +
+        `${found.unread.length ? `; ${found.unread.length} code file(s) were not read whole` : ""}. Treat absence as unknown.`,
+    );
+  }
+  run.addFinding({
+    id: "detected-audit-surface",
+    category: "Audit surface",
+    severity: "info",
+    label: "INFERRED",
+    // Paths only. A placeholder string here would read as a path to every consumer of `evidence`; the
+    // empty case is carried by `detail.observedCount` and the message.
+    evidence: observedFiles,
+    message: parts.join(" "),
+    standardRef: R.audit,
+    detail: {
+      observed: found.observed.slice(0, AUDIT_PAYLOAD_MAX_OBSERVED),
+      observedCount: found.observedCount,
+      observedOmitted: Math.max(0, found.observedCount - found.observed.length),
+      unread: found.unread.slice(0, AUDIT_PAYLOAD_MAX_UNREAD),
+      unreadCount: found.unread.length,
+      unreadOmitted: Math.max(0, found.unread.length - AUDIT_PAYLOAD_MAX_UNREAD),
+      unclassified: found.unclassified.slice(0, AUDIT_PAYLOAD_MAX_UNREAD),
+      unclassifiedCount: found.unclassified.length,
+      incomplete: found.incomplete,
+      incompleteReasons: found.incompleteReasons,
+      blindSpots: found.blindSpots,
+      languageFamilies: found.languageFamilies,
+      idioms: found.idioms,
+      excluded: found.excluded,
+    },
   });
 }
 
@@ -3869,7 +4989,7 @@ export async function main(args) {
   // says a rule is non-exemptible. An entry that does not validate, or whose digest does not match
   // the file on disk, simply never matches: the file is inspected as ordinary content.
   const catalog = await loadCatalog();
-  const policy = await loadProjectPolicy(root);
+  let policy = await loadProjectPolicy(root);
   const today = new Date().toISOString().slice(0, 10);
   const exemptionCheck = { problems: [], bound: [] };
   // One relative-path index, built once: pins x files would be quadratic near the file cap.
@@ -3999,9 +5119,11 @@ export async function main(args) {
   const envCheck = detectCommittedEnvFiles(files, root, repoAvailability, run);
   detectConflictMarkers(files, root, repoAvailability, run);
   detectSecretsInArtifacts(files, run);
-  detectSwallowedExceptions(files, run);
+  const swallowedObservation = detectSwallowedExceptions(files, run);
   detectCertBypass(files, run);
   detectSqlConcat(files, run);
+  // Last on purpose, and read-only: it observes where audit mechanisms are and binds to no rule.
+  reportAuditSurface(files, run, { surfaceLoss, unreadableFiles });
 
   // Every declared exemption is accounted for: one that does not apply says so, and why. A silent
   // dead entry is a waiver nobody can tell is still protecting anything — or is protecting the wrong
@@ -4292,6 +5414,99 @@ export async function main(args) {
   }
 
   /**
+   * Path-scoped justifications (ADR 0017).
+   *
+   * Validated here, after the version guard and before any finding is read by the verdict, because a
+   * justification that is malformed must fail the CONFIGURATION (exit 2, no verdict), never be
+   * partially applied: a half-honoured waiver list is a verdict nobody can reproduce from the policy.
+   *
+   * Applied by subtracting declared paths from ONE rule's own observed violating paths. Nothing else
+   * is touched — every other detector has already run over every file, and no other finding is read
+   * or rewritten here.
+   */
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const justificationReport = {
+    trackedBasis: null,
+    trackedNote: null,
+    // Filled after evaluation: the number of rules whose disposition is `excepted` (by either
+    // mechanism) and the number of path justifications that produced one.
+    exceptionCount: 0,
+    justificationCount: 0,
+    exceptedRules: [],
+    applied: [],
+    expired: [],
+    stale: [],
+    unverified: [],
+    problems: [],
+  };
+  const declaredJustifications = Array.isArray(policy.document?.justifications) ? policy.document.justifications : [];
+  let expiredJustified = [];
+  if (declaredJustifications.length > 0) {
+    const tracked = trackedProvider(root, files.map((f) => rel(f)));
+    justificationReport.trackedBasis = tracked.basis;
+    justificationReport.trackedNote = tracked.note;
+    const problems = justificationProblems(declaredJustifications, { catalog, root, tracked });
+    justificationReport.problems = problems.map((p) => ({ index: p.index, field: p.field, code: p.code, message: p.message }));
+
+    if (problems.length > 0) {
+      const shown = problems
+        .slice(0, 6)
+        .map((p) => `justifications[${p.index}].${p.field} [${p.code}] ${p.message}`)
+        .join("; ");
+      const more = problems.length > 6 ? `; and ${problems.length - 6} more` : "";
+      policy = {
+        document: null,
+        error:
+          `project-policy.yml has ${problems.length} invalid path justification(s), so none were applied: ${shown}${more}`,
+      };
+    } else {
+      // The registry of rules whose detector can be subtracted from. Kept beside the allowlist in
+      // justifications.mjs by an assertion, so admitting a rule there without wiring it here fails.
+      const observations = new Map([["errors.no-swallowed-exceptions", swallowedObservation]]);
+      for (const rule of JUSTIFIABLE_RULES) {
+        if (!observations.has(rule)) throw new Error(`justifiable rule ${rule} has no detector observation`);
+      }
+      // An expired justification is NOT applied: the violation it covered stays a finding and the
+      // rule fails on it, and a separate failed result names the lapse. It is classified against the
+      // same observations so an expired entry whose path no longer violates is only stale.
+      const { active, expired } = splitByExpiry(declaredJustifications, todayIso);
+      const lapsed = applyJustifications(expired, observations);
+      justificationReport.expired = lapsed.applied.map(justifiedRecord);
+      expiredJustified = lapsed.applied;
+      const outcome = applyJustifications(active, observations);
+      outcome.stale.push(...lapsed.stale.map((e) => ({ ...e, why: `expired on ${e.expires} and ${e.why}` })));
+      outcome.unverified.push(...lapsed.unverified);
+      justificationReport.applied = outcome.applied.map(justifiedRecord);
+      justificationReport.stale = outcome.stale.map((e) => ({ ...justifiedRecord(e), why: e.why }));
+      justificationReport.unverified = outcome.unverified.map((e) => ({ ...justifiedRecord(e), why: e.why }));
+
+      // Re-count the one finding the detector emitted: same id, label, severity and reference, with
+      // only the justified paths removed from its evidence. The caller's evidence cap is not applied
+      // twice because `addFinding` is the single writer and applies it itself.
+      const recount = { "errors.no-swallowed-exceptions": swallowedExceptionMessage };
+      for (const [rule, remaining] of outcome.remaining) {
+        if (!outcome.applied.some((e) => e.rule === rule)) continue;
+        const template = findings.find((x) => x.rule === rule);
+        for (let i = findings.length - 1; i >= 0; i--) if (findings[i].rule === rule) findings.splice(i, 1);
+        if (remaining.length > 0 && template) {
+          addFinding({ ...template, evidence: remaining, message: recount[rule](remaining.length) });
+        }
+      }
+      for (const e of outcome.stale) {
+        addFinding({
+          id: "stale-justification",
+          category: "Justifications",
+          severity: "warning",
+          label: "OBSERVED",
+          evidence: [e.path],
+          message: `The justification for ${e.rule} at ${e.path} is stale: ${e.why}. Remove it when: ${e.removeWhen}`,
+          standardRef: N.swallowed,
+        });
+      }
+    }
+  }
+
+  /**
    * Digest the paths each attestation says it reviewed, so a material change to them makes the
    * attestation stale (ADR 0005 rule 4).
    *
@@ -4574,7 +5789,15 @@ export async function main(args) {
     establishedRejections: Array.isArray(reviewHistoryBase.baseRejectionRules)
       ? new Set(reviewHistoryBase.baseRejectionRules)
       : null,
+    justified: justificationReport.applied,
+    expiredJustified,
   });
+  justificationReport.exceptedRules = verdict.results
+    .filter((r) => r.disposition === "excepted")
+    .map((r) => r.ruleId)
+    .sort();
+  justificationReport.exceptionCount = justificationReport.exceptedRules.length;
+  justificationReport.justificationCount = justificationReport.applied.length;
 
   // A rejection recorded on a rule declared not-applicable is surfaced as a finding that carries no
   // rule, so it cannot change any result or the verdict (ST-47). It is added here, after evaluate,
@@ -4620,7 +5843,19 @@ export async function main(args) {
     // Standard 18 R3: a violation of an effectively-`optional` rule is silent, so the finding that
     // evidences it is withheld here too. `audit` (policy-independent evidence, ADR 0004) is unchanged.
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
-    emit(JSON.stringify({ ...report, findings: visibleFindings }, null, 2) + "\n");
+    emit(
+      JSON.stringify(
+        {
+          ...report,
+          findings: visibleFindings,
+          // Additive. Present on every validate run so a consumer never has to guess whether the
+          // absence of the key means "none declared" or "not reported".
+          justifications: justificationReport,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
   } else {
     emitText(
       renderVerdict(
@@ -4646,6 +5881,7 @@ export async function main(args) {
           return !listed;
         }),
         applicabilityConflict && report.status === "NOT_EVALUATED",
+        justificationReport,
       ) + "\n",
     );
     // Report the current digest for any attestation that lacks one, so it can be recorded rather
@@ -4682,6 +5918,8 @@ export async function main(args) {
   // than exit 2 because it is a statement about the project, not about the configuration — the policy
   // read fine, and what it says is that a prohibition went unexamined.
   if (report.unestablishedProhibitions?.length) return done(EXIT_FINDINGS);
+  // NOT_EVALUATED is non-zero whichever way it was reached.
+  if (report.status === "NOT_EVALUATED") return done(EXIT_FINDINGS);
   return done(EXIT_OK);
 }
 

@@ -120,4 +120,7 @@ fact.
 `standards audit` does not inspect whether an application writes audit events, which fields they
 carry, or whether secrets reach them, so `audit.business-state` is reported not-evaluated. Its test
 and CI observations (`no-test-surface`, `no-ci-configuration`) are about verification, not about this
-standard, and carry no rule binding. Conformance is established by review.
+standard, and carry no rule binding. It separately lists where audit-named constructs appear, as the unbound `info`
+observation `detected-audit-surface` (a fixed list of name idioms, test and CI paths excluded, with `unread`,
+`incomplete` and `blindSpots` reported as separate parts). That locates code; it neither inspects event fields nor
+establishes that any requirement here is met. Conformance is established by review.

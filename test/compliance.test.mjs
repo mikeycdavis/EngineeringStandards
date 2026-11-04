@@ -972,7 +972,9 @@ test("an exception on a manual-review rule applies only to the rule it names", (
   assert.equal(verdict.results.find((r) => r.ruleId === other.id).disposition, "excepted");
   assert.equal(verdict.results.find((r) => r.ruleId === FORBIDDEN_MANUAL).disposition, "not-evaluated");
   assert.deepEqual(verdict.unestablishedProhibitions, [FORBIDDEN_MANUAL]);
-  assert.equal(verdict.status, STATUS.COMPLIANT_WITH_EXCEPTIONS);
+  // Owner decision (ADR 0017): an unexamined prohibition outranks an exception in the aggregate. Before,
+  // this asserted COMPLIANT_WITH_EXCEPTIONS because exceptions were decided first.
+  assert.equal(verdict.status, STATUS.NOT_EVALUATED);
 });
 
 test("an expired exception on a manual-review forbidden rule is not excepted", () => {
@@ -1174,8 +1176,10 @@ test("the exception on a manual-review rule reaches the validate CLI output and 
     assert.equal(result.disposition, "excepted");
     assert.ok(!json.unestablishedProhibitions.includes("data.migration-rollback"));
     const text = cli([]).stdout;
-    assert.match(text, /Excepted:\s*\n\s+data\.migration-rollback — Legacy DML corpus/);
-    const unestablished = (text.split("Unestablished prohibitions")[1] ?? "").split("Excepted:")[0];
+    // Owner decision (ADR 0017): the section and the line say EXCEPTED unambiguously. Before this
+    // asserted /Excepted:\s*\n\s+data\.migration-rollback/.
+    assert.match(text, /EXCEPTED:\s*\n\s+EXCEPTED data\.migration-rollback — Legacy DML corpus/);
+    const unestablished = (text.split("Unestablished prohibitions")[1] ?? "").split("EXCEPTED:")[0];
     assert.ok(!/data\.migration-rollback/.test(unestablished), "an excepted rule was listed as unestablished");
   } finally {
     await rm(dir, { recursive: true, force: true });
