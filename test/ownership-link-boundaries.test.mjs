@@ -24,7 +24,7 @@ async function claimed(...values) {
     await mkdir(path.join(root, PLAN), { recursive: true });
     await writeFile(path.join(root, "artifacts/backlog/github-mapping.json"), JSON.stringify({ target: "o/r" }), "utf8");
     const text = values.map((v, i) => `### I${i}\n\n- **Tracked by:** ${v}\n\n`).join("");
-    await writeFile(path.join(root, PLAN, "p.md"), text, "utf8");
+    await writeFile(path.join(root, PLAN, "01-p.md"), text, "utf8");
     const claims = await collectPlanClaims(root);
     return values.map((_, i) => claims.filter((c) => c.title === `I${i}`).map((c) => c.issue));
   } finally {

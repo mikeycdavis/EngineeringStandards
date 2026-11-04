@@ -315,7 +315,7 @@ test("a truncated Markdown file OUTSIDE the plan directory does not withdraw the
   );
 });
 
-test("CURRENT (ST-24 part B will narrow this): a truncated README.md under the plan directory counts as a plan file", async () => {
+test("a truncated README.md under the plan directory is a supporting document: it does not withdraw planning.item-fields", async () => {
   await withRepo(
     {
       [`${PLAN}/00-overview.md`]: OVERVIEW,
@@ -323,8 +323,26 @@ test("CURRENT (ST-24 part B will narrow this): a truncated README.md under the p
       [`${PLAN}/README.md`]: sized("# How to read this plan\n\n", CAP + 20 * 1024),
     },
     async (root) => {
-      // `isPlanFile` is the single predicate and today it accepts any `.md` under the directory. The
-      // owner rule (a README is never a plan item) is part B of #117, not this change.
+      // ST-24 part B (#117): the plan items are the numbered files (`isPlanItemFile`). A README is still a
+      // plan file, but no item is read from it, so a partial read of it cannot hide a missing field:
+      // `planning.item-fields` was evaluated over text that was read whole. It stays true that the file was
+      // truncated (the finding is emitted) and that plan-code-consistency, whose domain is any truncated
+      // .md, is withdrawn.
+      const json = cli("validate", root);
+      assert.ok((json.findings ?? []).some((f) => f.id === "evidence-truncated-file"), "precondition: a file was truncated");
+      assert.equal(shape(json, RULE), "evaluated/passed");
+      assert.equal(resultFor(json, "planning.plan-code-consistency").disposition, "not-evaluated");
+    },
+  );
+});
+
+test("a truncated NUMBERED plan file still withdraws planning.item-fields (control for the README case)", async () => {
+  await withRepo(
+    {
+      [`${PLAN}/00-overview.md`]: OVERVIEW,
+      [PLAN_FILE]: sized(GOOD("One"), CAP + 20 * 1024),
+    },
+    async (root) => {
       assert.equal(shape(cli("validate", root), RULE), "not-evaluated/skipped");
     },
   );

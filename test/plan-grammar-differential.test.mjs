@@ -147,7 +147,7 @@ test("ownership parity: every probe matches the legacy claims, or is a pinned ap
   const files = {};
   const names = new Map();
   PROBES.forEach((p, i) => {
-    const name = `probe-${String(i).padStart(3, "0")}.md`;
+    const name = `01-probe-${String(i).padStart(3, "0")}.md`;
     files[name] = p.text;
     names.set(`${PLAN}/${name}`, p.id);
   });
@@ -180,8 +180,8 @@ test("monotonic fail-closed: no new claim, and every dropped legacy claim is rep
   const files = {};
   const corrected = new Set();
   [...PROBES.map((p) => p.text), ...literals].forEach((text, i) => {
-    files[`c-${String(i).padStart(3, "0")}.md`] = text;
-    if (i < PROBES.length && FALSE_POSITIVE_CORRECTIONS.has(PROBES[i].id)) corrected.add(`c-${String(i).padStart(3, "0")}.md`);
+    files[`01-c-${String(i).padStart(3, "0")}.md`] = text;
+    if (i < PROBES.length && FALSE_POSITIVE_CORRECTIONS.has(PROBES[i].id)) corrected.add(`01-c-${String(i).padStart(3, "0")}.md`);
   });
   const root = await scratch(files);
   try {
@@ -214,12 +214,12 @@ test("this repository's own plan files: the same claims as the legacy collector,
   assert.ok(legacy.length >= 20, `claims: ${legacy.length}`);
 });
 
-test("file discovery (Q4): a nested plan file is read; case and extension rules follow the canonical collector", async () => {
+test("file discovery (Q4, ST-24 part B): a nested plan file is a supporting document and yields no claim; case and extension rules follow the canonical collector", async () => {
   const root = await scratch(Object.fromEntries(FILE_PROBES.map((p) => [p.file, p.text])));
   try {
     assert.deepEqual(legacyCollectPlanClaims(root), [], "the legacy discovery saw none of them");
     const now = await collectPlanOwnership(root);
-    assert.deepEqual(now.claims.map((c) => `${c.file}|${c.issue}`), [`${PLAN}/sub/p.md|1`], "only the nested .md is a plan file");
+    assert.deepEqual(now.claims.map((c) => `${c.file}|${c.issue}`), [], "no probe is a numbered plan-item file directly in the plan directory, so none yields a claim");
     assert.deepEqual(now.problems, []);
   } finally {
     await rm(root, { recursive: true, force: true });
