@@ -15,6 +15,8 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Withdrawn-rule message (ST-25, #118, message half). A rule whose detector ran and was then withdrawn because evidence was not obtained (a truncated or unreadable file, a spent read budget, a short file walk) now reports a not-evaluated message that says a check ran and names the reasons, up to three with a count of the rest, display-safe: `A check for <rule> ran, but the rule is not established because some of its evidence was not obtained: <reasons>.` A rule with no detector, a manual-review rule, and a detector that withdrew because its subject is absent (`scm.no-committed-env-files` without an index, `reconstruction.baseline-artifacts` without a baseline directory, which record no unknown reason) keep `No implemented check evaluates <rule>.`. The reasons travel to `evaluate` as a new optional `withdrawn` map, collected at the end of the run from the records the withdrawal was already decided from; status, disposition, score, verdict, exit code and `schemaVersion` do not change, and the message is the only output difference (pinned: with and without the map every other field of every result is equal). Both sentences are pinned in `test/withdrawn-rule-message.test.mjs`, with mutation checks. `VERSION` stays `2.0.0`.
+
 Boundary declaration and checker (ST-23 follow-on, refs #112; split from draft PR 113, the Standard 51 text is a separate
 change). Adds an optional, additive boundary declaration ([ADR 0018](artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)):
 a root-level `architecture-boundaries.yml`, discovered by name beside `project-policy.yml` and described by the new

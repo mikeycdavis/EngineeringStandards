@@ -3185,9 +3185,10 @@ function detectDocDiscrepancies(files, run) {
  * unestablished `forbidden` rules (Standard 45 R6). Whether that cap should reach this rule is a
  * framework decision, not this detector's.
  *
- * KNOWN LIMITATION: the withdrawn result's message is compliance.mjs's generic "No implemented check
- * evaluates ...", because no detector can supply its own reason for a not-evaluated result today —
- * the same limitation `scm.no-committed-env-files` already has when it withdraws silently.
+ * The withdrawn result's message says a check ran when this detector withdrew over unread content
+ * (ST-25, #118): `compliance.mjs` composes the sentence from the reasons collected at the end of the run.
+ * Withdrawing because the rule's subject is absent (`evaluated: false`) records no unknown reason, so
+ * that result keeps the generic "No implemented check evaluates ..." sentence.
  */
 function detectStandardsViolations(files, run) {
   const { has, rel, addFinding } = run;
@@ -5774,6 +5775,32 @@ export async function main(args) {
       !unestablished(id),
   );
 
+  // WHY a rule whose detector ran is nevertheless not evaluated, for the sentence a not-evaluated result
+  // carries (ST-25, #118). It reads the same records the withdrawal above was decided from and decides
+  // nothing: a rule absent from this map keeps "No implemented check evaluates ...".
+  const withdrawnReasons = new Map();
+  for (const id of EVALUATED_RULES) {
+    if (evaluatedThisRun.includes(id)) continue;
+    const reasons = [];
+    for (const u of run.unknownChecks.get(id) ?? []) reasons.push(`${u.file}: ${u.reason}`);
+    if (CONTENT_DERIVED_RULES.includes(id)) {
+      if (walkWentShort) {
+        const lost = [];
+        if (surfaceLoss.capped) lost.push("the file walk stopped at its file cap");
+        if (surfaceLoss.budget.exhausted) lost.push("the read budget was exhausted");
+        if (unreadableFiles.length > 0) lost.push(`${unreadableFiles.length} file(s) could not be read`);
+        if (frameworkExcluded.length > 0) lost.push(`${frameworkExcluded.length} director(ies) were excluded by the framework`);
+        if (surfaceLoss.dirs.length > 0) lost.push(`${surfaceLoss.dirs.length} director(ies) could not be listed`);
+        reasons.push(lost.join(", "));
+      }
+      if (truncationReached(id)) {
+        const own = truncatedPaths.filter((p) => (TRUNCATION_DOMAIN[id] ?? (() => true))(p));
+        reasons.push(`${own.slice(0, 3).join(", ")}${own.length > 3 ? ` and ${own.length - 3} more` : ""} read only up to the ${MAX_READ_BYTES}-byte cap`);
+      }
+    }
+    if (reasons.length > 0) withdrawnReasons.set(id, reasons);
+  }
+
   const verdict = evaluate({
     catalog,
     policy: evaluationDocument,
@@ -5783,6 +5810,7 @@ export async function main(args) {
     baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null,
     findings,
     evaluated: evaluatedThisRun,
+    withdrawn: withdrawnReasons,
     today,
     freshness,
     // Rules whose rejection is already at the trusted base (append-only); null when unknown.
