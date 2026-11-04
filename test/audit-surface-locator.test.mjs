@@ -1300,3 +1300,38 @@ test("a Unicode line separator inside a block comment after return ends the stat
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
   });
 });
+
+test("a TypeScript type literal is a block-like brace: a regex statement may follow a semicolonless type alias or annotation", async () => {
+  const NL = String.fromCharCode(10);
+  const ts = [
+    "type Result = { ok: boolean }",
+    "/recordAuditEvent(a)/.test(s);",
+    "export type Pair<T> = { a: T }",
+    "/recordAuditEvent(b)/.test(s);",
+    "declare type Hole = { h: 1 }",
+    "/recordAuditEvent(c)/.test(s);",
+    "const x: { a: number }",
+    "/recordAuditEvent(d)/.test(s);",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.ts": ts }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});
+
+test("the type-literal exemption is narrow: an assignment to a variable named type, and a ternary after a declaration, stay expressions", async () => {
+  const NL = String.fromCharCode(10);
+  const ts = [
+    "type = { a: 1 } / recordAuditEvent(a) / 2;",
+    "const y = ok ? 1 : { a: 1 } / recordAuditEvent(b) / 2;",
+    "const z = { a: 1 } / recordAuditEvent(c) / 2;",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.ts": ts }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/a.ts:1 recorder-call recordAuditEvent",
+      "src/a.ts:2 recorder-call recordAuditEvent",
+      "src/a.ts:3 recorder-call recordAuditEvent",
+    ]);
+  });
+});

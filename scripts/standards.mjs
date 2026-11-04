@@ -737,18 +737,26 @@ function splitSource(text, ext, options = {}) {
   let blockHasBreak = false;
   let blockBreakAt = -1;
   const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "!", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
+  // What lies between the previous `;`, `{` or `}` and here, trimmed: the statement a brace is inside of.
+  const statementSoFar = () => {
+    let start = code.length;
+    const stop = Math.max(0, start - 400);
+    while (start > stop && !";{}".includes(code[start - 1])) start -= 1;
+    return code.slice(start).trim();
+  };
   const braceOpensExpression = () => {
     const prev = lastCode();
+    // A TypeScript TYPE literal is not a runtime expression, and a regex may legally follow it on the next
+    // line: `type R = { ok: boolean }` and a declaration's annotation `const x: { a: number }`.
+    if (prev === "=" && /^(?:export\s+)?(?:declare\s+)?type\s+[A-Za-z_$][\w$]*[^=]*=$/.test(statementSoFar())) return false;
+    if (prev === ":" && /^(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*:$/.test(statementSoFar())) return false;
     if (prev === ":") {
       // A colon before a brace is three different things. Inside an object literal it is a property value
       // (an expression). Elsewhere it is a ternary's else-branch (an expression), unless the statement it
       // ends is a `case X:`, a `default:` or a label (`name:`): there the brace opens a BLOCK, and a regex
       // literal may follow its `}`. The statement is what lies between the previous `;`, `{` or `}` and here.
       if (braceStack.length > 0 && braceStack[braceStack.length - 1]) return true;
-      let start = code.length - 1;
-      const stop = Math.max(0, start - 400);
-      while (start > stop && !";{}".includes(code[start - 1])) start -= 1;
-      const statement = code.slice(start, code.length).replace(/:\s*$/, "").trim();
+      const statement = statementSoFar().replace(/:$/, "").trim();
       return !/^(?:case\b[\s\S]*|default|[A-Za-z_$][\w$]*)$/.test(statement);
     }
     // `return` and `yield` take an expression only on the SAME line: a line terminator after them ends the
