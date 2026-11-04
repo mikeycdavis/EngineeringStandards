@@ -1228,3 +1228,41 @@ test("a brace after return, throw or typeof is an expression (the keyword set is
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
   });
 });
+
+test("a brace on the line after return or yield is a block (automatic semicolon insertion): a regex literal may follow it", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "function* f() { yield",
+    "{ work(); } /recordAuditEvent(x)/.test(s); }",
+    "function g() { return",
+    "{ work(); } /recordAuditEvent(y)/.test(s); }",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});
+
+test("a brace on the same line as return or yield, even after a comment, is an expression", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "function g() { return /* note */ { a: 1 } / recordAuditEvent(x) / 2; }",
+    "function* h() { yield { a: 1 } / recordAuditEvent(y) / 2; }",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/a.js:1 recorder-call recordAuditEvent",
+      "src/a.js:2 recorder-call recordAuditEvent",
+    ]);
+  });
+});
+
+test("a Unicode line separator after return also ends the statement", async () => {
+  const NL = String.fromCharCode(10);
+  const LS = String.fromCharCode(0x2028);
+  const js = ["function g() { return" + LS + "{ work(); } /recordAuditEvent(y)/.test(s); }", ""].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});

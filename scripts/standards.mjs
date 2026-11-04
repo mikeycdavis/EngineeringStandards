@@ -745,9 +745,13 @@ function splitSource(text, ext, options = {}) {
       const statement = code.slice(start, code.length).replace(/:\s*$/, "").trim();
       return !/^(?:case\b[\s\S]*|default|[A-Za-z_$][\w$]*)$/.test(statement);
     }
+    // `return` and `yield` take an expression only on the SAME line: a line terminator after them ends the
+    // statement (automatic semicolon insertion), so a brace on the next line is a block.
+    if (/(?:^|[^\w$.])(?:return|yield)[^\S\n\r\u2028\u2029]*$/.test(code.slice(-24))) return true;
+    if (/(?:^|[^\w$.])(?:return|yield)\s*$/.test(code.slice(-24))) return false;
     return (
       EXPRESSION_BRACE_AFTER.has(prev) ||
-      /(?:^|[^\w$.])(?:return|typeof|case|in|delete|void|throw|new|yield|await)\s*$/.test(code.slice(-24))
+      /(?:^|[^\w$.])(?:typeof|case|in|delete|void|throw|new|await)\s*$/.test(code.slice(-24))
     );
   };
 
