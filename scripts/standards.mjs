@@ -730,6 +730,12 @@ function splitSource(text, ext, options = {}) {
   // after anything else (`)`, `=>`, a block keyword, a statement boundary) is a block, the existing behaviour.
   const braceStack = [];
   let closedExpression = false;
+  const LINE_SEPARATOR = String.fromCharCode(0x2028);
+  const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
+  // Whether the block comment being read holds a line terminator, and the length `code` had where the last
+  // such comment ended (-1 for none).
+  let blockHasBreak = false;
+  let blockBreakAt = -1;
   const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "!", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
   const braceOpensExpression = () => {
     const prev = lastCode();
@@ -747,7 +753,9 @@ function splitSource(text, ext, options = {}) {
     }
     // `return` and `yield` take an expression only on the SAME line: a line terminator after them ends the
     // statement (automatic semicolon insertion), so a brace on the next line is a block.
-    if (/(?:^|[^\w$.])(?:return|yield)[^\S\n\r\u2028\u2029]*$/.test(code.slice(-24))) return true;
+    const sameLine = /(?:^|[^\w$.])(?:return|yield)([^\S\n\r\u2028\u2029]*)$/.exec(code.slice(-24));
+    // ...unless a block comment holding a line terminator sits between the keyword and the brace.
+    if (sameLine !== null) return blockBreakAt < code.length - sameLine[1].length;
     if (/(?:^|[^\w$.])(?:return|yield)\s*$/.test(code.slice(-24))) return false;
     return (
       EXPRESSION_BRACE_AFTER.has(prev) ||
@@ -787,6 +795,7 @@ function splitSource(text, ext, options = {}) {
       }
       if (syntax.block && rest2 === "/*") {
         mode = "block";
+        blockHasBreak = false;
         drop("/");
         drop("*");
         i += 2;
@@ -894,12 +903,16 @@ function splitSource(text, ext, options = {}) {
     if (mode === "block") {
       if (rest2 === "*/") {
         mode = "code";
+        // A block comment that contains a line terminator counts as one for automatic semicolon insertion,
+        // but its text is not in `code`; remember where in `code` it fell (see `braceOpensExpression`).
+        if (blockHasBreak) blockBreakAt = code.length;
         comments += "\n";
         drop("*");
         drop("/");
         i += 2;
         continue;
       }
+      if (c === "\n" || c === "\r" || c === LINE_SEPARATOR || c === PARAGRAPH_SEPARATOR) blockHasBreak = true;
       comments += c;
       drop(c);
       i++;

@@ -1266,3 +1266,37 @@ test("a Unicode line separator after return also ends the statement", async () =
     assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
   });
 });
+
+test("a line terminator inside a block comment after return or yield also ends the statement", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "function* f() { yield /*" + NL + "*/ { work(); } /recordAuditEvent(x)/.test(s); }",
+    "function g() { return/*" + NL + "*/{ work(); } /recordAuditEvent(y)/.test(s); }",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});
+
+test("a block comment WITHOUT a line terminator after return does not end the statement", async () => {
+  const NL = String.fromCharCode(10);
+  const js = ["function g() { return /* one line */ { a: 1 } / recordAuditEvent(x) / 2; }", ""].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/a.js:1 recorder-call recordAuditEvent"]);
+  });
+});
+
+test("a Unicode line separator inside a block comment after return ends the statement too", async () => {
+  const NL = String.fromCharCode(10);
+  const LS = String.fromCharCode(0x2028);
+  const PS = String.fromCharCode(0x2029);
+  const js = [
+    "function g() { return /*" + LS + "*/ { work(); } /recordAuditEvent(x)/.test(s); }",
+    "function h() { return /*" + PS + "*/ { work(); } /recordAuditEvent(y)/.test(s); }",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});
