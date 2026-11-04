@@ -36,7 +36,9 @@ invokes this pack and reads its result. Producer choices, stated for the reviewe
 | consumer `scripts/contracts/adapter.mjs` @ 292b3dd | `603bf08978ce1f7ac45caeefc48bfcbd4d63492352118c9d8ad05eb4dc401d17` |
 | consumer `scripts/contracts/jsonschema.mjs` @ 292b3dd | `306d51429b7b0be1cb9ab4442ace08866c237bbad87c091132796b87e767b707` |
 | consumer `scripts/enforce.mjs` @ 292b3dd | `8881e01da3760a7862a43b7eb8f5de952588cf2a8c97b5768b2e261386e50eb5` |
-| `scripts/standards.mjs` (the entrypoint) | recorded by the commit that carries this file; this file does not name its own revision (no self-SHA field is invented) |
+| `scripts/standards.mjs` (the entrypoint, blob content at base 3b1fca2, unchanged by this candidate) | `2f4eba26aefe1703250d8ac5f0cf8b73cab19fbb62e5ac45eb9c072350e7d174` |
+
+This file does not name the candidate commit that carries it: no self-SHA field is invented. The reviewed head is the pull request head.
 
 A Windows checkout with `core.autocrlf=true` converts line endings; hash the blob content
 (`git show <rev>:standards-adapter.json | sha256sum`), not a converted working file.
@@ -56,7 +58,7 @@ revision above. Without that variable the tests are skipped with a stated reason
 
 Consumer-owned test files run at the same revision (not part of this repository):
 `test/open-vocabulary.test.mjs`, `test/adapter-conformance.test.mjs`, `test/process-completion.test.mjs`:
-56 tests, 56 pass, 0 fail.
+56 tests, 56 pass, 0 fail. This repository's full suite at the candidate commit: `node scripts/test.mjs` 1385 tests, 1369 pass, 16 skipped (4 of them this candidate's consumer-conditional tests), 0 fail; `node scripts/boundaries-check.mjs` exit 0.
 
 ## Supported matrix and equivalence (criterion 6)
 
