@@ -2696,13 +2696,30 @@ const PLAN_FILE_PATTERN = new RegExp(
 /**
  * Is this repository-relative path a plan file: a `.md` anywhere under the plan directory.
  *
- * THE ONE PREDICATE. `detectPlanDiscrepancies` and `collectPlanOwnership` each carried their own copy
- * of this test. It is deliberately the CURRENT definition and nothing narrower: a `README.md` and a
- * nested `notes/scratch.md` are plan files today, and the numbered-filename inventory that would
- * exclude them is a separate, owner-decided change (ST-24 part B).
+ * THE ONE PREDICATE for "a file the plan directory holds". `detectPlanDiscrepancies` and
+ * `collectPlanOwnership` each carried their own copy of this test. It is deliberately broad: a
+ * `README.md` and a nested `notes/scratch.md` are plan files, so every rule that inspects the files of the
+ * plan directory still inspects them. Which of them are plan ITEMS is a different question, answered by
+ * `isPlanItemFile`.
  */
 export function isPlanFile(relPath) {
   return PLAN_FILE_PATTERN.test(relPath);
+}
+
+const PLAN_ITEM_FILE_PATTERN = new RegExp(
+  "^" + PLAN_DIR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/\\d{2}-[^/]+\\.md$",
+);
+
+/**
+ * Is this repository-relative path a plan-item file: directly in the plan directory and named by the
+ * numbered convention `NN-<section>.md` (`00-overview.md`, `01-standard-44.md`; Standard 44).
+ *
+ * THE MECHANICAL INVENTORY of plan items (owner rule, #117). Items are read from these files and from no
+ * other, and never because a link points at a file. A `README.md`, an unnumbered file and anything in a
+ * subdirectory is supporting documentation: still a plan file, never a source of plan items.
+ */
+export function isPlanItemFile(relPath) {
+  return PLAN_ITEM_FILE_PATTERN.test(relPath);
 }
 
 /**
@@ -2716,16 +2733,25 @@ export function isExecutableItem(item) {
 /**
  * Read every plan file once and return what both plan rules and the ownership collector derive from it.
  *
- *   planFiles   the plan files (`isPlanFile`), in the order `files` supplied them
- *   items       the `###` items of every plan file that WAS read, in file order then document order,
- *               exactly as `parsePlanItems` returns them (malformed-field diagnostics read these)
+ *   planFiles   every plan file (`isPlanFile`), in the order `files` supplied them: the plan-item files
+ *               AND the supporting documents, so a rule that inspects the plan directory still sees all
+ *   items       the `###` items of every plan-ITEM file (`isPlanItemFile`) that WAS read, in file order
+ *               then document order, exactly as `parsePlanItems` returns them (malformed-field
+ *               diagnostics read these)
  *   executable  `items` filtered by `isExecutableItem`
- *   documents   `{ file, items, orphans }` per plan file that was read, from `parsePlanDocument`
- *   unreadable  `{ file, reason }` per plan file whose text is unavailable. It is never given text.
- *   truncated   repository-relative paths of plan files that were read only up to the read cap. They
+ *   documents   `{ file, items, orphans }` per plan-item file that was read, from `parsePlanDocument`
+ *   unreadable  `{ file, reason }` per plan-item file whose text is unavailable. It is never given text.
+ *   truncated   repository-relative paths of plan-item files that were read only up to the read cap. They
  *               ARE parsed (a violation in the prefix is real), but they are listed so no consumer has
  *               to present them as whole; `detectPlanDiscrepancies` withdraws `planning.item-fields`
  *               for each.
+ *   supportingDocuments
+ *               `{ file, unreadable, truncated, itemShaped }` per plan file that is NOT a plan-item file
+ *               (a `README.md`, an unnumbered or nested file), in `planFiles` order. It is never in
+ *               `items` or `executable`. `unreadable` is the reason or null; `itemShaped` lists the
+ *               `{ title, line }` of each `###` item in it that carries `Status` or another plan field,
+ *               content the author should move into a numbered file; the reader reports it and does not
+ *               promote it. A link from the index to such a file changes none of this.
  *
  * No input is read twice and nothing is recorded on `run`: whether an unread file becomes an unknown
  * check is the caller's decision, because the two callers decide it differently (the audit records
@@ -2736,17 +2762,31 @@ export function readPlanItems(files, run) {
   const unreadable = [];
   const truncated = [];
   const documents = [];
+  const supportingDocuments = [];
   for (const f of planFiles) {
+    const file = run.rel(f);
     const content = run.textOf(f);
-    if (!content.available) {
-      unreadable.push({ file: run.rel(f), reason: content.reason });
+    if (!isPlanItemFile(file)) {
+      const entry = { file, unreadable: null, truncated: false, itemShaped: [] };
+      if (!content.available) entry.unreadable = content.reason;
+      else {
+        entry.truncated = run.truncated.has(f);
+        for (const item of parsePlanDocument(content.text, file).items) {
+          if (isExecutableItem(item) || PLAN_FIELDS.some((k) => item.fields.has(k))) entry.itemShaped.push({ title: item.title, line: item.line });
+        }
+      }
+      supportingDocuments.push(entry);
       continue;
     }
-    if (run.truncated.has(f)) truncated.push(run.rel(f));
-    documents.push({ file: run.rel(f), ...parsePlanDocument(content.text, run.rel(f)) });
+    if (!content.available) {
+      unreadable.push({ file, reason: content.reason });
+      continue;
+    }
+    if (run.truncated.has(f)) truncated.push(file);
+    documents.push({ file, ...parsePlanDocument(content.text, file) });
   }
   const items = documents.flatMap((d) => d.items);
-  return { planFiles, items, executable: items.filter(isExecutableItem), documents, unreadable, truncated };
+  return { planFiles, items, executable: items.filter(isExecutableItem), documents, unreadable, truncated, supportingDocuments };
 }
 
 /**
@@ -2786,7 +2826,7 @@ async function detectPlanDiscrepancies(files, run) {
   // A plan file read only up to the cap is a partial read of exactly the evidence this rule consumes
   // (#118). Its items before the cap are parsed and any violation among them is kept, but "no item
   // lacks a field" cannot be said of text nobody read, so the rule is withdrawn here, at the read
-  // site, for the paths `isPlanFile` selected — the same predicate that decided which files are read.
+  // site, for the paths `isPlanItemFile` selected: the numbered plan-item files, the only plan files items are read from.
   // The table is not used for this on purpose: `CONTENT_DERIVED_RULES` membership would also subject
   // `planning.item-fields` to the coarse whole-walk term (a `fixtures/` directory, an unlistable
   // directory), withdrawing it over repositories whose plan was read whole, or that have none.

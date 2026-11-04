@@ -27,7 +27,7 @@ async function owned(text) {
     await mkdir(path.join(root, "artifacts/backlog"), { recursive: true });
     await mkdir(path.join(root, PLAN), { recursive: true });
     await writeFile(path.join(root, "artifacts/backlog/github-mapping.json"), JSON.stringify({ target: "o/r" }), "utf8");
-    await writeFile(path.join(root, PLAN, "p.md"), text, "utf8");
+    await writeFile(path.join(root, PLAN, "01-p.md"), text, "utf8");
     return await own.collectPlanOwnership(root);
   } finally {
     await rm(root, { recursive: true, force: true });

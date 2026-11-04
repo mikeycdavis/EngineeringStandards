@@ -2,8 +2,8 @@
 //
 // Every case is a set of files written into a scratch repository, so it is deterministic and carries no
 // absolute path. Cases are chosen to put each classification predicate on both sides of its boundary:
-// plan-file or not, executable or not, read whole, truncated, or unread, fenced or not. Part B of ST-24 will
-// change what README, unnumbered and nested files mean; the cases that pin today's answer for them are marked.
+// plan-file or not, executable or not, read whole, truncated, or unread, fenced or not. Part B of ST-24 (now done) changed
+// what README, unnumbered and nested files mean (supporting documents, never items); the cases for them are marked.
 //
 // `budget` is the `--max-total-read-bytes` value for a case that must leave a file unread.
 
@@ -50,7 +50,7 @@ export const CASES = [
     files: { [`${PLAN}/00-overview.md`]: OVERVIEW, [`${PLAN}/01-a.md`]: "### Only item\n\n- **Status - amended:** READY\n- **Purpose:** p\n" },
   },
   {
-    id: "readme-item-shaped", // current behaviour: README.md is a plan file and its `###` with Status is executable (part B changes this)
+    id: "readme-item-shaped", // part B: README.md is a supporting document, its `###` with Status is reported and never executable
     files: {
       [`${PLAN}/00-overview.md`]: OVERVIEW,
       [`${PLAN}/01-a.md`]: item("One"),
@@ -58,7 +58,7 @@ export const CASES = [
     },
   },
   {
-    id: "readme-linked-from-index", // current behaviour: a link changes nothing, README.md is a plan file anyway
+    id: "readme-linked-from-index", // a link from the index changes nothing: README.md stays a supporting document
     files: {
       [`${PLAN}/00-overview.md`]: `${OVERVIEW}\nSee [the guide](README.md).\n`,
       [`${PLAN}/01-a.md`]: item("One"),
@@ -66,7 +66,7 @@ export const CASES = [
     },
   },
   {
-    id: "nested-and-unnumbered", // current behaviour: any .md anywhere under the directory is a plan file (part B changes this)
+    id: "nested-and-unnumbered", // part B: only numbered files directly in the directory are plan items
     files: {
       [`${PLAN}/00-overview.md`]: OVERVIEW,
       [`${PLAN}/01-a.md`]: item("One"),

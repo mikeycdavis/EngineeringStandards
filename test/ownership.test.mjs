@@ -141,7 +141,7 @@ test("no open issues is evaluated and ok, which is not the same as not evaluated
 
 test("a claim is the Tracked by field, not a mention in prose or another field", async () => {
   const root = await scratch({
-    [`${PLAN}/08.md`]:
+    [`${PLAN}/08-x.md`]:
       item("Owner", `GitHub issue [#10](${URL(10)})`) +
       `### Mentions only\n\n- **Status:** NOT_STARTED\n- **Purpose:** see [#11](${URL(11)}) and #12\n\nSee ${URL(13)}.\n`,
   });
@@ -156,7 +156,7 @@ test("a claim is the Tracked by field, not a mention in prose or another field",
 
 test("a multi-line Tracked by field yields every issue it names, once per item", async () => {
   const root = await scratch({
-    [`${PLAN}/04.md`]: item("Two", `GitHub issues\n  [#10](${URL(10)}) and\n  [#11](${URL(11)}) and again [#10](${URL(10)})`),
+    [`${PLAN}/04-x.md`]: item("Two", `GitHub issues\n  [#10](${URL(10)}) and\n  [#11](${URL(11)}) and again [#10](${URL(10)})`),
   });
   try {
     assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue).sort(), [10, 11]);
@@ -167,7 +167,7 @@ test("a multi-line Tracked by field yields every issue it names, once per item",
 
 test("a pull request reference in Tracked by is not an issue claim", async () => {
   const root = await scratch({
-    [`${PLAN}/08.md`]: item("PR", "[PR #15](https://github.com/o/r/pull/15), **merged**"),
+    [`${PLAN}/08-x.md`]: item("PR", "[PR #15](https://github.com/o/r/pull/15), **merged**"),
   });
   try {
     assert.deepEqual(await collectPlanClaims(root), []);
@@ -178,8 +178,8 @@ test("a pull request reference in Tracked by is not an issue claim", async () =>
 
 test("claims in two different files for one issue are both found", async () => {
   const root = await scratch({
-    [`${PLAN}/04.md`]: item("A", `[#10](${URL(10)})`),
-    [`${PLAN}/08.md`]: item("B", `[#10](${URL(10)})`),
+    [`${PLAN}/04-x.md`]: item("A", `[#10](${URL(10)})`),
+    [`${PLAN}/08-x.md`]: item("B", `[#10](${URL(10)})`),
   });
   try {
     const claims = await collectPlanClaims(root);
@@ -252,7 +252,7 @@ test("parseIssueSnapshot keeps only open issues of a gh-shaped list, and accepts
 // --- the command: three exit codes, and NOT_EVALUATED is not a pass ------------------------------
 
 test("CLI without an issue snapshot is NOT_EVALUATED, exit 2", async () => {
-  const root = await scratch({ [`${PLAN}/08.md`]: item("A", `[#10](${URL(10)})`) });
+  const root = await scratch({ [`${PLAN}/08-x.md`]: item("A", `[#10](${URL(10)})`) });
   try {
     const r = run(root);
     assert.equal(r.status, 2);
@@ -264,7 +264,7 @@ test("CLI without an issue snapshot is NOT_EVALUATED, exit 2", async () => {
 
 test("CLI: exit 0 when owned, 1 on a violation, with the issue named", async () => {
   const root = await scratch({
-    [`${PLAN}/08.md`]: item("A", `[#10](${URL(10)})`),
+    [`${PLAN}/08-x.md`]: item("A", `[#10](${URL(10)})`),
     "issues.json": JSON.stringify([{ number: 10, state: "OPEN" }]),
     "bad.json": JSON.stringify([{ number: 10, state: "OPEN" }, { number: 11, state: "OPEN" }]),
   });
@@ -401,7 +401,7 @@ test("releaseReady is false when a problem exists even if every issue is claimed
 
 test("the Tracked by value ends at the next field, a blank line or a heading", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### Next field\n\n- **Tracked by:** [#10](${URL(10)})\n- **Evidence:** discussed [#20](${URL(20)})\n\n` +
       `### Blank line\n\n- **Tracked by:** [#11](${URL(11)})\n\nprose naming [#21](${URL(21)})\n\n` +
       `### Heading\n\n- **Tracked by:** [#12](${URL(12)})\n### Other\n[#22](${URL(22)})\n`,
@@ -415,7 +415,7 @@ test("the Tracked by value ends at the next field, a blank line or a heading", a
 
 test("a Tracked by line before any heading, and non-markdown files, are not claims", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]: `- **Tracked by:** [#10](${URL(10)})\n\n### Real\n\n- **Tracked by:** [#11](${URL(11)})\n`,
+    [`${PLAN}/01-a.md`]: `- **Tracked by:** [#10](${URL(10)})\n\n### Real\n\n- **Tracked by:** [#11](${URL(11)})\n`,
     [`${PLAN}/notes.txt`]: item("Text", `[#12](${URL(12)})`),
   });
   try {
@@ -451,7 +451,7 @@ const withTracked = (label, value) =>
 
 test("a qualified Tracked by field is a claim, the same as the plain one", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]: withTracked("**Tracked by — external authority:**", `[#10](${URL(10)})`),
+    [`${PLAN}/01-a.md`]: withTracked("**Tracked by — external authority:**", `[#10](${URL(10)})`),
   });
   try {
     assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10]);
@@ -462,7 +462,7 @@ test("a qualified Tracked by field is a claim, the same as the plain one", async
 
 test("a label that only resembles Tracked by is not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by us:**", `[#10](${URL(10)})`) +
       withTracked("**Not Tracked by:**", `[#11](${URL(11)})`) +
       withTracked("**Tracked by - dash:**", `[#12](${URL(12)})`),
@@ -476,7 +476,7 @@ test("a label that only resembles Tracked by is not a claim", async () => {
 
 test("a link to another repository with a matching issue number is not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", "[#10](https://github.com/other/repo/issues/10)") +
       withTracked("**Tracked by:**", "[#11](https://example.com/o/r/issues/11)") +
       withTracked("**Tracked by:**", `[#12](${URL(12)})`),
@@ -492,7 +492,7 @@ test("a link to another repository with a matching issue number is not a claim",
 
 test("the repository match ignores case and a leading www, and is exact on owner and repo", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", "[#10](https://GitHub.com/O/R/issues/10)") +
       withTracked("**Tracked by:**", "[#11](https://www.github.com/o/r/issues/11)") +
       withTracked("**Tracked by:**", "[#12](https://github.com/o/r2/issues/12)") +
@@ -508,9 +508,9 @@ test("the repository match ignores case and a leading www, and is exact on owner
 test("with no mapped repository, an issue link cannot be judged and the read fails rather than guessing", async () => {
   const root = await scratch({
     [MAP]: JSON.stringify({ items: {} }),
-    [`${PLAN}/a.md`]: item("A", `[#10](${URL(10)})`),
+    [`${PLAN}/01-a.md`]: item("A", `[#10](${URL(10)})`),
   });
-  const bare = await scratch({ [MAP]: JSON.stringify({ items: {} }), [`${PLAN}/a.md`]: item("A", "none yet") });
+  const bare = await scratch({ [MAP]: JSON.stringify({ items: {} }), [`${PLAN}/01-a.md`]: item("A", "none yet") });
   try {
     await assert.rejects(() => collectPlanClaims(root), /target/);
     assert.deepEqual(await collectPlanClaims(bare), [], "no link, so nothing needed the repository");
@@ -536,7 +536,7 @@ test("a hierarchy container named by exactly one plan item is a violation, never
 test("CLI: a plan item claiming a container exits 1 and names the class", async () => {
   const root = await scratch({
     [MAP]: JSON.stringify({ target: "o/r", items: { "FE-01": { number: 70 } } }),
-    [`${PLAN}/a.md`]: withTracked("**Tracked by — mistaken:**", `[#70](${URL(70)})`),
+    [`${PLAN}/01-a.md`]: withTracked("**Tracked by — mistaken:**", `[#70](${URL(70)})`),
     "issues.json": JSON.stringify([70]),
   });
   try {
@@ -549,7 +549,7 @@ test("CLI: a plan item claiming a container exits 1 and names the class", async 
 });
 
 test("the canonical TrackedBy spelling is a claim too", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: withTracked("**TrackedBy:**", `[#10](${URL(10)})`) });
+  const root = await scratch({ [`${PLAN}/01-a.md`]: withTracked("**TrackedBy:**", `[#10](${URL(10)})`) });
   try {
     assert.deepEqual((await collectPlanClaims(root)).map((c) => c.issue), [10]);
   } finally {
@@ -561,7 +561,7 @@ test("the canonical TrackedBy spelling is a claim too", async () => {
 
 test("the Tracked by value ends at an indented next field, as at an unindented one", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### Indented\n\n  - **Tracked by:** none\n  - **Evidence:** discussed [#20](${URL(20)})\n\n` +
       `### Mixed\n\n- **Tracked by:** [#10](${URL(10)})\n  - **Evidence:** discussed [#21](${URL(21)})\n\n`,
   });
@@ -574,7 +574,7 @@ test("the Tracked by value ends at an indented next field, as at an unindented o
 
 test("an issue URL embedded inside a longer URL or word is not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `[x](https://redirect.example/?next=${URL(10)})`) +
       withTracked("**Tracked by:**", `[y](https://redirect.example/${URL(11)})`) +
       withTracked("**Tracked by:**", `see xhttps://github.com/o/r/issues/12`),
@@ -588,7 +588,7 @@ test("an issue URL embedded inside a longer URL or word is not a claim", async (
 
 test("issue URLs at a URL boundary still claim: bare, bracketed, parenthesised, angle-bracketed", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `${URL(10)}`) +
       withTracked("**Tracked by:**", `[#11](${URL(11)})`) +
       withTracked("**Tracked by:**", `<${URL(12)}>`) +
@@ -607,7 +607,7 @@ test("issue URLs at a URL boundary still claim: bare, bracketed, parenthesised, 
 
 test("a bold list item under Tracked by is a continuation, not a next field", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### Indented\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n  - **[#11](${URL(11)})**\n\n` +
       `### Unindented\n\n- **Tracked by:**\n- **[#12](${URL(12)})**\n\n` +
       `### Tabbed, CRLF\r\n\r\n- **Tracked by:**\r\n\t- **[#13](${URL(13)})**\r\n\r\n`,
@@ -621,7 +621,7 @@ test("a bold list item under Tracked by is a continuation, not a next field", as
 
 test("the value still ends at a line the canonical grammar reads as a field, after bold list items", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n  - **Evidence:** discussed [#20](${URL(20)})\n  - **[#21](${URL(21)})**\n\n` +
       `### B\n\n- **Tracked by:**\n  - **[#11](${URL(11)})**\n- **Evidence — qualified:** [#22](${URL(22)})\n\n` +
       `### C\n\n- **Tracked by:**\n  - **[#12](${URL(12)})**\n- **Purpose:** [#23](${URL(23)})\n\n` +
@@ -636,7 +636,7 @@ test("the value still ends at a line the canonical grammar reads as a field, aft
 
 test("a malformed field attempt ends the value, and a bold link item with trailing text does not", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**: parent\n- **Evidence**: discussed [#20](${URL(20)})\n\n` +
       `### B\n\n- **Tracked by:** [#11](${URL(11)})\n* **Evidence:** discussed [#21](${URL(21)})\n\n`,
   });
@@ -649,7 +649,7 @@ test("a malformed field attempt ends the value, and a bold link item with traili
 
 test("an issue URL after emphasis, HTML quoting or closing, or a list separator is still a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `**${URL(10)}**`) +
       withTracked("**Tracked by:**", `<a href="${URL(12)}">x</a>`) +
       withTracked("**Tracked by:**", `<b>${URL(13)}</b>`) +
@@ -668,7 +668,7 @@ test("an issue URL after emphasis, HTML quoting or closing, or a list separator 
 
 test("a URL embedded after path, query, word or colon characters is still not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `https://x.example/?u=${URL(10)}`) +
       withTracked("**Tracked by:**", `https://x.example/${URL(11)}`) +
       withTracked("**Tracked by:**", `xhttps://github.com/o/r/issues/12`) +
@@ -687,7 +687,7 @@ test("a URL embedded after path, query, word or colon characters is still not a 
 
 test("a colon-less or wrapped malformed known field ends the value, as the canonical parser reads it", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### A\n\n- **Tracked by:**\n  - **[#10](${URL(10)})**\n- **Purpose** discussion [#20](${URL(20)})\n\n` +
       `### B\n\n- **Tracked by:** [#11](${URL(11)})\n  - **Verification** [#21](${URL(21)})\n\n` +
       `### C\n\n- **Tracked by:** [#12](${URL(12)})\n* **Purpose\n  wrapped [#22](${URL(22)})\n\n` +
@@ -706,7 +706,7 @@ test("a colon-less or wrapped malformed known field ends the value, as the canon
 
 test("a separator inside an already-started URL does not make the URL after it a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `[redirect](https://redirect.example/?next;${URL(10)})`) +
       withTracked("**Tracked by:**", `[redirect](https://redirect.example/?next,${URL(11)})`) +
       withTracked("**Tracked by:**", `https://redirect.example/?next="${URL(12)}`) +
@@ -725,7 +725,7 @@ test("a separator inside an already-started URL does not make the URL after it a
 
 test("a misplaced-colon field whose label has parentheses or a slash ends the value; bold link and URL items do not", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### A\n\n- **Tracked by:** [#10](${URL(10)})\n- **Verification (CI/local)**: [#20](${URL(20)})\n\n` +
       `### B\n\n- **Tracked by:** [#11](${URL(11)})\n* **Purpose (a/b)**: [#21](${URL(21)})\n\n` +
       `### C\n\n- **Tracked by:**\n  - **[#12](${URL(12)})**: parent\n  - **${URL(13)}**: note\n\n`,
@@ -739,7 +739,7 @@ test("a misplaced-colon field whose label has parentheses or a slash ends the va
 
 test("an issue URL inside a non-hierarchical URL (data:, mailto:, urn:, javascript:) is not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `[payload](data:text/plain,${URL(10)})`) +
       withTracked("**Tracked by:**", `[mail](mailto:a@b.example?body=x;${URL(11)})`) +
       withTracked("**Tracked by:**", `[u](urn:x:y,${URL(12)})`) +
@@ -758,7 +758,7 @@ test("an issue URL inside a non-hierarchical URL (data:, mailto:, urn:, javascri
 
 test("an issue URL right after ( < [ inside a token that began with a scheme is not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       withTracked("**Tracked by:**", `data:text/plain,(${URL(10)})`) +
       withTracked("**Tracked by:**", `data:text/plain,<${URL(11)}>`) +
       withTracked("**Tracked by:**", `data:text/plain,[${URL(12)}]`) +
