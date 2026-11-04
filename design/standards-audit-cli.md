@@ -154,6 +154,7 @@ something absent, unproven, or contradictory.
 | `missing-planning-artifacts` | Missing planning artifacts | Absence of `artifacts/project-plan-breakdown/`, or a breakdown with no `00-overview.md` | `warning` |
 | `no-test-surface` | Verification surface | No test files found; audit-only, no rule binding | `info` |
 | `no-ci-configuration` | Verification surface | No CI configuration found; audit-only, no rule binding | `info` |
+| `detected-audit-surface` | Audit surface | Where audit-named types, tables, recorder calls and framework attributes appear in non-test code, by a fixed idiom list reported in `detail.idioms`; always emitted, with `detail.unread`, `detail.incomplete` and `detail.blindSpots` as separate parts; audit-only, no rule binding, `INFERRED` | `info` |
 | `committed-conflict-markers` | Unresolved merge conflicts | A conflict-marker group (opener, separator and terminator, each at column 0 and exactly seven characters) in the working-tree copy of a tracked file the audit reads, outside Markdown fenced blocks; audit-only, no rule binding, `INFERRED` | `warning` |
 | `unverified-functionality` | Unverified functionality | Capabilities with no corresponding test coverage | `warning` |
 | `potential-dead-code` | Potential dead code | Unreferenced modules, unreachable routes, exports with no importer | `info` |
@@ -253,7 +254,7 @@ requirement that produced it, so a reader can go from a finding to the rule with
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": "1.1.0",
   "repo": "F:/Repos/ExampleProject",
   "auditedAt": "2026-08-08T16:40:00Z",
   "findings": [
@@ -265,10 +266,43 @@ requirement that produced it, so a reader can go from a finding to the rule with
       "evidence": ["artifacts/"],
       "message": "No artifacts/project-plan-breakdown/ directory exists.",
       "standardRef": "standards/44-existing-project-reconstruction.md#r4--required-artifacts-and-canonical-paths"
+    },
+    {
+      "id": "detected-audit-surface",
+      "category": "Audit surface",
+      "severity": "info",
+      "label": "INFERRED",
+      "evidence": ["src/audit.js"],
+      "message": "1 audit-named construct(s) were observed in 1 non-test code file(s) of the working tree ...",
+      "standardRef": "standards/03-auditing.md#r1--the-core-rule",
+      "rule": null,
+      "detail": {
+        "observed": [{ "file": "src/audit.js", "line": 4, "kind": "recorder-definition", "identifier": "recordAuditEvent", "family": "javascript-typescript", "idiom": "recorder.named-call" }],
+        "observedCount": 1,
+        "unread": [],
+        "unclassified": [],
+        "incomplete": false,
+        "incompleteReasons": [],
+        "blindSpots": [{ "id": "construct:string-literal-ddl", "kind": "construct", "description": "..." }],
+        "languageFamilies": [],
+        "idioms": [],
+        "excluded": {}
+      }
     }
   ]
 }
 ```
+
+`findings[].detail` is an optional member carried only by findings that need structured parts (today, only
+`detected-audit-surface`); every other finding is serialised unchanged. Adding it and the always-present
+`detected-audit-surface` finding is an additive change to the result, a MINOR bump under Standard 15 R3: the audit
+envelope's `schemaVersion` is `"1.1.0"`, and so is the validate envelope's.
+
+**Direction of error for `detected-audit-surface`.** The observation is `INFERRED`, bound to no rule, and cannot
+establish a pass. Where the source is ambiguous it is resolved toward over-reporting, never toward hiding a real
+construct. For example, a `#` that is a MySQL comment in one dialect and an identifier character in T-SQL or Oracle
+(`SELECT a#note ...`) is read as part of the identifier, so a MySQL comment attached to an identifier is still listed
+as a construct. No per-dialect detection exists because the locator has no input that names the dialect.
 
 Every finding carries one of the Standard 44 evidence labels (`OBSERVED`, `INFERRED`,
 `CONFIRMED_BY_OWNER`, `UNKNOWN`) so that a consumer can distinguish a fact from a heuristic — the
