@@ -1377,3 +1377,12 @@ test("a binary plus or minus before a brace still starts an expression", async (
     ]);
   });
 });
+
+test("await is an identifier in a classic script: a brace on the next line is a block; on the same line it is the operand", async () => {
+  const NL = String.fromCharCode(10);
+  const cjs = ["let await = 1; await", "{ work(); } /recordAuditEvent(a)/.test(s);", ""].join(NL);
+  const mjs = ["async function f() { await { a: 1 } / recordAuditEvent(b) / 2; }", ""].join(NL);
+  await withRepo({ "src/a.cjs": cjs, "src/b.mjs": mjs }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), ["src/b.mjs:1 recorder-call recordAuditEvent"]);
+  });
+});

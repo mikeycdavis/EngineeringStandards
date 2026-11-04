@@ -762,15 +762,17 @@ function splitSource(text, ext, options = {}) {
       const statement = statementSoFar().replace(/:$/, "").trim();
       return !/^(?:case\b[\s\S]*|default|[A-Za-z_$][\w$]*)$/.test(statement);
     }
-    // `return` and `yield` take an expression only on the SAME line: a line terminator after them ends the
-    // statement (automatic semicolon insertion), so a brace on the next line is a block.
-    const sameLine = /(?:^|[^\w$.])(?:return|yield)([^\S\n\r\u2028\u2029]*)$/.exec(code.slice(-24));
+    // `return`, `yield` and `await` take an expression only on the SAME line: a line terminator after them ends
+    // the statement (automatic semicolon insertion) or, for `await`, which is an ordinary identifier in a classic
+    // script, leaves a plain statement, so a brace on the next line is a block. A brace on the same line cannot
+    // follow an identifier, so there the word is the keyword and the brace is its operand.
+    const sameLine = /(?:^|[^\w$.])(?:return|yield|await)([^\S\n\r\u2028\u2029]*)$/.exec(code.slice(-24));
     // ...unless a block comment holding a line terminator sits between the keyword and the brace.
     if (sameLine !== null) return blockBreakAt < code.length - sameLine[1].length;
-    if (/(?:^|[^\w$.])(?:return|yield)\s*$/.test(code.slice(-24))) return false;
+    if (/(?:^|[^\w$.])(?:return|yield|await)\s*$/.test(code.slice(-24))) return false;
     return (
       EXPRESSION_BRACE_AFTER.has(prev) ||
-      /(?:^|[^\w$.])(?:typeof|case|in|delete|void|throw|new|await)\s*$/.test(code.slice(-24))
+      /(?:^|[^\w$.])(?:typeof|case|in|delete|void|throw|new)\s*$/.test(code.slice(-24))
     );
   };
 
