@@ -32,7 +32,7 @@ const cli = (root, ...args) =>
   spawnSync(process.execPath, [SCRIPT, "--root", root, "--issues", path.join(root, "issues.json"), ...args], { encoding: "utf8" });
 
 test("Q1: a Tracked by under a ## section heading is a reported problem; the issue stays unowned, not silently absent", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n\n## Section\n- **Tracked by:** ${U(2)}\n` });
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n\n## Section\n- **Tracked by:** ${U(2)}\n` });
   try {
     const own = await collectPlanOwnership(root);
     assert.deepEqual(own.claims.map((c) => c.issue), [1]);
@@ -47,10 +47,10 @@ test("Q1: a Tracked by under a ## section heading is a reported problem; the iss
 });
 
 test("Q1: a #### heading stays inside the ### item, and the claim keeps the ### title", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `### Item\n#### Detail\n- **Tracked by:** ${U(1)}\n` });
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `### Item\n#### Detail\n- **Tracked by:** ${U(1)}\n` });
   try {
     const own = await collectPlanOwnership(root);
-    assert.deepEqual(own.claims, [{ file: `${PLAN}/a.md`, title: "Item", issue: 1 }]);
+    assert.deepEqual(own.claims, [{ file: `${PLAN}/01-a.md`, title: "Item", issue: 1 }]);
     assert.deepEqual(own.problems, []);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -58,7 +58,7 @@ test("Q1: a #### heading stays inside the ### item, and the claim keeps the ### 
 });
 
 test("Q1: a ## heading is not an item, so it cannot own a claim, and a following ### item still can", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `## Section\n- **Tracked by:** ${U(1)}\n### Item\n- **Tracked by:** ${U(2)}\n` });
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `## Section\n- **Tracked by:** ${U(1)}\n### Item\n- **Tracked by:** ${U(2)}\n` });
   try {
     const own = await collectPlanOwnership(root);
     assert.deepEqual(own.claims.map((c) => `${c.issue}@${c.title}`), ["2@Item"]);
@@ -69,7 +69,7 @@ test("Q1: a ## heading is not an item, so it cannot own a claim, and a following
 });
 
 test("Q3: a second Tracked by is a duplicate problem; the first claim survives and the issue is claimed once, not twice", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n- **Tracked by:** ${U(1)}\n- **TrackedBy:** ${U(2)}\n` });
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n- **Tracked by:** ${U(1)}\n- **TrackedBy:** ${U(2)}\n` });
   try {
     const own = await collectPlanOwnership(root);
     assert.deepEqual(own.claims.map((c) => c.issue), [1]);
@@ -85,7 +85,7 @@ test("Q3: a second Tracked by is a duplicate problem; the first claim survives a
 });
 
 test("a malformed Tracked by is named as malformed, with its line, and exits 1", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `### Item\n- **Tracked by - ext:** ${U(1)}\n` }, [1]);
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `### Item\n- **Tracked by - ext:** ${U(1)}\n` }, [1]);
   try {
     const r = cli(root, "--json");
     assert.equal(r.status, 1);
@@ -98,17 +98,17 @@ test("a malformed Tracked by is named as malformed, with its line, and exits 1",
   }
 });
 
-test("Q4: a plan file in a subdirectory is read, and the JSON issues shape is unchanged", async () => {
+test("Q4 (ST-24 part B): a plan file in a subdirectory is a supporting document and yields no claim; the JSON issues shape is unchanged", async () => {
   const root = await scratch({ [`${PLAN}/sub/deep/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n` }, [1]);
   try {
     const r = cli(root, "--json");
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 1, "the open issue is claimed by nothing");
     const json = JSON.parse(r.stdout);
     assert.deepEqual(json.issues[0], {
       number: 1,
-      classification: CLASS.claimedOnce,
-      owners: [{ file: `${PLAN}/sub/deep/a.md`, title: "Item" }],
-      releaseEligible: true,
+      classification: CLASS.absent,
+      owners: [],
+      releaseEligible: false,
     });
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -117,7 +117,7 @@ test("Q4: a plan file in a subdirectory is read, and the JSON issues shape is un
 
 test("Q4: a plan file over the read cap makes the CLI NOT_EVALUATED (exit 2), not a pass", async () => {
   const big = `### Item\n- **Tracked by:** ${U(1)}\n\n${"filler line\n".repeat(40000)}`;
-  const root = await scratch({ [`${PLAN}/a.md`]: big }, [1]);
+  const root = await scratch({ [`${PLAN}/01-a.md`]: big }, [1]);
   try {
     const r = cli(root);
     assert.equal(r.status, 2);
@@ -139,7 +139,7 @@ test("Q4: a repository with no plan directory still evaluates, with no claims an
 });
 
 test("a ### heading with no title cannot own a claim: reported, never a claim", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `### \n- **Tracked by:** ${U(1)}\n` }, [1]);
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `### \n- **Tracked by:** ${U(1)}\n` }, [1]);
   try {
     const own = await collectPlanOwnership(root);
     assert.deepEqual(own.claims, []);
@@ -150,7 +150,7 @@ test("a ### heading with no title cannot own a claim: reported, never a claim", 
 });
 
 test("Q4: a plan file the read budget skipped, a capped walk and an unlistable plan directory each end NOT_EVALUATED", async () => {
-  const root = await scratch({ [`${PLAN}/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n` }, [1]);
+  const root = await scratch({ [`${PLAN}/01-a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n` }, [1]);
   try {
     const spent = await collectSurface(root, { maxTotalReadBytes: 1 });
     await assert.rejects(() => collectPlanOwnership(root, { surface: spent }), /a\.md was not read/);

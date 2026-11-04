@@ -35,7 +35,7 @@ test("#101 P2 (standards.mjs:2211): an empty `##` or `#` heading ends attributio
     const text = `### A\n${heading}\n- **Tracked by:** ${U(2)}\n`;
     const { items } = parsePlanDocument(text, "p.md");
     assert.deepEqual(items[0].spans.map((s) => s.attributed), [false], JSON.stringify(heading));
-    const root = await scratch({ [`${PLAN}/p.md`]: text });
+    const root = await scratch({ [`${PLAN}/01-p.md`]: text });
     try {
       const own = await collectPlanOwnership(root);
       assert.deepEqual(own.claims, [], JSON.stringify(heading));
@@ -54,7 +54,7 @@ test("#101 P2 (standards.mjs:2211): text that only starts with # is not a headin
 for (const dir of ["vendor", "build", "node_modules"]) {
   test(`#101 P2 (ownership.mjs:184): a plan file under a framework-excluded \`${dir}\` directory is NOT_EVALUATED, not silently absent`, async () => {
     const root = await scratch({
-      [`${PLAN}/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n`,
+      [`${PLAN}/01-a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n`,
       [`${PLAN}/${dir}/b.md`]: `### Hidden\n- **Tracked by:** ${U(2)}\n- **Tracked by:** ${U(2)}\n`,
     });
     try {
@@ -67,7 +67,7 @@ for (const dir of ["vendor", "build", "node_modules"]) {
 
 test("#101 P2 (ownership.mjs:184): an exclusion elsewhere, or one the repository itself declared, does not withhold the plan", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n`,
+    [`${PLAN}/01-a.md`]: `### Item\n- **Tracked by:** ${U(1)}\n`,
     "docs/fixtures/x.md": "x\n",
     "artifacts/vendor/y.md": "y\n",
   });
@@ -103,7 +103,7 @@ test("#99 P2 (ownership.mjs:127): `](` bypasses the enclosing-scheme check only 
 
 test("#99 P2 (ownership.mjs:127): end to end, a stray `](` inside a scheme token is not a claim", async () => {
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### Bad\n- **Tracked by:** data:text/plain,](${U(10)})\n` +
       `### Good\n- **Tracked by:** x:[#11](${U(11)})\n`,
   });
@@ -148,7 +148,7 @@ test("#102 P2 (ownership.mjs:125): a backslash-escaped bracket opens or closes n
 test("#102 P2 (ownership.mjs:125): end to end, an escaped label opener inside a scheme token is not a claim", async () => {
   const B = "\\";
   const root = await scratch({
-    [`${PLAN}/a.md`]:
+    [`${PLAN}/01-a.md`]:
       `### Bad\n- **Tracked by:** data:${B}[x](${U(20)})\n` +
       `### Good\n- **Tracked by:** data:[x](${U(21)})\n`,
   });

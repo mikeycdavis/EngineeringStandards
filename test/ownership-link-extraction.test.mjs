@@ -145,7 +145,7 @@ async function plan(text) {
   await mkdir(path.join(root, "artifacts/backlog"), { recursive: true });
   await mkdir(path.join(root, "artifacts/project-plan-breakdown"), { recursive: true });
   await writeFile(path.join(root, "artifacts/backlog/github-mapping.json"), JSON.stringify({ target: "o/r" }), "utf8");
-  await writeFile(path.join(root, "artifacts/project-plan-breakdown/p.md"), text, "utf8");
+  await writeFile(path.join(root, "artifacts/project-plan-breakdown/01-p.md"), text, "utf8");
   return root;
 }
 
@@ -154,7 +154,7 @@ test("end to end: a star-joined plan value that fits the read cap yields its one
   assert.ok(Buffer.byteLength(text) < 400000);
   const root = await plan(text);
   try {
-    assert.deepEqual(await collectPlanClaims(root), [{ file: "artifacts/project-plan-breakdown/p.md", title: "A", issue: 1 }]);
+    assert.deepEqual(await collectPlanClaims(root), [{ file: "artifacts/project-plan-breakdown/01-p.md", title: "A", issue: 1 }]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -26,9 +26,11 @@
  *   4. ONE DEFINITION. No `scripts/*.mjs` outside its comments names the plan directory except at its
  *      single definition.
  *
- * The cases marked CURRENT pin what is true today and what part B of ST-24 will change on purpose
- * (README and nested files stop being plan items). They are here so that change is a visible edit to a
- * test, not a silent one.
+ * PART B (the numbered-filename inventory) changes ONE thing on purpose: README, unnumbered and nested files
+ * stop being a source of plan items and become `supportingDocuments`. Reader equivalence therefore holds
+ * against the frozen reader RESTRICTED to the numbered files (identity for any case whose plan files are all
+ * numbered), and the cases that differ are the visible edits: `readme-item-shaped`,
+ * `readme-linked-from-index` and `nested-and-unnumbered`.
  */
 
 import { test } from "node:test";
@@ -45,6 +47,7 @@ import {
   conflictGroups,
   isExecutableItem,
   isPlanFile,
+  isPlanItemFile,
   markdownLines,
   readPlanItems,
 } from "../scripts/standards.mjs";
@@ -80,7 +83,17 @@ const shape = (r, run) => ({
 
 // --- 1. reader equivalence ---------------------------------------------------------------------------
 
-const observed = { truncated: 0, unreadable: 0, executable: 0, nonExecutable: 0, nested: 0, readme: 0 };
+// The numbered plan-item convention, spelled out independently of the implementation under test.
+const NUMBERED = new RegExp("^" + PLAN + "/[0-9]{2}-[^/]+[.]md$");
+const onlyNumbered = (r) => ({
+  ...r,
+  items: r.items.filter((i) => NUMBERED.test(i.file)),
+  executable: r.executable.filter((i) => NUMBERED.test(i.file)),
+  unreadable: r.unreadable.filter((u) => NUMBERED.test(u.file)),
+  truncated: r.truncated.filter((t) => NUMBERED.test(t)),
+});
+
+const observed = { truncated: 0, unreadable: 0, executable: 0, nonExecutable: 0, nested: 0, readme: 0, supporting: 0, itemShaped: 0 };
 
 for (const c of CASES) {
   test(`readPlanItems equals the frozen inline reader: ${c.id}`, async () => {
@@ -89,9 +102,25 @@ for (const c of CASES) {
       const { run, files } = await collectSurface(dir, { maxTotalReadBytes: c.budget ?? AMPLE });
       const now = readPlanItems(files, run);
       const then = legacyReadPlan(files, run);
-      assert.deepEqual(shape(now, run), shape(then, run));
+      // Part B changes ONE thing, on purpose: only numbered plan-item files are a source of items. So the
+      // frozen reader's answer, restricted to the numbered files, is the expected answer; for a case whose
+      // plan files are all numbered the restriction removes nothing and this is exact equality.
+      assert.deepEqual(shape(now, run), shape(onlyNumbered(then), run));
       // The reader is the same object graph, not merely an equal one, for the parts detectors consume.
-      assert.deepEqual(now.executable, then.executable);
+      assert.deepEqual(now.executable, onlyNumbered(then).executable);
+      // planFiles is NOT narrowed: every rule that inspects plan-directory files still inspects them all.
+      assert.deepEqual(now.planFiles, then.planFiles);
+      // Every plan file that is not numbered is a supporting document, in planFiles order, and no item of it
+      // is in items or executable.
+      assert.deepEqual(
+        now.supportingDocuments.map((d) => d.file),
+        now.planFiles.map((f) => run.rel(f)).filter((f) => !NUMBERED.test(f)),
+      );
+      for (const d of now.supportingDocuments) {
+        assert.ok(!now.items.some((i) => i.file === d.file), `${d.file} must contribute no items`);
+        assert.ok(!now.executable.some((i) => i.file === d.file), `${d.file} must not be executable`);
+        assert.ok(!now.unreadable.some((u) => u.file === d.file) && !now.truncated.includes(d.file));
+      }
 
       observed.truncated += now.truncated.length;
       observed.unreadable += now.unreadable.length;
@@ -99,6 +128,8 @@ for (const c of CASES) {
       observed.nonExecutable += now.items.length - now.executable.length;
       observed.nested += now.planFiles.filter((f) => run.rel(f).slice(PLAN.length + 1).includes("/")).length;
       observed.readme += now.planFiles.filter((f) => run.rel(f).endsWith("/README.md")).length;
+      observed.supporting += now.supportingDocuments.length;
+      observed.itemShaped += now.supportingDocuments.reduce((n, d) => n + d.itemShaped.length, 0);
 
       // An unread file is never given text, and a truncated one is never listed as whole.
       for (const u of now.unreadable) assert.ok(!now.items.some((i) => i.file === u.file), `${u.file} must contribute no items`);
@@ -116,6 +147,8 @@ test("the corpus exercises every reader state (it is not vacuous)", () => {
   assert.ok(observed.nonExecutable >= 3, "items that are not executable");
   assert.ok(observed.nested >= 2, "nested plan files");
   assert.ok(observed.readme >= 2, "README plan files");
+  assert.ok(observed.supporting >= 5, "supporting documents");
+  assert.ok(observed.itemShaped >= 3, "item-shaped content outside the numbered inventory");
 });
 
 test("the exported predicates are the single plan-file and executable definitions", () => {
@@ -138,19 +171,92 @@ test("the exported predicates are the single plan-file and executable definition
   assert.equal(isExecutableItem({ fields: new Map([["Purpose", "p"]]) }), false);
 });
 
-test("CURRENT behaviour (ST-24 part B changes it): README.md and nested files are plan files", () => {
+test("isPlanItemFile: only NN-<section>.md directly in the plan directory is a plan item", () => {
+  for (const [p, want] of [
+    [`${PLAN}/00-overview.md`, true],
+    [`${PLAN}/01-standard-44.md`, true],
+    [`${PLAN}/99-x.md`, true],
+    [`${PLAN}/README.md`, false],
+    [`${PLAN}/unnumbered.md`, false],
+    [`${PLAN}/1-short.md`, false],
+    [`${PLAN}/001-long.md`, false],
+    [`${PLAN}/01-.md`, false],
+    [`${PLAN}/01.md`, false],
+    [`${PLAN}/01-a.MD`, false],
+    [`${PLAN}/01-a.md.txt`, false],
+    [`${PLAN}/notes/01-a.md`, false],
+    [`${PLAN}/archive/2025/01-old.md`, false],
+    [`${PLAN}-old/01-a.md`, false],
+    [`docs/${PLAN}/01-a.md`, false],
+    ["01-a.md", false],
+    ["", false],
+  ]) {
+    assert.equal(isPlanItemFile(p), want, p);
+    // An item file is always a plan file; the inventory is a subset of the plan files, never wider.
+    if (want) assert.equal(isPlanFile(p), true, p);
+  }
+  // The plan-file predicate is unchanged: it still names every .md under the directory.
   assert.equal(isPlanFile(`${PLAN}/README.md`), true);
   assert.equal(isPlanFile(`${PLAN}/notes/scratch.md`), true);
   assert.equal(isPlanFile(`${PLAN}/unnumbered.md`), true);
 });
 
-test("CURRENT behaviour (ST-24 part B changes it): a README with an item and a Status is executable", async () => {
+async function readOf(files) {
+  const dir = await materialise(files);
+  try {
+    const { run, files: found } = await collectSurface(dir, { maxTotalReadBytes: AMPLE });
+    return { read: readPlanItems(found, run), run };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("a README with an item and a Status is a supporting document, never executable, and is reported", async () => {
   const c = CASES.find((x) => x.id === "readme-item-shaped");
-  const dir = await materialise(c.files);
+  const { read, run } = await readOf(c.files);
+  assert.deepEqual(read.executable.map((i) => i.file), [`${PLAN}/01-a.md`]);
+  assert.deepEqual(read.items.map((i) => i.file), [`${PLAN}/01-a.md`]);
+  // Still a plan file, so rules that inspect plan-directory files still inspect it.
+  assert.ok(read.planFiles.some((f) => run.rel(f).endsWith("/README.md")));
+  assert.deepEqual(read.supportingDocuments, [
+    { file: `${PLAN}/README.md`, unreadable: null, truncated: false, itemShaped: [{ title: "How to read", line: 3 }] },
+  ]);
+});
+
+test("a link from the index to a support file does not change its classification", async () => {
+  const base = CASES.find((x) => x.id === "readme-linked-from-index").files;
+  const files = {
+    ...base,
+    [`${PLAN}/notes.md`]: "### Loose\n\n- **Status:** NOT_STARTED\n",
+    [`${PLAN}/notes/scratch.md`]: "### Scratch\n\n- **Status:** READY\n",
+  };
+  const links = "\n[a](README.md) [b](./notes.md) [c](notes/scratch.md)\n";
+  const linked = (await readOf({ ...files, [`${PLAN}/00-overview.md`]: "# Overview\n" + links })).read;
+  const bare = (await readOf({ ...files, [`${PLAN}/00-overview.md`]: "# Overview\n\nNo links here.\n" })).read;
+  const view = (r) => ({
+    items: r.items.map((i) => i.file),
+    executable: r.executable.map((i) => i.file),
+    supporting: r.supportingDocuments,
+  });
+  assert.deepEqual(view(linked), view(bare));
+  assert.deepEqual(view(linked).executable, [`${PLAN}/01-a.md`]);
+  assert.deepEqual(view(linked).supporting.map((d) => d.file).sort(), [`${PLAN}/README.md`, `${PLAN}/notes.md`, `${PLAN}/notes/scratch.md`]);
+});
+
+test("a truncated supporting document is recorded on the document, not as a truncated plan-item file", async () => {
+  const dir = await materialise({
+    [`${PLAN}/00-overview.md`]: "# Overview\n",
+    [`${PLAN}/01-a.md`]: "### One\n\n- **Status:** READY\n",
+    [`${PLAN}/README.md`]: "# Guide\n\n### In the guide\n\n- **Purpose:** p\n",
+  });
   try {
     const { run, files } = await collectSurface(dir, { maxTotalReadBytes: AMPLE });
+    const readme = files.find((f) => run.rel(f).endsWith("/README.md"));
+    run.truncated.add(readme);
     const read = readPlanItems(files, run);
-    assert.deepEqual(read.executable.map((i) => i.file).sort(), [`${PLAN}/01-a.md`, `${PLAN}/README.md`]);
+    assert.deepEqual(read.truncated, [], "a truncated README is not a truncated plan-item file");
+    assert.equal(read.supportingDocuments[0].truncated, true);
+    assert.deepEqual(read.supportingDocuments[0].itemShaped, [{ title: "In the guide", line: 3 }]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -167,6 +273,43 @@ test("a field's continuation text reaches the reader through the item spans", as
     const span = one.spans.find((s) => s.key === "Acceptance Criteria");
     assert.match(span.text, /first criterion/);
     assert.match(span.text, /second criterion/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("end to end: a README with an incomplete item shaped like a plan item is not checked as one", async () => {
+  const run = (files) => {
+    return materialise(files).then((dir) => {
+      try {
+        const r = spawnSync(process.execPath, [path.join(ROOT, "scripts", "standards.mjs"), "validate", `--dir=${dir}`, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        const json = JSON.parse(r.stdout);
+        return json.results.find((x) => x.ruleId === "planning.item-fields" || x.rule === "planning.item-fields");
+      } finally {
+        rm(dir, { recursive: true, force: true });
+      }
+    });
+  };
+  const complete = {
+    [`${PLAN}/00-overview.md`]: "# Overview\n\nProse.\n",
+    [`${PLAN}/01-a.md`]: CASES.find((x) => x.id === "complete-item").files[`${PLAN}/01-a.md`],
+  };
+  const incomplete = "# Reading this plan\n\n### How to read\n\n- **Status:** NOT_STARTED\n";
+  const baseline = await run(complete);
+  assert.ok(baseline, "the rule has a result");
+  // Control: the same incomplete item in a NUMBERED file is checked, and the rule fails.
+  const numbered = await run({ ...complete, [`${PLAN}/02-b.md`]: incomplete });
+  assert.notEqual(numbered.status, baseline.status, "control: an incomplete item in a numbered file changes the result");
+  // The README is not.
+  assert.deepEqual(await run({ ...complete, [`${PLAN}/README.md`]: incomplete }), baseline);
+});
+
+test("ownership: a claim written in a README is not a plan-item claim", async () => {
+  const claim = (to) => `# ${to}\n\n### Owner\n\n- **Status:** READY\n- **Tracked by:** [#7](https://github.com/o/r/issues/7)\n`;
+  const dir = await materialise({ "artifacts/backlog/github-mapping.json": JSON.stringify({ target: "o/r" }), [`${PLAN}/00-overview.md`]: "# Overview\n", [`${PLAN}/README.md`]: claim("Guide"), [`${PLAN}/01-a.md`]: claim("Real") });
+  try {
+    const owned = await collectPlanOwnership(dir);
+    assert.deepEqual(owned.claims.map((c) => c.file), [`${PLAN}/01-a.md`]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
