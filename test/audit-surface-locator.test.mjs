@@ -1308,6 +1308,16 @@ test("a regex literal holding a brace does not list a file that has no template 
   });
 });
 
+test("a file that names no audit identifier is never listed, even when it holds a regex span with a quote", async () => {
+  const js = ["const r = /'/;", "const q = /\"/g;", "export const half = (n) => n / 2;", ""].join(NLC);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), []);
+    assert.deepEqual(f.detail.unclassified, []);
+    assert.equal(f.detail.incomplete, false);
+  });
+});
+
 test("U+2028 and U+2029 end a JavaScript line comment, so the code after one is read; Python's comment runs on", async () => {
   const LS = String.fromCharCode(0x2028);
   const PS = String.fromCharCode(0x2029);

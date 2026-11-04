@@ -185,6 +185,8 @@ test("isPlanItemFile: only NN-<section>.md directly in the plan directory is a p
     [`${PLAN}/01-a.MD`, false],
     [`${PLAN}/01-a.md.txt`, false],
     [`${PLAN}/notes/01-a.md`, false],
+    [`${PLAN}/01-notes/x.md`, false],
+    [`${PLAN}/01-a/b/c.md`, false],
     [`${PLAN}/archive/2025/01-old.md`, false],
     [`${PLAN}-old/01-a.md`, false],
     [`docs/${PLAN}/01-a.md`, false],
@@ -257,6 +259,26 @@ test("a truncated supporting document is recorded on the document, not as a trun
     assert.deepEqual(read.truncated, [], "a truncated README is not a truncated plan-item file");
     assert.equal(read.supportingDocuments[0].truncated, true);
     assert.deepEqual(read.supportingDocuments[0].itemShaped, [{ title: "In the guide", line: 3 }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable supporting document carries its reason and is never given text, items or a claim", async () => {
+  const dir = await materialise({
+    [`${PLAN}/00-overview.md`]: "# Overview\n",
+    [`${PLAN}/01-a.md`]: "### One\n\n- **Status:** READY\n",
+    [`${PLAN}/README.md`]: "# Guide\n\n### In the guide\n\n- **Status:** READY\n",
+  });
+  try {
+    const { run, files } = await collectSurface(dir, { maxTotalReadBytes: AMPLE });
+    const reason = "read failed: EACCES (test)";
+    const blind = { rel: run.rel, truncated: run.truncated, textOf: (f) => (run.rel(f).endsWith("/README.md") ? { available: false, reason } : run.textOf(f)) };
+    const read = readPlanItems(files, blind);
+    assert.deepEqual(read.supportingDocuments, [{ file: `${PLAN}/README.md`, unreadable: reason, truncated: false, itemShaped: [] }]);
+    assert.deepEqual(read.unreadable, [], "an unreadable README is not an unreadable plan-item file");
+    assert.deepEqual(read.items.map((i) => i.file), [`${PLAN}/01-a.md`]);
+    assert.deepEqual(read.executable.map((i) => i.file), [`${PLAN}/01-a.md`]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

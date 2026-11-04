@@ -117,6 +117,37 @@ test("a rule withdrawn by the coarse truncation term names the truncated path", 
   );
 });
 
+test("a rule withdrawn only by a spent read budget names the budget, not a file", async () => {
+  const files = { [`${PLAN}/00-overview.md`]: OVERVIEW, [`${PLAN}/01-plan.md`]: GOOD };
+  for (let i = 0; i < 20; i += 1) files[`src/m${String(i).padStart(2, "0")}.js`] = `export const a = ${i};\n${"// pad\n".repeat(50)}`;
+  await withRepo(files, (root) => {
+    const json = JSON.parse(
+      spawnSync(process.execPath, [CLI, "validate", `--dir=${root}`, "--json", "--max-total-read-bytes=4000"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).stdout,
+    );
+    const r = resultFor(json, "planning.plan-code-consistency");
+    assert.equal(r.disposition, "not-evaluated");
+    assert.equal(
+      r.message,
+      "A check for planning.plan-code-consistency ran, but the rule is not established because some of its evidence was not obtained: the read budget was exhausted.",
+    );
+    // The plan files were read whole, so the rule that reads only them is not withdrawn by the budget.
+    assert.equal(resultFor(json, "planning.item-fields").disposition, "evaluated");
+  });
+});
+
+test("a rule withdrawn over several truncated files names three of them and counts the rest", async () => {
+  const files = { [`${PLAN}/00-overview.md`]: OVERVIEW, [`${PLAN}/01-plan.md`]: GOOD };
+  for (const n of ["a", "b", "c", "d"]) files[`docs/${n}.md`] = sized(`# ${n}\n\n`, CAP + 20 * 1024);
+  await withRepo(files, (root) => {
+    const r = resultFor(validate(root), "planning.plan-code-consistency");
+    assert.equal(r.disposition, "not-evaluated");
+    assert.ok(
+      r.message.includes(`docs/a.md, docs/b.md, docs/c.md and 1 more read only up to the ${CAP}-byte cap`),
+      r.message,
+    );
+  });
+});
+
 test("a rule with no detector keeps the old sentence, and no rule is described as having run unless its detector exists", async () => {
   const detectors = await evaluatedRules();
   const big = sized(`${GOOD}\n`, CAP + 160 * 1024);
