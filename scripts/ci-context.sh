@@ -24,6 +24,10 @@
 #   scripts/ci-context.sh <repo-root> <project>   # prints the context path on stdout
 set -euo pipefail
 
+# Repository paths, the project name and git output are shown through display_safe (ST-48 b).
+# shellcheck source=display-safe.sh
+. "$(dirname "${BASH_SOURCE[0]}")/display-safe.sh"
+
 repo_root="${1:?usage: ci-context.sh <repo-root> <project>}"
 project="${2:?usage: ci-context.sh <repo-root> <project>}"
 
@@ -42,8 +46,8 @@ project="${2:?usage: ci-context.sh <repo-root> <project>}"
 # before the repository is even read, so a hostile name is refused on a dirty tree too.
 case "$project" in
   "" | [!a-z0-9]* | *[!a-z0-9_-]*)
+    printf "'%s' is not a usable project name.\n" "$(display_safe "$project")" >&2
     cat >&2 <<EOF
-'$project' is not a usable project name.
 
 It names a temporary directory that this script deletes recursively, so it is restricted to a plain
 Compose project name: a lowercase letter or digit, then lowercase letters, digits, hyphens, or
@@ -107,10 +111,10 @@ Nothing about this state can reach a commit: git refuses to commit an unmerged i
 the files clears it. So the run is refused here rather than producing a verdict about a tree that
 does not yet exist.
 EOF
-  [ -n "$operations" ] && printf '\n  operation in progress:%s\n' "$operations" >&2
+  [ -n "$operations" ] && printf '\n  operation in progress:%s\n' "$(display_safe "$operations")" >&2
   if [ -n "$unmerged" ]; then
     printf '\n  unmerged paths:\n' >&2
-    git -C "$repo_root" diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' >&2 || true
+    git -C "$repo_root" diff --name-only --diff-filter=U 2>/dev/null | display_safe_lines | sed 's/^/    /' >&2 || true
   fi
   printf '\nFinish or abort the operation, then re-run.\n' >&2
   exit 2
@@ -138,8 +142,8 @@ the working tree has uncommitted changes, and local CI verifies committed conten
 Anything not committed would be absent from the run, so a pass would describe a tree you are not
 looking at. Commit or stash, then re-run.
 
-$status
 EOF
+  printf '%s\n' "$status" | display_safe_lines >&2
   exit 2
 fi
 
@@ -183,7 +187,7 @@ fi
 # two wrong things that agree.
 materialised="$(git -C "$context_root" rev-parse HEAD)"
 if [ "$materialised" != "$sha" ]; then
-  echo "the CI context materialised $materialised, not the requested $sha." >&2
+  echo "the CI context materialised $(display_safe "$materialised"), not the requested $(display_safe "$sha")." >&2
   # `exit` does not fire the ERR trap, so this path removes the partial context itself.
   cleanup_partial
   exit 2

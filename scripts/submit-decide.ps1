@@ -36,6 +36,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Repository paths, branch names, remote URLs, the project name and git output are escaped before they are
+# shown (ST-48 b); see scripts/display-safe.ps1.
+. (Join-Path $PSScriptRoot 'display-safe.ps1')
+
 # Unique per invocation. A predictable tag would be shared with every other checkout of a directory
 # by this name, which is how a stale gate gets executed against a current submission.
 $RepoSlug = ((Split-Path -Leaf $RepoRoot) -replace '[^A-Za-z0-9]', '-').ToLowerInvariant()
@@ -58,14 +62,19 @@ try {
     $code = $LASTEXITCODE
 
     if ($PrBody) {
-        if ($code -ne 0) { throw "the gate could not render the verification block (exit $code)." }
+        if ($code -ne 0) { throw "the gate could not render the verification block (exit $code): $(ConvertTo-DisplaySafe ($output | Out-String) -Layout -Native)" }
         return ($output | Out-String)
     }
 
     # Exit 2 means the question was malformed, which is not the same as a refusal and must not be
     # reported as one.
-    if ($code -eq 2) { throw "the gate could not evaluate the submission (exit 2): $($output | Out-String)" }
-    return ($output | Out-String | ConvertFrom-Json)
+    if ($code -eq 2) { throw "the gate could not evaluate the submission (exit 2): $(ConvertTo-DisplaySafe ($output | Out-String) -Layout -Native)" }
+    $decision = $output | Out-String | ConvertFrom-Json
+    # The message is shown by the caller. The gate escapes its own fields; this is the second layer.
+    if ($null -ne $decision -and $decision.PSObject.Properties['message']) {
+        $decision.message = ConvertTo-DisplaySafe $decision.message -Layout -Native
+    }
+    return $decision
 }
 finally {
     # Removed by the exact name this invocation created, on every path including a thrown decision.

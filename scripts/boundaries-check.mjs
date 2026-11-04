@@ -20,7 +20,7 @@
 import path from "node:path";
 import process from "node:process";
 import { loadDeclaration, scanRepository, checkBoundaries, DECLARATION_FILE } from "./boundaries.mjs";
-import { displaySafe, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanOut, jsonText } from "./display-safe.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -33,7 +33,7 @@ const root = path.resolve(dirArg ? dirArg.slice("--dir=".length) : ".");
 
 function finish(report, exit) {
   if (json) {
-    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    process.stdout.write(jsonText(report, null, 2) + "\n");
   } else {
     humanOut(`Boundaries: ${displaySafe(report.status)}\n`);
     if (report.reason) humanOut(`  ${displaySafe(report.reason)}\n`);

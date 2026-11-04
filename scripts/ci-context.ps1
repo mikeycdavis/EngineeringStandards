@@ -69,6 +69,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Repository paths, branch names, remote URLs, the project name and git output are escaped before they are
+# shown (ST-48 b); see scripts/display-safe.ps1.
+. (Join-Path $PSScriptRoot 'display-safe.ps1')
+
 # The project name is validated first, before this script does anything at all.
 #
 # `$Project` names the temporary directory, and this script later removes that directory with
@@ -87,7 +91,7 @@ Set-StrictMode -Version Latest
 # refused on a dirty tree too.
 if ($Project -notmatch '^[a-z0-9][a-z0-9_-]*$') {
     throw @"
-'$Project' is not a usable project name.
+'$(ConvertTo-DisplaySafe $Project)' is not a usable project name.
 
 It names a temporary directory that this script deletes recursively, so it is restricted to a plain
 Compose project name: a lowercase letter or digit, then lowercase letters, digits, hyphens, or
@@ -99,7 +103,7 @@ function Invoke-Git {
     param([string[]] $GitArgs, [string] $What)
     $output = & git @GitArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "$What failed: $($output | Out-String)"
+        throw "$What failed: $(ConvertTo-DisplaySafe ($output | Out-String) -Layout -Native)"
     }
     return ($output | Out-String).Trim()
 }
@@ -157,10 +161,10 @@ foreach ($marker in @('rebase-merge', 'rebase-apply', 'sequencer')) {
 
 if ($unmerged -or $operations.Count -gt 0) {
     $detail = ''
-    if ($operations.Count -gt 0) { $detail += "`n  operation in progress: $($operations -join ' ')" }
+    if ($operations.Count -gt 0) { $detail += "`n  operation in progress: $(ConvertTo-DisplaySafe ($operations -join ' '))" }
     if ($unmerged) {
         $paths = Invoke-Git @('-C', $RepoRoot, 'diff', '--name-only', '--diff-filter=U') 'listing unmerged paths'
-        $detail += "`n  unmerged paths:`n$($paths -split "`n" | ForEach-Object { "    $_" } | Out-String)"
+        $detail += "`n  unmerged paths:`n$($paths -split "`n" | ForEach-Object { "    $(ConvertTo-DisplaySafe $_ -Native)" } | Out-String)"
     }
     throw @"
 this working tree has an unresolved conflict, and local CI verifies committed content at HEAD.
@@ -205,7 +209,7 @@ the working tree has uncommitted changes, and local CI verifies committed conten
 Anything not committed would be absent from the run, so a pass would describe a tree you are not
 looking at. Commit or stash, then re-run.
 
-$status
+$(ConvertTo-DisplaySafe $status -Layout -Native)
 "@
 }
 
@@ -260,7 +264,7 @@ else {
 # comparison at submission would then be comparing two wrong things that agree.
 $materialised = Invoke-Git @('-C', $contextRoot, 'rev-parse', 'HEAD') 'confirming the materialised commit'
 if ($materialised -ne $sha) {
-    throw "the CI context materialised $materialised, not the requested $sha."
+    throw "the CI context materialised $(ConvertTo-DisplaySafe $materialised), not the requested $(ConvertTo-DisplaySafe $sha)."
 }
 
 }

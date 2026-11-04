@@ -55,7 +55,7 @@ import {
 import { currentReview, recordedRejections } from "./reviews.mjs";
 import { reviewHistoryPreflight, effectiveAttestations, IDENTITY_NOTE } from "./review-history.mjs";
 import { loadDeclaration, DECLARATION_FILE } from "./boundaries.mjs";
-import { displaySafe, displaySafeText, humanErr } from "./display-safe.mjs";
+import { displaySafe, displaySafeText, humanErr, jsonText } from "./display-safe.mjs";
 import {
   JUSTIFIABLE_RULES,
   applyJustifications,
@@ -271,17 +271,17 @@ async function loadProjectPolicy(repoRoot) {
 }
 
 /** Render the Standard 30 verdict beneath the human report. */
-function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false, justifications = null) {
+export function renderVerdict(report, policy, policyFindings = [], exemptionFindings = [], exemptionChangedVerdict = false, justifications = null) {
   const out = [];
   out.push("Compliance");
   if (policy.error) {
-    out.push(`  ${policy.error}`);
+    out.push(`  ${displaySafe(policy.error)}`);
     out.push("  Status: NOT_EVALUATED — a policy that cannot be read is a configuration error,");
     out.push("  not a compliance failure.");
     return out.join("\n");
   }
   if (!policy.document) {
-    out.push(`  ${policy.reason}.`);
+    out.push(`  ${displaySafe(policy.reason)}.`);
     out.push("  Status: NOT_EVALUATED — findings above are observations, not a verdict.");
     out.push("  Add project-policy.yml to get one; see INSTRUCTIONS.md.");
     return out.join("\n");
@@ -329,14 +329,14 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
 
     if (unexamined.length) {
       out.push("  Unestablished prohibitions — nobody looked for these:");
-      for (const ruleId of unexamined) out.push(`    ${ruleId}`);
+      for (const ruleId of unexamined) out.push(`    ${displaySafe(ruleId)}`);
       out.push("");
     }
     if (unverified.length) {
       out.push("  Unestablished prohibitions — reviewed, but the review does not establish the");
       out.push("  current state:");
       for (const ruleId of unverified) {
-        out.push(`    ${ruleId} [${freshnessOf.get(ruleId).freshness}]`);
+        out.push(`    ${displaySafe(ruleId)} [${displaySafe(freshnessOf.get(ruleId).freshness)}]`);
       }
       out.push("");
       out.push("  A human recorded a review of each of these. What cannot be established is that the");
@@ -381,8 +381,8 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
     out.push(`  Justified (path-scoped, ${justifications.trackedBasis}):`);
     for (const j of justifications.applied) {
       out.push(
-        `    ${j.rule} @ ${j.path} — ${j.reason} (owner ${j.approvedBy}, approved ${j.approvedAt}, ` +
-          `expires ${j.expires ?? "never"}; ${j.reference}; remove when: ${j.removeWhen})`,
+        `    ${displaySafe(j.rule)} @ ${displaySafe(j.path)} — ${displaySafe(j.reason)} (owner ${displaySafe(j.approvedBy)}, approved ${displaySafe(j.approvedAt)}, ` +
+          `expires ${displaySafe(j.expires ?? "never")}; ${displaySafe(j.reference)}; remove when: ${displaySafe(j.removeWhen)})`,
       );
     }
     out.push("");
@@ -390,18 +390,18 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   if (justifications?.expired?.length) {
     out.push("  Expired justifications (NOT applied; the violation is reported again):");
     for (const j of justifications.expired) {
-      out.push(`    ${j.rule} @ ${j.path} — expired ${j.expires} (owner ${j.approvedBy})`);
+      out.push(`    ${displaySafe(j.rule)} @ ${displaySafe(j.path)} — expired ${displaySafe(j.expires)} (owner ${displaySafe(j.approvedBy)})`);
     }
     out.push("");
   }
   if (justifications?.stale?.length) {
     out.push("  Stale justifications (warning — remove them):");
-    for (const j of justifications.stale) out.push(`    ${j.rule} @ ${j.path} — ${j.why}`);
+    for (const j of justifications.stale) out.push(`    ${displaySafe(j.rule)} @ ${displaySafe(j.path)} — ${displaySafe(j.why)}`);
     out.push("");
   }
   if (justifications?.unverified?.length) {
     out.push("  Unverified justifications (the path was not read in full this run):");
-    for (const j of justifications.unverified) out.push(`    ${j.rule} @ ${j.path}`);
+    for (const j of justifications.unverified) out.push(`    ${displaySafe(j.rule)} @ ${displaySafe(j.path)}`);
     out.push("");
   }
   const attested = report.results.filter((r) => r.disposition === "attested");
@@ -415,8 +415,8 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
   if (policyFindings.length) {
     out.push("  Policy findings (the verdict above is unchanged by these):");
     for (const f of policyFindings) {
-      out.push(`    ${f.message}`);
-      out.push(`      -> ${f.remediation}`);
+      out.push(`    ${displaySafe(f.message)}`);
+      out.push(`      -> ${displaySafe(f.remediation)}`);
     }
     out.push("");
   }
@@ -435,7 +435,7 @@ function renderVerdict(report, policy, policyFindings = [], exemptionFindings = 
 
   const na = report.results.filter((r) => r.disposition === "not-applicable");
   if (na.length) {
-    out.push(`  Not applicable (${na.length}): ${na.map((r) => r.ruleId).join(", ")}`);
+    out.push(`  Not applicable (${na.length}): ${na.map((r) => displaySafe(r.ruleId)).join(", ")}`);
     out.push("");
   }
 
@@ -1111,7 +1111,7 @@ async function runInit({ argv, dirFlag, positional, json }, emit) {
   if (!dryRun) await applyInit(target, report);
 
   if (json) {
-    emit(JSON.stringify({ ...report, dryRun }, null, 2) + "\n");
+    emit(jsonText({ ...report, dryRun }, null, 2) + "\n");
   } else {
     emit(displaySafeText(renderInit(report, { dryRun })) + "\n");
   }
@@ -5314,7 +5314,7 @@ export async function main(args) {
     // audit: evidence only. No status, no score, no policy required — ADR 0004.
     if (cli.json) {
       emit(
-        JSON.stringify(
+        jsonText(
           {
             schemaVersion: SCHEMA_VERSION,
             repo: root.split(path.sep).join("/"),
@@ -5389,7 +5389,7 @@ export async function main(args) {
       `a version that did not evaluate it would misstate its own provenance.`;
     if (cli.json) {
       emit(
-        JSON.stringify(
+        jsonText(
           {
             error: "VERSION_MISMATCH",
             policyStandardVersion: declaredVersion,
@@ -5844,7 +5844,7 @@ export async function main(args) {
     // evidences it is withheld here too. `audit` (policy-independent evidence, ADR 0004) is unchanged.
     const visibleFindings = findings.filter((f) => !(f.rule && verdict.silencedRules.has(resolveRule(catalog, f.rule)?.id)));
     emit(
-      JSON.stringify(
+      jsonText(
         {
           ...report,
           findings: visibleFindings,
