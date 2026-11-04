@@ -671,7 +671,7 @@ function splitSource(text, ext, options = {}) {
   // block inside the expression closes the right thing. Empty unless `templateExpressions` is set.
   const exprStack = [];
   const syntax = COMMENT_SYNTAX.get(ext);
-  if (!syntax) return { code: text, structure: text, comments: "" };
+  if (!syntax) return { code: text, structure: text, comments: "", regexSpans: [] };
 
   let code = "";
   let comments = "";
@@ -681,6 +681,11 @@ function splitSource(text, ext, options = {}) {
   // the only thing a detector could do was count matches in one view and count them in another —
   // and two counts never establish that they refer to the same site.
   const structure = [];
+  // Every span blanked as a regex literal, as [start, end] (inclusive) offsets into `text`. The regex-versus-division
+  // decision is a guess (one previous character plus keywords, no parser), so a division read as a regex opener
+  // blanks real code up to the next `/`. The guess is not made cleverer; the spans it acted on are reported, so a
+  // caller that must not read silence as absence can look at what was blanked (see `locateAuditSurface`).
+  const regexSpans = [];
   const keep = (c) => structure.push(c);
   const drop = (c) => structure.push(c === "\n" ? "\n" : " ");
 
@@ -830,6 +835,7 @@ function splitSource(text, ext, options = {}) {
         const close = regexLiteralEnd(text, i);
         if (close !== -1) {
           code += text.slice(i, close + 1);
+          regexSpans.push([i, close]);
           keep("/");
           for (let k = i + 1; k < close; k += 1) drop(text[k]);
           keep("/");
@@ -844,8 +850,9 @@ function splitSource(text, ext, options = {}) {
     }
 
     if (mode === "line") {
-      // A line comment ends at LF, CRLF or a lone CR (a CR-only file has no LF to end it).
-      if (c === "\n" || c === "\r") {
+      // A line comment ends at LF, CRLF or a lone CR (a CR-only file has no LF to end it), and in JavaScript and
+      // TypeScript at U+2028 and U+2029 as well: without them the code after one was read as comment text.
+      if (c === "\n" || c === "\r" || ((c === "\u2028" || c === "\u2029") && STRING_ENDS_AT_EOL.has(ext) && ext !== ".py")) {
         mode = "code";
         code += c;
         comments += "\n";
@@ -913,7 +920,7 @@ function splitSource(text, ext, options = {}) {
     code += c;
     i++;
   }
-  return { code, structure: structure.join(""), comments };
+  return { code, structure: structure.join(""), comments, regexSpans };
 }
 
 /**
@@ -3225,9 +3232,10 @@ function detectDocDiscrepancies(files, run) {
  * unestablished `forbidden` rules (Standard 45 R6). Whether that cap should reach this rule is a
  * framework decision, not this detector's.
  *
- * KNOWN LIMITATION: the withdrawn result's message is compliance.mjs's generic "No implemented check
- * evaluates ...", because no detector can supply its own reason for a not-evaluated result today —
- * the same limitation `scm.no-committed-env-files` already has when it withdraws silently.
+ * The withdrawn result's message says a check ran when this detector withdrew over unread content
+ * (ST-25, #118): `compliance.mjs` composes the sentence from the reasons collected at the end of the run.
+ * Withdrawing because the rule's subject is absent (`evaluated: false`) records no unknown reason, so
+ * that result keeps the generic "No implemented check evaluates ..." sentence.
  */
 function detectStandardsViolations(files, run) {
   const { has, rel, addFinding } = run;
@@ -3977,11 +3985,31 @@ const AUDIT_LANGUAGE_FAMILIES = [
 /**
  * A declared type or table name containing `audit`, except `auditor` (`AuditEvent`, `AuditService`,
  * `IAuditService`, `AuditableEntity`, `orders_audit`, `audit.events`). A person who audits is not an audit
- * mechanism. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
- * it a use, and any other identifier that merely contains the word is reported as unclassified, never
+ * mechanism. Only the WORD auditor is excluded (`Auditor`, `Auditors`, `AuditorService`, `auditor_id`, `AUDITOR`):
+ * `AuditOrder` and `AuditOrganization` merely begin with the same letters. The stem is matched in ANY letter case
+ * (`AuDiT_events` is an audit name); only the auditor exclusion is case-sensitive, so that a CamelCase boundary
+ * (`AuditorService` against `AuditOrder`) can be told apart. This is a NAME test only: the declaration keyword
+ * (`class`, `CREATE TABLE`) is what makes it a use, and any other identifier that merely contains the word is reported as unclassified, never
  * as an observation.
  */
-const AUDIT_NAME_RE = /audit(?!or)/i;
+const AUDIT_NAME_RE = /[Aa][Uu][Dd][Ii][Tt](?!(?:ors?(?![a-z])|ORS?(?![A-Z])))/;
+
+/**
+ * Whether a span `splitSource` blanked as a regex literal could have hidden an audit mechanism: it holds an
+ * audit-named identifier in the raw text (a call between two divisions), or a string delimiter (a misread span can
+ * swallow the quote that opens or closes a string, after which the code up to the next quote is read as string
+ * text, outside any span), or, where template expressions are scanned, a brace (the expression's closing brace is
+ * found by counting braces, and a span skips them). Each span is tested separately, so the cost is linear in the
+ * blanked text.
+ */
+function blankedRegexMayHideAudit(text, ext, options) {
+  for (const [start, end] of splitSource(text, ext, options).regexSpans) {
+    const span = text.slice(start, end + 1);
+    if (AUDIT_NAME_RE.test(span) || /['"`]/.test(span)) return true;
+    if (options.templateExpressions === true && /[{}]/.test(span)) return true;
+  }
+  return false;
+}
 
 const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
 
@@ -4046,7 +4074,7 @@ const AUDIT_BLIND_SPOTS = [
   { id: "language-family:shell", kind: "language-family", description: "Shell and PowerShell (.sh, .ps1) have no idiom; nothing in them is read for audit mechanisms." },
   { id: "language-family:markup-components", kind: "language-family", description: "Vue, Svelte and Razor components (.vue, .svelte, .razor) mix markup with script; they are not tokenised as plain JavaScript or C#, so none of their content is read." },
   { id: "language-family:unlisted-code-languages", kind: "language-family", description: "Code languages outside this tool's code-extension list (for example .swift, .scala, .fs, .cpp, .c, .kts, .cshtml, .vb, .dart) are never read; their files are counted in languageFamilies but not searched." },
-  { id: "construct:audit-named-identifiers-outside-idioms", kind: "construct", description: "An identifier containing `audit` that is not a declared type, audit-table DDL, a recorder-shaped call or a listed attribute (variables, parameters, imports, DI registrations) is not classified; files holding one and no observation are listed as `unclassified` and make the search incomplete. Files that already hold an observation are not checked for further unclassified identifiers." },
+  { id: "construct:audit-named-identifiers-outside-idioms", kind: "construct", description: "An identifier containing `audit` that is not a declared type, audit-table DDL, a recorder-shaped call or a listed attribute (variables, parameters, imports, DI registrations) is not classified; files holding one and no observation are listed as `unclassified` and make the search incomplete. Files that already hold an observation are not checked for further unclassified identifiers, with one exception: a span the tokenizer blanked as a regex literal (a division can be misread as a regex opener) that holds an audit-named identifier or a string delimiter (inside a template expression, or a brace) lists the file as `unclassified` even when it holds an observation." },
   { id: "construct:logging-frameworks-as-audit-trails", kind: "construct", description: "Audit trails written through a general logging framework, a message bus or an event store, with no audit-named construct, are not located." },
   { id: "construct:attribute-forms-not-matched", kind: "construct", description: "Audit attributes, annotations and decorators are matched only at the start of a line and, in C#, only first in an attribute list; inline and listed forms are not seen." },
   { id: "construct:database-native-audit", kind: "construct", description: "Triggers, views, stored procedures, temporal or system-versioned tables, change-data-capture and database audit extensions are not located." },
@@ -4370,8 +4398,12 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     // `${...}` in a template literal executes, so the locator scans those expressions; the shared view blanks
     // the whole literal and is left as it is for every other detector.
     let structure = view.text;
+    // The options of the splitSource call that produced `structure` (the shared view takes none), so the regex spans
+    // checked below are the ones that call blanked.
+    let splitOptions = {};
     if (fam.family === "javascript-typescript" && raw.text.includes("$" + "{")) {
-      structure = splitSource(raw.text, ext, { templateExpressions: true }).structure;
+      splitOptions = { templateExpressions: true };
+      structure = splitSource(raw.text, ext, splitOptions).structure;
     }
     if (fam.family === "javascript-typescript" && [".js", ".jsx", ".tsx"].includes(ext) && structure.includes("</")) {
       // JSX text children are prose, not declarations (see maskJsxText); the locator's view only.
@@ -4379,7 +4411,8 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     }
     if (fam.family === "sql" && raw.text.includes("$")) {
       // A dollar-quoted body is a literal for the locator only (see splitSource); other detectors keep it.
-      structure = splitSource(raw.text, ext, { dollarQuotes: true }).structure;
+      splitOptions = { dollarQuotes: true };
+      structure = splitSource(raw.text, ext, splitOptions).structure;
     }
     let newlines = null;
     const lineAt = (index) => {
@@ -4493,7 +4526,18 @@ export function locateAuditSurface(files, run, surface, options = {}) {
     }
     // An audit-named identifier in a file with no observation is something the locator saw and could
     // not classify. It is reported, and it makes the search incomplete: silence there is not absence.
-    if (!fileHit && AUDIT_NAME_RE.test(structure)) unclassified.push({ file: r, family: fam.family });
+    // The tokenizer decides regex-versus-division by a guess, and a division read as a regex opener blanks real code
+    // up to the next `/`, where the structural view above cannot see it. So an audit-named identifier inside any span
+    // blanked as a regex literal makes the file unclassified, whether or not the file also holds an observation:
+    // the blanked span may hold a call the locator never counted. So does a string delimiter in such a span, which can
+    // desynchronise the string state after it. A genuine pattern such as /audit/i or /["']/ is the same report,
+    // the honest-unknown direction. Only a file that names an audit identifier at all pays for the extra scan.
+    if (
+      (!fileHit && AUDIT_NAME_RE.test(structure)) ||
+      (AUDIT_NAME_RE.test(raw.text) && blankedRegexMayHideAudit(raw.text, ext, splitOptions))
+    ) {
+      unclassified.push({ file: r, family: fam.family });
+    }
   }
 
   unread.sort((a, b) => byCodepoint(a.file, b.file) || byCodepoint(a.reason, b.reason));
@@ -5821,6 +5865,32 @@ export async function main(args) {
       !unestablished(id),
   );
 
+  // WHY a rule whose detector ran is nevertheless not evaluated, for the sentence a not-evaluated result
+  // carries (ST-25, #118). It reads the same records the withdrawal above was decided from and decides
+  // nothing: a rule absent from this map keeps "No implemented check evaluates ...".
+  const withdrawnReasons = new Map();
+  for (const id of EVALUATED_RULES) {
+    if (evaluatedThisRun.includes(id)) continue;
+    const reasons = [];
+    for (const u of run.unknownChecks.get(id) ?? []) reasons.push(`${u.file}: ${u.reason}`);
+    if (CONTENT_DERIVED_RULES.includes(id)) {
+      if (walkWentShort) {
+        const lost = [];
+        if (surfaceLoss.capped) lost.push("the file walk stopped at its file cap");
+        if (surfaceLoss.budget.exhausted) lost.push("the read budget was exhausted");
+        if (unreadableFiles.length > 0) lost.push(`${unreadableFiles.length} file(s) could not be read`);
+        if (frameworkExcluded.length > 0) lost.push(`${frameworkExcluded.length} director(ies) were excluded by the framework`);
+        if (surfaceLoss.dirs.length > 0) lost.push(`${surfaceLoss.dirs.length} director(ies) could not be listed`);
+        reasons.push(lost.join(", "));
+      }
+      if (truncationReached(id)) {
+        const own = truncatedPaths.filter((p) => (TRUNCATION_DOMAIN[id] ?? (() => true))(p));
+        reasons.push(`${own.slice(0, 3).join(", ")}${own.length > 3 ? ` and ${own.length - 3} more` : ""} read only up to the ${MAX_READ_BYTES}-byte cap`);
+      }
+    }
+    if (reasons.length > 0) withdrawnReasons.set(id, reasons);
+  }
+
   const verdict = evaluate({
     catalog,
     policy: evaluationDocument,
@@ -5830,6 +5900,7 @@ export async function main(args) {
     baseRecordedAttestations: reviewHistoryBase.baseAttestations ?? reviewHistoryBase.baseRecordedAttestations ?? null,
     findings,
     evaluated: evaluatedThisRun,
+    withdrawn: withdrawnReasons,
     today,
     freshness,
     // Rules whose rejection is already at the trusted base (append-only); null when unknown.

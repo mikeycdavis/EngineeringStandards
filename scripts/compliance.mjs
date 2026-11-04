@@ -64,6 +64,26 @@ export function strayRejectionsFor(ruleId, { attestations, recordedAttestations,
   return recordedRejections(recordedAttestations?.[ruleId]);
 }
 
+const WITHDRAWN_REASONS_SHOWN = 3;
+
+/**
+ * The message of a not-evaluated result that no attestation or exception explains (ST-25, #118).
+ *
+ * Two different facts used to share one sentence. A rule with NO detector is not evaluated because
+ * nothing checks it. A rule whose detector RAN and was then withdrawn is not evaluated because the
+ * evidence it needed was not obtained (a truncated plan file, an unreadable file, a spent read
+ * budget). "No implemented check evaluates X" is false of the second, and it sends the reader to look
+ * for a missing detector when the remedy is to restore the evidence. `withdrawn` is the set of reasons
+ * the caller recorded; a rule absent from it, or a manual-review rule, keeps the original sentence.
+ */
+function notEvaluatedMessage(rule, withdrawn) {
+  const reasons = rule.validationType === "manual-review" ? [] : (withdrawn?.get(rule.id) ?? []);
+  if (reasons.length === 0) return `No implemented check evaluates ${rule.id}.`;
+  const shown = reasons.slice(0, WITHDRAWN_REASONS_SHOWN).map((r) => displaySafe(r));
+  const more = reasons.length > shown.length ? `; and ${reasons.length - shown.length} more` : "";
+  return `A check for ${rule.id} ran, but the rule is not established because some of its evidence was not obtained: ${shown.join("; ")}${more}.`;
+}
+
 /**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
@@ -71,6 +91,11 @@ export function strayRejectionsFor(ruleId, { attestations, recordedAttestations,
  * @param evaluated the set of rule ids the evaluator actually examined — the crucial input.
  *                  A rule absent from this set was not checked, and reporting it as passing
  *                  because nothing failed is the false green this whole framework exists to stop.
+ * @param withdrawn a Map from rule id to the reasons a rule whose detector RAN was withdrawn from
+ *                  `evaluated` anyway (ST-25, #118). It changes one sentence and nothing else: a
+ *                  not-evaluated result for a rule listed here says that a check ran and names the
+ *                  reasons, instead of "No implemented check evaluates ...", which is true only of a
+ *                  rule with no detector. Status, disposition, score and verdict are unaffected.
  * @param today     ISO date, for exception expiry
  * @param justified path-scoped justifications the caller already subtracted from `findings` (ADR
  *                  0017), each `{ rule, path, reason, reference, approvedBy, approvedAt, removeWhen }`.
@@ -81,7 +106,7 @@ export function strayRejectionsFor(ruleId, { attestations, recordedAttestations,
  * @param expiredJustified justifications past their `expires`. They are not applied; each yields a
  *                  failed `expired-justification` configuration result, as an expired exception does.
  */
-export function evaluate({ catalog, policy, findings, evaluated, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null, justified, expiredJustified }) {
+export function evaluate({ catalog, policy, findings, evaluated, withdrawn = null, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null, justified, expiredJustified }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -292,9 +317,7 @@ export function evaluate({ catalog, policy, findings, evaluated, today, freshnes
     // `passed` that way was possible before attestations existed, and it is the false green
     // Standard 24 R2 forbids.
     if (rule.validationType === "manual-review" || !examined.has(rule.id)) {
-      results.push(
-        base(rule, level, RESULT.skipped, "not-evaluated", `No implemented check evaluates ${rule.id}.`),
-      );
+      results.push(base(rule, level, RESULT.skipped, "not-evaluated", notEvaluatedMessage(rule, withdrawn)));
       continue;
     }
 
