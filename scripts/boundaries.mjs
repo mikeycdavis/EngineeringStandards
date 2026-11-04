@@ -714,7 +714,11 @@ function analyse(rawToks) {
     // the bound function is then called at once, `process.exit.bind(null)(1)`. Merely naming
     // `.call` or `.bind` (`const c = process.exit.call;`) invokes nothing and stays an indirect use.
     const callOpen = (x) => (isP(x, "(") ? x : isP(x, "?") && isP(x + 1, ".") && isP(x + 2, "(") ? x + 2 : -1);
-    const invokedAfter = (x) => callOpen(x) >= 0;
+    // Closing grouping parens of the expression, `(process.exit.bind(null))(1)`, are stepped over.
+    const invokedAfter = (x) => {
+      for (let n = st.opens; n > 0 && isP(x, ")"); n--) x++;
+      return callOpen(x) >= 0;
+    };
     let called = invokedAfter(q);
     if (!called && isP(q, ".") && (isId(q + 1, "call") || isId(q + 1, "apply"))) called = invokedAfter(q + 2);
     if (!called && isP(q, ".") && isId(q + 1, "bind") && isP(q + 2, "(")) {
@@ -830,6 +834,10 @@ function analyse(rawToks) {
     // a method definition: name(name) {}. The name must not be a keyword that takes a parenthesised
     // expression, or `if (fetch) {}` and `while (WebSocket) {}` would read as a declaration.
     const before = toks[open - 2];
+    // The brace must open on the line that closes the parameter list. `run(fetch)` + newline + `{}` is a
+    // call followed by a block under automatic semicolon insertion, and a class method written with
+    // its brace on the next line is the same tokens; the ambiguity resolves to the global (fails closed).
+    if (toks[close + 1].line !== toks[close].line) return false;
     return isId(open - 1) && !NOT_A_METHOD_NAME.has(toks[open - 1].v) && !!before && ((before.t === "p" && ["{", "}", ",", ";", "*"].includes(before.v)) ||
       (before.t === "id" && ["static", "async", "get", "set"].includes(before.v)));
   };

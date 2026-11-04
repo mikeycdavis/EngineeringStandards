@@ -1705,7 +1705,7 @@ test("R1/D4: naming process.exit.call or binding process.exit without invoking i
     assert.deepEqual(r.terminates, [], src);
     assert.ok(r.mechanisms["termination-indirect"].length > 0, `${src} is still an indirect use and must be reported`);
   }
-  for (const src of ["process.exit.bind(null)(1);", "process.exit.bind(null)?.(1);", "process.exit.call(process, 1);", "process.exit.call?.(process, 1);", "process.exit.apply(process, [1]);", "process.exit(1);"]) {
+  for (const src of ["process.exit.bind(null)(1);", "process.exit.bind(null)?.(1);", "(process.exit.bind(null))(1);", "((process.exit.bind(null)))(1);", "(process.exit.call)(process, 1);", "process.exit.call(process, 1);", "process.exit.call?.(process, 1);", "process.exit.apply(process, [1]);", "process.exit(1);"]) {
     assert.ok(scanSource(src).terminates.length > 0, src);
   }
 });
@@ -1714,7 +1714,7 @@ test("R1/D5: a plain parameter named like a network global is not the global", (
   for (const src of ["function visit(fetch) {}", "const f = (WebSocket) => 1;", "const g = fetch => 1;", "const h = (a, fetch) => 1;", "const i = async (EventSource) => 1;", "function* k(WebSocket) {}", "class C { m(fetch) {} }", "try {} catch (fetch) {}", "function d(fetch = 1) {}"]) {
     assert.equal(scanSource(src).mechanisms.network.length, 0, src);
   }
-  for (const src of ["if (fetch) {}", "function supportsNetwork() { if (fetch) {} }", "function f() { while (WebSocket) {} }", "{ if (a) {} else if (EventSource) {} }", "x(); for (const k of fetch) {}", "; switch (fetch) {}", "{ with (fetch) {} }", "function g() { return 1; if (XMLHttpRequest) {} }", "run(fetch);", "const f = (x) => fetch;", "const g = (a = fetch) => 1;", "fetch(u);", "new WebSocket(u);"]) {
+  for (const src of ["if (fetch) {}", "function supportsNetwork() { if (fetch) {} }", "function f() { while (WebSocket) {} }", "{ if (a) {} else if (EventSource) {} }", "x(); for (const k of fetch) {}", "function f() { run(fetch)\n{} }", "function g() { a()\nrun(WebSocket)\n{ b() }\n}", "; switch (fetch) {}", "{ with (fetch) {} }", "function g() { return 1; if (XMLHttpRequest) {} }", "run(fetch);", "const f = (x) => fetch;", "const g = (a = fetch) => 1;", "fetch(u);", "new WebSocket(u);"]) {
     assert.ok(scanSource(src).mechanisms.network.length > 0, src);
   }
 });
