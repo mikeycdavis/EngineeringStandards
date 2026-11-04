@@ -1352,3 +1352,28 @@ test("the audit stem is matched in any letter case; only the auditor exclusion i
     assert.equal(f.detail.incomplete, false);
   });
 });
+
+test("a brace on the line after a postfix update is a block (automatic semicolon insertion)", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "let x = 0; x++",
+    "{ work(); } /recordAuditEvent(a)/.test(s);",
+    "x--",
+    "{ work(); } /recordAuditEvent(b)/.test(s);",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});
+
+test("a binary plus or minus before a brace still starts an expression", async () => {
+  const NL = String.fromCharCode(10);
+  const js = ["const a = 1 + { v: 1 } / recordAuditEvent(a) / 2;", "const b = 1 - { v: 1 } / recordAuditEvent(b) / 2;", ""].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), [
+      "src/a.js:1 recorder-call recordAuditEvent",
+      "src/a.js:2 recorder-call recordAuditEvent",
+    ]);
+  });
+});

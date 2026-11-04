@@ -746,6 +746,9 @@ function splitSource(text, ext, options = {}) {
   };
   const braceOpensExpression = () => {
     const prev = lastCode();
+    // `x++` or `x--` ends an expression statement; a brace after it (on the next line, by automatic semicolon
+    // insertion) is a block, never an operand. Without this the trailing `+` or `-` reads as a binary operator.
+    if (afterPostfixUpdate()) return false;
     // A TypeScript TYPE literal is not a runtime expression, and a regex may legally follow it on the next
     // line: `type R = { ok: boolean }` and a declaration's annotation `const x: { a: number }`.
     if (prev === "=" && /^(?:export\s+)?(?:declare\s+)?type\s+[A-Za-z_$][\w$]*[^=]*=$/.test(statementSoFar())) return false;
