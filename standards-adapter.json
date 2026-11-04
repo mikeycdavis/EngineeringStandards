@@ -1,0 +1,32 @@
+{
+  "$schema": "https://standards-enforcer/schemas/standards-adapter.schema.json",
+  "schemaVersion": "1.2.0",
+  "standard": {
+    "id": "engineering"
+  },
+  "evaluation": {
+    "entrypoint": "scripts/standards.mjs",
+    "arguments": [
+      "validate",
+      "{target}",
+      "--json"
+    ]
+  },
+  "result": {
+    "statuses": [
+      "COMPLIANT",
+      "COMPLIANT_WITH_EXCEPTIONS",
+      "NON_COMPLIANT",
+      "NOT_EVALUATED"
+    ],
+    "passing": [
+      "COMPLIANT",
+      "COMPLIANT_WITH_EXCEPTIONS"
+    ]
+  },
+  "adoption": {
+    "policyFiles": [
+      "project-policy.yml"
+    ]
+  }
+}
