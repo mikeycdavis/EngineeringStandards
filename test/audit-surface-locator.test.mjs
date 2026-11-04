@@ -1147,3 +1147,48 @@ test("T-SQL temporary tables and # inside identifiers are not MySQL comments", a
     ]);
   });
 });
+
+// --- ST-26 repair: names the locator used to drop silently (Codex P2 findings on #135) -------------------
+//
+// Both defects made a file land in none of observed / unread / unclassified, so `incomplete: false`
+// was reported for code the locator could not see (criterion 3: silence is not absence).
+
+test("class names that merely begin with Audit-Or are observed; only the word auditor is excluded", async () => {
+  const NL = String.fromCharCode(10);
+  const js = ["class AuditOrder {}", "class AuditOrganization {}", "class Auditor {}", "class Auditors {}", "class AuditorService {}", "class AUDITOR {}", "class AUDITORDER {}", ""].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), [
+      "src/a.js:1 type AuditOrder",
+      "src/a.js:2 type AuditOrganization",
+      "src/a.js:7 type AUDITORDER",
+    ]);
+    assert.equal(f.detail.incomplete, false);
+  });
+});
+
+test("a recorder call after a } that closes an expression is code, not a blanked regex literal", async () => {
+  const NL = String.fromCharCode(10);
+  const js = [
+    "const n = { valueOf() { return 8; } } / recordAuditEvent(x) / 2;",
+    "const m = [ { a: 1 } ] / 2; const k = ({ b: 2 }) / recordAuditEvent(y) / 2;",
+    "const o = f({ c: 3 } / recordAuditEvent(z) / 2);",
+    "",
+  ].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    const f = surfaceOf(cli("audit", dir).json);
+    assert.deepEqual(sites(f), [
+      "src/a.js:1 recorder-call recordAuditEvent",
+      "src/a.js:2 recorder-call recordAuditEvent",
+      "src/a.js:3 recorder-call recordAuditEvent",
+    ]);
+  });
+});
+
+test("a } that closes a block still lets a regex literal follow, so its contents are not observations", async () => {
+  const NL = String.fromCharCode(10);
+  const js = ["if (ok) { go(); }", "/recordAuditEvent(x)/.test(s);", "function f() { return 1; } /recordAuditEvent(y)/.test(s);", ""].join(NL);
+  await withRepo({ "src/a.js": js }, async (dir) => {
+    assert.deepEqual(sites(surfaceOf(cli("audit", dir).json)), []);
+  });
+});

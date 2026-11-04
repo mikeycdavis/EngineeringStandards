@@ -724,6 +724,16 @@ function splitSource(text, ext, options = {}) {
     return end - 2 >= stop && code[end - 1] === code[end - 2] && (code[end - 1] === "+" || code[end - 1] === "-");
   };
   const REGEX_MAY_START_AFTER = new Set(["", "(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
+  // `}` ends either a block (a statement follows, so `/` may open a regex) or an expression such as an object
+  // literal (`x = { a: 1 } / n`), after which `/` divides. One entry per open `{` in code: true when that brace
+  // opened an expression, decided by what precedes it. `closedExpression` is the kind of the last `}`. A brace
+  // after anything else (`)`, `=>`, a block keyword, a statement boundary) is a block, the existing behaviour.
+  const braceStack = [];
+  let closedExpression = false;
+  const EXPRESSION_BRACE_AFTER = new Set(["=", "(", ",", ":", "[", "?", "!", "&", "|", "+", "-", "*", "%", "<", "~", "^"]);
+  const braceOpensExpression = () =>
+    EXPRESSION_BRACE_AFTER.has(lastCode()) ||
+    /(?:^|[^w$.])(?:return|typeof|case|in|delete|void|throw|new|yield|await)s*$/.test(code.slice(-24));
 
   const quoteCache = {};
   let mode = "code";
@@ -826,7 +836,7 @@ function splitSource(text, ext, options = {}) {
       // inside the unfinished-work pattern table is a description of a stub, not a stub, and the
       // detector could not tell the difference. Contents stay in `code`, because sourceOf() exists
       // for import matching and a specifier is never a regex.
-      if (syntax.block && c === "/" && ((REGEX_MAY_START_AFTER.has(lastCode()) && !afterPostfixUpdate()) || followsRegexKeyword())) {
+      if (syntax.block && c === "/" && ((REGEX_MAY_START_AFTER.has(lastCode()) && !afterPostfixUpdate() && !(lastCode() === "}" && closedExpression)) || followsRegexKeyword())) {
         const close = regexLiteralEnd(text, i);
         if (close !== -1) {
           code += text.slice(i, close + 1);
@@ -837,6 +847,8 @@ function splitSource(text, ext, options = {}) {
           continue;
         }
       }
+      if (c === "{") braceStack.push(braceOpensExpression());
+      else if (c === "}") closedExpression = braceStack.pop() === true;
       code += c;
       keep(c);
       i++;
@@ -3937,11 +3949,13 @@ const AUDIT_LANGUAGE_FAMILIES = [
 /**
  * A declared type or table name containing `audit`, except `auditor` (`AuditEvent`, `AuditService`,
  * `IAuditService`, `AuditableEntity`, `orders_audit`, `audit.events`). A person who audits is not an audit
- * mechanism. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
+ * mechanism. Only the WORD auditor is excluded (`Auditor`, `Auditors`, `AuditorService`, `auditor_id`, `AUDITOR`):
+ * `AuditOrder` and `AuditOrganization` merely begin with the same letters. The test is case-sensitive on purpose,
+ * so that a CamelCase boundary (`AuditorService` against `AuditOrder`) can be told apart. This is a NAME test only: the declaration keyword (`class`, `CREATE TABLE`) is what makes
  * it a use, and any other identifier that merely contains the word is reported as unclassified, never
  * as an observation.
  */
-const AUDIT_NAME_RE = /audit(?!or)/i;
+const AUDIT_NAME_RE = /(?:[Aa]udit(?!ors?(?![a-z]))|AUDIT(?!ORS?(?![A-Z])))/;
 
 const AUDIT_JS_TS_PY_JAVA_CS = ["csharp", "java-kotlin", "javascript-typescript", "python"];
 

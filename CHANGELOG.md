@@ -15,6 +15,8 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Audit-surface locator: two silent drops repaired (ST-26, refs #119). The locator reported `observedCount 0, incomplete false` for audit-named code it had dropped, so a dependent detector would have read absence as a fact. (1) The name filter `/audit(?!or)/i` excluded every `AuditOr*` name (`AuditOrder`, `AuditOrganization`) along with `Auditor`; it now excludes only the word auditor (`Auditor`, `Auditors`, `AuditorService`, `auditor_id`, `AUDITOR`) and is case-sensitive so a CamelCase boundary can be told apart. (2) The source tokenizer read a `/` after the `}` of an object literal or other expression (`x = { a: 1 } / recordAuditEvent(y) / 2`) as a regex opener and blanked the call between the slashes; it now records, per `{`, whether the brace opened an expression or a block and reads `/` after an expression-closing `}` as division. A `}` that closes a block still lets a regex literal follow. The change is observational: no rule result, verdict, score, exit code or `schemaVersion` moves, and `VERSION` stays `2.0.0`.
+
 Boundary declaration and checker (ST-23 follow-on, refs #112; split from draft PR 113, the Standard 51 text is a separate
 change). Adds an optional, additive boundary declaration ([ADR 0018](artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)):
 a root-level `architecture-boundaries.yml`, discovered by name beside `project-policy.yml` and described by the new
