@@ -811,6 +811,7 @@ function analyse(rawToks) {
   };
   // A plain parameter: `(a, name) => ...`, `name => ...`, `function f(name) {}`, `m(name) {}`,
   // `catch (name) {}`. It declares a local; it is not a reference to the global of that name.
+  const NOT_A_METHOD_NAME = new Set(["if", "while", "for", "switch", "with", "return", "typeof", "void", "delete", "await", "yield", "throw", "case", "new", "in", "of", "instanceof", "else", "do", "try", "finally", "catch", "function", "class", "extends", "export", "import", "default", "var", "let", "const"]);
   const isPlainParameter = (k) => {
     if (isP(k + 1, "=") && isP(k + 2, ">") && !isP(k - 1, ".")) {
       return true; // name => ...
@@ -826,9 +827,10 @@ function analyse(rawToks) {
     if (isP(open - 1, "*") && isId(open - 2, "function")) return true;
     if (isId(open - 1) && isId(open - 2, "function")) return true; // function f(name) {}
     if (isP(open - 1, "*") === false && isId(open - 1) && isP(open - 2, "*") && isId(open - 3, "function")) return true;
-    // a method definition: name(name) {}
+    // a method definition: name(name) {}. The name must not be a keyword that takes a parenthesised
+    // expression, or `if (fetch) {}` and `while (WebSocket) {}` would read as a declaration.
     const before = toks[open - 2];
-    return isId(open - 1) && !!before && ((before.t === "p" && ["{", "}", ",", ";", "*"].includes(before.v)) ||
+    return isId(open - 1) && !NOT_A_METHOD_NAME.has(toks[open - 1].v) && !!before && ((before.t === "p" && ["{", "}", ",", ";", "*"].includes(before.v)) ||
       (before.t === "id" && ["static", "async", "get", "set"].includes(before.v)));
   };
   const isGlobalReference = (k, afterDot) => {
