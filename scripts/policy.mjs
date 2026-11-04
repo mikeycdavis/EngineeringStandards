@@ -18,7 +18,7 @@
  * file's directory).
  */
 
-import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut, jsonText } from "./display-safe.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { statSync } from "node:fs";
@@ -302,7 +302,7 @@ async function main() {
 
   if (options.json) {
     process.stdout.write(
-      JSON.stringify(
+      jsonText(
         {
           schemaVersion: "1.0",
           policy: relative,

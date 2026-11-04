@@ -36,7 +36,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
-import { displaySafe, humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, humanErr, humanOut, jsonText } from "./display-safe.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -172,7 +172,7 @@ const problems =
 
 if (JSON_OUT) {
   process.stdout.write(
-    JSON.stringify(
+    jsonText(
       {
         expectedCount: inventory.expectedCount,
         detectedCount,

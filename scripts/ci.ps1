@@ -46,6 +46,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Repository paths, branch names, remote URLs, the project name and git output are escaped before they are
+# shown (ST-48 b); see scripts/display-safe.ps1.
+. (Join-Path $PSScriptRoot 'display-safe.ps1')
+
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ComposeFile = Join-Path $RepoRoot 'compose.ci.yml'
 $ReportDir = Join-Path $RepoRoot 'artifacts/local-ci'
@@ -99,7 +103,7 @@ function Get-ComposeOutput {
 
 function Write-Stage([string] $Text) {
     Write-Host ""
-    Write-Host "==> $Text" -ForegroundColor Cyan
+    Write-Host "==> $(ConvertTo-DisplaySafe $Text)" -ForegroundColor Cyan
 }
 
 # Teardown removes exactly what this run created: containers, the run's network, and volumes
@@ -154,9 +158,9 @@ try {
         throw "this is a linked git worktree, whose .git points outside the build context. Run CI from the main working tree."
     }
 
-    Write-Host "repository : $RepoRoot"
-    Write-Host "image      : $Image"
-    Write-Host "project    : $Project"
+    Write-Host "repository : $(ConvertTo-DisplaySafe $RepoRoot)"
+    Write-Host "image      : $(ConvertTo-DisplaySafe $Image)"
+    Write-Host "project    : $(ConvertTo-DisplaySafe $Project)"
 
     # The build context is committed content, not the working directory. Everything about why lives
     # in scripts/ci-context.ps1; what matters here is that this line is the only thing that decides
@@ -165,7 +169,7 @@ try {
     Write-Stage "Materialising the CI context from committed HEAD"
     $ContextRoot = & (Join-Path $PSScriptRoot 'ci-context.ps1') -RepoRoot $RepoRoot -Project $Project
     $env:CI_CONTEXT = $ContextRoot
-    Write-Host "context    : $ContextRoot"
+    Write-Host "context    : $(ConvertTo-DisplaySafe $ContextRoot)"
 
     Write-Stage "Building the CI image"
     if ((Invoke-Compose build) -ne 0) { throw "the CI image failed to build." }
@@ -197,7 +201,7 @@ try {
     & docker cp "${CiContainer}:/work/artifacts/local-ci/latest.json" $ReportPath 2>&1 | Out-Null
 
     if (Test-Path $ReportPath) {
-        Write-Host "record          : $ReportPath"
+        Write-Host "record          : $(ConvertTo-DisplaySafe $ReportPath)"
     }
     elseif ($pipelineExit -eq 0) {
         # A pass with no record is not a pass anyone can act on: submit-pr has nothing to check the
@@ -209,17 +213,17 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "CI could not complete: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "CI could not complete: $(ConvertTo-DisplaySafe $_.Exception.Message -Layout)" -ForegroundColor Red
     $exitCode = 2
 }
 finally {
     if ($KeepOnFailure -and $exitCode -ne 0) {
         Write-Host ""
         Write-Host "Containers kept for inspection (-KeepOnFailure)." -ForegroundColor Yellow
-        if ($ContextRoot) { Write-Host "  context: $ContextRoot" }
-        Write-Host "  docker logs $CiContainer"
-        Write-Host "  docker compose -p $Project -f compose.ci.yml run --rm --entrypoint bash ci"
-        Write-Host "  docker rm -f $CiContainer; docker compose -p $Project -f compose.ci.yml down --volumes --remove-orphans"
+        if ($ContextRoot) { Write-Host "  context: $(ConvertTo-DisplaySafe $ContextRoot)" }
+        Write-Host "  docker logs $(ConvertTo-DisplaySafe $CiContainer)"
+        Write-Host "  docker compose -p $(ConvertTo-DisplaySafe $Project) -f compose.ci.yml run --rm --entrypoint bash ci"
+        Write-Host "  docker rm -f $(ConvertTo-DisplaySafe $CiContainer); docker compose -p $(ConvertTo-DisplaySafe $Project) -f compose.ci.yml down --volumes --remove-orphans"
     }
     else {
         Remove-CiEnvironment

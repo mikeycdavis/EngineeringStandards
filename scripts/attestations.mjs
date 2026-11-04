@@ -33,7 +33,7 @@ import {
 } from "./repository.mjs";
 import { currentReview, reviewsOf, reviewProblems, isLegacyShape } from "./reviews.mjs";
 import { reviewHistoryPreflight, IDENTITY_NOTE } from "./review-history.mjs";
-import { displaySafe } from "./display-safe.mjs";
+import { displaySafe, jsonText } from "./display-safe.mjs";
 
 const EXIT_OK = 0;
 const EXIT_FINDINGS = 1;
@@ -66,7 +66,7 @@ try {
       attestations: [],
       violations: [`review history: ${missing.reason}`],
     };
-    if (JSON_OUT) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    if (JSON_OUT) process.stdout.write(jsonText(report, null, 2) + "\n");
     else {
       humanErr(
         `history integrity: VIOLATED - ${displaySafe(missing.reason)}\nNo attestation is created, listed as valid or renewed.\n`,
@@ -268,7 +268,7 @@ const legacy = rows.filter((r) => r.algorithm === LEGACY_ALGORITHM);
 
 if (JSON_OUT) {
   process.stdout.write(
-    JSON.stringify(
+    jsonText(
       {
         repository: { available: repo.available, reason: repo.reason },
         historyIntegrity: {

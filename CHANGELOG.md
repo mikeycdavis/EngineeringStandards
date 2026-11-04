@@ -15,6 +15,8 @@ All notable changes to this framework. Versioning follows
 
 ## Unreleased
 
+Display-safety residual limits (ST-48, refs #157). `renderVerdict` escapes `policy.error`, `policy.reason` and every other repository-controlled field it prints per field, so the verdict cannot carry a forged line; `displaySafe` also escapes variation selectors (U+FE00-FE0F, U+E0100-E01EF), U+034F, the Hangul fillers (U+115F, U+1160, U+3164), U+17B4/U+17B5, U+2065 and U+206A-206F, U+FFFC and lone surrogates; JSON output goes through `jsonText`, which writes C1 (including U+0085), format and bidi characters as escapes with the parsed value unchanged; and `ci.sh`, `ci.ps1`, `ci-context.sh`, `ci-context.ps1`, `submit-pr.ps1` and `submit-decide.ps1` escape the repository path, branch, remote URL, project name and git or gate output they print (new `scripts/display-safe.sh` and `scripts/display-safe.ps1`). No verdict, disposition, score or exit code changes; `VERSION` is unchanged.
+
 Boundary declaration and checker (ST-23 follow-on, refs #112; split from draft PR 113, the Standard 51 text is a separate
 change). Adds an optional, additive boundary declaration ([ADR 0018](artifacts/adr/0018-architectural-boundaries-are-declared-and-checked-within-stated-observation-limits.md)):
 a root-level `architecture-boundaries.yml`, discovered by name beside `project-policy.yml` and described by the new

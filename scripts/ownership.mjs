@@ -55,7 +55,7 @@
  * No third-party dependencies, matching scripts/standards.mjs.
  */
 
-import { displaySafe, displaySafeText, humanErr, humanOut } from "./display-safe.mjs";
+import { displaySafe, displaySafeText, humanErr, humanOut, jsonText } from "./display-safe.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -468,7 +468,7 @@ async function main(argv) {
     humanErr(`NOT_EVALUATED: ${displaySafe(e.message)}\n`);
     return EXIT_NOT_EVALUATED;
   }
-  process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : displaySafeText(`${render(result, claims.length)}\n`));
+  process.stdout.write(json ? `${jsonText(result, null, 2)}\n` : displaySafeText(`${render(result, claims.length)}\n`));
   return result.ok ? EXIT_OK : EXIT_VIOLATION;
 }
 
