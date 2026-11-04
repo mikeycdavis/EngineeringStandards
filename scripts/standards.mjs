@@ -5483,13 +5483,20 @@ export async function main(args) {
       // Re-count the one finding the detector emitted: same id, label, severity and reference, with
       // only the justified paths removed from its evidence. The caller's evidence cap is not applied
       // twice because `addFinding` is the single writer and applies it itself.
-      const recount = { "errors.no-swallowed-exceptions": swallowedExceptionMessage };
+      // Only the detector's own finding (matched by rule AND id) is re-counted. A rule can also carry
+      // other findings, e.g. the info-level `fixture-exempted` record of a fixture exemption on the
+      // same rule: those are separate records and must be neither used as the template nor removed.
+      const recount = {
+        "errors.no-swallowed-exceptions": { id: "swallowed-exception", message: swallowedExceptionMessage },
+      };
       for (const [rule, remaining] of outcome.remaining) {
         if (!outcome.applied.some((e) => e.rule === rule)) continue;
-        const template = findings.find((x) => x.rule === rule);
-        for (let i = findings.length - 1; i >= 0; i--) if (findings[i].rule === rule) findings.splice(i, 1);
+        const { id, message } = recount[rule];
+        const isDetectorFinding = (x) => x.rule === rule && x.id === id;
+        const template = findings.find(isDetectorFinding);
+        for (let i = findings.length - 1; i >= 0; i--) if (isDetectorFinding(findings[i])) findings.splice(i, 1);
         if (remaining.length > 0 && template) {
-          addFinding({ ...template, evidence: remaining, message: recount[rule](remaining.length) });
+          addFinding({ ...template, evidence: remaining, message: message(remaining.length) });
         }
       }
       for (const e of outcome.stale) {

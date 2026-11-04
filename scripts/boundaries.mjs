@@ -709,8 +709,22 @@ function analyse(rawToks) {
       if (assign || prefix) terminates.push(line);
       return;
     }
-    const called = isP(q, "(") || (isP(q, "?") && isP(q + 1, ".") && isP(q + 2, "(")) ||
-      (isP(q, ".") && (isId(q + 1, "call") || isId(q + 1, "apply") || isId(q + 1, "bind")));
+    // A call is an invocation: `process.exit(...)`, or `process.exit.call(...)` / `.apply(...)`, whose
+    // member call itself invokes it. `.bind(...)` only makes a function, so it terminates only where
+    // the bound function is then called at once, `process.exit.bind(null)(1)`. Merely naming
+    // `.call` or `.bind` (`const c = process.exit.call;`) invokes nothing and stays an indirect use.
+    const callOpen = (x) => (isP(x, "(") ? x : isP(x, "?") && isP(x + 1, ".") && isP(x + 2, "(") ? x + 2 : -1);
+    // Closing grouping parens of the expression, `(process.exit.bind(null))(1)`, are stepped over.
+    const invokedAfter = (x) => {
+      for (let n = st.opens; n > 0 && isP(x, ")"); n--) x++;
+      return callOpen(x) >= 0;
+    };
+    let called = invokedAfter(q);
+    if (!called && isP(q, ".") && (isId(q + 1, "call") || isId(q + 1, "apply"))) called = invokedAfter(q + 2);
+    if (!called && isP(q, ".") && isId(q + 1, "bind") && isP(q + 2, "(")) {
+      const close = matching("(", q + 2);
+      called = close > 0 && invokedAfter(close + 1);
+    }
     if (called) terminates.push(line);
     else flag("termination-indirect", line);
   };
@@ -791,8 +805,45 @@ function analyse(rawToks) {
     }
     return -1;
   };
+  const enclosingParen = (k) => {
+    let d = 0;
+    for (let x = k - 1; x >= 0; x--) {
+      if (isP(x, ")")) d++;
+      else if (isP(x, "(")) { if (d === 0) return x; d--; }
+    }
+    return -1;
+  };
+  // A plain parameter: `(a, name) => ...`, `name => ...`, `function f(name) {}`, `m(name) {}`,
+  // `catch (name) {}`. It declares a local; it is not a reference to the global of that name.
+  const NOT_A_METHOD_NAME = new Set(["if", "while", "for", "switch", "with", "return", "typeof", "void", "delete", "await", "yield", "throw", "case", "new", "in", "of", "instanceof", "else", "do", "try", "finally", "catch", "function", "class", "extends", "export", "import", "default", "var", "let", "const"]);
+  const isPlainParameter = (k) => {
+    if (isP(k + 1, "=") && isP(k + 2, ">") && !isP(k - 1, ".")) {
+      return true; // name => ...
+    }
+    if (!(isP(k - 1, "(") || isP(k - 1, ",")) || !(isP(k + 1, ")") || isP(k + 1, ",") || (isP(k + 1, "=") && !isP(k + 2, "=")))) return false;
+    const open = enclosingParen(k);
+    if (open < 0) return false;
+    const close = matching("(", open);
+    if (close < 0) return false;
+    if (isP(close + 1, "=") && isP(close + 2, ">")) return true; // (a, name) => ...
+    if (!isP(close + 1, "{")) return false;
+    if (isId(open - 1, "function") || isId(open - 1, "catch")) return true; // function (name) {}, catch (name) {}
+    if (isP(open - 1, "*") && isId(open - 2, "function")) return true;
+    if (isId(open - 1) && isId(open - 2, "function")) return true; // function f(name) {}
+    if (isP(open - 1, "*") === false && isId(open - 1) && isP(open - 2, "*") && isId(open - 3, "function")) return true;
+    // a method definition: name(name) {}. The name must not be a keyword that takes a parenthesised
+    // expression, or `if (fetch) {}` and `while (WebSocket) {}` would read as a declaration.
+    const before = toks[open - 2];
+    // The brace must open on the line that closes the parameter list. `run(fetch)` + newline + `{}` is a
+    // call followed by a block under automatic semicolon insertion, and a class method written with
+    // its brace on the next line is the same tokens; the ambiguity resolves to the global (fails closed).
+    if (toks[close + 1].line !== toks[close].line) return false;
+    return isId(open - 1) && !NOT_A_METHOD_NAME.has(toks[open - 1].v) && !!before && ((before.t === "p" && ["{", "}", ",", ";", "*"].includes(before.v)) ||
+      (before.t === "id" && ["static", "async", "get", "set"].includes(before.v)));
+  };
   const isGlobalReference = (k, afterDot) => {
     if (afterDot || isP(k + 1, ":")) return false;
+    if (isPlainParameter(k)) return false;
     for (const kw of ["typeof", "function", "const", "let", "var", "class"]) if (isId(k - 1, kw)) return false;
     // a method definition: name ( ... ) {
     if (isP(k + 1, "(")) {
@@ -1198,10 +1249,14 @@ function parseEvidence(e) {
  * evidence-outside-observation, evidence-not-regular-file, repository-package-import,
  * external-prefix-shadows-member.
  *
+ * `io` is the filesystem seam for the two reads that can fail on a path that exists (listing a member
+ * directory, reading an evidence file); a failure there is reported as `unreadable-path`, never thrown,
+ * so the exit contract 0/1/2 of boundaries-check holds. Tests inject a failing `io`.
+ *
  * A side-effect import across a declared edge is a use of the interface named "side-effect": the
  * edge's `via` must list it, or `*`.
  */
-export function checkBoundaries(repoRoot, declaration, scan = scanRepository(repoRoot, declaration)) {
+export function checkBoundaries(repoRoot, declaration, scan = scanRepository(repoRoot, declaration), io = { readdirSync, readFileSync }) {
   const violations = [];
   const members = declaration.members;
   const edgeMap = new Map(declaration.edges.map((e) => [`${e.from}->${e.to}`, e]));
@@ -1256,8 +1311,23 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
       let st = null;
       try { st = statSync(abs); } catch { /* absent */ }
       const wrongType = st !== null && (isDirectoryPath(p) ? !st.isDirectory() : !st.isFile());
-      const empty = st !== null && !wrongType && isDirectoryPath(p) && readdirSync(abs).length === 0;
-      if (st === null || wrongType || empty) {
+      let empty = false;
+      let unlistable = false;
+      if (st !== null && !wrongType && isDirectoryPath(p)) {
+        try {
+          empty = io.readdirSync(abs).length === 0;
+        } catch {
+          unlistable = true;
+        }
+      }
+      if (unlistable) {
+        violations.push({
+          kind: "unreadable-path",
+          file: p,
+          line: 1,
+          message: `member '${m.id}' owns '${p}', which exists but cannot be listed; what it contains is not observed`,
+        });
+      } else if (st === null || wrongType || empty) {
         violations.push({ kind: "dead-member-path", file: p, line: 1, message: `member '${m.id}' owns '${p}', which matches no file` });
       }
     }
@@ -1378,7 +1448,14 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
         line,
         message: `${owner}: evidence '${e}' is ${target}; evidence must be a regular file inside the repository, not a directory or a link`,
       });
-    } else if (line > readFileSync(abs, "utf8").split(LINE_TERMINATORS).length) {
+    } else if (evidenceLineCount(io, abs) === null) {
+      violations.push({
+        kind: "unreadable-path",
+        file,
+        line,
+        message: `${owner}: evidence '${e}' names a file that exists but cannot be read; the cited line is not observed`,
+      });
+    } else if (line > evidenceLineCount(io, abs)) {
       violations.push({ kind: "evidence-out-of-range", file, line, message: `${owner}: evidence '${e}' is past the end of the file` });
     } else if (edge && !fileSet.has(file)) {
       violations.push({
@@ -1400,4 +1477,13 @@ export function checkBoundaries(repoRoot, declaration, scan = scanRepository(rep
     }
   }
   return violations;
+}
+
+/** Line count of an evidence file, or null when it exists but cannot be read. */
+function evidenceLineCount(io, abs) {
+  try {
+    return io.readFileSync(abs, "utf8").split(LINE_TERMINATORS).length;
+  } catch {
+    return null;
+  }
 }

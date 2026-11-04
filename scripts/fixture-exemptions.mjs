@@ -127,8 +127,10 @@ export function pathProblem(p) {
  * the file is inspected as ordinary content. Nothing here throws, so an adopter's typo is reported
  * rather than turned into a crash or, worse, a silently honoured entry.
  *
- * `catalog` may be null (policy.mjs tolerates a missing catalog); rule-aware checks are then skipped
- * rather than faked.
+ * `catalog` may be null (policy.mjs tolerates a missing catalog). The per-file allowlist alone does not
+ * hold the non-exemptible invariant (it still lists a rule the catalog marks non-exemptible), so
+ * without a catalog no entry can be shown exemptible: every entry is then reported and NON-APPLYING,
+ * which fails closed instead of silently honouring a waiver nothing could check.
  */
 export function checkEntries(entries, { catalog, today, isDirectory = null }) {
   const problems = [];
@@ -192,7 +194,9 @@ export function checkEntries(entries, { catalog, today, isDirectory = null }) {
         "fixture-exemption-rule-not-exemptible",
         `'${entry.rule}' cannot be exempted per fixture file; exemptible rules: ${FIXTURE_EXEMPTIBLE_RULES.join(", ")}`,
       );
-    } else if (catalog) {
+    } else if (!catalog) {
+      problem("fixture-exemption-no-catalog", `'${entry.rule}' cannot be shown exemptible without the rule catalog; the entry is not applied`);
+    } else {
       const rule = catalog.rules.get(entry.rule);
       if (!rule) problem("fixture-exemption-unknown-rule", `'${entry.rule}' is not a catalogued rule id`);
       else if (rule.nonExemptible) problem("fixture-exemption-non-exemptible", `'${entry.rule}' is non-exemptible (Standard 20 R4)`);

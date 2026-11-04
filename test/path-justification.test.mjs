@@ -21,11 +21,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkPolicy } from "../scripts/policy.mjs";
-import { pathFormProblem, JUSTIFIABLE_RULES } from "../scripts/justifications.mjs";
+import { pathFormProblem, JUSTIFIABLE_RULES, justificationProblems, trackedProvider } from "../scripts/justifications.mjs";
 import { loadCatalog } from "../scripts/catalog.mjs";
 import { evaluate } from "../scripts/compliance.mjs";
 
@@ -58,7 +59,7 @@ const entry = (p, over = {}) => ({
 });
 
 /** A JSON string is a valid YAML double-quoted scalar, so entries serialise without a YAML library. */
-function policyYaml(entries) {
+function policyYaml(entries, extra = "") {
   const lines = [`standardVersion: ${JSON.stringify(VERSION)}`, `project: "path-justification-fixture"`];
   if (entries.length > 0) {
     lines.push("justifications:");
@@ -69,7 +70,7 @@ function policyYaml(entries) {
       });
     }
   }
-  return lines.join("\n") + "\n";
+  return lines.join("\n") + "\n" + extra;
 }
 
 const git = (cwd, ...args) => {
@@ -82,9 +83,9 @@ const git = (cwd, ...args) => {
  * Build a repository. `files` maps path -> content; `entries` are the justifications; `useGit`
  * false leaves a plain directory. `untracked` files are written but never added.
  */
-async function build({ files, entries = [], useGit = true, untracked = {} }) {
+async function build({ files, entries = [], useGit = true, untracked = {}, policyExtra = "" }) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "path-justification-"));
-  const all = { ...files, "project-policy.yml": policyYaml(entries) };
+  const all = { ...files, "project-policy.yml": policyYaml(entries, policyExtra) };
   for (const [rel, content] of Object.entries(all)) {
     await mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
     await writeFile(path.join(dir, rel), content);
@@ -484,6 +485,93 @@ test("pathFormProblem: an exact canonical file path is the only accepted form", 
 test("only errors.no-swallowed-exceptions is admitted today", () => {
   assert.deepEqual([...JUSTIFIABLE_RULES], [RULE]);
   assert.throws(() => JUSTIFIABLE_RULES.push("security.no-cert-bypass"), TypeError, "the allowlist must be frozen");
+});
+
+// A legacy alias names a catalogued rule under a second spelling (ADR 0002). It must be rejected as an
+// alias, with the canonical id in the message, not accepted and not reported as an unknown rule. The
+// policy schema's rule pattern already refuses the camelCase spelling at the front door, so both layers
+// are pinned: the schema by the full policy check, the engine's own branch by calling it directly.
+const ALIAS = "ai.uiCapabilitiesMustBeAgentOperable";
+
+test("a legacy alias is rejected as an alias by the engine's justification check", async () => {
+  const catalog = await loadCatalog(path.join(ROOT, "rules"));
+  const canonical = catalog.aliases.get(ALIAS);
+  assert.ok(canonical, "the control alias must exist in the catalog");
+  await withRepo({ files: { "examples/alpha/one.mjs": EMPTY_CATCH } }, (dir) => {
+    const e = entry("examples/alpha/one.mjs", { rule: ALIAS });
+    const tracked = trackedProvider(dir, ["examples/alpha/one.mjs"]);
+    const problems = justificationProblems([e], { catalog, root: dir, tracked });
+    assert.deepEqual(problems.map((p) => p.code), ["rule-alias"], JSON.stringify(problems));
+    assert.match(problems[0].message, new RegExp(canonical.replace(/\./g, "\.")));
+    const canonicalProblems = justificationProblems([entry("examples/alpha/one.mjs")], { catalog, root: dir, tracked });
+    assert.deepEqual(canonicalProblems, [], "the canonical id of the same rule is admitted");
+  });
+});
+
+test("a legacy alias in a policy is refused before any justification is applied", async () => {
+  const dir = await rejectionRepo([entry("examples/alpha/one.mjs", { rule: ALIAS })]);
+  try {
+    const r = await checkPolicy(path.join(dir, "project-policy.yml"), SCHEMA, TODAY, { root: dir });
+    assert.equal(r.status, "invalid");
+    assert.ok(r.errors.length > 0);
+    const { code, json } = validate(dir);
+    assert.equal(code, 2, "an invalid justification is a configuration error");
+    assert.notEqual(json?.status, "COMPLIANT");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+// --- A justification and a fixture exemption on the same rule (ST-22 x ST-19a) ------------------
+//
+// The recount after a justification re-emits the detector's finding with only the unjustified
+// paths. It must pick the detector's own `swallowed-exception` finding, never the info-level
+// `fixture-exempted` record that the same rule can also carry.
+
+const fixturePolicyExtra = (p, content) =>
+  `fixtureExemptions:\n  - path: ${JSON.stringify(p)}\n    sha256: ${JSON.stringify(
+    createHash("sha256").update(content).digest("hex"),
+  )}\n    rule: ${JSON.stringify(RULE)}\n    reason: "digest-locked fixture"\n    owner: "project-owner"\n    reviewWhen: "the fixture is regenerated"\n`;
+
+const ruleFindings = (json) => json.findings.filter((f) => f.rule === RULE || f.id === "fixture-exempted");
+
+test("a fixture exemption and a justification on one rule keep the true violation as the error finding", async () => {
+  await withRepo(
+    {
+      files: { "fx/a.mjs": EMPTY_CATCH, "j/b.mjs": EMPTY_CATCH, "u/c.mjs": EMPTY_CATCH },
+      entries: [entry("j/b.mjs")],
+      policyExtra: fixturePolicyExtra("fx/a.mjs", EMPTY_CATCH),
+    },
+    (dir) => {
+      const { json } = validate(dir);
+      const swallowed = json.findings.filter((f) => f.id === "swallowed-exception");
+      assert.equal(swallowed.length, 1, JSON.stringify(ruleFindings(json)));
+      assert.equal(swallowed[0].severity, "error");
+      assert.deepEqual(swallowed[0].evidence, ["u/c.mjs"]);
+      const waived = json.findings.filter((f) => f.id === "fixture-exempted");
+      assert.equal(waived.length, 1, "the fixture waiver record must survive the recount");
+      assert.deepEqual(waived[0].evidence, ["fx/a.mjs"]);
+      assert.equal(result(json, RULE).status, "failed");
+    },
+  );
+});
+
+test("a fixture exemption and a justification covering every violation keep the waiver record", async () => {
+  await withRepo(
+    {
+      files: { "fx/a.mjs": EMPTY_CATCH, "j/b.mjs": EMPTY_CATCH },
+      entries: [entry("j/b.mjs")],
+      policyExtra: fixturePolicyExtra("fx/a.mjs", EMPTY_CATCH),
+    },
+    (dir) => {
+      const { json } = validate(dir);
+      const waived = json.findings.filter((f) => f.id === "fixture-exempted");
+      assert.equal(waived.length, 1, JSON.stringify(ruleFindings(json)));
+      assert.deepEqual(waived[0].evidence, ["fx/a.mjs"]);
+      assert.ok(!json.findings.some((f) => f.id === "swallowed-exception"));
+      assertExcepted(result(json, RULE));
+    },
+  );
 });
 
 // --- Spellings that reach the same bytes by another name ---------------------------------------
