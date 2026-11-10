@@ -1737,6 +1737,12 @@ test("optional-call bind: naming or binding process.exit without invoking the bo
   }
 });
 
+test("optional-call bind: another member of process.exit, called then invoked, is not a termination", () => {
+  for (const src of ["process.exit.foo?.(null)(1);", "process.exit.foo(null)(1);", "process.exit.toString?.(null)(1);"]) {
+    assert.deepEqual(scanSource(src).terminates, [], src);
+  }
+});
+
 test("optional-call bind: process.exit.name is not a termination (fail-closed indirect use, unchanged)", () => {
   const r = scanSource("process.exit.name;");
   assert.deepEqual(r.terminates, []);
