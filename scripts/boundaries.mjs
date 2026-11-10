@@ -720,9 +720,13 @@ function analyse(rawToks) {
       return callOpen(x) >= 0;
     };
     let called = invokedAfter(q);
-    if (!called && isP(q, ".") && (isId(q + 1, "call") || isId(q + 1, "apply"))) called = invokedAfter(q + 2);
-    if (!called && isP(q, ".") && isId(q + 1, "bind") && isP(q + 2, "(")) {
-      const close = matching("(", q + 2);
+    // The member is reached by `.` or by the optional `?.`: `process.exit?.bind(null)(1)`.
+    const m = isP(q, ".") ? q + 1 : isP(q, "?") && isP(q + 1, ".") ? q + 2 : -1;
+    if (!called && m >= 0 && (isId(m, "call") || isId(m, "apply"))) called = invokedAfter(m + 1);
+    if (!called && m >= 0 && isId(m, "bind")) {
+      // `.bind(...)` or the optional-call `.bind?.(...)`: the bound function must then be invoked
+      const open = callOpen(m + 1);
+      const close = open >= 0 ? matching("(", open) : -1;
       called = close > 0 && invokedAfter(close + 1);
     }
     if (called) terminates.push(line);

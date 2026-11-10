@@ -1710,6 +1710,63 @@ test("R1/D4: naming process.exit.call or binding process.exit without invoking i
   }
 });
 
+test("optional-call bind: process.exit.bind?.(null)(1) terminates and keeps its process-termination observation", () => {
+  for (const src of [
+    "process.exit.bind?.(null)(1);",
+    "(process.exit.bind?.(null))(1);",
+    "((process.exit.bind?.(null)))(1);",
+    "process.exit.bind?.(null)?.(1);",
+    "(process.exit.bind?.(null))?.(1);",
+    "process.exit?.bind(null)(1);",
+    "process?.exit.bind?.(null)(1);",
+    "process.exit.call?.(null, 1);",
+    "process.exit.apply?.(null, [1]);",
+    "(process.exit.bind?.(null)\n)(1);",
+  ]) {
+    const r = scanSource(src);
+    assert.ok(r.terminates.length > 0, `${src} must terminate: ${JSON.stringify(r.terminates)}`);
+    assert.deepEqual(r.mechanisms["termination-indirect"], [], `${src} is a direct termination, not an indirect use`);
+  }
+});
+
+test("optional-call bind: naming or binding process.exit without invoking the bound function stays an indirect use", () => {
+  for (const src of ["const b = process.exit.bind?.(null);", "process.exit.bind?.(null);", "const c = process.exit.call;", "const d = process.exit?.bind;"]) {
+    const r = scanSource(src);
+    assert.deepEqual(r.terminates, [], src);
+    assert.ok(r.mechanisms["termination-indirect"].length > 0, `${src} is still an indirect use`);
+  }
+});
+
+test("optional-call bind: another member of process.exit, called then invoked, is not a termination", () => {
+  for (const src of ["process.exit.foo?.(null)(1);", "process.exit.foo(null)(1);", "process.exit.toString?.(null)(1);"]) {
+    assert.deepEqual(scanSource(src).terminates, [], src);
+  }
+});
+
+test("optional-call bind: process.exit.name is not a termination (fail-closed indirect use, unchanged)", () => {
+  const r = scanSource("process.exit.name;");
+  assert.deepEqual(r.terminates, []);
+  assert.ok(r.mechanisms["termination-indirect"].length > 0);
+});
+
+test("optional-call bind: lookalikes that are not process.exit are not a termination", () => {
+  for (const src of [
+    "foo.bind?.(null)(1);",
+    "const bind = (x) => x; bind?.(null)(1);",
+    "obj.exit.bind?.(null)(1);",
+    "process.exitCode;",
+    "const c = process.exitCode;",
+    "const s = 'process.exit.bind?.(null)(1)';",
+    "// process.exit.bind?.(null)(1)\n",
+    "/* process.exit.bind?.(null)(1) */",
+    "const t = `process.exit.bind?.(null)(1)`;",
+  ]) {
+    const r = scanSource(src);
+    assert.deepEqual(r.terminates, [], src);
+    assert.deepEqual(r.mechanisms["termination-indirect"], [], src);
+  }
+});
+
 test("R1/D5: a plain parameter named like a network global is not the global", () => {
   for (const src of ["function visit(fetch) {}", "const f = (WebSocket) => 1;", "const g = fetch => 1;", "const h = (a, fetch) => 1;", "const i = async (EventSource) => 1;", "function* k(WebSocket) {}", "class C { m(fetch) {} }", "try {} catch (fetch) {}", "function d(fetch = 1) {}"]) {
     assert.equal(scanSource(src).mechanisms.network.length, 0, src);
