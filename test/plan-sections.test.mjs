@@ -174,3 +174,45 @@ test("the rule is wired: catalog assurance is partial and the rule is evaluated"
   const catalog = JSON.parse((await import("node:fs")).readFileSync(path.join(HERE, "..", "rules", "planning.json"), "utf8"));
   assert.equal(catalog.rules.find((r) => r.id === RULE).assurance, "partial");
 });
+
+test("a UTF-8 BOM before a first-line heading does not hide it", () => {
+  assert.deepEqual(topLevelHeadings("﻿# One\n\n# Two\n").map((h) => h.line), [1, 3]);
+});
+
+test("CRLF line endings are handled", () => {
+  assert.deepEqual(topLevelHeadings("# One\r\n\r\n# Two\r\n").map((h) => h.line), [1, 3]);
+});
+
+test("an inline-code <!-- does not open a comment that swallows later headings", () => {
+  assert.deepEqual(topLevelHeadings("# One\n\nUse `<!--` to open.\n\n# Two\n").map((h) => h.line), [1, 5]);
+});
+
+test("a setext underline after a list item is not a heading", () => {
+  assert.deepEqual(topLevelHeadings("# One\n\n- item\n===\n").map((h) => h.line), [1]);
+});
+
+test("a plan directory with only a .txt file yields NOT_EVALUATED with no finding", async () => {
+  await withRepo({ [`${PLAN}/notes.txt`]: "x\n" }, (dir) => {
+    const j = validate(dir);
+    assert.deepEqual(findings(j), []);
+    assert.equal(result(j).disposition, "not-evaluated");
+  });
+});
+
+test("an absent plan directory yields NOT_EVALUATED with no finding bound to this rule", async () => {
+  await withRepo({ "README.md": "# x\n" }, (dir) => {
+    const j = validate(dir);
+    assert.deepEqual(findings(j), []);
+    assert.equal(result(j).disposition, "not-evaluated");
+  });
+});
+
+test("read-budget exhaustion leaves the rule NOT_EVALUATED, never partial-clean", async () => {
+  await withRepo({ [`${PLAN}/00-a.md`]: ok("A"), [`${PLAN}/01-b.md`]: ok("B") }, (dir) => {
+    const r = spawnSync(process.execPath, [CLI, "validate", `--dir=${dir}`, "--json", "--max-total-read-bytes=1"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const j = JSON.parse(r.stdout);
+    assert.deepEqual(findings(j), []);
+    assert.equal(result(j).disposition, "not-evaluated");
+    assert.notEqual(result(j).status, "passed");
+  });
+});

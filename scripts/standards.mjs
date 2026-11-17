@@ -2844,7 +2844,11 @@ const canonicalStatus = (raw) => {
  * code and outside HTML comments (ST-27, #120). Fence handling is `markdownLines`, the one shared
  * fence-aware walk: no second fence tracker exists. Returns `{ line, text }` per heading.
  */
+/** A line that cannot be the text of a setext heading: another heading, a list item or a block quote. */
+const NOT_PARAGRAPH = /^ {0,3}(?:#{1,6}(?:[ \t]|$)|[-*+][ \t]|\d+[.)][ \t]|>)/;
 export function topLevelHeadings(text) {
+  // A UTF-8 byte-order mark is not content: it must not stop a first-line heading from being one.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   const out = [];
   let inComment = false;
   let previous = null; // the last plain text line, for a setext underline
@@ -2860,9 +2864,16 @@ export function topLevelHeadings(text) {
       line = line.slice(end + 3);
       inComment = false;
     }
-    // Remove whole comments on this line, then open one that does not close.
-    line = line.replace(/<!--[\s\S]*?-->/g, "");
-    const open = line.indexOf("<!--");
+    // Remove whole comments on this line, then open one that does not close. A `<!--` inside an inline
+    // code span is text about a comment, not a comment, so code spans are masked first (same length).
+    const masked = line.replace(/`[^`]*`/g, (m) => " ".repeat(m.length));
+    const cut = [];
+    for (const m of masked.matchAll(/<!--[\s\S]*?-->/g)) cut.push([m.index, m.index + m[0].length]);
+    for (const [a, b] of cut.reverse()) {
+      line = line.slice(0, a) + line.slice(b);
+    }
+    const maskedAfter = line.replace(/`[^`]*`/g, (m) => " ".repeat(m.length));
+    const open = maskedAfter.indexOf("<!--");
     if (open !== -1) {
       line = line.slice(0, open);
       inComment = true;
@@ -2870,7 +2881,7 @@ export function topLevelHeadings(text) {
     if (/^ {0,3}#(?:[ \t]+\S|[ \t]*$)/.test(line) && !/^ {0,3}##/.test(line)) {
       out.push({ line: rec.line, text: rec.text.trim() });
       previous = null;
-    } else if (/^ {0,3}=+[ \t]*$/.test(line) && previous !== null) {
+    } else if (/^ {0,3}=+[ \t]*$/.test(line) && previous !== null && !NOT_PARAGRAPH.test(previous.text)) {
       out.push({ line: previous.line, text: previous.text.trim() });
       previous = null;
     } else if (line.trim() === "") {
@@ -2900,6 +2911,8 @@ const ONE_FILE_BLIND_SPOTS = [
   "one top-level heading followed by many second-level sections is indistinguishable from one legitimate section with subsections",
   "a file that names several sections in prose",
   "whether the sections are the right ones (planning.handoff owns that)",
+  "a code fence marker inside an HTML comment, which the shared fence walk classifies before comments are considered",
+  "ordering numbers of three or more digits (only NN- is accepted, so 100-x.md is reported as not matching NN-<section>.md)",
 ];
 function detectOneFilePerSection(files, run) {
   const { rel, addFinding } = run;
@@ -2934,7 +2947,7 @@ function detectOneFilePerSection(files, run) {
       severity: "error",
       label: "OBSERVED",
       evidence: unnumbered.map(rel),
-      message: `${unnumbered.length} plan section file(s) have no NN- ordering number (NN-<section>.md), so sequence is not preserved.`,
+      message: `${unnumbered.length} plan section file(s) have no NN- ordering number and so do not match NN-<section>.md (two digits, a hyphen): ${unnumbered.map(rel).join(", ")}.`,
       standardRef: STD04,
     });
   }
