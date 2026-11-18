@@ -2891,9 +2891,13 @@ function maskCodeSpans(line) {
 export function headingAmbiguity(text) {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   let inComment = false;
+  const hasComment = text.includes("<!--");
   for (const line of text.split(/\r?\n/)) {
     if (inComment && /^ {0,3}(?:```|~~~)/.test(line)) return "a code fence marker inside an HTML comment";
     const masked = maskCodeSpans(line);
+    // An unmatched backtick run in a file that has comments may open a code span that wraps across lines,
+    // which per-line masking cannot see, so the comment structure is not reliable.
+    if (hasComment && masked.includes("`") && !/^ {0,3}(?:```|~~~)/.test(line)) return "an inline code span that may wrap across lines";
     const o = masked.lastIndexOf("<!--");
     const c = masked.lastIndexOf("-->");
     if (o !== -1 && o > c) inComment = true;

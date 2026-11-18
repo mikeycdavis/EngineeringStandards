@@ -235,3 +235,12 @@ test("a fence marker inside an HTML comment, or a raw HTML block, is an unknown,
     });
   }
 });
+
+test("an inline code span that wraps across lines around <!-- is an unknown", async () => {
+  await withRepo({ [`${PLAN}/00-a.md`]: "# First\n\nUse `some\n<!--` here.\n\n# Second\n" }, (dir) => {
+    const j = validate(dir);
+    assert.deepEqual(findings(j), []);
+    assert.equal(result(j).disposition, "not-evaluated");
+    assert.match(result(j).message, /00-a\.md/);
+  });
+});
