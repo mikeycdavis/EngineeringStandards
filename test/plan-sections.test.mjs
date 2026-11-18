@@ -216,3 +216,22 @@ test("read-budget exhaustion leaves the rule NOT_EVALUATED, never partial-clean"
     assert.notEqual(result(j).status, "passed");
   });
 });
+
+test("a multi-backtick code span containing <!-- does not open a comment", () => {
+  assert.deepEqual(topLevelHeadings("Use `` <!-- ` `` as an example.\n\n# Title\n").map((h) => h.line), [3]);
+});
+
+test("a ## line before a setext underline is not a top-level heading", () => {
+  assert.deepEqual(topLevelHeadings("# Title\n\n## Sub\n===\n").map((h) => h.line), [1]);
+});
+
+test("a fence marker inside an HTML comment, or a raw HTML block, is an unknown, never a count", async () => {
+  for (const body of ["# First\n\n<!--\n```\n-->\n# Second\n", "# Title\n\n<pre>\n# example\n</pre>\n"]) {
+    await withRepo({ [`${PLAN}/00-a.md`]: body }, (dir) => {
+      const j = validate(dir);
+      assert.deepEqual(findings(j), []);
+      assert.equal(result(j).disposition, "not-evaluated");
+      assert.match(result(j).message, /00-a\.md/);
+    });
+  }
+});

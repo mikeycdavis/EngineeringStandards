@@ -2846,6 +2846,65 @@ const canonicalStatus = (raw) => {
  */
 /** A line that cannot be the text of a setext heading: another heading, a list item or a block quote. */
 const NOT_PARAGRAPH = /^ {0,3}(?:#{1,6}(?:[ \t]|$)|[-*+][ \t]|\d+[.)][ \t]|>)/;
+/** Mask inline code spans by full backtick-run length (CommonMark), same length, so `<!--` in one is text. */
+function maskCodeSpans(line) {
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] !== "`") {
+      out += line[i++];
+      continue;
+    }
+    let n = 0;
+    while (line[i + n] === "`") n++;
+    let j = i + n;
+    let close = -1;
+    while (j < line.length) {
+      if (line[j] !== "`") {
+        j++;
+        continue;
+      }
+      let m = 0;
+      while (line[j + m] === "`") m++;
+      if (m === n) {
+        close = j;
+        break;
+      }
+      j += m;
+    }
+    if (close === -1) {
+      out += line.slice(i, i + n);
+      i += n;
+    } else {
+      out += " ".repeat(close + n - i);
+      i = close + n;
+    }
+  }
+  return out;
+}
+
+/**
+ * Constructs whose heading structure this reader cannot classify reliably. A file with one is reported
+ * unknown rather than guessed at: a fence marker inside an HTML comment (the shared fence walk classifies
+ * before comments are considered) and a raw HTML block (its contents are not Markdown). Returns a reason or null.
+ */
+export function headingAmbiguity(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  let inComment = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (inComment && /^ {0,3}(?:```|~~~)/.test(line)) return "a code fence marker inside an HTML comment";
+    const masked = maskCodeSpans(line);
+    const o = masked.lastIndexOf("<!--");
+    const c = masked.lastIndexOf("-->");
+    if (o !== -1 && o > c) inComment = true;
+    else if (c !== -1 && c > o) inComment = false;
+  }
+  for (const rec of markdownLines(text)) {
+    if (!rec.inFence && /^ {0,3}<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)/.test(rec.text)) return "a raw HTML block";
+  }
+  return null;
+}
+
 export function topLevelHeadings(text) {
   // A UTF-8 byte-order mark is not content: it must not stop a first-line heading from being one.
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
@@ -2866,13 +2925,13 @@ export function topLevelHeadings(text) {
     }
     // Remove whole comments on this line, then open one that does not close. A `<!--` inside an inline
     // code span is text about a comment, not a comment, so code spans are masked first (same length).
-    const masked = line.replace(/`[^`]*`/g, (m) => " ".repeat(m.length));
+    const masked = maskCodeSpans(line);
     const cut = [];
     for (const m of masked.matchAll(/<!--[\s\S]*?-->/g)) cut.push([m.index, m.index + m[0].length]);
     for (const [a, b] of cut.reverse()) {
       line = line.slice(0, a) + line.slice(b);
     }
-    const maskedAfter = line.replace(/`[^`]*`/g, (m) => " ".repeat(m.length));
+    const maskedAfter = maskCodeSpans(line);
     const open = maskedAfter.indexOf("<!--");
     if (open !== -1) {
       line = line.slice(0, open);
@@ -2911,7 +2970,7 @@ const ONE_FILE_BLIND_SPOTS = [
   "one top-level heading followed by many second-level sections is indistinguishable from one legitimate section with subsections",
   "a file that names several sections in prose",
   "whether the sections are the right ones (planning.handoff owns that)",
-  "a code fence marker inside an HTML comment, which the shared fence walk classifies before comments are considered",
+  "a file with a code fence marker inside an HTML comment or a raw HTML block is reported unknown, not counted",
   "ordering numbers of three or more digits (only NN- is accepted, so 100-x.md is reported as not matching NN-<section>.md)",
 ];
 function detectOneFilePerSection(files, run) {
@@ -2979,6 +3038,11 @@ function detectOneFilePerSection(files, run) {
     const content = run.textOf(f);
     if (!content.available) {
       run.unknown(ONE_FILE_RULE, r, content.reason);
+      continue;
+    }
+    const ambiguity = headingAmbiguity(content.text);
+    if (ambiguity) {
+      run.unknown(ONE_FILE_RULE, r, `contains ${ambiguity}, so its top-level headings cannot be counted reliably`);
       continue;
     }
     const headings = topLevelHeadings(content.text);
