@@ -261,3 +261,8 @@ test("a closing-fence lookalike with trailing text is an unknown, never a count"
     assert.match(result(j).message, /00-a\.md/);
   });
 });
+
+test("removing an inline comment never manufactures a heading", () => {
+  assert.deepEqual(topLevelHeadings("# Real\n\n#<!-- note --> Fake\n").map((h) => h.line), [1]);
+  assert.deepEqual(topLevelHeadings("# Real <!-- note -->\n").map((h) => h.line), [1]);
+});

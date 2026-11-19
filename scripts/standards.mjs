@@ -2929,6 +2929,8 @@ export function headingAmbiguity(text) {
   return null;
 }
 
+// A removed comment leaves this placeholder, so removal can never turn text into a heading (`#<!-- c --> x`).
+const MARK = "";
 export function topLevelHeadings(text) {
   // A UTF-8 byte-order mark is not content: it must not stop a first-line heading from being one.
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
@@ -2944,7 +2946,7 @@ export function topLevelHeadings(text) {
     if (inComment) {
       const end = line.indexOf("-->");
       if (end === -1) continue;
-      line = line.slice(end + 3);
+      line = MARK + line.slice(end + 3);
       inComment = false;
     }
     // Remove whole comments on this line, then open one that does not close. A `<!--` inside an inline
@@ -2953,12 +2955,12 @@ export function topLevelHeadings(text) {
     const cut = [];
     for (const m of masked.matchAll(/<!--[\s\S]*?-->/g)) cut.push([m.index, m.index + m[0].length]);
     for (const [a, b] of cut.reverse()) {
-      line = line.slice(0, a) + line.slice(b);
+      line = line.slice(0, a) + MARK + line.slice(b);
     }
     const maskedAfter = maskCodeSpans(line);
     const open = maskedAfter.indexOf("<!--");
     if (open !== -1) {
-      line = line.slice(0, open);
+      line = line.slice(0, open) + MARK;
       inComment = true;
     }
     if (/^ {0,3}#(?:[ \t]+\S|[ \t]*$)/.test(line) && !/^ {0,3}##/.test(line)) {
