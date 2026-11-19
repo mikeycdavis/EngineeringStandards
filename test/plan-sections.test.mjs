@@ -244,3 +244,11 @@ test("an inline code span that wraps across lines around <!-- is an unknown", as
     assert.match(result(j).message, /00-a\.md/);
   });
 });
+
+test("a comment opener inside a real fenced example does not make the file ambiguous", async () => {
+  await withRepo({ [`${PLAN}/00-a.md`]: "# First\n\n```html\n<!--\n```\n\n# Second\n" }, (dir) => {
+    const f = findings(validate(dir)).find((x) => x.id === "plan-section-heading-count");
+    assert.ok(f);
+    assert.match(f.message, /line 1: # First; line 7: # Second/);
+  });
+});
