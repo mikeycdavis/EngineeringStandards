@@ -252,3 +252,12 @@ test("a comment opener inside a real fenced example does not make the file ambig
     assert.match(f.message, /line 1: # First; line 7: # Second/);
   });
 });
+
+test("a closing-fence lookalike with trailing text is an unknown, never a count", async () => {
+  await withRepo({ [`${PLAN}/00-a.md`]: "# Title\n\n```\n```not-a-close\n# example\n```\n" }, (dir) => {
+    const j = validate(dir);
+    assert.deepEqual(findings(j), []);
+    assert.equal(result(j).disposition, "not-evaluated");
+    assert.match(result(j).message, /00-a\.md/);
+  });
+});

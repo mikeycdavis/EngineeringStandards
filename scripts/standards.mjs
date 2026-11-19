@@ -2892,9 +2892,13 @@ export function headingAmbiguity(text) {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   let inComment = false;
   let fence = null; // { ch, len } of the open fence
+  const mine = new Map(); // 1-based line -> whether this scan has it inside a fence (non-marker lines only)
+  let lineNo = 0;
   const hasComment = text.includes("<!--");
   for (const line of text.split(/\r?\n/)) {
+    lineNo += 1;
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) mine.set(lineNo, fence !== null);
     if (fence) {
       // Inside a fence nothing but its closing marker matters: a comment opener there is example text.
       if (marker && marker[1][0] === fence.ch && marker[1].length >= fence.len && marker[2].trim() === "") fence = null;
@@ -2913,6 +2917,11 @@ export function headingAmbiguity(text) {
     const c = masked.lastIndexOf("-->");
     if (o !== -1 && o > c) inComment = true;
     else if (c !== -1 && c > o) inComment = false;
+  }
+  // The shared fence walk must agree with this scan about which plain lines are code; where it does not
+  // (a closing-fence lookalike with trailing text), counting headings from it would be a guess.
+  for (const rec of markdownLines(text)) {
+    if (mine.has(rec.line) && mine.get(rec.line) !== rec.inFence) return "a code fence the shared reader classifies differently";
   }
   for (const rec of markdownLines(text)) {
     if (!rec.inFence && /^ {0,3}<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)/.test(rec.text)) return "a raw HTML block";
