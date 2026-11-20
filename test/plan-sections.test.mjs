@@ -286,3 +286,8 @@ test("comment delimiters beside backticks, and openers in indented text, are rep
   assert.match(headingAmbiguity("# First\n\n<!-- ` --> `\n\n# Second\n"), /backtick/);
   assert.match(headingAmbiguity("# First\n\n    <!-- literal example\n\n# Second\n"), /indented/);
 });
+
+test("a code fence opened inside a list item or block quote is reported as ambiguous", () => {
+  assert.match(headingAmbiguity("# Real\n\n- ```markdown\n  # example heading\n  ```\n"), /list item or block quote/);
+  assert.match(headingAmbiguity("# Real\n\n> ```\n> # x\n> ```\n"), /list item or block quote/);
+});
