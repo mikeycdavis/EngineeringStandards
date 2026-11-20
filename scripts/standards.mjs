@@ -2913,6 +2913,9 @@ export function headingAmbiguity(text) {
     // An unmatched backtick run in a file that has comments may open a code span that wraps across lines,
     // which per-line masking cannot see, so the comment structure is not reliable.
     if (hasComment && masked.includes("`")) return "an inline code span that may wrap across lines";
+    // A backslash-escaped opener renders literally; honouring escapes in every comment scan is more than this
+    // reader does, so such a file is reported as not countable.
+    if (masked.includes("\\<!--")) return "a backslash-escaped comment opener";
     const o = masked.lastIndexOf("<!--");
     const c = masked.lastIndexOf("-->");
     if (o !== -1 && o > c) inComment = true;
@@ -3071,8 +3074,9 @@ function detectOneFilePerSection(files, run) {
       run.unknown(ONE_FILE_RULE, r, `contains ${ambiguity}, so its top-level headings cannot be counted reliably`);
       continue;
     }
-    const headings = topLevelHeadings(content.text);
     const truncated = run.truncated.has(f);
+    // The read cap cuts mid-line: the incomplete final line is not classified, so a cut `#not-a-heading` cannot become one.
+    const headings = topLevelHeadings(truncated ? content.text.slice(0, content.text.lastIndexOf("\n") + 1) : content.text);
     if (headings.length > 1 || (headings.length === 0 && !truncated)) {
       addFinding({
         id: "plan-section-heading-count",

@@ -13,7 +13,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { topLevelHeadings } from "../scripts/standards.mjs";
+import { topLevelHeadings, headingAmbiguity } from "../scripts/standards.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "scripts", "standards.mjs");
@@ -265,4 +265,19 @@ test("a closing-fence lookalike with trailing text is an unknown, never a count"
 test("removing an inline comment never manufactures a heading", () => {
   assert.deepEqual(topLevelHeadings("# Real\n\n#<!-- note --> Fake\n").map((h) => h.line), [1]);
   assert.deepEqual(topLevelHeadings("# Real <!-- note -->\n").map((h) => h.line), [1]);
+});
+
+test("a backslash-escaped comment opener is reported as ambiguous, not silently swallowed", () => {
+  assert.match(headingAmbiguity("# First\n\nUse \\<!-- literally.\n\n# Second\n"), /backslash-escaped/);
+  assert.equal(headingAmbiguity("# First\n\nUse <!-- real --> here.\n"), null);
+});
+
+test("a read cap that cuts a paragraph after '#' does not manufacture a heading", async () => {
+  const cut = `# Real\n\n${"p".repeat(79)}\n`.repeat(1) + `${"p".repeat(79)}\n`.repeat(Math.ceil(CAP / 80) - 2);
+  const body = cut.slice(0, CAP - 2) + "\n#not-a-heading\n";
+  await withRepo({ [`${PLAN}/00-overview.md`]: ok("O"), [`${PLAN}/01-big.md`]: body }, (dir) => {
+    const j = validate(dir);
+    assert.deepEqual(findings(j), []);
+    assert.equal(result(j).disposition, "not-evaluated");
+  });
 });
