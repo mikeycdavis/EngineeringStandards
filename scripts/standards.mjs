@@ -2909,6 +2909,10 @@ export function headingAmbiguity(text) {
       fence = { ch: marker[1][0], len: marker[1].length };
       continue;
     }
+    // Comment delimiters beside backticks, or inside indented text, are where comment and code-span (or indented
+    // code) precedence matters and is not modelled here, so such a file is reported as not countable.
+    if (/<!--|-->/.test(line) && line.includes("`")) return "a comment delimiter on a line with a backtick";
+    if (!inComment && /^(?: {4,}|\t)/.test(line) && line.includes("<!--")) return "a comment opener in indented text";
     const masked = maskCodeSpans(line);
     // An unmatched backtick run in a file that has comments may open a code span that wraps across lines,
     // which per-line masking cannot see, so the comment structure is not reliable.

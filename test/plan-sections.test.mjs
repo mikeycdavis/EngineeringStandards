@@ -281,3 +281,8 @@ test("a read cap that cuts a paragraph after '#' does not manufacture a heading"
     assert.equal(result(j).disposition, "not-evaluated");
   });
 });
+
+test("comment delimiters beside backticks, and openers in indented text, are reported as ambiguous", () => {
+  assert.match(headingAmbiguity("# First\n\n<!-- ` --> `\n\n# Second\n"), /backtick/);
+  assert.match(headingAmbiguity("# First\n\n    <!-- literal example\n\n# Second\n"), /indented/);
+});
