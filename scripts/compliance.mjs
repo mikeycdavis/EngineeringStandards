@@ -85,6 +85,14 @@ function notEvaluatedMessage(rule, withdrawn) {
 }
 
 /**
+ * The message of a partial detector's clean run (ST-27, #120). It says what was observed and what it
+ * cannot establish; it never says the rule is satisfied.
+ */
+function partialMessage(rule, scope) {
+  return `A partial check for ${rule.id} found no violation within what it observed (${displaySafe(scope.observedScope)}), but it cannot establish the rule. Blind spots: ${scope.blindSpots.map((b) => displaySafe(b)).join("; ")}.`;
+}
+
+/**
  * @param catalog   from loadCatalog()
  * @param policy    a validated project-policy document, or null when the project declares none
  * @param findings  evaluator findings, each optionally carrying `rule` (a canonical id)
@@ -106,7 +114,7 @@ function notEvaluatedMessage(rule, withdrawn) {
  * @param expiredJustified justifications past their `expires`. They are not applied; each yields a
  *                  failed `expired-justification` configuration result, as an expired exception does.
  */
-export function evaluate({ catalog, policy, findings, evaluated, withdrawn = null, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null, justified, expiredJustified }) {
+export function evaluate({ catalog, policy, findings, evaluated, withdrawn = null, partial = null, today, freshness, establishedRejections = null, recordedAttestations = null, baseRecordedAttestations = null, justified, expiredJustified }) {
   const declaredRules = policy?.rules ?? {};
   const applicability = policy?.applicability ?? {};
   const exceptions = Array.isArray(policy?.exceptions) ? policy.exceptions : [];
@@ -317,6 +325,17 @@ export function evaluate({ catalog, policy, findings, evaluated, withdrawn = nul
     // `passed` that way was possible before attestations existed, and it is the false green
     // Standard 24 R2 forbids.
     if (rule.validationType === "manual-review" || !examined.has(rule.id)) {
+      const scope = rule.validationType === "manual-review" ? undefined : partial?.get(rule.id);
+      if (scope) {
+        // A partial detector's clean run: NOT_EVALUATED with assurance `partial`, never a pass (ST-27).
+        results.push({
+          ...base(rule, level, RESULT.skipped, "not-evaluated", partialMessage(rule, scope)),
+          assurance: "partial",
+          observedScope: scope.observedScope,
+          blindSpots: [...scope.blindSpots],
+        });
+        continue;
+      }
       results.push(base(rule, level, RESULT.skipped, "not-evaluated", notEvaluatedMessage(rule, withdrawn)));
       continue;
     }

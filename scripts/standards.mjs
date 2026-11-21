@@ -112,6 +112,7 @@ const EVALUATED_RULES = [
   "documentation.code-consistency",
   "planning.breakdown-directory",
   "planning.item-fields",
+  "planning.one-file-per-section",
   "planning.plan-code-consistency",
   "verification.before-completion",
   "quality.unfinished-work",
@@ -160,6 +161,7 @@ const EVALUATED_RULES = [
  */
 const CONTENT_DERIVED_RULES = [
   "documentation.code-consistency",
+  "planning.one-file-per-section",
   "planning.plan-code-consistency",
   "verification.before-completion",
   "quality.unfinished-work",
@@ -206,6 +208,8 @@ const TRUNCATION_DOMAIN = {
     !ENV_FILE_RE.test(f.split(path.sep).join("/")) && (isCode(f) || CONFIG_EXT.has(path.extname(f))),
   "documentation.code-consistency": (f) => /(^|\/)(readme\.md|package\.json)$/i.test(f.split(path.sep).join("/")),
   "planning.plan-code-consistency": (f) => path.extname(f) === ".md",
+  // The detector's own filter: a `.md` directly in the plan directory, posix-normalised (ST-27, #120).
+  "planning.one-file-per-section": (f) => PLAN_DIRECT_CHILD_PATTERN.test(f.split(path.sep).join("/")),
 };
 
 /**
@@ -455,6 +459,7 @@ export function renderVerdict(report, policy, policyFindings = [], exemptionFind
   return out.join("\n");
 }
 const STD03 = "standards/03-auditing.md";
+const STD04 = "standards/04-planning-standards.md";
 const STD44 = "standards/44-existing-project-reconstruction.md";
 const STD46 = "standards/46-source-control-safety.md";
 const STD48 = "standards/48-error-handling-and-observability.md";
@@ -1262,6 +1267,11 @@ function createRun({ root, strict, json }) {
    */
   const unknownChecks = new Map();
 
+  // The clean-run statement of a PARTIAL detector (ST-27, #120): rule id -> { observedScope, blindSpots }.
+  // A partial detector never returns PASS for the whole rule; a run with no violation within its
+  // observed scope is reported NOT_EVALUATED with this scope and these blind spots instead.
+  const partialScopes = new Map();
+
   // Fixture exemptions bound to this invocation's bytes, and which of them fired. Per run, like
   // everything else here (ADR 0014).
   const exemptions = new Map();
@@ -1275,6 +1285,7 @@ function createRun({ root, strict, json }) {
     truncated,
     readDigests,
     unknownChecks,
+    partialScopes,
 
     /**
      * The ONE write door for collected content, and the reason the two maps above are no longer
@@ -1305,6 +1316,16 @@ function createRun({ root, strict, json }) {
     unknown(rule, file, reason) {
       if (!unknownChecks.has(rule)) unknownChecks.set(rule, []);
       unknownChecks.get(rule).push({ file, reason });
+    },
+
+    /**
+     * Record what a PARTIAL detector observed when it found nothing, as data rather than as a pass.
+     * `observedScope` is one sentence of what was checked; `blindSpots` lists what the detector cannot
+     * establish. This is the only way a partial rule's clean run is reported, and the result is always
+     * not-evaluated with assurance `partial` (see `evaluate`).
+     */
+    partial(rule, observedScope, blindSpots) {
+      partialScopes.set(rule, { observedScope, blindSpots: [...blindSpots] });
     },
 
     /** Repo-relative path with forward slashes, so output is stable across platforms. */
@@ -2729,6 +2750,11 @@ export function isPlanItemFile(relPath) {
   return PLAN_ITEM_FILE_PATTERN.test(relPath);
 }
 
+/** A `.md` directly in the plan directory (not nested): the files `planning.one-file-per-section` inspects. */
+const PLAN_DIRECT_CHILD_PATTERN = new RegExp(
+  "^" + PLAN_DIR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/[^/]+\\.md$",
+);
+
 /**
  * Is this plan item executable: does it carry a `Status` field. The one definition both plan rules
  * evaluate over.
@@ -2812,6 +2838,279 @@ const canonicalStatus = (raw) => {
   if (/^(NOT_STARTED|READY|IN_PROGRESS|BLOCKED|IN_REVIEW|COMPLETE|DEFERRED|CANCELLED)$/.test(upper)) return upper;
   return STATUS_ALIASES[first.toLowerCase()] ?? upper;
 };
+
+/**
+ * The top-level (`#`, or a setext `===` underline) headings of a Markdown plan section, outside fenced
+ * code and outside HTML comments (ST-27, #120). Fence handling is `markdownLines`, the one shared
+ * fence-aware walk: no second fence tracker exists. Returns `{ line, text }` per heading.
+ */
+/** A line that cannot be the text of a setext heading: another heading, a list item or a block quote. */
+const NOT_PARAGRAPH = /^ {0,3}(?:#{1,6}(?:[ \t]|$)|[-*+][ \t]|\d+[.)][ \t]|>)/;
+/** Mask inline code spans by full backtick-run length (CommonMark), same length, so `<!--` in one is text. */
+function maskCodeSpans(line) {
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] !== "`") {
+      out += line[i++];
+      continue;
+    }
+    let n = 0;
+    while (line[i + n] === "`") n++;
+    let j = i + n;
+    let close = -1;
+    while (j < line.length) {
+      if (line[j] !== "`") {
+        j++;
+        continue;
+      }
+      let m = 0;
+      while (line[j + m] === "`") m++;
+      if (m === n) {
+        close = j;
+        break;
+      }
+      j += m;
+    }
+    if (close === -1) {
+      out += line.slice(i, i + n);
+      i += n;
+    } else {
+      out += " ".repeat(close + n - i);
+      i = close + n;
+    }
+  }
+  return out;
+}
+
+/**
+ * Constructs whose heading structure this reader cannot classify reliably. A file with one is reported
+ * unknown rather than guessed at: a fence marker inside an HTML comment (the shared fence walk classifies
+ * before comments are considered) and a raw HTML block (its contents are not Markdown). Returns a reason or null.
+ */
+export function headingAmbiguity(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  let inComment = false;
+  let fence = null; // { ch, len } of the open fence
+  const mine = new Map(); // 1-based line -> whether this scan has it inside a fence (non-marker lines only)
+  let lineNo = 0;
+  const hasComment = text.includes("<!--");
+  for (const line of text.split(/\r?\n/)) {
+    lineNo += 1;
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) mine.set(lineNo, fence !== null);
+    if (fence) {
+      // Inside a fence nothing but its closing marker matters: a comment opener there is example text.
+      if (marker && marker[1][0] === fence.ch && marker[1].length >= fence.len && marker[2].trim() === "") fence = null;
+      continue;
+    }
+    if (inComment && marker) return "a code fence marker inside an HTML comment";
+    if (marker && !inComment && !(marker[1][0] === "`" && marker[2].includes("`"))) {
+      fence = { ch: marker[1][0], len: marker[1].length };
+      continue;
+    }
+    // A fence opened inside a list item or block quote is a container the shared reader does not model.
+    if (/^ {0,3}(?:[-*+]|\d+[.)]|>)[ \t]+(?:[-*+>][ \t]+)*(?:`{3,}|~{3,})/.test(line)) return "a code fence inside a list item or block quote";
+    // Comment delimiters beside backticks, or inside indented text, are where comment and code-span (or indented
+    // code) precedence matters and is not modelled here, so such a file is reported as not countable.
+    if (/<!--|-->/.test(line) && line.includes("`")) return "a comment delimiter on a line with a backtick";
+    if (!inComment && /^(?: {4,}|\t)/.test(line) && line.includes("<!--")) return "a comment opener in indented text";
+    const masked = maskCodeSpans(line);
+    // An unmatched backtick run in a file that has comments may open a code span that wraps across lines,
+    // which per-line masking cannot see, so the comment structure is not reliable.
+    if (hasComment && masked.includes("`")) return "an inline code span that may wrap across lines";
+    // A backslash-escaped opener renders literally; honouring escapes in every comment scan is more than this
+    // reader does, so such a file is reported as not countable.
+    if (masked.includes("\\<!--")) return "a backslash-escaped comment opener";
+    const o = masked.lastIndexOf("<!--");
+    const c = masked.lastIndexOf("-->");
+    if (o !== -1 && o > c) inComment = true;
+    else if (c !== -1 && c > o) inComment = false;
+  }
+  // The shared fence walk must agree with this scan about which plain lines are code; where it does not
+  // (a closing-fence lookalike with trailing text), counting headings from it would be a guess.
+  for (const rec of markdownLines(text)) {
+    if (mine.has(rec.line) && mine.get(rec.line) !== rec.inFence) return "a code fence the shared reader classifies differently";
+  }
+  for (const rec of markdownLines(text)) {
+    if (!rec.inFence && /^ {0,3}<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)/.test(rec.text)) return "a raw HTML block";
+  }
+  return null;
+}
+
+// A removed comment leaves this placeholder, so removal can never turn text into a heading (`#<!-- c --> x`).
+const MARK = "";
+export function topLevelHeadings(text) {
+  // A UTF-8 byte-order mark is not content: it must not stop a first-line heading from being one.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const out = [];
+  let inComment = false;
+  let previous = null; // the last plain text line, for a setext underline
+  for (const rec of markdownLines(text)) {
+    if (rec.inFence) {
+      previous = null;
+      continue;
+    }
+    let line = rec.text;
+    if (inComment) {
+      const end = line.indexOf("-->");
+      if (end === -1) continue;
+      line = MARK + line.slice(end + 3);
+      inComment = false;
+    }
+    // Remove whole comments on this line, then open one that does not close. A `<!--` inside an inline
+    // code span is text about a comment, not a comment, so code spans are masked first (same length).
+    const masked = maskCodeSpans(line);
+    const cut = [];
+    for (const m of masked.matchAll(/<!--[\s\S]*?-->/g)) cut.push([m.index, m.index + m[0].length]);
+    for (const [a, b] of cut.reverse()) {
+      line = line.slice(0, a) + MARK + line.slice(b);
+    }
+    const maskedAfter = maskCodeSpans(line);
+    const open = maskedAfter.indexOf("<!--");
+    if (open !== -1) {
+      line = line.slice(0, open) + MARK;
+      inComment = true;
+    }
+    if (/^ {0,3}#(?:[ \t]|$)/.test(line) && !/^ {0,3}##/.test(line)) {
+      out.push({ line: rec.line, text: rec.text.trim() });
+      previous = null;
+    } else if (/^ {0,3}=+[ \t]*$/.test(line) && previous !== null && !NOT_PARAGRAPH.test(previous.text)) {
+      out.push({ line: previous.line, text: previous.text.trim() });
+      previous = null;
+    } else if (line.trim() === "") {
+      previous = null;
+    } else {
+      previous = { line: rec.line, text: rec.text };
+    }
+  }
+  return out;
+}
+
+/**
+ * `planning.one-file-per-section` (ST-27, #120; Standard 4 R3), a PARTIAL detector.
+ *
+ * Facts it can establish: F1 every section file has a numeric `NN-` ordering segment; F2 ordering
+ * numbers are unique; F3 each section file has exactly one top-level heading. The numbered filename
+ * convention (`isPlanItemFile`) is the one definition of "numbered" (owner rule; D3 accepts only
+ * `NN-`). A `README.md` is supporting documentation and never a section file. A file in a nested
+ * directory is an unknown, never recursed into and never passed (D1).
+ *
+ * It is partial because one H1 followed by many `##` sections is indistinguishable from one legitimate
+ * section with subsections, so a clean run is reported NOT_EVALUATED with assurance `partial`, the
+ * observed scope and the blind spots (D2), never PASS.
+ */
+const ONE_FILE_RULE = "planning.one-file-per-section";
+const ONE_FILE_BLIND_SPOTS = [
+  "one top-level heading followed by many second-level sections is indistinguishable from one legitimate section with subsections",
+  "a file that names several sections in prose",
+  "whether the sections are the right ones (planning.handoff owns that)",
+  "a file with a code fence marker inside an HTML comment or a raw HTML block is reported unknown, not counted",
+  "ordering numbers of three or more digits (only NN- is accepted, so 100-x.md is reported as not matching NN-<section>.md)",
+];
+function detectOneFilePerSection(files, run) {
+  const { rel, addFinding } = run;
+  const dir = PLAN_DIR;
+  const planFiles = files.filter((f) => isPlanFile(rel(f)));
+  if (planFiles.length === 0) {
+    // planning.breakdown-directory owns the absence finding; never a vacuous pass here.
+    run.unknown(ONE_FILE_RULE, `${dir}/`, "no plan-directory file was observed");
+    return;
+  }
+  const direct = [];
+  for (const f of planFiles) {
+    const r = rel(f);
+    if (!PLAN_DIRECT_CHILD_PATTERN.test(r)) {
+      run.unknown(ONE_FILE_RULE, r, "nested plan file: Standard 4 does not define a nested layout, so it is neither inspected nor passed");
+    } else if (!/^readme\.md$/i.test(r.slice(dir.length + 1))) {
+      direct.push(f);
+    }
+  }
+  if (direct.length === 0) {
+    run.unknown(ONE_FILE_RULE, `${dir}/`, "no section file is present (a README is supporting documentation, never a section file)");
+    return;
+  }
+
+  // F1, from names alone: established even when a file's content was not read.
+  const unnumbered = direct.filter((f) => !isPlanItemFile(rel(f)));
+  if (unnumbered.length > 0) {
+    addFinding({
+      id: "plan-section-file-unnumbered",
+      rule: "planning.one-file-per-section",
+      category: "Plan structure",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: unnumbered.map(rel),
+      message: `${unnumbered.length} plan section file(s) have no NN- ordering number and so do not match NN-<section>.md (two digits, a hyphen): ${unnumbered.map(rel).join(", ")}.`,
+      standardRef: STD04,
+    });
+  }
+  // F2, from names alone.
+  const byNumber = new Map();
+  for (const f of direct) {
+    if (!isPlanItemFile(rel(f))) continue;
+    const n = rel(f).slice(dir.length + 1, dir.length + 3);
+    if (!byNumber.has(n)) byNumber.set(n, []);
+    byNumber.get(n).push(rel(f));
+  }
+  for (const [n, group] of [...byNumber].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (group.length < 2) continue;
+    addFinding({
+      id: "plan-section-number-duplicated",
+      rule: "planning.one-file-per-section",
+      category: "Plan structure",
+      severity: "error",
+      label: "OBSERVED",
+      evidence: group,
+      message: `Ordering number ${n}- is used by ${group.length} plan section files, so their order is ambiguous.`,
+      standardRef: STD04,
+    });
+  }
+  // F3, from content: exactly one top-level heading, in a file read whole.
+  let readWhole = 0;
+  for (const f of direct) {
+    const r = rel(f);
+    const content = run.textOf(f);
+    if (!content.available) {
+      run.unknown(ONE_FILE_RULE, r, content.reason);
+      continue;
+    }
+    const ambiguity = headingAmbiguity(content.text);
+    if (ambiguity) {
+      run.unknown(ONE_FILE_RULE, r, `contains ${ambiguity}, so its top-level headings cannot be counted reliably`);
+      continue;
+    }
+    const truncated = run.truncated.has(f);
+    // The read cap cuts mid-line: the incomplete final line is not classified, so a cut `#not-a-heading` cannot become one.
+    const headings = topLevelHeadings(truncated ? content.text.slice(0, content.text.lastIndexOf("\n") + 1) : content.text);
+    if (headings.length > 1 || (headings.length === 0 && !truncated)) {
+      addFinding({
+        id: "plan-section-heading-count",
+        rule: "planning.one-file-per-section",
+        category: "Plan structure",
+        severity: "error",
+        label: "OBSERVED",
+        evidence: [r],
+        message:
+          headings.length === 0
+            ? `${r} has no top-level heading.`
+            : `${r} has ${headings.length} top-level headings (${headings.map((h) => `line ${h.line}: ${h.text}`).join("; ")}); each section belongs in its own file.`,
+        standardRef: STD04,
+        detail: { file: r, headings },
+      });
+    }
+    if (truncated) {
+      run.unknown(ONE_FILE_RULE, r, `read only up to the ${MAX_READ_BYTES}-byte cap, so a second heading past it was not searched`);
+    } else {
+      readWhole += 1;
+    }
+  }
+  run.partial(
+    ONE_FILE_RULE,
+    `${readWhole} section file(s) read whole: each has an NN- ordering number, numbers are unique, and each has exactly one top-level heading`,
+    ONE_FILE_BLIND_SPOTS,
+  );
+}
 
 async function detectPlanDiscrepancies(files, run) {
   const { rel, root, addFinding } = run;
@@ -5186,6 +5485,7 @@ export async function main(args) {
   detectMissingDocs(files, run);
   detectArchitectureArtifacts(files, run);
   detectMissingPlanningArtifacts(files, run);
+  detectOneFilePerSection(files, run);
   detectUnverifiedFunctionality(files, run);
   detectVerificationSurface(files, run, {
     pathsComplete: !surfaceLoss.capped && !surfaceLoss.dirs.length && !frameworkExcluded.length,
@@ -5858,11 +6158,19 @@ export async function main(args) {
   // A detector that reports `evaluated: false` withdrew its rule because the rule's subject could not
   // be established — an unreadable index, or no baseline directory (#63) — which is neither a
   // violation nor unread content, so neither `confirmed` nor `unestablished` above can express it.
+  // A PARTIAL detector's clean run (ST-27, #120): it recorded what it observed, found nothing, and has
+  // no unknown check. It is withdrawn from `evaluated` and reported not-evaluated with assurance
+  // `partial`, never passed. A confirmed violation keeps the rule evaluated and failed.
+  const partialClean = (id) => run.partialScopes.has(id) && !confirmed.has(id) && !run.unknownChecks.has(id);
   const evaluatedThisRun = EVALUATED_RULES.filter(
     (id) =>
       !(id === "scm.no-committed-env-files" && envCheck.evaluated === false) &&
       !(id === "reconstruction.baseline-artifacts" && baselineCheck.evaluated === false) &&
-      !unestablished(id),
+      !unestablished(id) &&
+      !(partialClean(id) && !evidenceWentUnsearched(id)),
+  );
+  const partialScopes = new Map(
+    [...run.partialScopes].filter(([id]) => partialClean(id) && !evidenceWentUnsearched(id)),
   );
 
   // WHY a rule whose detector ran is nevertheless not evaluated, for the sentence a not-evaluated result
@@ -5901,6 +6209,7 @@ export async function main(args) {
     findings,
     evaluated: evaluatedThisRun,
     withdrawn: withdrawnReasons,
+    partial: partialScopes,
     today,
     freshness,
     // Rules whose rejection is already at the trusted base (append-only); null when unknown.
