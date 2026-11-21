@@ -2972,7 +2972,7 @@ export function topLevelHeadings(text) {
       line = line.slice(0, open) + MARK;
       inComment = true;
     }
-    if (/^ {0,3}#(?:[ \t]+\S|[ \t]*$)/.test(line) && !/^ {0,3}##/.test(line)) {
+    if (/^ {0,3}#(?:[ \t]|$)/.test(line) && !/^ {0,3}##/.test(line)) {
       out.push({ line: rec.line, text: rec.text.trim() });
       previous = null;
     } else if (/^ {0,3}=+[ \t]*$/.test(line) && previous !== null && !NOT_PARAGRAPH.test(previous.text)) {

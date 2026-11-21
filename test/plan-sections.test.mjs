@@ -291,3 +291,8 @@ test("a code fence opened inside a list item or block quote is reported as ambig
   assert.match(headingAmbiguity("# Real\n\n- ```markdown\n  # example heading\n  ```\n"), /list item or block quote/);
   assert.match(headingAmbiguity("# Real\n\n> ```\n> # x\n> ```\n"), /list item or block quote/);
 });
+
+test("a heading whose content starts with Unicode whitespace is still a heading", () => {
+  assert.deepEqual(topLevelHeadings("#  Title\n").map((h) => h.line), [1]);
+  assert.deepEqual(topLevelHeadings("# Title\n").map((h) => h.line), []);
+});
