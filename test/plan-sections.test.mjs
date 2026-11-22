@@ -133,6 +133,8 @@ test("README.md is never a section file, with or without an index link", async (
     const j = validate(dir);
     assert.deepEqual(findings(j), []);
     assert.equal(result(j).assurance, "partial");
+    // The README is listed in the observed scope as supporting documentation, never evaluated as a section.
+    assert.match(result(j).observedScope, /artifacts\/project-plan-breakdown\/README\.md listed as supporting documentation/);
   });
 });
 

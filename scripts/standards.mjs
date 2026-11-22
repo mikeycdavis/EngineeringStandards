@@ -3041,12 +3041,15 @@ function detectOneFilePerSection(files, run) {
     return;
   }
   const direct = [];
+  const supporting = []; // README files: listed in the observed scope, never evaluated as sections
   for (const f of planFiles) {
     const r = rel(f);
     if (!PLAN_DIRECT_CHILD_PATTERN.test(r)) {
       run.unknown(ONE_FILE_RULE, r, "nested plan file: Standard 4 does not define a nested layout, so it is neither inspected nor passed");
     } else if (!/^readme\.md$/i.test(r.slice(dir.length + 1))) {
       direct.push(f);
+    } else {
+      supporting.push(r);
     }
   }
   if (direct.length === 0) {
@@ -3130,7 +3133,7 @@ function detectOneFilePerSection(files, run) {
   }
   run.partial(
     ONE_FILE_RULE,
-    `${readWhole} section file(s) read whole: each has an NN- ordering number, numbers are unique, and each has exactly one top-level heading`,
+    `${readWhole} section file(s) read whole: each has an NN- ordering number, numbers are unique, and each has exactly one top-level heading${supporting.length > 0 ? `; ${supporting.join(", ")} listed as supporting documentation, not evaluated as a section file` : ""}`,
     ONE_FILE_BLIND_SPOTS,
   );
 }
