@@ -296,3 +296,102 @@ test("a heading whose content starts with Unicode whitespace is still a heading"
   assert.deepEqual(topLevelHeadings("#  Title\n").map((h) => h.line), [1]);
   assert.deepEqual(topLevelHeadings("# Title\n").map((h) => h.line), []);
 });
+
+test("a thematic break, comment-only line, indented code or reference definition before '===' is not a setext heading", () => {
+  for (const body of ["# One\n\n---\n===\n", "# One\n\n<!-- c -->\n===\n", "# One\n\nfoo\n<!--\nx\n-->\n===\n", "# One\n\n    code\n===\n", "# One\n\n[ref]: http://x\n===\n"]) {
+    assert.deepEqual(topLevelHeadings(body).map((h) => h.line), [1], JSON.stringify(body));
+  }
+  assert.deepEqual(topLevelHeadings("# One\n\nTitle\n===\n").map((h) => h.line), [1, 3]);
+});
+
+test("use versus mention: headings named only in a comment, a fence, inline code or prose are not violations", async () => {
+  const body = "# Only\n\n<!-- # not a heading -->\n\n```md\n# nor this\n```\n\nWrite `# like this` to make one, or put a # sign mid-line.\n";
+  await withRepo({ [`${PLAN}/00-only.md`]: body }, (dir) => {
+    assert.deepEqual(findings(validate(dir)), []);
+  });
+});
+
+test("README beside a violating section file: the README is not evaluated and the violation stands", async () => {
+  await withRepo({ [`${PLAN}/README.md`]: "# Index\n\n# Another\n", [`${PLAN}/00-overview.md`]: ok("O"), [`${PLAN}/overview.md`]: ok("X") }, (dir) => {
+    const j = validate(dir);
+    const f = findings(j);
+    assert.equal(f.length, 1);
+    assert.match(JSON.stringify(f[0]), /overview\.md/);
+    assert.doesNotMatch(JSON.stringify(f), /README/);
+    assert.equal(result(j).status, "failed");
+  });
+});
+
+test("a section file that cannot be read leaves the rule NOT_EVALUATED, never passed", async () => {
+  await withRepo({ [`${PLAN}/00-overview.md`]: ok("O"), [`${PLAN}/01-a.md`]: ok("A") }, async (dir) => {
+    await rm(path.join(dir, PLAN, "01-a.md"));
+    const j = validate(dir);
+    assert.equal(findings(j).length, 0);
+    assert.notEqual(result(j).status, "passed");
+    assert.notEqual(result(j).disposition, "evaluated");
+  });
+});
+
+test("mutation: inverting the heading-count predicate in a copy of the tool makes the two-heading fixture pass unnoticed", async () => {
+  const fs = await import("node:fs");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "plan-mut-"));
+  try {
+    fs.cpSync(path.join(HERE, "..", "scripts"), path.join(tmp, "scripts"), { recursive: true });
+    fs.cpSync(path.join(HERE, "..", "rules"), path.join(tmp, "rules"), { recursive: true });
+    fs.cpSync(path.join(HERE, "..", "VERSION"), path.join(tmp, "VERSION"));
+    const target = path.join(tmp, "scripts", "standards.mjs");
+    const src = fs.readFileSync(target, "utf8");
+    assert.ok(src.includes("headings.length > 1 ||"), "the predicate under mutation exists");
+    fs.writeFileSync(target, src.replace("headings.length > 1 ||", "headings.length > 99 ||"));
+    await withRepo({ [`${PLAN}/plan.md`]: "# A\n\n# B\n" }, (dir) => {
+      const run = (cli) => JSON.parse(spawnSync(process.execPath, [cli, "validate", `--dir=${dir}`, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).stdout);
+      const count = (j) => findings(j).filter((f) => f.id === "plan-section-heading-count").length;
+      assert.equal(count(run(CLI)), 1, "the real tool reports the monolith");
+      assert.equal(count(run(target)), 0, "the mutated tool misses it, so the fixture detects the mutation");
+    });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("self-versus-target parity: the same plan gives the same rule result as the tool's own repository and as a target", async () => {
+  const fs = await import("node:fs");
+  const files = { [`${PLAN}/00-overview.md`]: ok("O"), [`${PLAN}/01-a.md`]: "# A\n\n# A2\n", [`${PLAN}/overview.md`]: ok("X") };
+  await withRepo(files, (dir) => {
+    fs.cpSync(path.join(HERE, "..", "scripts"), path.join(dir, "scripts"), { recursive: true });
+    fs.cpSync(path.join(HERE, "..", "rules"), path.join(dir, "rules"), { recursive: true });
+    fs.cpSync(path.join(HERE, "..", "VERSION"), path.join(dir, "VERSION"));
+    const shape = (j) => ({ r: { status: result(j).status, disposition: result(j).disposition, assurance: result(j).assurance }, f: findings(j).map((x) => x.id).sort() });
+    const target = validate(dir);
+    const self = JSON.parse(spawnSync(process.execPath, [path.join(dir, "scripts", "standards.mjs"), "validate", "--json"], { cwd: dir, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).stdout);
+    assert.deepEqual(shape(self), shape(target));
+    assert.ok(shape(target).f.length >= 2);
+  });
+});
+
+async function fixtureFiles(name) {
+  const fs = await import("node:fs");
+  const base = path.join(HERE, "fixtures", "plan-sections", name);
+  const out = {};
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else out[path.relative(base, p).split(path.sep).join("/")] = fs.readFileSync(p, "utf8");
+    }
+  };
+  walk(base);
+  return out;
+}
+
+test("fixtures under test/fixtures/plan-sections: the compliant plan is clean and the monolith is a violation naming its file", async () => {
+  await withRepo(await fixtureFiles("compliant"), (dir) => {
+    assert.deepEqual(findings(validate(dir)), []);
+  });
+  await withRepo(await fixtureFiles("monolith"), (dir) => {
+    const f = findings(validate(dir));
+    assert.equal(f.length, 1);
+    assert.equal(f[0].id, "plan-section-heading-count");
+    assert.match(f[0].message, /00-plan\.md has 2 top-level headings/);
+  });
+});

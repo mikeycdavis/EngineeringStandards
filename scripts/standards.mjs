@@ -2938,6 +2938,7 @@ export function headingAmbiguity(text) {
   return null;
 }
 
+const NOT_SETEXT_TEXT = /^(?: {4}|\t)|^ {0,3}(?:([-*_])(?: *\1){2,} *$|\[[^\]]+\]:)/;
 // A removed comment leaves this placeholder, so removal can never turn text into a heading (`#<!-- c --> x`).
 const MARK = "";
 export function topLevelHeadings(text) {
@@ -2979,6 +2980,10 @@ export function topLevelHeadings(text) {
       out.push({ line: previous.line, text: previous.text.trim() });
       previous = null;
     } else if (line.trim() === "") {
+      previous = null;
+    } else if (NOT_SETEXT_TEXT.test(line) || line.includes(MARK)) {
+      // A thematic break, indented code, a link reference definition or a comment-bearing line is not paragraph
+      // text, so a following `===` cannot turn it into a heading.
       previous = null;
     } else {
       previous = { line: rec.line, text: rec.text };
