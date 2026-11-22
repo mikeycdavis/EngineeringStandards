@@ -2949,7 +2949,7 @@ export function headingAmbiguity(text) {
     if (mine.has(rec.line) && mine.get(rec.line) !== rec.inFence) return "a code fence the shared reader classifies differently";
   }
   for (const rec of markdownLines(text)) {
-    if (!rec.inFence && /^ {0,3}(?:<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)|<[?!])/.test(rec.text)) return "a raw HTML block";
+    if (!rec.inFence && /^ {0,3}(?:<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)|<\?|<![A-Za-z[])/.test(rec.text)) return "a raw HTML block";
   }
   return null;
 }
