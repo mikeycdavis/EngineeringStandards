@@ -2938,6 +2938,7 @@ export function headingAmbiguity(text) {
   return null;
 }
 
+const NOT_SETEXT_TEXT_NON_INDENT = /^ {0,3}(?:([-*_])(?: *\1){2,} *$|\[[^\]]+\]:)/;
 const NOT_SETEXT_TEXT = /^(?: {4}|\t)|^ {0,3}(?:([-*_])(?: *\1){2,} *$|\[[^\]]+\]:)/;
 // A removed comment leaves this placeholder, so removal can never turn text into a heading (`#<!-- c --> x`).
 const MARK = "";
@@ -2984,7 +2985,8 @@ export function topLevelHeadings(text) {
     } else if (NOT_SETEXT_TEXT.test(line) || (line.includes(MARK) && line.split(MARK).join("").trim() === "")) {
       // A thematic break, indented code, a link reference definition or a comment-only line is not paragraph
       // text, so a following `===` cannot turn it into a heading.
-      previous = null;
+      // Indented text inside a running paragraph is a continuation (indented code cannot interrupt a paragraph).
+      if (!(previous !== null && /^(?: {4}|\t)/.test(line) && !NOT_SETEXT_TEXT_NON_INDENT.test(line))) previous = null;
     } else {
       previous = { line: rec.line, text: rec.text };
     }
