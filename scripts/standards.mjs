@@ -2981,8 +2981,8 @@ export function topLevelHeadings(text) {
       previous = null;
     } else if (line.trim() === "") {
       previous = null;
-    } else if (NOT_SETEXT_TEXT.test(line) || line.includes(MARK)) {
-      // A thematic break, indented code, a link reference definition or a comment-bearing line is not paragraph
+    } else if (NOT_SETEXT_TEXT.test(line) || (line.includes(MARK) && line.split(MARK).join("").trim() === "")) {
+      // A thematic break, indented code, a link reference definition or a comment-only line is not paragraph
       // text, so a following `===` cannot turn it into a heading.
       previous = null;
     } else {

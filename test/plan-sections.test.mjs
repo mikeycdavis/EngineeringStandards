@@ -302,6 +302,8 @@ test("a thematic break, comment-only line, indented code or reference definition
     assert.deepEqual(topLevelHeadings(body).map((h) => h.line), [1], JSON.stringify(body));
   }
   assert.deepEqual(topLevelHeadings("# One\n\nTitle\n===\n").map((h) => h.line), [1, 3]);
+  // A title that merely carries an inline comment is still paragraph text.
+  assert.deepEqual(topLevelHeadings("Title <!-- editorial note -->\n===\n\nBody.\n").map((h) => h.line), [1]);
 });
 
 test("use versus mention: headings named only in a comment, a fence, inline code or prose are not violations", async () => {
