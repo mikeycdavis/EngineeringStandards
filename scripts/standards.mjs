@@ -2890,6 +2890,8 @@ function maskCodeSpans(line) {
  */
 export function headingAmbiguity(text) {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  // The shared reader splits on LF only, so a lone CR is a line ending it does not see.
+  if (/\r(?!\n)/.test(text)) return "a CR-only line ending";
   let inComment = false;
   let fence = null; // { ch, len } of the open fence
   const mine = new Map(); // 1-based line -> whether this scan has it inside a fence (non-marker lines only)
