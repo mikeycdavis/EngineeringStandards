@@ -403,3 +403,19 @@ test("fixtures under test/fixtures/plan-sections: the compliant plan is clean an
     assert.match(f[0].message, /00-plan\.md has 2 top-level headings/);
   });
 });
+
+test("empty comments, mid-line comment openers, HTML block types 3-5 and lazy continuation are reported ambiguous, not miscounted", () => {
+  const cases = [
+    ["# A\n\n<!-->\n\n# B\n\nBody.\n", /empty HTML comment/],
+    ["# A\n\n<!--->\n\n# B\n", /empty HTML comment/],
+    ["# A\n\nSee <!-- note\n# B\n-->\n", /middle of a line/],
+    ["# A\n\n<?x\n# Not\n?>\n", /raw HTML block/],
+    ["# A\n\n<![CDATA[\n# Not\n]]>\n", /raw HTML block/],
+    ["# A\n\n<!DOCTYPE x\n# Not\n>\n", /raw HTML block/],
+    ["# A\n\n> foo\nbar\n===\n", /setext underline/],
+    ["# A\n\n- foo\nbar\n===\n", /setext underline/],
+  ];
+  for (const [body, re] of cases) assert.match(headingAmbiguity(body) ?? "", re, JSON.stringify(body));
+  // Ordinary closed comments and plain setext titles stay countable.
+  assert.equal(headingAmbiguity("# A <!-- x -->\n\n<!-- y -->\n\nTitle\n===\n"), null);
+});

@@ -2896,6 +2896,8 @@ export function headingAmbiguity(text) {
   let fence = null; // { ch, len } of the open fence
   const mine = new Map(); // 1-based line -> whether this scan has it inside a fence (non-marker lines only)
   let lineNo = 0;
+  let container = false; // a block quote or list item line was seen
+  let underline = false; // a setext `=` underline line was seen
   const hasComment = text.includes("<!--");
   for (const line of text.split(/\r?\n/)) {
     lineNo += 1;
@@ -2927,18 +2929,27 @@ export function headingAmbiguity(text) {
     // A backslash-escaped opener renders literally; honouring escapes in every comment scan is more than this
     // reader does, so such a file is reported as not countable.
     if (masked.includes("\\<!--")) return "a backslash-escaped comment opener";
+    // `<!-->` and `<!--->` are complete comments on their own, which the two comment scans read differently.
+    if (/<!--+>/.test(masked)) return "an empty HTML comment";
+    if (/^ {0,3}(?:>|[-*+][ \t]|\d+[.)][ \t])/.test(line)) container = true;
+    if (/^ {0,3}=+[ \t]*$/.test(line)) underline = true;
     const o = masked.lastIndexOf("<!--");
     const c = masked.lastIndexOf("-->");
+    // A comment opened mid-line is inline HTML, which an ATX heading can interrupt; this reader treats it as a block.
+    if (o !== -1 && o > c && !inComment && masked.slice(0, o).trim() !== "") return "a comment opened in the middle of a line";
     if (o !== -1 && o > c) inComment = true;
     else if (c !== -1 && c > o) inComment = false;
   }
+  // A lazy continuation line inside a quote or list item can be followed by `===` without becoming a heading;
+  // containers are not modelled, so a setext underline in a file that has any is not countable.
+  if (container && underline) return "a setext underline in a file with block quotes or list items";
   // The shared fence walk must agree with this scan about which plain lines are code; where it does not
   // (a closing-fence lookalike with trailing text), counting headings from it would be a guess.
   for (const rec of markdownLines(text)) {
     if (mine.has(rec.line) && mine.get(rec.line) !== rec.inFence) return "a code fence the shared reader classifies differently";
   }
   for (const rec of markdownLines(text)) {
-    if (!rec.inFence && /^ {0,3}<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)/.test(rec.text)) return "a raw HTML block";
+    if (!rec.inFence && /^ {0,3}(?:<\/?[A-Za-z][A-Za-z0-9-]*(?:[\s/>]|$)|<[?!])/.test(rec.text)) return "a raw HTML block";
   }
   return null;
 }
