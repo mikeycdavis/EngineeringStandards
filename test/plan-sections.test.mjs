@@ -304,6 +304,8 @@ test("a thematic break, comment-only line, indented code or reference definition
   assert.deepEqual(topLevelHeadings("# One\n\nTitle\n===\n").map((h) => h.line), [1, 3]);
   // A title that merely carries an inline comment is still paragraph text.
   assert.deepEqual(topLevelHeadings("Title <!-- editorial note -->\n===\n\nBody.\n").map((h) => h.line), [1]);
+  // `[label]:` may or may not be a reference definition; the file is reported as not countable, not guessed at.
+  assert.match(headingAmbiguity("[text]: not a valid destination\n===\n"), /link reference definition/);
   // Indented text inside a running paragraph continues it; indented code cannot interrupt one.
   assert.deepEqual(topLevelHeadings("Title\n    continued\n===\n").map((h) => h.line), [1]);
 });

@@ -2911,6 +2911,9 @@ export function headingAmbiguity(text) {
     }
     // A fence opened inside a list item or block quote is a container the shared reader does not model.
     if (/^ {0,3}(?:[-*+]|\d+[.)]|>)[ \t]+(?:[-*+>][ \t]+)*(?:`{3,}|~{3,})/.test(line)) return "a code fence inside a list item or block quote";
+    // Whether `[label]: ...` is a link reference definition depends on its destination syntax, which is not modelled;
+    // a line that might be one is reported as not countable rather than guessed at.
+    if (/^ {0,3}\[[^\]]+\]:/.test(line)) return "a possible link reference definition";
     // Comment delimiters beside backticks, or inside indented text, are where comment and code-span (or indented
     // code) precedence matters and is not modelled here, so such a file is reported as not countable.
     if (/<!--|-->/.test(line) && line.includes("`")) return "a comment delimiter on a line with a backtick";
